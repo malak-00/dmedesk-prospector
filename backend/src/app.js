@@ -5,6 +5,7 @@ import logger from "./middleware/logger.js";
 const app = express();
 
 app.use(logger);
+app.use(errorHandler);
 app.use(cors());
 app.use(express.json());
 
