@@ -1,15 +1,21 @@
 {
-  "name": "backend",
+  "name": "dmedesk-prospector-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Backend API for DME Desk Prospector",
+  "type": "module",
+  "main": "src/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "echo \"No tests configured yet\""
   },
-  "keywords": [],
+  "keywords": [
+    "dme",
+    "prospecting",
+    "nppes"
+  ],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "axios": "^1.18.1",
     "cors": "^2.8.6",
