@@ -1,5 +1,6 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { classifyRole } from "../utils/roleClassifier.js";
 
 const USER_AGENT = "DMEDeskProspectorBot/1.0 (+prospecting research)";
 const MAX_PAGES = 4; // homepage + up to 3 relevant subpages
@@ -13,21 +14,6 @@ const RELEVANT_PAGE_KEYWORDS = [
   { keyword: "contact", type: "contact" },
 ];
 
-const ROLE_CATEGORIES = {
-  owner: ["owner", "founder", "co-founder", "president", "ceo", "chief executive"],
-  executive: ["vice president", " vp ", "cfo", "coo", "chief", "executive director"],
-  manager: ["manager", "director", "supervisor", "administrator", "office manager", "practice manager"],
-  admin: ["admin", "administrative", "front office", "office coordinator"],
-};
-
-function classifyRole(titleText) {
-  if (!titleText) return "unknown";
-  const lower = ` ${titleText.toLowerCase()} `;
-  for (const [category, keywords] of Object.entries(ROLE_CATEGORIES)) {
-    if (keywords.some((k) => lower.includes(k))) return category;
-  }
-  return "staff";
-}
 
 async function checkRobotsAllowed(baseUrl, path) {
   try {

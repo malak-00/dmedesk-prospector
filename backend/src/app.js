@@ -1,23 +1,24 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 import logger from "./middleware/logger.js";
 import errorHandler from "./middleware/errorHandler.js";
 import routes from "./routes/index.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-// Global middleware (order matters)
 app.use(cors());
 app.use(express.json());
 app.use(logger);
 
-// Health / root route
-app.get("/", (req, res) => {
-  res.json({
-    name: "DME Desk Prospector",
-    version: "1.0.0",
-    status: "running",
-  });
+// Static frontend
+app.use(express.static(path.join(__dirname, "../public")));
+
+// Health check (moved from "/")
+app.get("/api/health", (req, res) => {
+  res.json({ name: "DME Desk Prospector", version: "1.0.0", status: "running" });
 });
 
 // Feature routes

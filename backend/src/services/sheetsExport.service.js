@@ -90,3 +90,29 @@ export async function exportCompaniesToSheet(companies = []) {
 
 export { SheetsNotConfiguredError };
 export default { exportCompaniesToSheet };
+
+/**
+ * Reads the NPI column from the sheet and returns the set of NPIs
+ * already exported by anyone on the team. Used to filter duplicate
+ * leads out of future searches.
+ */
+export async function getClaimedNpis() {
+  assertConfigured();
+
+  const sheets = await getSheetsClient();
+  const tab = config.googleSheetTabName;
+  const npiColumnIndex = CSV_COLUMNS.findIndex((c) => c.key === "npi");
+  const colLetter = String.fromCharCode(65 + npiColumnIndex); // "B"
+
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.googleSheetId,
+      range: `${tab}!${colLetter}2:${colLetter}100000`, // skip header row
+    });
+    const values = res.data.values || [];
+    return new Set(values.flat().filter(Boolean).map(String));
+  } catch {
+    // Tab doesn't exist yet (no exports made) -- nothing is claimed
+    return new Set();
+  }
+}

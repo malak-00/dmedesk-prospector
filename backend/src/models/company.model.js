@@ -5,11 +5,13 @@ export function createCompany({
   phone = null,
   fax = null,
   website = null,
+  email = null,
   taxonomy = {},
   placeId = null,
   rating = null,
   ratingCount = null,
   isClosed = null,
+  decisionMakers = [],
   sources = {},
 } = {}) {
   return {
@@ -17,6 +19,7 @@ export function createCompany({
     name: name || null,
     npi,
     website,
+    email,
     phone,
     fax,
     address: {
@@ -31,15 +34,12 @@ export function createCompany({
       code: taxonomy.code ?? null,
       description: taxonomy.description ?? null,
     },
-    places: {
-      placeId,
-      rating, // 0-10 scale (Foursquare)
-      ratingCount,
-      isClosed, // true/false/null (unknown)
-    },
+    places: { placeId, rating, ratingCount, isClosed },
+    decisionMakers, // [{ name, title, roleCategory, phone, source, sourceUrl }]
     sources: {
       nppes: Boolean(sources.nppes),
       places: Boolean(sources.places),
+      website: Boolean(sources.website),
     },
     score: null,
   };

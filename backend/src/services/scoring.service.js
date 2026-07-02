@@ -7,6 +7,7 @@ const WEIGHTS = {
   placesVerified: 15,
   goodRating: 10,
   establishedPresence: 10,
+   hasDecisionMaker: 15,
 };
 
 const MAX_POSSIBLE_SCORE = Object.values(WEIGHTS).reduce((a, b) => a + b, 0);
@@ -42,6 +43,11 @@ export function scoreCompany(company) {
       ? WEIGHTS.establishedPresence
       : 0;
 
+  breakdown.hasDecisionMaker =
+    Array.isArray(company.decisionMakers) && company.decisionMakers.length > 0
+      ? WEIGHTS.hasDecisionMaker
+      : 0;
+  
   const total = Object.values(breakdown).reduce((a, b) => a + b, 0);
 
   return {

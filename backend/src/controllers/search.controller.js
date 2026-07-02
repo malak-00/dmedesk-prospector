@@ -12,7 +12,7 @@ export async function searchNppes(req, res, next) {
       state,
       postalCode,
       taxonomyDescription,
-      limit,
+      limit, 
     } = req.query;
 
     const hasAnyCriteria =
@@ -65,6 +65,7 @@ export async function searchCompaniesHandler(req, res, next) {
       taxonomyDescription,
       limit,
       enrich,
+      scrape
     } = req.query;
 
     const hasAnyCriteria =
@@ -86,18 +87,13 @@ export async function searchCompaniesHandler(req, res, next) {
     }
 
     const shouldEnrich = enrich !== "false"; // enrich by default
+    const shouldScrape = scrape === "true"; // opt-in: scraping is slower, off by default
+
 
     const result = await searchCompanies(
-      {
-        organizationName,
-        city,
-        state,
-        postalCode,
-        taxonomyDescription,
-        limit: parsedLimit,
-      },
-      shouldEnrich
-    );
+  { organizationName, city, state, postalCode, taxonomyDescription, limit: parsedLimit },
+  { enrichPlaces: shouldEnrich, scrapeWebsites: shouldScrape }
+);
 
     res.json({ success: true, ...result });
   } catch (err) {
