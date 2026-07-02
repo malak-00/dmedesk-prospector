@@ -11,16 +11,30 @@ class SheetsNotConfiguredError extends Error {
 
 function assertConfigured() {
   const missing = [];
-  if (!config.googleServiceAccountKeyPath) missing.push("GOOGLE_SERVICE_ACCOUNT_KEY_PATH");
+  if (!config.googleServiceAccountKeyPath && !config.googleServiceAccountKeyJson) {
+    missing.push("GOOGLE_SERVICE_ACCOUNT_KEY_PATH or GOOGLE_SERVICE_ACCOUNT_KEY_JSON");
+  }
   if (!config.googleSheetId) missing.push("GOOGLE_SHEET_ID");
   if (missing.length > 0) throw new SheetsNotConfiguredError(missing.join(", "));
 }
 
+function parseServiceAccountJson(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // hosts that only support single-line env vars often need the key base64-encoded
+    return JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
+  }
+}
+
 async function getSheetsClient() {
-  const auth = new google.auth.GoogleAuth({
-    keyFile: config.googleServiceAccountKeyPath,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
+  const authOptions = { scopes: ["https://www.googleapis.com/auth/spreadsheets"] };
+  if (config.googleServiceAccountKeyJson) {
+    authOptions.credentials = parseServiceAccountJson(config.googleServiceAccountKeyJson);
+  } else {
+    authOptions.keyFile = config.googleServiceAccountKeyPath;
+  }
+  const auth = new google.auth.GoogleAuth(authOptions);
   return google.sheets({ version: "v4", auth });
 }
 
