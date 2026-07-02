@@ -54,6 +54,17 @@ function normalizeProvider(raw) {
 
   const isOrganization = raw.enumeration_type === "NPI-2";
 
+  const authorizedOfficial =
+  isOrganization && basic.authorized_official_last_name
+    ? {
+        firstName: basic.authorized_official_first_name || null,
+        lastName: basic.authorized_official_last_name || null,
+        credential: basic.authorized_official_credential || null,
+        title: basic.authorized_official_title_or_position || null,
+        phone: basic.authorized_official_telephone_number || null,
+      }
+    : null;
+
   return {
     npi: raw.number,
     enumerationType: raw.enumeration_type, // "NPI-1" (individual) or "NPI-2" (org)
@@ -78,6 +89,7 @@ function normalizeProvider(raw) {
       license: primaryTaxonomy.license || null,
       state: primaryTaxonomy.state || null,
     },
+    authorizedOfficial
   };
 }
 
@@ -101,16 +113,18 @@ export async function searchProviders(criteria = {}) {
     postalCode,
     taxonomyDescription,
     limit = 20,
+    skip = 0,
   } = criteria;
 
   const params = {
-    enumeration_type: "NPI-2", // organizations only — DME suppliers are orgs, not individuals
+    enumeration_type: "NPI-2",
     organization_name: organizationName || undefined,
     city: city || undefined,
     state: state || undefined,
     postal_code: postalCode || undefined,
     taxonomy_description: taxonomyDescription || undefined,
     limit,
+    skip,
   };
 
   const data = await fetchFromNppes(params);
