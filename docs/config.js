@@ -3,4 +3,4 @@
 // the shared team access code -- the real API keys live in Apps Script's
 // Script Properties, never in this repo.
 
-const APPS_SCRIPT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_EXEC_URL_HERE";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbywy89pKrOYGDcNdzMNcjxR02sBXJhQojittf4zyG1_WKaVLHU4Yh4UoVKYizzKxifzAw/exec";
