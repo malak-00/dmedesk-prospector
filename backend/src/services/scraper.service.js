@@ -1,6 +1,6 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
-import { classifyRole } from "../utils/roleClassifier.js";
+import { classifyRole, ROLE_CATEGORIES } from "../utils/roleClassifier.js";
 
 const USER_AGENT = "DMEDeskProspectorBot/1.0 (+prospecting research)";
 const MAX_PAGES = 4; // homepage + up to 3 relevant subpages

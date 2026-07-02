@@ -119,6 +119,18 @@ var NppesService = (function () {
 
     var results = Array.isArray(data.results) ? data.results.map(normalizeProvider) : [];
 
+    // NPPES's taxonomy_description filter doesn't reliably behave as a strict
+    // match -- it can return unrelated taxonomies (pharmacy, home contractor,
+    // transport, etc.) alongside genuine matches when the term isn't an exact
+    // registered taxonomy string. Enforce it ourselves as a safety net so a
+    // DME search doesn't surface unrelated provider types.
+    if (criteria.taxonomyDescription) {
+      var term = criteria.taxonomyDescription.toLowerCase();
+      results = results.filter(function (r) {
+        return r.taxonomy && r.taxonomy.description && r.taxonomy.description.toLowerCase().indexOf(term) !== -1;
+      });
+    }
+
     return {
       count: data.result_count != null ? data.result_count : results.length,
       results: results,

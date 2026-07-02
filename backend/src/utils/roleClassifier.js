@@ -1,4 +1,4 @@
-const ROLE_CATEGORIES = {
+export const ROLE_CATEGORIES = {
   owner: ["owner", "founder", "co-founder", "president", "ceo", "chief executive"],
   executive: ["vice president", " vp ", "cfo", "coo", "chief", "executive director"],
   manager: ["manager", "director", "supervisor", "administrator", "office manager", "practice manager"],

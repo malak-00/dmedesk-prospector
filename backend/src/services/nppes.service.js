@@ -129,9 +129,19 @@ export async function searchProviders(criteria = {}) {
 
   const data = await fetchFromNppes(params);
 
-  const results = Array.isArray(data.results)
+  let results = Array.isArray(data.results)
     ? data.results.map(normalizeProvider)
     : [];
+
+  // NPPES's taxonomy_description filter doesn't reliably behave as a strict
+  // match -- it can return unrelated taxonomies (pharmacy, home contractor,
+  // transport, etc.) alongside genuine matches when the term isn't an exact
+  // registered taxonomy string. Enforce it ourselves as a safety net so a
+  // DME search doesn't surface unrelated provider types.
+  if (taxonomyDescription) {
+    const term = taxonomyDescription.toLowerCase();
+    results = results.filter((r) => r.taxonomy?.description?.toLowerCase().includes(term));
+  }
 
   return {
     count: data.result_count ?? results.length,
