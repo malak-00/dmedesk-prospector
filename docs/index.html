@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DME Desk Prospector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark">DME</span>
+      <span class="brand-name">Desk Prospector</span>
+    </div>
+    <div class="status" id="statusIndicator"><span class="status-dot"></span><span id="statusText">Ready</span></div>
+  </header>
+
+  <main class="app-main">
+    <section class="search-panel" aria-label="Search filters">
+      <form id="searchForm">
+        <div class="field-grid">
+          <label class="field">
+            <span>Organization name</span>
+            <input type="text" name="organizationName" placeholder="e.g. Global Med Supply">
+          </label>
+          <label class="field">
+            <span>City</span>
+            <input type="text" name="city" placeholder="e.g. Tampa">
+          </label>
+          <label class="field">
+            <span>State</span>
+            <input type="text" name="state" maxlength="2" placeholder="FL" style="text-transform:uppercase">
+          </label>
+          <label class="field">
+            <span>Postal code</span>
+            <input type="text" name="postalCode" placeholder="33601">
+          </label>
+          <label class="field field-wide">
+            <span>Specialty / taxonomy</span>
+            <input type="text" name="taxonomyDescription" value="Durable Medical Equipment" placeholder="e.g. Durable Medical Equipment">
+          </label>
+          <label class="field">
+            <span>Limit</span>
+            <input type="number" name="limit" value="20" min="1" max="50">
+          </label>
+        </div>
+        <div class="field-row">
+          <label class="checkbox">
+            <input type="checkbox" name="enrich" checked>
+            <span>Enrich with Places data</span>
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" name="scrape">
+            <span>Scrape websites for contacts <em>(slower)</em></span>
+          </label>
+          <button type="submit" class="btn btn-primary" id="searchBtn">Search leads</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="results-panel">
+      <div class="results-toolbar">
+        <div class="results-count" id="resultsCount">No search run yet</div>
+        <div class="results-actions">
+          <button class="btn btn-ghost" id="exportCsvBtn" disabled>Export CSV</button>
+          <button class="btn btn-ghost" id="exportSheetsBtn" disabled>Export to Sheets</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="results-table" id="resultsTable">
+          <thead>
+            <tr>
+              <th class="col-check"><input type="checkbox" id="selectAll"></th>
+              <th class="col-score">Score</th>
+              <th>Company</th>
+              <th>Location</th>
+              <th>Contact</th>
+              <th>Phone</th>
+              <th class="col-expand"></th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody">
+            <tr class="empty-row"><td colspan="7">Run a search to see leads here.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
