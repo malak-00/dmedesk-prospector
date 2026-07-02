@@ -1,4 +1,4 @@
-const CSV_COLUMNS = [
+export const CSV_COLUMNS = [
   { key: "name", label: "Company Name" },
   { key: "npi", label: "NPI" },
   { key: "phone", label: "Phone" },
@@ -30,7 +30,7 @@ function escapeCsvValue(value) {
   return str;
 }
 
-function flattenCompany(company) {
+export function flattenCompany(company) {
   const primaryContact = company.decisionMakers?.[0] || null;
   const activeSources = Object.entries(company.sources || {})
     .filter(([, active]) => active)

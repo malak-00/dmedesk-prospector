@@ -9,6 +9,9 @@ const config = {
   foursquareApiKey: process.env.FOURSQUARE_SERVICE_API_KEY || null,
   geminiApiKey: process.env.GEMINI_API_KEY || null,
   geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+  googleServiceAccountKeyPath: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || null,
+  googleSheetId: process.env.GOOGLE_SHEET_ID || null,
+  googleSheetTabName: process.env.GOOGLE_SHEET_TAB_NAME || "Leads",
 };
 
 export default config;
