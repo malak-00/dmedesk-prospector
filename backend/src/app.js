@@ -3,6 +3,7 @@ import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
 import logger from "./middleware/logger.js";
+import basicAuth from "./middleware/basicAuth.js";
 import errorHandler from "./middleware/errorHandler.js";
 import routes from "./routes/index.js";
 
@@ -12,6 +13,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(logger);
+app.use(basicAuth);
 
 // Static frontend
 app.use(express.static(path.join(__dirname, "../public")));

@@ -15,6 +15,8 @@ const config = {
   googleServiceAccountKeyJson: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON || null,
   googleSheetId: process.env.GOOGLE_SHEET_ID || null,
   googleSheetTabName: process.env.GOOGLE_SHEET_TAB_NAME || "Leads",
+  basicAuthUser: process.env.BASIC_AUTH_USER || null,
+  basicAuthPass: process.env.BASIC_AUTH_PASS || null,
 };
 
 export default config;
