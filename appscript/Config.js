@@ -2,8 +2,7 @@
 // in the Apps Script editor) instead of a .env file -- there is no dotenv here,
 // and nothing here should ever be hardcoded into a file that gets committed.
 //
-// Required properties to set before deploying:
-//   APP_TOKEN                      -- shared secret the frontend must send with every request
+// Required property to set before deploying:
 //   GOOGLE_SHEET_ID                -- the sheet used as lead log + dedup source
 // Optional (feature degrades gracefully if unset, same as the Node version):
 //   NPPES_VERSION                  -- defaults to 2.1
