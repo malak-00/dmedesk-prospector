@@ -133,7 +133,7 @@ function rowHtml(company, index) {
       </td>
       <td class="mono">${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")}</td>
       <td>${primaryContact ? escapeHtml(primaryContact.name) : '<span style="color:var(--muted)">—</span>'}</td>
-      <td class="mono">${escapeHtml(company.phone || "—")}</td>
+      <td class="mono">${primaryContact?.phone ? escapeHtml(primaryContact.phone) : '<span style="color:var(--muted)">—</span>'}</td>
       <td><span class="chevron ${isExpanded ? "open" : ""}">▸</span></td>
     </tr>
   `];
@@ -149,6 +149,7 @@ function rowHtml(company, index) {
                 NPI: ${escapeHtml(company.npi || "—")}<br>
                 ${escapeHtml(company.address?.line1 || "")}<br>
                 ${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")} ${escapeHtml(company.address?.postalCode || "")}<br>
+                Company phone: ${escapeHtml(company.phone || "—")}<br>
                 Website: ${company.website ? `<a href="${escapeHtml(company.website)}" target="_blank">${escapeHtml(company.website)}</a>` : "—"}<br>
                 Fax: ${escapeHtml(company.fax || "—")}
               </div>
@@ -282,6 +283,46 @@ async function exportSheets() {
     setStatus("error", "Error");
   }
 }
+
+// ---- State dropdown + dependent city suggestions ----
+// Leaving State on "All states" (or City blank) simply omits that filter from
+// the NPPES query, i.e. searches across all states / all cities.
+const US_STATE_NAMES = {
+  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
+  CO: "Colorado", CT: "Connecticut", DE: "Delaware", DC: "District of Columbia",
+  FL: "Florida", GA: "Georgia", HI: "Hawaii", ID: "Idaho", IL: "Illinois",
+  IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky", LA: "Louisiana",
+  ME: "Maine", MD: "Maryland", MA: "Massachusetts", MI: "Michigan",
+  MN: "Minnesota", MS: "Mississippi", MO: "Missouri", MT: "Montana",
+  NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
+  NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota",
+  OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania",
+  RI: "Rhode Island", SC: "South Carolina", SD: "South Dakota",
+  TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia",
+  WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
+};
+
+const stateSelect = document.getElementById("stateSelect");
+const cityInput = document.getElementById("cityInput");
+const cityOptions = document.getElementById("cityOptions");
+
+for (const [code, name] of Object.entries(US_STATE_NAMES)) {
+  const opt = document.createElement("option");
+  opt.value = code;
+  opt.textContent = `${code} — ${name}`;
+  stateSelect.appendChild(opt);
+}
+
+function refreshCityOptions() {
+  const cities = US_CITIES_BY_STATE[stateSelect.value] || [];
+  cityOptions.innerHTML = cities.map((c) => `<option value="${c}"></option>`).join("");
+}
+
+stateSelect.addEventListener("change", () => {
+  cityInput.value = ""; // stale city from the previous state would silently mis-filter
+  refreshCityOptions();
+});
+refreshCityOptions();
 
 els.form.addEventListener("submit", runSearch);
 els.selectAll.addEventListener("change", (e) => {

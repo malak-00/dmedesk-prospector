@@ -26,12 +26,15 @@
             <input type="text" name="organizationName" placeholder="e.g. Global Med Supply">
           </label>
           <label class="field">
-            <span>City</span>
-            <input type="text" name="city" placeholder="e.g. Tampa">
+            <span>State</span>
+            <select name="state" id="stateSelect">
+              <option value="">All states</option>
+            </select>
           </label>
           <label class="field">
-            <span>State</span>
-            <input type="text" name="state" maxlength="2" placeholder="FL" style="text-transform:uppercase">
+            <span>City</span>
+            <input type="text" name="city" id="cityInput" list="cityOptions" placeholder="All cities" autocomplete="off">
+            <datalist id="cityOptions"></datalist>
           </label>
           <label class="field">
             <span>Postal code</span>
@@ -93,7 +96,7 @@
               <th>Company</th>
               <th>Location</th>
               <th>Contact</th>
-              <th>Phone</th>
+              <th>Contact phone</th>
               <th class="col-expand"></th>
             </tr>
           </thead>
@@ -107,6 +110,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <script src="/usLocations.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

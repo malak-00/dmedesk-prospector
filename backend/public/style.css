@@ -88,7 +88,7 @@ body {
 .field-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 16px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 500; }
 .field-wide { grid-column: span 2; }
-.field input {
+.field input, .field select {
   font-family: var(--font-ui);
   font-size: 14px;
   padding: 9px 11px;
@@ -98,9 +98,10 @@ body {
   color: var(--ink);
   transition: border-color 0.12s ease, background 0.12s ease;
 }
+.field select { appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238B93A1' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; padding-right: 30px; cursor: pointer; }
 .field input::placeholder { color: var(--muted-2); }
-.field input:hover { border-color: #3A4150; }
-.field input:focus {
+.field input:hover, .field select:hover { border-color: #3A4150; }
+.field input:focus, .field select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
