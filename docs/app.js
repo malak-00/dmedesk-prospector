@@ -62,6 +62,11 @@ const els = {
   selectAll: document.getElementById("selectAll"),
   exportCsvBtn: document.getElementById("exportCsvBtn"),
   exportSheetsBtn: document.getElementById("exportSheetsBtn"),
+  exportCsvLabel: document.getElementById("exportCsvLabel"),
+  exportSheetsLabel: document.getElementById("exportSheetsLabel"),
+  selectionChip: document.getElementById("selectionChip"),
+  selectionCount: document.getElementById("selectionCount"),
+  clearSelectionBtn: document.getElementById("clearSelectionBtn"),
   statusDot: document.querySelector(".status-dot"),
   statusText: document.getElementById("statusText"),
   toast: document.getElementById("toast"),
@@ -120,7 +125,7 @@ async function runSearch(evt) {
 
   els.searchBtn.disabled = true;
   setStatus("busy", "Searching…");
-  els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">Searching NPPES registry…</td></tr>`;
+  els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7"><div class="loading-row"><span class="spinner"></span> Searching NPPES registry…</div></td></tr>`;
 
   try {
     const data = await apiGet("search/companies", params);
@@ -145,23 +150,34 @@ function renderResults(excludedAsClaimed = 0) {
   els.resultsCount.textContent = `${companies.length} lead${companies.length === 1 ? "" : "s"} found${excludedNote}`;
   els.exportCsvBtn.disabled = companies.length === 0;
   els.exportSheetsBtn.disabled = companies.length === 0;
-  els.selectAll.checked = false;
+  els.selectAll.checked = companies.length > 0 && state.selected.size === companies.length;
 
   if (companies.length === 0) {
     els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">No leads matched that search.</td></tr>`;
+    updateSelectionUI();
     return;
   }
 
   els.resultsBody.innerHTML = companies.map((c, i) => rowHtml(c, i)).join("");
   attachRowHandlers();
+  updateSelectionUI();
+}
+
+function updateSelectionUI() {
+  const count = state.selected.size;
+  els.selectionChip.hidden = count === 0;
+  els.selectionCount.textContent = `${count} selected`;
+  els.exportCsvLabel.textContent = count > 0 ? `Export ${count} selected` : "Export CSV";
+  els.exportSheetsLabel.textContent = count > 0 ? `Send ${count} selected` : "Export to Sheets";
 }
 
 function rowHtml(company, index) {
   const primaryContact = company.decisionMakers?.[0];
   const isExpanded = state.expandedIndex === index;
+  const isSelected = state.selected.has(index);
   const rows = [`
-    <tr class="lead-row" data-index="${index}">
-      <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}"></td>
+    <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>${scoreRing(company.score)}</td>
       <td>
         <div class="company-name">${escapeHtml(company.name)}</div>
@@ -229,7 +245,11 @@ function attachRowHandlers() {
   document.querySelectorAll(".row-check").forEach((box) => {
     box.addEventListener("change", (e) => {
       const idx = Number(e.target.dataset.index);
-      if (e.target.checked) state.selected.add(idx); else state.selected.delete(idx);
+      const row = e.target.closest(".lead-row");
+      if (e.target.checked) { state.selected.add(idx); row?.classList.add("is-selected"); }
+      else { state.selected.delete(idx); row?.classList.remove("is-selected"); }
+      els.selectAll.checked = state.companies.length > 0 && state.selected.size === state.companies.length;
+      updateSelectionUI();
     });
   });
 
@@ -300,8 +320,18 @@ els.selectAll.addEventListener("change", (e) => {
   document.querySelectorAll(".row-check").forEach((box) => {
     box.checked = e.target.checked;
     const idx = Number(box.dataset.index);
-    if (e.target.checked) state.selected.add(idx); else state.selected.delete(idx);
+    const row = box.closest(".lead-row");
+    if (e.target.checked) { state.selected.add(idx); row?.classList.add("is-selected"); }
+    else { state.selected.delete(idx); row?.classList.remove("is-selected"); }
   });
+  updateSelectionUI();
+});
+els.clearSelectionBtn.addEventListener("click", () => {
+  state.selected.clear();
+  els.selectAll.checked = false;
+  document.querySelectorAll(".row-check").forEach((box) => { box.checked = false; });
+  document.querySelectorAll(".lead-row").forEach((row) => row.classList.remove("is-selected"));
+  updateSelectionUI();
 });
 els.exportCsvBtn.addEventListener("click", exportCsv);
 els.exportSheetsBtn.addEventListener("click", exportSheets);

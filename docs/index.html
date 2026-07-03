@@ -55,17 +55,32 @@
             <input type="checkbox" name="scrape">
             <span>Scrape websites for contacts <em>(slower)</em></span>
           </label>
-          <button type="submit" class="btn btn-primary" id="searchBtn">Search leads</button>
+          <button type="submit" class="btn btn-primary" id="searchBtn">
+            <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            <span>Search leads</span>
+          </button>
         </div>
       </form>
     </section>
 
     <section class="results-panel">
       <div class="results-toolbar">
-        <div class="results-count" id="resultsCount">No search run yet</div>
+        <div class="results-meta">
+          <div class="results-count" id="resultsCount">No search run yet</div>
+          <div class="selection-chip" id="selectionChip" hidden>
+            <span id="selectionCount">0 selected</span>
+            <button type="button" class="link-btn" id="clearSelectionBtn">Clear</button>
+          </div>
+        </div>
         <div class="results-actions">
-          <button class="btn btn-ghost" id="exportCsvBtn" disabled>Export CSV</button>
-          <button class="btn btn-ghost" id="exportSheetsBtn" disabled>Export to Sheets</button>
+          <button class="btn btn-ghost" id="exportCsvBtn" disabled>
+            <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v9m0 0L4.5 6.5M8 10l3.5-3.5M2 12v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span id="exportCsvLabel">Export CSV</span>
+          </button>
+          <button class="btn btn-ghost" id="exportSheetsBtn" disabled>
+            <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 6.5h12M2 10.5h12M6.5 2v12" stroke="currentColor" stroke-width="1.4"/></svg>
+            <span id="exportSheetsLabel">Export to Sheets</span>
+          </button>
         </div>
       </div>
 
