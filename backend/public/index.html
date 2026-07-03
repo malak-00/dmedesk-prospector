@@ -42,7 +42,14 @@
           </label>
           <label class="field field-wide">
             <span>Specialty / taxonomy</span>
-            <input type="text" name="taxonomyDescription" value="Durable Medical Equipment" placeholder="e.g. Durable Medical Equipment">
+            <select name="taxonomyDescription">
+              <option value="">All specialties</option>
+              <option value="Durable Medical Equipment" selected>Durable Medical Equipment &amp; Medical Supplies</option>
+              <option value="Oxygen Equipment">DME — Oxygen Equipment &amp; Supplies</option>
+              <option value="Prosthetic/Orthotic">Prosthetic/Orthotic Supplier</option>
+              <option value="Orthopedic">Orthopedics (any orthopedic specialty)</option>
+              <option value="Prosthetic">Prosthetics (any prosthetic specialty)</option>
+            </select>
           </label>
           <label class="field">
             <span>Name contains</span>
