@@ -103,6 +103,7 @@ function checkAuth_(params) {
 function readSearchCriteria_(params) {
   return {
     organizationName: params.organizationName || undefined,
+    nameContains: params.nameContains || undefined,
     city: params.city || undefined,
     state: params.state || undefined,
     postalCode: params.postalCode || undefined,

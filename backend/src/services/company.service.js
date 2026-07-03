@@ -139,15 +139,19 @@ async function fetchFreshProviders(criteria, desiredLimit, claimedNpis) {
   let totalScanned = 0;
 
   while (fresh.length < desiredLimit && skip <= NPPES_MAX_SKIP) {
-    const { results } = await searchProviders({
+    const { results, rawCount } = await searchProviders({
       ...criteria,
       limit: NPPES_PAGE_SIZE,
       skip,
     });
 
-    if (results.length === 0) break; // NPPES has no more matches at all
+    // Last-page checks must use rawCount (what NPPES actually returned),
+    // not results.length -- local taxonomy/keyword filters can trim a full
+    // page and would otherwise end pagination early.
+    const fetched = rawCount ?? results.length;
+    if (fetched === 0) break; // NPPES has no more matches at all
 
-    totalScanned += results.length;
+    totalScanned += fetched;
     for (const provider of results) {
       if (fresh.length >= desiredLimit) break;
       if (!provider.npi || !claimedNpis.has(String(provider.npi))) {
@@ -155,7 +159,7 @@ async function fetchFreshProviders(criteria, desiredLimit, claimedNpis) {
       }
     }
 
-    if (results.length < NPPES_PAGE_SIZE) break; // last page from NPPES
+    if (fetched < NPPES_PAGE_SIZE) break; // last page from NPPES
     skip += NPPES_PAGE_SIZE;
   }
 

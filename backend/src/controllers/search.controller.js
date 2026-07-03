@@ -8,15 +8,16 @@ export async function searchNppes(req, res, next) {
   try {
     const {
       organizationName,
+      nameContains,
       city,
       state,
       postalCode,
       taxonomyDescription,
-      limit, 
+      limit,
     } = req.query;
 
     const hasAnyCriteria =
-      organizationName || city || state || postalCode || taxonomyDescription;
+      organizationName || nameContains || city || state || postalCode || taxonomyDescription;
 
     if (!hasAnyCriteria) {
       const error = new Error(
@@ -35,6 +36,7 @@ export async function searchNppes(req, res, next) {
 
     const result = await searchProviders({
       organizationName,
+      nameContains,
       city,
       state,
       postalCode,
@@ -59,6 +61,7 @@ export async function searchCompaniesHandler(req, res, next) {
   try {
     const {
       organizationName,
+      nameContains,
       city,
       state,
       postalCode,
@@ -69,11 +72,11 @@ export async function searchCompaniesHandler(req, res, next) {
     } = req.query;
 
     const hasAnyCriteria =
-      organizationName || city || state || postalCode || taxonomyDescription;
+      organizationName || nameContains || city || state || postalCode || taxonomyDescription;
 
     if (!hasAnyCriteria) {
       const error = new Error(
-        "At least one search parameter is required (organizationName, city, state, postalCode, or taxonomyDescription)"
+        "At least one search parameter is required (organizationName, nameContains, city, state, postalCode, or taxonomyDescription)"
       );
       error.status = 400;
       throw error;
@@ -91,7 +94,7 @@ export async function searchCompaniesHandler(req, res, next) {
 
 
     const result = await searchCompanies(
-  { organizationName, city, state, postalCode, taxonomyDescription, limit: parsedLimit },
+  { organizationName, nameContains, city, state, postalCode, taxonomyDescription, limit: parsedLimit },
   { enrichPlaces: shouldEnrich, scrapeWebsites: shouldScrape }
 );
 

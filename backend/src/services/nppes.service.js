@@ -108,6 +108,7 @@ function normalizeProvider(raw) {
 export async function searchProviders(criteria = {}) {
   const {
     organizationName,
+    nameContains,
     city,
     state,
     postalCode,
@@ -133,6 +134,11 @@ export async function searchProviders(criteria = {}) {
     ? data.results.map(normalizeProvider)
     : [];
 
+  // How many NPPES actually sent back for this page, before our local
+  // filters below trim it. Pagination must use this -- not the filtered
+  // length -- to decide whether NPPES has more pages.
+  const rawCount = results.length;
+
   // NPPES's taxonomy_description filter doesn't reliably behave as a strict
   // match -- it can return unrelated taxonomies (pharmacy, home contractor,
   // transport, etc.) alongside genuine matches when the term isn't an exact
@@ -143,8 +149,18 @@ export async function searchProviders(criteria = {}) {
     results = results.filter((r) => r.taxonomy?.description?.toLowerCase().includes(term));
   }
 
+  // NPPES's organization_name only matches from the start of the name
+  // (trailing wildcard allowed, leading wildcard not supported), so a
+  // "name contains" search can't be expressed in the API query at all --
+  // it has to be a local substring filter over fetched pages.
+  if (nameContains) {
+    const term = nameContains.toLowerCase();
+    results = results.filter((r) => r.name?.toLowerCase().includes(term));
+  }
+
   return {
     count: data.result_count ?? results.length,
+    rawCount,
     results,
   };
 }

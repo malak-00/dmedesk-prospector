@@ -125,9 +125,13 @@ var CompanyService = (function () {
       );
       var results = result.results;
 
-      if (results.length === 0) break; // NPPES has no more matches at all
+      // Last-page checks must use rawCount (what NPPES actually returned),
+      // not results.length -- local taxonomy/keyword filters can trim a full
+      // page and would otherwise end pagination early.
+      var fetched = result.rawCount != null ? result.rawCount : results.length;
+      if (fetched === 0) break; // NPPES has no more matches at all
 
-      totalScanned += results.length;
+      totalScanned += fetched;
       for (var i = 0; i < results.length; i++) {
         if (fresh.length >= desiredLimit) break;
         var provider = results[i];
@@ -136,7 +140,7 @@ var CompanyService = (function () {
         }
       }
 
-      if (results.length < NPPES_PAGE_SIZE) break; // last page from NPPES
+      if (fetched < NPPES_PAGE_SIZE) break; // last page from NPPES
       skip += NPPES_PAGE_SIZE;
     }
 

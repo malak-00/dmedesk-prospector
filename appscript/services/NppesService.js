@@ -119,6 +119,11 @@ var NppesService = (function () {
 
     var results = Array.isArray(data.results) ? data.results.map(normalizeProvider) : [];
 
+    // How many NPPES actually sent back for this page, before our local
+    // filters below trim it. Pagination must use this -- not the filtered
+    // length -- to decide whether NPPES has more pages.
+    var rawCount = results.length;
+
     // NPPES's taxonomy_description filter doesn't reliably behave as a strict
     // match -- it can return unrelated taxonomies (pharmacy, home contractor,
     // transport, etc.) alongside genuine matches when the term isn't an exact
@@ -131,8 +136,20 @@ var NppesService = (function () {
       });
     }
 
+    // NPPES's organization_name only matches from the start of the name
+    // (trailing wildcard allowed, leading wildcard not supported), so a
+    // "name contains" search can't be expressed in the API query at all --
+    // it has to be a local substring filter over fetched pages.
+    if (criteria.nameContains) {
+      var nameTerm = criteria.nameContains.toLowerCase();
+      results = results.filter(function (r) {
+        return r.name && r.name.toLowerCase().indexOf(nameTerm) !== -1;
+      });
+    }
+
     return {
       count: data.result_count != null ? data.result_count : results.length,
+      rawCount: rawCount,
       results: results,
     };
   }
