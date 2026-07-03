@@ -87,6 +87,7 @@ function handleRequest_(e) {
         var opts = {};
         if (params.mine === "true") opts.claimedBy = session.displayName;
         if (params.updatedWithinDays) opts.updatedWithinDays = Number(params.updatedWithinDays);
+        if (params.updatedYear) opts.updatedYear = params.updatedYear;
         return jsonResponse_({
           success: true,
           data: { leads: SheetsStore.listClaimedLeads(opts), statuses: SheetsStore.ALLOWED_STATUSES },

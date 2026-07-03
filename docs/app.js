@@ -92,8 +92,20 @@ const els = {
   claimedCount: document.getElementById("claimedCount"),
   onlyMine: document.getElementById("onlyMine"),
   updatedWithin: document.getElementById("updatedWithin"),
+  updatedYear: document.getElementById("updatedYear"),
   refreshClaimedBtn: document.getElementById("refreshClaimedBtn"),
 };
+
+// Populate the "Year" filter with the current year and a few back.
+(function () {
+  const thisYear = new Date().getFullYear();
+  for (let y = thisYear; y >= thisYear - 5; y--) {
+    const opt = document.createElement("option");
+    opt.value = String(y);
+    opt.textContent = String(y);
+    els.updatedYear.appendChild(opt);
+  }
+})();
 
 /* ---------- Sign in ---------- */
 
@@ -435,6 +447,7 @@ async function loadClaimedLeads() {
     const params = {};
     if (els.onlyMine.checked) params.mine = "true";
     if (els.updatedWithin.value) params.updatedWithinDays = els.updatedWithin.value;
+    if (els.updatedYear.value) params.updatedYear = els.updatedYear.value;
     const data = await apiGet("leads/list", params);
     state.statuses = data.statuses || [];
     state.claimedLoaded = true;
@@ -565,6 +578,7 @@ document.querySelectorAll(".view-tabs .tab").forEach((tab) => {
 });
 els.onlyMine.addEventListener("change", loadClaimedLeads);
 els.updatedWithin.addEventListener("change", loadClaimedLeads);
+els.updatedYear.addEventListener("change", loadClaimedLeads);
 els.refreshClaimedBtn.addEventListener("click", loadClaimedLeads);
 
 if (getSession()) hideLogin(); else showLogin();

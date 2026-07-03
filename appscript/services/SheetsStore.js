@@ -1,16 +1,29 @@
 // Replaces backend/src/services/sheetsExport.service.js. No service account
 // or googleapis needed -- Apps Script talks to Sheets natively via
-// SpreadsheetApp. Still always appends lead rows, never overwrites them;
-// the only in-place edits are the Status columns via updateLeadStatus.
+// SpreadsheetApp. Always APPENDS lead rows, never overwrites; the only
+// in-place edits are the Status columns via updateLeadStatus.
 //
-// Sheet columns = CsvExport.CSV_COLUMNS followed by TRACKING_COLUMNS
-// (Claimed By etc.). Tracking columns are appended at the END on purpose:
-// getClaimedNpis computes the NPI column position from CSV_COLUMNS, so
-// nothing may shift the earlier columns.
+// Everything is keyed by COLUMN LABEL, never by fixed position: on export we
+// look up (or append) each column by its header text, so adding a new column
+// later never shifts or corrupts rows already in the sheet. New columns are
+// always appended at the far right.
 
 var SheetsStore = (function () {
-  var TRACKING_COLUMNS = ["Claimed By", "Claimed At", "Status", "Status Updated By", "Status Updated At"];
+  // Full sheet layout for a FRESH sheet = lead columns (from CsvExport) then
+  // the tracking columns. For an existing sheet we only ever append missing
+  // labels at the end, so this order only matters the very first time.
+  var TRACKING_COLUMNS = [
+    { key: "claimedBy", label: "Claimed By" },
+    { key: "claimedAt", label: "Claimed At" },
+    { key: "status", label: "Status" },
+    { key: "statusUpdatedBy", label: "Status Updated By" },
+    { key: "statusUpdatedAt", label: "Status Updated At" },
+  ];
   var ALLOWED_STATUSES = ["new", "called", "voicemail", "interested", "not interested", "do not call"];
+
+  function columnDefs_() {
+    return CsvExport.CSV_COLUMNS.concat(TRACKING_COLUMNS);
+  }
 
   function assertConfigured() {
     if (!Config.googleSheetId()) {
@@ -18,10 +31,6 @@ var SheetsStore = (function () {
       err.name = "SheetsNotConfiguredError";
       throw err;
     }
-  }
-
-  function fullHeader_() {
-    return CsvExport.CSV_COLUMNS.map(function (c) { return c.label; }).concat(TRACKING_COLUMNS);
   }
 
   function getSheet_() {
@@ -32,34 +41,48 @@ var SheetsStore = (function () {
     return sheet;
   }
 
-  // Writes the header if the sheet is empty, and extends it in place if it
-  // predates newer columns (older rows just have blanks there).
-  function ensureHeader_(sheet) {
-    var header = fullHeader_();
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(header);
-      return;
-    }
-    var existingWidth = sheet.getLastColumn();
-    if (existingWidth < header.length) {
-      sheet.getRange(1, 1, 1, header.length).setValues([header]);
-    }
-  }
-
-  function headerIndex_(sheet, label) {
+  // 0-based map of header label (lowercased) -> column index for the current sheet.
+  function buildColMap_(sheet) {
+    var map = {};
+    if (sheet.getLastColumn() === 0) return map;
     var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     for (var i = 0; i < header.length; i++) {
-      if (String(header[i]).trim().toLowerCase() === label.toLowerCase()) return i; // 0-based
+      var label = String(header[i]).trim().toLowerCase();
+      if (label) map[label] = i;
     }
-    return -1;
+    return map;
   }
 
-  // Makes the Status column a real dropdown in the sheet itself, so editing a
-  // status directly in Google Sheets offers the same choices as the app.
-  function applyStatusValidation_(sheet) {
+  // Guarantees every expected column exists, appending any missing ones at the
+  // far right (never moving existing columns). Returns the fresh column map.
+  function ensureColumns_(sheet) {
+    var expected = columnDefs_().map(function (c) { return c.label; });
+
+    if (sheet.getLastRow() === 0) {
+      sheet.getRange(1, 1, 1, expected.length).setValues([expected]);
+      return buildColMap_(sheet);
+    }
+
+    var map = buildColMap_(sheet);
+    var missing = expected.filter(function (label) { return map[label.toLowerCase()] == null; });
+    if (missing.length) {
+      var startCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, startCol, 1, missing.length).setValues([missing]);
+      map = buildColMap_(sheet);
+    }
+    return map;
+  }
+
+  function colIndex_(colMap, label) {
+    var i = colMap[label.toLowerCase()];
+    return i == null ? -1 : i;
+  }
+
+  // Makes the Status column a real dropdown in the sheet itself.
+  function applyStatusValidation_(sheet, colMap) {
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return;
-    var statusCol = headerIndex_(sheet, "Status");
+    var statusCol = colIndex_(colMap, "Status");
     if (statusCol < 0) return;
     var rule = SpreadsheetApp.newDataValidation()
       .requireValueInList(ALLOWED_STATUSES, true)
@@ -78,21 +101,32 @@ var SheetsStore = (function () {
     }
 
     var sheet = getSheet_();
-    ensureHeader_(sheet);
-
+    var colMap = ensureColumns_(sheet);
+    var width = sheet.getLastColumn();
     var now = new Date().toISOString();
+    var defs = columnDefs_();
+
     var rows = companies.map(function (company) {
       var flat = CsvExport.flattenCompany(company);
-      var base = CsvExport.CSV_COLUMNS.map(function (c) {
-        return flat[c.key] != null ? flat[c.key] : "";
+      var row = [];
+      for (var i = 0; i < width; i++) row.push(""); // width-filled, label-placed below
+      defs.forEach(function (c) {
+        var ci = colIndex_(colMap, c.label);
+        if (ci < 0) return;
+        var val;
+        if (c.key === "claimedBy") val = claimedBy || "";
+        else if (c.key === "claimedAt") val = now;
+        else if (c.key === "status") val = "new";
+        else if (c.key === "statusUpdatedBy" || c.key === "statusUpdatedAt") val = "";
+        else val = flat[c.key] != null ? flat[c.key] : "";
+        row[ci] = val;
       });
-      return base.concat([claimedBy || "", now, "new", "", ""]);
+      return row;
     });
 
-    var width = fullHeader_().length;
     var startRow = sheet.getLastRow() + 1;
     sheet.getRange(startRow, 1, rows.length, width).setValues(rows);
-    applyStatusValidation_(sheet); // keep the sheet's Status dropdown current
+    applyStatusValidation_(sheet, colMap);
 
     return {
       tab: Config.googleSheetTabName(),
@@ -102,21 +136,19 @@ var SheetsStore = (function () {
     };
   }
 
-  // Reads the NPI column and returns the set of NPIs already exported by
-  // anyone on the team, so search results can filter them out.
+  // Reads the NPI column (by label) and returns the set of NPIs already
+  // exported by anyone on the team, so search results can filter them out.
   function getClaimedNpis() {
     assertConfigured();
     var sheet = getSheet_();
-
-    var npiColIndex = -1;
-    for (var i = 0; i < CsvExport.CSV_COLUMNS.length; i++) {
-      if (CsvExport.CSV_COLUMNS[i].key === "npi") { npiColIndex = i; break; }
-    }
-
     var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return new Set(); // header only or empty -- nothing claimed yet
+    if (lastRow < 2) return new Set();
 
-    var values = sheet.getRange(2, npiColIndex + 1, lastRow - 1, 1).getValues();
+    var colMap = buildColMap_(sheet);
+    var npiCol = colIndex_(colMap, "NPI");
+    if (npiCol < 0) return new Set();
+
+    var values = sheet.getRange(2, npiCol + 1, lastRow - 1, 1).getValues();
     var claimed = new Set();
     values.forEach(function (row) {
       var v = row[0];
@@ -125,10 +157,11 @@ var SheetsStore = (function () {
     return claimed;
   }
 
-  // Returns claimed leads for the tracking view, sorted by most recently
-  // updated (Status Updated At, falling back to Claimed At).
-  //   opts.claimedBy       -- filter to one person's leads
+  // Returns claimed leads sorted by most recently updated (Status Updated At,
+  // falling back to Claimed At).
+  //   opts.claimedBy         -- filter to one person's leads
   //   opts.updatedWithinDays -- only leads touched within the last N days
+  //   opts.updatedYear       -- only leads whose last update is in this year
   function listClaimedLeads(opts) {
     assertConfigured();
     opts = opts || {};
@@ -136,17 +169,16 @@ var SheetsStore = (function () {
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return [];
 
-    var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
-      .map(function (h) { return String(h).trim().toLowerCase(); });
-    var col = function (label) { return header.indexOf(label.toLowerCase()); };
+    var colMap = buildColMap_(sheet);
+    var get = function (label) { return colIndex_(colMap, label); };
 
     var idx = {
-      name: col("Company Name"), npi: col("NPI"),
-      city: col("City"), state: col("State"),
-      contactName: col("Contact Name"), contactTitle: col("Contact Title"),
-      contactPhone: col("Contact Phone"), companyPhone: col("Phone"),
-      claimedBy: col("Claimed By"), claimedAt: col("Claimed At"),
-      status: col("Status"), statusUpdatedAt: col("Status Updated At"),
+      name: get("Company Name"), npi: get("NPI"),
+      city: get("City"), state: get("State"),
+      contactName: get("Contact Name"), contactTitle: get("Contact Title"),
+      contactPhone: get("Contact Phone"), companyPhone: get("Phone"),
+      claimedBy: get("Claimed By"), claimedAt: get("Claimed At"),
+      status: get("Status"), statusUpdatedAt: get("Status Updated At"),
     };
 
     var data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
@@ -168,7 +200,6 @@ var SheetsStore = (function () {
         claimedAt: claimedAt,
         status: pick(idx.status) || "new",
         statusUpdatedAt: statusUpdatedAt,
-        // effective "last updated" = latest status change, else when claimed
         lastUpdated: statusUpdatedAt || claimedAt,
       };
     }).filter(function (lead) { return lead.npi !== "" || lead.name !== ""; });
@@ -189,7 +220,14 @@ var SheetsStore = (function () {
       }
     }
 
-    // Most recently updated first (undated rows sink to the bottom).
+    if (opts.updatedYear) {
+      var yr = String(opts.updatedYear);
+      leads = leads.filter(function (lead) {
+        var d = new Date(lead.lastUpdated);
+        return !isNaN(d.getTime()) && String(d.getFullYear()) === yr;
+      });
+    }
+
     leads.sort(function (a, b) {
       var ta = Date.parse(a.lastUpdated) || 0;
       var tb = Date.parse(b.lastUpdated) || 0;
@@ -199,8 +237,7 @@ var SheetsStore = (function () {
     return leads;
   }
 
-  // Sets the Status columns on every row whose NPI matches. Rows exported
-  // before the tracking columns existed get them filled in on first update.
+  // Sets the Status columns on every row whose NPI matches.
   function updateLeadStatus(npi, status, updatedBy) {
     assertConfigured();
     if (!npi) {
@@ -215,7 +252,7 @@ var SheetsStore = (function () {
     }
 
     var sheet = getSheet_();
-    ensureHeader_(sheet); // guarantees the Status columns exist
+    var colMap = ensureColumns_(sheet); // guarantees the Status columns exist
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) {
       var empty = new Error("No leads in the sheet yet");
@@ -223,10 +260,10 @@ var SheetsStore = (function () {
       throw empty;
     }
 
-    var npiCol = headerIndex_(sheet, "NPI");
-    var statusCol = headerIndex_(sheet, "Status");
-    var byCol = headerIndex_(sheet, "Status Updated By");
-    var atCol = headerIndex_(sheet, "Status Updated At");
+    var npiCol = colIndex_(colMap, "NPI");
+    var statusCol = colIndex_(colMap, "Status");
+    var byCol = colIndex_(colMap, "Status Updated By");
+    var atCol = colIndex_(colMap, "Status Updated At");
 
     var npis = sheet.getRange(2, npiCol + 1, lastRow - 1, 1).getValues();
     var now = new Date().toISOString();
@@ -249,7 +286,7 @@ var SheetsStore = (function () {
     }
 
     SpreadsheetApp.flush(); // force the write to persist before we return
-    applyStatusValidation_(sheet); // keep the dropdown on any newly-tracked rows
+    applyStatusValidation_(sheet, colMap);
     return { npi: String(npi), status: status, rowsUpdated: updated };
   }
 
