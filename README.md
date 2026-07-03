@@ -6,7 +6,11 @@ data and website scraping, scores each lead, generates AI call briefs, and
 exports to CSV or a shared Google Sheet (which also doubles as the
 cross-team dedup log, so two people don't chase the same lead).
 
-There's no login system yet and no database — everything is stateless
+On the Apps Script deployment path, teammates sign in with a username and
+password (managed in a Users tab of the sheet), exports record who claimed
+each lead, and a Claimed leads view tracks call outcomes back into the
+sheet. Leads are also enriched with Medicare DMEPOS claim volumes from
+CMS's free public data API. There's no database — everything is stateless
 per-request, and the Google Sheet is the only persistent store.
 
 ## Requirements
@@ -167,9 +171,9 @@ two.
    just flat — Apps Script doesn't have real folders, flat names are fine),
    `NppesService`, `FoursquareService`, `AiBriefService`, `ScraperService`,
    `UrlUtils`, `RoleClassifier`, `ScoringService`, `CsvExport`,
-   `SheetsStore`, `CompanyService`. The exact file names don't matter to
-   Apps Script (everything shares one global scope) — just get every
-   file's content in.
+   `SheetsStore`, `CompanyService`, `CmsService`, `AuthService`. The exact
+   file names don't matter to Apps Script (everything shares one global
+   scope) — just get every file's content in.
 3. Click **Project Settings** (gear icon) → check **"Show `appsscript.json`
    manifest file in editor"** → open it → replace its contents with
    `appscript/appsscript.json` from this repo.
@@ -181,8 +185,7 @@ time:
 
 | Property | Required? | Value |
 |---|---|---|
-| `APP_TOKEN` | **required** | make up any password-like string — this is what your team enters to use the app |
-| `GOOGLE_SHEET_ID` | required for Sheets export/dedup | the ID from your sheet's URL |
+| `GOOGLE_SHEET_ID` | **required** (sign-in, export, dedup, tracking all use the sheet) | the ID from your sheet's URL |
 | `FOURSQUARE_SERVICE_API_KEY` | optional | from the Foursquare developer console |
 | `GEMINI_API_KEY` | optional | from Google AI Studio |
 | `GEMINI_MODEL` | optional | defaults to `gemini-2.5-flash` |
@@ -190,7 +193,26 @@ time:
 | `NPPES_VERSION` | optional | defaults to `2.1` |
 
 No service account or key file needed — since this runs as your own Apps
-Script, it already has native access to any Sheet you own.
+Script, it already has native access to any Sheet you own. The CMS
+Medicare enrichment needs no key at all.
+
+### 4b. Create the Users tab (sign-in accounts)
+
+In the same Google Sheet, add a tab named exactly **`Users`** with this
+layout:
+
+| Username | Password | Display Name |
+|---|---|---|
+| caroline | some-password | Caroline R |
+| ahmed | another-password | Ahmed K |
+
+One row per teammate. Usernames are case-insensitive; Display Name is what
+appears in the app and in the sheet's "Claimed By" column. Add or remove
+rows any time — changes take effect on the next sign-in, no redeploy
+needed. Passwords are stored as plain text in this tab, which only the
+sheet owner can see: fine for an internal stopgap, but tell teammates not
+to reuse personal passwords. Sessions last 6 hours, then users sign in
+again.
 
 ### 5. Deploy as a Web App
 
@@ -213,9 +235,11 @@ browser, no local clone needed) and paste your `/exec` URL into
 
 ### 7. Test it
 
-Visit your Pages URL. It'll prompt for the access code — enter the
-`APP_TOKEN` value you set in step 4. Run a real search, generate a brief,
-export to CSV, export to Sheets, and confirm each works end to end.
+Visit your Pages URL. Sign in with a username/password from the Users tab,
+run a real search, generate a brief, export to CSV, export to Sheets (the
+rows land with your name in "Claimed By"), then open the **Claimed leads**
+tab and set a status on one — confirm it appears in the sheet's Status
+column.
 
 ### Updating the Apps Script code later
 
@@ -226,7 +250,10 @@ live Web App by itself — you need **Deploy → Manage deployments** → edit
 
 ## What's not built yet
 
-- Authentication / user accounts (dedup tracks *that* a lead was claimed,
-  not *who* claimed it)
-- A database (Google Sheets is the only persistent store)
+- A database (Google Sheets is the only persistent store; sign-in accounts
+  live in a Users tab, sessions in Apps Script's cache)
 - Any CRM integration beyond Google Sheets
+- Sign-in / claimed-by / outcome tracking on the Node deployment path —
+  those are Apps Script-only for now (the Node path still uses Basic Auth
+  and plain Sheets export); the shared pipeline (CMS Medicare data,
+  scoring, briefs) is on both

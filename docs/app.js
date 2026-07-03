@@ -1,43 +1,42 @@
-// Adapted from backend/public/app.js for the Apps Script backend. Same UI
-// and behavior as the Node version; only the request layer changed:
-// - relative /api/... fetches -> APPS_SCRIPT_URL with a ?path= query param
-//   (Apps Script Web Apps have no real router)
-// - the shared access token goes in the query string, not an Authorization
-//   header or the browser's native Basic Auth prompt, so requests stay CORS
-//   "simple requests" and never trigger a preflight Apps Script can't answer
+// Frontend for the Apps Script backend. Request layer notes:
+// - every request carries ?path= (Apps Script has no real router) and
+//   ?token= (session token from sign-in; query param rather than a header
+//   keeps requests CORS-simple so no preflight is ever sent)
+// - POST bodies go as text/plain for the same reason; the backend parses
+//   them as JSON regardless of content type
 // - every response is HTTP 200; success/failure is the `success` field in
-//   the JSON body, not the HTTP status
+//   the JSON body, and body.status 401 means the session expired
 
-const TOKEN_STORAGE_KEY = "dmeProspectorToken";
+const SESSION_STORAGE_KEY = "dmeProspectorSession";
 
-function getToken() {
-  let token = localStorage.getItem(TOKEN_STORAGE_KEY);
-  if (!token) {
-    token = window.prompt("Enter the team access code:") || "";
-    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token);
+function getSession() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY)) || null;
+  } catch {
+    return null;
   }
-  return token;
 }
 
-function clearToken() {
-  localStorage.removeItem(TOKEN_STORAGE_KEY);
+function saveSession(session) {
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
 async function apiGet(path, params = {}) {
   const query = new URLSearchParams(params);
   query.set("path", path);
-  query.set("token", getToken());
+  query.set("token", getSession()?.token || "");
   const res = await fetch(`${APPS_SCRIPT_URL}?${query.toString()}`);
   return unwrap(await res.json());
 }
 
 async function apiPost(path, body) {
-  const query = new URLSearchParams({ path, token: getToken() });
+  const query = new URLSearchParams({ path, token: getSession()?.token || "" });
   const res = await fetch(`${APPS_SCRIPT_URL}?${query.toString()}`, {
     method: "POST",
-    // text/plain (not application/json) keeps this a CORS-simple request so
-    // the browser never sends a preflight OPTIONS -- Apps Script parses the
-    // body as JSON on its side regardless of the declared content type.
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(body),
   });
@@ -46,13 +45,23 @@ async function apiPost(path, body) {
 
 function unwrap(payload) {
   if (!payload.success) {
-    if (payload.status === 401) clearToken(); // wrong/stale code -- ask again next time
+    if (payload.status === 401) {
+      clearSession();
+      showLogin();
+    }
     throw new Error(payload.error || "Request failed");
   }
   return payload.data;
 }
 
-const state = { companies: [], selected: new Set(), expandedIndex: null };
+const state = {
+  companies: [],
+  selected: new Set(),
+  expandedIndex: null,
+  view: "search",
+  claimedLoaded: false,
+  statuses: [],
+};
 
 const els = {
   form: document.getElementById("searchForm"),
@@ -70,7 +79,80 @@ const els = {
   statusDot: document.querySelector(".status-dot"),
   statusText: document.getElementById("statusText"),
   toast: document.getElementById("toast"),
+  loginOverlay: document.getElementById("loginOverlay"),
+  loginForm: document.getElementById("loginForm"),
+  loginBtn: document.getElementById("loginBtn"),
+  loginError: document.getElementById("loginError"),
+  userChip: document.getElementById("userChip"),
+  userName: document.getElementById("userName"),
+  signOutBtn: document.getElementById("signOutBtn"),
+  viewSearch: document.getElementById("viewSearch"),
+  viewClaimed: document.getElementById("viewClaimed"),
+  claimedBody: document.getElementById("claimedBody"),
+  claimedCount: document.getElementById("claimedCount"),
+  onlyMine: document.getElementById("onlyMine"),
+  refreshClaimedBtn: document.getElementById("refreshClaimedBtn"),
 };
+
+/* ---------- Sign in ---------- */
+
+function showLogin() {
+  els.loginOverlay.hidden = false;
+  els.userChip.hidden = true;
+  els.loginForm.querySelector("input[name=username]")?.focus();
+}
+
+function hideLogin() {
+  els.loginOverlay.hidden = true;
+  const session = getSession();
+  if (session) {
+    els.userName.textContent = session.displayName;
+    els.userChip.hidden = false;
+  }
+}
+
+async function handleLogin(evt) {
+  evt.preventDefault();
+  const formData = new FormData(els.loginForm);
+  els.loginBtn.disabled = true;
+  els.loginError.hidden = true;
+
+  try {
+    const data = await apiPost("auth/login", {
+      username: formData.get("username"),
+      password: formData.get("password"),
+    });
+    saveSession({ token: data.token, username: data.username, displayName: data.displayName });
+    els.loginForm.reset();
+    hideLogin();
+    showToast(`Welcome, ${data.displayName}`);
+  } catch (err) {
+    els.loginError.textContent = err.message;
+    els.loginError.hidden = false;
+  } finally {
+    els.loginBtn.disabled = false;
+  }
+}
+
+async function handleSignOut() {
+  try { await apiPost("auth/logout", {}); } catch { /* best effort */ }
+  clearSession();
+  showLogin();
+}
+
+/* ---------- View tabs ---------- */
+
+function switchView(view) {
+  state.view = view;
+  document.querySelectorAll(".view-tabs .tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.view === view);
+  });
+  els.viewSearch.hidden = view !== "search";
+  els.viewClaimed.hidden = view !== "claimed";
+  if (view === "claimed" && !state.claimedLoaded) loadClaimedLeads();
+}
+
+/* ---------- UI helpers ---------- */
 
 function setStatus(mode, text) {
   els.statusDot.className = `status-dot ${mode === "ready" ? "" : mode}`;
@@ -108,6 +190,22 @@ function scoreRing(score) {
     </div>`;
 }
 
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str ?? "";
+  return div.innerHTML;
+}
+
+function medicareSummary(medicare) {
+  if (!medicare || medicare.totalClaims == null) return "No CMS claims data found";
+  const parts = [`${Number(medicare.totalClaims).toLocaleString()} claims`];
+  if (medicare.totalBeneficiaries != null) parts.push(`${Number(medicare.totalBeneficiaries).toLocaleString()} beneficiaries`);
+  if (medicare.medicarePayment != null) parts.push(`$${Math.round(medicare.medicarePayment).toLocaleString()} paid`);
+  return parts.join(" · ");
+}
+
+/* ---------- Search ---------- */
+
 function buildSearchParams(formData) {
   const params = {};
   for (const [key, value] of formData.entries()) {
@@ -136,7 +234,7 @@ async function runSearch(evt) {
     renderResults(data.excludedAsClaimed || 0);
     setStatus("ready", "Ready");
   } catch (err) {
-    els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">${err.message}</td></tr>`;
+    els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(err.message)}</td></tr>`;
     setStatus("error", "Error");
     showToast(err.message, true);
   } finally {
@@ -203,7 +301,8 @@ function rowHtml(company, index) {
                 ${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")} ${escapeHtml(company.address?.postalCode || "")}<br>
                 Company phone: ${escapeHtml(company.phone || "—")}<br>
                 Website: ${company.website ? `<a href="${escapeHtml(company.website)}" target="_blank">${escapeHtml(company.website)}</a>` : "—"}<br>
-                Fax: ${escapeHtml(company.fax || "—")}
+                Fax: ${escapeHtml(company.fax || "—")}<br>
+                Medicare (CMS): ${escapeHtml(medicareSummary(company.medicare))}
               </div>
             </div>
             <div class="detail-block">
@@ -229,12 +328,6 @@ function rowHtml(company, index) {
   }
 
   return rows.join("");
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str ?? "";
-  return div.innerHTML;
 }
 
 function attachRowHandlers() {
@@ -279,6 +372,8 @@ async function generateBrief(index) {
   }
 }
 
+/* ---------- Export ---------- */
+
 function getExportCompanies() {
   if (state.selected.size > 0) {
     return [...state.selected].map((i) => state.companies[i]);
@@ -311,7 +406,8 @@ async function exportSheets() {
   setStatus("busy", "Sending to Sheets…");
   try {
     const data = await apiPost("export/sheets", { companies });
-    showToast(`Added ${data.rowsAdded} row(s) to "${data.tab}"`, false, data.sheetUrl);
+    showToast(`Added ${data.rowsAdded} row(s) claimed by ${data.claimedBy || "you"}`, false, data.sheetUrl);
+    state.claimedLoaded = false; // claimed view is now stale
     setStatus("ready", "Ready");
   } catch (err) {
     showToast(err.message, true);
@@ -319,7 +415,68 @@ async function exportSheets() {
   }
 }
 
-// ---- State dropdown + dependent city suggestions ----
+/* ---------- Claimed leads view ---------- */
+
+async function loadClaimedLeads() {
+  els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="6"><div class="loading-row"><span class="spinner"></span> Loading claimed leads…</div></td></tr>`;
+  try {
+    const params = els.onlyMine.checked ? { mine: "true" } : {};
+    const data = await apiGet("leads/list", params);
+    state.statuses = data.statuses || [];
+    state.claimedLoaded = true;
+    renderClaimedLeads(data.leads || []);
+  } catch (err) {
+    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="6">${escapeHtml(err.message)}</td></tr>`;
+    showToast(err.message, true);
+  }
+}
+
+function renderClaimedLeads(leads) {
+  els.claimedCount.textContent = `${leads.length} claimed lead${leads.length === 1 ? "" : "s"}`;
+
+  if (leads.length === 0) {
+    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="6">Nothing claimed yet — export some leads to Sheets first.</td></tr>`;
+    return;
+  }
+
+  els.claimedBody.innerHTML = leads.map((lead) => `
+    <tr>
+      <td>
+        <div class="company-name">${escapeHtml(lead.name)}</div>
+        ${lead.contactName ? `<div class="company-taxonomy">${escapeHtml(lead.contactName)}</div>` : ""}
+      </td>
+      <td class="mono">${escapeHtml(lead.city)}, ${escapeHtml(lead.state)}</td>
+      <td class="mono">${lead.phone ? `<a href="tel:${escapeHtml(lead.phone)}">${escapeHtml(lead.phone)}</a>` : "—"}</td>
+      <td>${escapeHtml(lead.claimedBy || "—")}</td>
+      <td class="mono">${escapeHtml((lead.claimedAt || "").slice(0, 10))}</td>
+      <td>
+        <select class="status-select status-${escapeHtml(lead.status).replace(/\s+/g, "-")}" data-npi="${escapeHtml(lead.npi)}">
+          ${state.statuses.map((s) => `<option value="${escapeHtml(s)}" ${s === lead.status ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+        </select>
+      </td>
+    </tr>
+  `).join("");
+
+  els.claimedBody.querySelectorAll(".status-select").forEach((select) => {
+    select.addEventListener("change", async (e) => {
+      const npi = e.target.dataset.npi;
+      const status = e.target.value;
+      e.target.disabled = true;
+      try {
+        await apiPost("leads/status", { npi, status });
+        e.target.className = `status-select status-${status.replace(/\s+/g, "-")}`;
+        showToast(`Status updated to "${status}"`);
+      } catch (err) {
+        showToast(err.message, true);
+      } finally {
+        e.target.disabled = false;
+      }
+    });
+  });
+}
+
+/* ---------- State / city dropdowns ---------- */
+
 // Leaving State on "All states" (or City blank) simply omits that filter from
 // the NPPES query, i.e. searches across all states / all cities.
 const US_STATE_NAMES = {
@@ -359,6 +516,8 @@ stateSelect.addEventListener("change", () => {
 });
 refreshCityOptions();
 
+/* ---------- Wiring ---------- */
+
 els.form.addEventListener("submit", runSearch);
 els.selectAll.addEventListener("change", (e) => {
   document.querySelectorAll(".row-check").forEach((box) => {
@@ -379,3 +538,13 @@ els.clearSelectionBtn.addEventListener("click", () => {
 });
 els.exportCsvBtn.addEventListener("click", exportCsv);
 els.exportSheetsBtn.addEventListener("click", exportSheets);
+
+els.loginForm.addEventListener("submit", handleLogin);
+els.signOutBtn.addEventListener("click", handleSignOut);
+document.querySelectorAll(".view-tabs .tab").forEach((tab) => {
+  tab.addEventListener("click", () => switchView(tab.dataset.view));
+});
+els.onlyMine.addEventListener("change", loadClaimedLeads);
+els.refreshClaimedBtn.addEventListener("click", loadClaimedLeads);
+
+if (getSession()) hideLogin(); else showLogin();

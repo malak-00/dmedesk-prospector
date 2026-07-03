@@ -19,6 +19,12 @@ export const CSV_COLUMNS = [
   { key: "scoreValue", label: "Score" },
   { key: "scorePercentage", label: "Score %" },
   { key: "sources", label: "Data Sources" },
+  // New columns must only ever be APPENDED here: sheet rows written before
+  // a column existed keep their positions. Reordering would misalign every
+  // old row in the shared Google Sheet.
+  { key: "medicareClaims", label: "Medicare Claims" },
+  { key: "medicareBeneficiaries", label: "Medicare Beneficiaries" },
+  { key: "medicarePayment", label: "Medicare Payment $" },
 ];
 
 function escapeCsvValue(value) {
@@ -58,6 +64,9 @@ export function flattenCompany(company) {
     scoreValue: company.score?.value ?? "",
     scorePercentage: company.score?.percentage ?? "",
     sources: activeSources,
+    medicareClaims: company.medicare?.totalClaims ?? "",
+    medicareBeneficiaries: company.medicare?.totalBeneficiaries ?? "",
+    medicarePayment: company.medicare?.medicarePayment ?? "",
   };
 }
 

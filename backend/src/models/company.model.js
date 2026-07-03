@@ -12,6 +12,7 @@ export function createCompany({
   ratingCount = null,
   isClosed = null,
   decisionMakers = [],
+  medicare = null,
   sources = {},
 } = {}) {
   return {
@@ -36,10 +37,13 @@ export function createCompany({
     },
     places: { placeId, rating, ratingCount, isClosed },
     decisionMakers, // [{ name, title, roleCategory, phone, source, sourceUrl }]
+    // { totalClaims, totalServices, totalBeneficiaries, medicarePayment, medicareAllowed } or null
+    medicare,
     sources: {
       nppes: Boolean(sources.nppes),
       places: Boolean(sources.places),
       website: Boolean(sources.website),
+      cms: Boolean(sources.cms),
     },
     score: null,
   };

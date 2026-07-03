@@ -200,6 +200,7 @@ body {
 .results-table tbody tr.lead-row.is-selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .results-table tbody tr.lead-row.is-selected:hover { background: var(--accent-soft); }
 .results-table td { padding: 11px 14px; vertical-align: middle; }
+.results-table a, .detail-row a { color: var(--accent-ink); text-underline-offset: 2px; }
 .empty-row td { text-align: center; color: var(--muted); padding: 40px 10px; font-style: italic; }
 
 .loading-row { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 40px 10px; color: var(--muted); }
@@ -240,6 +241,68 @@ body {
   line-height: 1.6; margin-top: 10px; display: none;
 }
 .brief-output.visible { display: block; }
+
+/* ---------- Login ---------- */
+
+.login-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+}
+.login-overlay[hidden] { display: none; }
+.login-card {
+  display: flex; flex-direction: column; gap: 14px;
+  width: min(360px, calc(100vw - 48px));
+  background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
+  padding: 28px 26px;
+}
+.login-brand { justify-content: center; margin-bottom: 6px; }
+.login-btn { justify-content: center; margin-left: 0; }
+.login-error {
+  font-size: 13px; color: var(--score-low);
+  background: rgba(226,105,92,0.12); border: 1px solid rgba(226,105,92,0.35);
+  border-radius: var(--radius-sm); padding: 8px 11px;
+}
+.login-error[hidden] { display: none; }
+
+/* ---------- Header user chip ---------- */
+
+.header-right { display: flex; align-items: center; gap: 16px; }
+.user-chip {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--muted);
+  padding: 4px 12px; border: 1px solid var(--hairline); border-radius: 999px;
+}
+.user-chip[hidden] { display: none; }
+.user-chip #userName { color: var(--ink); font-weight: 600; }
+
+/* ---------- View tabs ---------- */
+
+.view-tabs { display: flex; gap: 4px; }
+.view-tabs .tab {
+  font-family: var(--font-ui); font-weight: 600; font-size: 13px;
+  color: var(--muted); background: none; border: 1px solid transparent;
+  border-radius: var(--radius-sm); padding: 8px 14px; cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.view-tabs .tab:hover { color: var(--ink); background: var(--surface-2); }
+.view-tabs .tab.active { color: var(--accent-ink); background: var(--accent-soft); }
+#viewSearch, #viewClaimed { display: flex; flex-direction: column; gap: 18px; }
+#viewSearch[hidden], #viewClaimed[hidden] { display: none; }
+
+/* ---------- Status select (claimed leads) ---------- */
+
+.status-select {
+  font-family: var(--font-mono); font-size: 12px;
+  background: var(--surface-2); color: var(--ink);
+  border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+  padding: 5px 8px; cursor: pointer;
+}
+.status-select:focus { outline: none; border-color: var(--accent); }
+.status-select.status-interested { border-color: var(--score-high); color: var(--score-high); }
+.status-select.status-not-interested, .status-select.status-do-not-call { border-color: var(--score-low); color: var(--score-low); }
+.status-select.status-called, .status-select.status-voicemail { border-color: var(--score-mid); color: var(--score-mid); }
 
 /* ---------- Toast ---------- */
 

@@ -151,7 +151,8 @@ function rowHtml(company, index) {
                 ${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")} ${escapeHtml(company.address?.postalCode || "")}<br>
                 Company phone: ${escapeHtml(company.phone || "—")}<br>
                 Website: ${company.website ? `<a href="${escapeHtml(company.website)}" target="_blank">${escapeHtml(company.website)}</a>` : "—"}<br>
-                Fax: ${escapeHtml(company.fax || "—")}
+                Fax: ${escapeHtml(company.fax || "—")}<br>
+                Medicare (CMS): ${escapeHtml(medicareSummary(company.medicare))}
               </div>
             </div>
             <div class="detail-block">
@@ -183,6 +184,14 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str ?? "";
   return div.innerHTML;
+}
+
+function medicareSummary(medicare) {
+  if (!medicare || medicare.totalClaims == null) return "No CMS claims data found";
+  const parts = [`${Number(medicare.totalClaims).toLocaleString()} claims`];
+  if (medicare.totalBeneficiaries != null) parts.push(`${Number(medicare.totalBeneficiaries).toLocaleString()} beneficiaries`);
+  if (medicare.medicarePayment != null) parts.push(`$${Math.round(medicare.medicarePayment).toLocaleString()} paid`);
+  return parts.join(" · ");
 }
 
 function attachRowHandlers() {

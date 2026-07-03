@@ -12,6 +12,7 @@ var ScoringService = (function () {
     goodRating: 10,
     establishedPresence: 10,
     hasDecisionMaker: 15,
+    medicareActive: 10,
   };
 
   var MAX_POSSIBLE_SCORE = Object.keys(WEIGHTS).reduce(function (sum, key) {
@@ -47,6 +48,14 @@ var ScoringService = (function () {
     breakdown.hasDecisionMaker =
       Array.isArray(company.decisionMakers) && company.decisionMakers.length > 0
         ? WEIGHTS.hasDecisionMaker
+        : 0;
+
+    // Confirmed active Medicare DMEPOS biller per CMS claims data --
+    // the strongest public signal that this is a real, revenue-generating
+    // supplier rather than a stale registration.
+    breakdown.medicareActive =
+      company.medicare && typeof company.medicare.totalClaims === "number" && company.medicare.totalClaims > 0
+        ? WEIGHTS.medicareActive
         : 0;
 
     var total = Object.keys(breakdown).reduce(function (sum, key) {

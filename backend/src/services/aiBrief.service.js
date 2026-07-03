@@ -22,14 +22,44 @@ function buildPrompt(company) {
     ? `Primary contact: ${dm.name}${dm.title ? `, ${dm.title}` : ""} (role: ${dm.roleCategory})`
     : "No named contact identified -- brief should suggest asking for the owner or office manager.";
 
+  const places = company.places || {};
+  let reputationLine;
+  if (typeof places.rating === "number") {
+    reputationLine = `Online reputation: rated ${places.rating}/10 from ${places.ratingCount ?? "an unknown number of"} reviews on Foursquare.`;
+  } else if (company.sources?.places) {
+    reputationLine = "Online reputation: listed on Foursquare but has no rating yet (little/no review presence).";
+  } else {
+    reputationLine = "Online reputation: not found on Foursquare at all (weak or absent online presence).";
+  }
+
+  const webLine = company.website
+    ? `Website: ${company.website}`
+    : "Website: NONE FOUND -- likely relies entirely on phone; missed/after-hours calls are lost business.";
+
+  let medicareLine;
+  if (company.medicare?.totalClaims != null) {
+    const m = company.medicare;
+    medicareLine =
+      `Medicare DMEPOS volume (CMS public data): ${m.totalClaims} claims` +
+      (m.totalBeneficiaries != null ? ` across ${m.totalBeneficiaries} beneficiaries` : "") +
+      (m.medicarePayment != null ? `, ~$${Math.round(m.medicarePayment).toLocaleString()} in Medicare payments` : "") +
+      " -- an active biller with real call volume to protect.";
+  } else {
+    medicareLine = "Medicare DMEPOS volume: no CMS claims data found (small, new, or non-Medicare supplier).";
+  }
+
   return `You are preparing a short call brief for a sales rep at DME Desk, an AI-powered voice receptionist product for DMEPOS (Durable Medical Equipment) suppliers. The rep is about to cold-call the company below to pitch DME Desk.
 
 Company: ${company.name}
 Location: ${company.address.city}, ${company.address.state}
 Specialty: ${company.taxonomy?.description || "Unknown"}
-Website: ${company.website || "None found"}
+${webLine}
+${reputationLine}
+${medicareLine}
 ${dmLine}
 Lead score: ${company.score?.percentage ?? "N/A"}% (${company.score?.value ?? "N/A"}/${company.score?.maxPossible ?? "N/A"} points)
+
+Base the pain point and talking point on the SPECIFIC signals above (web presence, reputation, Medicare volume) rather than generic DME industry claims. For example: no website or reviews suggests missed calls go nowhere; high Medicare volume means every missed call is expensive; low ratings suggest service strain.
 
 Write a concise call brief with exactly these sections, each 1-3 short lines:
 1. Opening line (personalized, not generic)

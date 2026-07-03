@@ -1,4 +1,5 @@
 import { searchProviders } from "./nppes.service.js";
+import { lookupByNpis } from "./cms.service.js";
 import foursquareService, { FoursquareNotConfiguredError } from "./foursquare.service.js";
 import { scrapeCompanyWebsite } from "./scraper.service.js";
 import { createCompany } from "../models/company.model.js";
@@ -168,7 +169,7 @@ async function fetchFreshProviders(criteria, desiredLimit, claimedNpis) {
 
 export async function searchCompanies(
   criteria = {},
-  { enrichPlaces = true, scrapeWebsites = false } = {}
+  { enrichPlaces = true, scrapeWebsites = false, enrichCms = true } = {}
 ) {
   const desiredLimit = criteria.limit || 20;
   const claimedNpis = await getClaimedNpisSafe();
@@ -187,6 +188,14 @@ export async function searchCompanies(
   }
   if (scrapeWebsites) {
     companies = await Promise.all(companies.map(tryEnrichWithScrape));
+  }
+  if (enrichCms) {
+    const medicareByNpi = await lookupByNpis(companies.map((c) => c.npi));
+    companies = companies.map((company) => {
+      const medicare = company.npi != null ? medicareByNpi.get(String(company.npi)) : null;
+      if (!medicare) return company;
+      return { ...company, medicare, sources: { ...company.sources, cms: true } };
+    });
   }
 
   companies = companies.map((company) => ({ ...company, score: scoreCompany(company) }));

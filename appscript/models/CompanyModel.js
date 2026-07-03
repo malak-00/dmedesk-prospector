@@ -36,10 +36,13 @@ var CompanyModel = (function () {
         isClosed: opts.isClosed != null ? opts.isClosed : null,
       },
       decisionMakers: opts.decisionMakers || [], // [{ name, title, roleCategory, phone, source, sourceUrl }]
+      // { totalClaims, totalServices, totalBeneficiaries, medicarePayment, medicareAllowed } or null
+      medicare: opts.medicare != null ? opts.medicare : null,
       sources: {
         nppes: Boolean(sources.nppes),
         places: Boolean(sources.places),
         website: Boolean(sources.website),
+        cms: Boolean(sources.cms),
       },
       score: null,
     };

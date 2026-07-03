@@ -147,12 +147,13 @@ var CompanyService = (function () {
     return { fresh: fresh, totalScanned: totalScanned };
   }
 
-  // options: { enrichPlaces = true, scrapeWebsites = false }
+  // options: { enrichPlaces = true, scrapeWebsites = false, enrichCms = true }
   function searchCompanies(criteria, options) {
     criteria = criteria || {};
     options = options || {};
     var enrichPlaces = options.enrichPlaces !== false;
     var scrapeWebsites = Boolean(options.scrapeWebsites);
+    var enrichCms = options.enrichCms !== false;
 
     var desiredLimit = criteria.limit || 20;
     var claimedNpis = getClaimedNpisSafe();
@@ -169,6 +170,17 @@ var CompanyService = (function () {
     }
     if (scrapeWebsites) {
       companies = companies.map(tryEnrichWithScrape);
+    }
+    if (enrichCms) {
+      var medicareByNpi = CmsService.lookupByNpis(companies.map(function (c) { return c.npi; }));
+      companies = companies.map(function (company) {
+        var medicare = company.npi != null ? medicareByNpi[String(company.npi)] : null;
+        if (!medicare) return company;
+        return Object.assign({}, company, {
+          medicare: medicare,
+          sources: Object.assign({}, company.sources, { cms: true }),
+        });
+      });
     }
 
     companies = companies.map(function (company) {

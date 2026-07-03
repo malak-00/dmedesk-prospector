@@ -23,6 +23,12 @@ var CsvExport = (function () {
     { key: "scoreValue", label: "Score" },
     { key: "scorePercentage", label: "Score %" },
     { key: "sources", label: "Data Sources" },
+    // New columns must only ever be APPENDED here: sheet rows written before
+    // a column existed keep their positions, and SheetsStore extends the
+    // header in place. Reordering would misalign every old row.
+    { key: "medicareClaims", label: "Medicare Claims" },
+    { key: "medicareBeneficiaries", label: "Medicare Beneficiaries" },
+    { key: "medicarePayment", label: "Medicare Payment $" },
   ];
 
   function escapeCsvValue(value) {
@@ -62,6 +68,9 @@ var CsvExport = (function () {
       scoreValue: score.value != null ? score.value : "",
       scorePercentage: score.percentage != null ? score.percentage : "",
       sources: activeSources,
+      medicareClaims: company.medicare && company.medicare.totalClaims != null ? company.medicare.totalClaims : "",
+      medicareBeneficiaries: company.medicare && company.medicare.totalBeneficiaries != null ? company.medicare.totalBeneficiaries : "",
+      medicarePayment: company.medicare && company.medicare.medicarePayment != null ? company.medicare.medicarePayment : "",
     };
   }
 

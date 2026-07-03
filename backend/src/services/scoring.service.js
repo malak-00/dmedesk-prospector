@@ -8,6 +8,7 @@ const WEIGHTS = {
   goodRating: 10,
   establishedPresence: 10,
    hasDecisionMaker: 15,
+  medicareActive: 10,
 };
 
 const MAX_POSSIBLE_SCORE = Object.values(WEIGHTS).reduce((a, b) => a + b, 0);
@@ -46,6 +47,14 @@ export function scoreCompany(company) {
   breakdown.hasDecisionMaker =
     Array.isArray(company.decisionMakers) && company.decisionMakers.length > 0
       ? WEIGHTS.hasDecisionMaker
+      : 0;
+
+  // Confirmed active Medicare DMEPOS biller per CMS claims data --
+  // the strongest public signal that this is a real, revenue-generating
+  // supplier rather than a stale registration.
+  breakdown.medicareActive =
+    typeof company.medicare?.totalClaims === "number" && company.medicare.totalClaims > 0
+      ? WEIGHTS.medicareActive
       : 0;
   
   const total = Object.values(breakdown).reduce((a, b) => a + b, 0);
