@@ -6,7 +6,7 @@
 <title>DME Desk Prospector</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -155,6 +155,16 @@
               <input type="checkbox" id="onlyMine">
               <span>Only mine</span>
             </label>
+            <label class="inline-field">
+              <span>Updated</span>
+              <select id="updatedWithin">
+                <option value="">Any time</option>
+                <option value="1">Today</option>
+                <option value="7">Last 7 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="90">Last 90 days</option>
+              </select>
+            </label>
           </div>
           <div class="results-actions">
             <button class="btn btn-ghost" id="refreshClaimedBtn">
@@ -168,11 +178,11 @@
           <table class="results-table">
             <thead>
               <tr>
-                <th>Company</th>
+                <th>Company / contact</th>
                 <th>Location</th>
-                <th>Phone</th>
+                <th>Contact phone</th>
                 <th>Claimed by</th>
-                <th>Date</th>
+                <th>Updated</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -187,8 +197,8 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="config.js"></script>
-  <script src="usLocations.js"></script>
-  <script src="app.js"></script>
+  <script src="config.js?v=3"></script>
+  <script src="usLocations.js?v=3"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

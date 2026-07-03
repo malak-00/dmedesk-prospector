@@ -157,6 +157,13 @@ body {
   background: var(--surface);
 }
 .results-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.inline-field { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+.inline-field select {
+  font-family: var(--font-ui); font-size: 12px; color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm); padding: 5px 8px; cursor: pointer;
+}
+.inline-field select:focus { outline: none; border-color: var(--accent); }
 .results-count { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
 .selection-chip {
   display: flex; align-items: center; gap: 8px;

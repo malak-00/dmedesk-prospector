@@ -196,10 +196,9 @@ No service account or key file needed — since this runs as your own Apps
 Script, it already has native access to any Sheet you own. The CMS
 Medicare enrichment needs no key at all.
 
-### 4b. Create the Users tab (sign-in accounts)
+### 4b. Create the Users sheet (sign-in accounts)
 
-In the same Google Sheet, add a tab named exactly **`Users`** with this
-layout:
+Sign-in accounts live in a tab named exactly **`Users`** with this layout:
 
 | Username | Password | Display Name |
 |---|---|---|
@@ -207,12 +206,23 @@ layout:
 | ahmed | another-password | Ahmed K |
 
 One row per teammate. Usernames are case-insensitive; Display Name is what
-appears in the app and in the sheet's "Claimed By" column. Add or remove
-rows any time — changes take effect on the next sign-in, no redeploy
-needed. Passwords are stored as plain text in this tab, which only the
-sheet owner can see: fine for an internal stopgap, but tell teammates not
-to reuse personal passwords. Sessions last 6 hours, then users sign in
-again.
+appears in the app and in the sheet's "Claimed By" column. Add/remove rows
+any time — changes take effect on the next sign-in, no redeploy needed.
+Passwords are plain text, so keep them app-specific (not reused personal
+passwords), and **6-hour** sessions mean users sign in about once a day.
+
+**Where to put the Users tab — this matters if teammates open the leads
+sheet directly:**
+
+- **Recommended (private):** create a *separate* Google Sheet that only you
+  can open, put the `Users` tab in it, and set its ID as the
+  **`AUTH_SHEET_ID`** Script Property. The app runs as you, so it can still
+  read it — but teammates never have access to that file, so they can't see
+  anyone's password. Use this if your team opens the leads sheet.
+- **Fallback (same sheet):** if `AUTH_SHEET_ID` is unset, the app looks for
+  a `Users` tab in the main leads sheet. Only safe if that sheet is private
+  to you — anyone who can open it would see the passwords. Hiding the tab
+  does **not** protect it (edit-access users can unhide).
 
 ### 5. Deploy as a Web App
 

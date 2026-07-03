@@ -91,6 +91,7 @@ const els = {
   claimedBody: document.getElementById("claimedBody"),
   claimedCount: document.getElementById("claimedCount"),
   onlyMine: document.getElementById("onlyMine"),
+  updatedWithin: document.getElementById("updatedWithin"),
   refreshClaimedBtn: document.getElementById("refreshClaimedBtn"),
 };
 
@@ -420,7 +421,9 @@ async function exportSheets() {
 async function loadClaimedLeads() {
   els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="6"><div class="loading-row"><span class="spinner"></span> Loading claimed leads…</div></td></tr>`;
   try {
-    const params = els.onlyMine.checked ? { mine: "true" } : {};
+    const params = {};
+    if (els.onlyMine.checked) params.mine = "true";
+    if (els.updatedWithin.value) params.updatedWithinDays = els.updatedWithin.value;
     const data = await apiGet("leads/list", params);
     state.statuses = data.statuses || [];
     state.claimedLoaded = true;
@@ -439,23 +442,28 @@ function renderClaimedLeads(leads) {
     return;
   }
 
-  els.claimedBody.innerHTML = leads.map((lead) => `
+  els.claimedBody.innerHTML = leads.map((lead) => {
+    const contactLine = lead.contactName
+      ? `${escapeHtml(lead.contactName)}${lead.contactTitle ? ` — ${escapeHtml(lead.contactTitle)}` : ""}`
+      : "";
+    return `
     <tr>
       <td>
         <div class="company-name">${escapeHtml(lead.name)}</div>
-        ${lead.contactName ? `<div class="company-taxonomy">${escapeHtml(lead.contactName)}</div>` : ""}
+        ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
       </td>
       <td class="mono">${escapeHtml(lead.city)}, ${escapeHtml(lead.state)}</td>
-      <td class="mono">${lead.phone ? `<a href="tel:${escapeHtml(lead.phone)}">${escapeHtml(lead.phone)}</a>` : "—"}</td>
+      <td class="mono">${lead.contactPhone ? `<a href="tel:${escapeHtml(lead.contactPhone)}">${escapeHtml(lead.contactPhone)}</a>` : "—"}</td>
       <td>${escapeHtml(lead.claimedBy || "—")}</td>
-      <td class="mono">${escapeHtml((lead.claimedAt || "").slice(0, 10))}</td>
+      <td class="mono">${escapeHtml((lead.lastUpdated || "").slice(0, 10))}</td>
       <td>
         <select class="status-select status-${escapeHtml(lead.status).replace(/\s+/g, "-")}" data-npi="${escapeHtml(lead.npi)}">
           ${state.statuses.map((s) => `<option value="${escapeHtml(s)}" ${s === lead.status ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
         </select>
       </td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 
   els.claimedBody.querySelectorAll(".status-select").forEach((select) => {
     select.addEventListener("change", async (e) => {
@@ -545,6 +553,7 @@ document.querySelectorAll(".view-tabs .tab").forEach((tab) => {
   tab.addEventListener("click", () => switchView(tab.dataset.view));
 });
 els.onlyMine.addEventListener("change", loadClaimedLeads);
+els.updatedWithin.addEventListener("change", loadClaimedLeads);
 els.refreshClaimedBtn.addEventListener("click", loadClaimedLeads);
 
 if (getSession()) hideLogin(); else showLogin();

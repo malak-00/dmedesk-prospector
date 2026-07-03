@@ -11,6 +11,12 @@
 //   GEMINI_API_KEY
 //   GEMINI_MODEL                   -- defaults to gemini-2.5-flash
 //   GOOGLE_SHEET_TAB_NAME           -- defaults to "Leads"
+//   AUTH_SHEET_ID                  -- a SEPARATE, private spreadsheet holding
+//                                     the Users tab. Set this so teammates who
+//                                     use the leads sheet can't see passwords.
+//                                     If unset, falls back to a "Users" tab in
+//                                     the main leads sheet (only safe if that
+//                                     sheet is private to you).
 
 var Config = (function () {
   function get(key, fallback) {
@@ -19,12 +25,12 @@ var Config = (function () {
   }
 
   return {
-    appToken: function () { return get("APP_TOKEN"); },
     nppesVersion: function () { return get("NPPES_VERSION", "2.1"); },
     foursquareApiKey: function () { return get("FOURSQUARE_SERVICE_API_KEY"); },
     geminiApiKey: function () { return get("GEMINI_API_KEY"); },
     geminiModel: function () { return get("GEMINI_MODEL", "gemini-2.5-flash"); },
     googleSheetId: function () { return get("GOOGLE_SHEET_ID"); },
     googleSheetTabName: function () { return get("GOOGLE_SHEET_TAB_NAME", "Leads"); },
+    authSheetId: function () { return get("AUTH_SHEET_ID"); },
   };
 })();

@@ -84,7 +84,9 @@ function handleRequest_(e) {
       }
 
       case "leads/list": {
-        var opts = params.mine === "true" ? { claimedBy: session.displayName } : {};
+        var opts = {};
+        if (params.mine === "true") opts.claimedBy = session.displayName;
+        if (params.updatedWithinDays) opts.updatedWithinDays = Number(params.updatedWithinDays);
         return jsonResponse_({
           success: true,
           data: { leads: SheetsStore.listClaimedLeads(opts), statuses: SheetsStore.ALLOWED_STATUSES },

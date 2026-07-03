@@ -54,6 +54,20 @@ var SheetsStore = (function () {
     return -1;
   }
 
+  // Makes the Status column a real dropdown in the sheet itself, so editing a
+  // status directly in Google Sheets offers the same choices as the app.
+  function applyStatusValidation_(sheet) {
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+    var statusCol = headerIndex_(sheet, "Status");
+    if (statusCol < 0) return;
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(ALLOWED_STATUSES, true)
+      .setAllowInvalid(false)
+      .build();
+    sheet.getRange(2, statusCol + 1, lastRow - 1, 1).setDataValidation(rule);
+  }
+
   function exportCompaniesToSheet(companies, claimedBy) {
     assertConfigured();
     companies = companies || [];
@@ -78,6 +92,7 @@ var SheetsStore = (function () {
     var width = fullHeader_().length;
     var startRow = sheet.getLastRow() + 1;
     sheet.getRange(startRow, 1, rows.length, width).setValues(rows);
+    applyStatusValidation_(sheet); // keep the sheet's Status dropdown current
 
     return {
       tab: Config.googleSheetTabName(),
@@ -110,8 +125,10 @@ var SheetsStore = (function () {
     return claimed;
   }
 
-  // Returns claimed leads for the tracking view. opts.claimedBy filters to
-  // one person's leads (matched against the Claimed By column).
+  // Returns claimed leads for the tracking view, sorted by most recently
+  // updated (Status Updated At, falling back to Claimed At).
+  //   opts.claimedBy       -- filter to one person's leads
+  //   opts.updatedWithinDays -- only leads touched within the last N days
   function listClaimedLeads(opts) {
     assertConfigured();
     opts = opts || {};
@@ -124,25 +141,34 @@ var SheetsStore = (function () {
     var col = function (label) { return header.indexOf(label.toLowerCase()); };
 
     var idx = {
-      name: col("Company Name"), npi: col("NPI"), phone: col("Phone"),
-      city: col("City"), state: col("State"), contactName: col("Contact Name"),
-      claimedBy: col("Claimed By"), claimedAt: col("Claimed At"), status: col("Status"),
+      name: col("Company Name"), npi: col("NPI"),
+      city: col("City"), state: col("State"),
+      contactName: col("Contact Name"), contactTitle: col("Contact Title"),
+      contactPhone: col("Contact Phone"),
+      claimedBy: col("Claimed By"), claimedAt: col("Claimed At"),
+      status: col("Status"), statusUpdatedAt: col("Status Updated At"),
     };
 
     var data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
     var leads = data.map(function (row, i) {
       var pick = function (j) { return j >= 0 && j < row.length ? String(row[j] || "") : ""; };
+      var claimedAt = pick(idx.claimedAt);
+      var statusUpdatedAt = pick(idx.statusUpdatedAt);
       return {
         rowNumber: i + 2,
         name: pick(idx.name),
         npi: pick(idx.npi),
-        phone: pick(idx.phone),
         city: pick(idx.city),
         state: pick(idx.state),
         contactName: pick(idx.contactName),
+        contactTitle: pick(idx.contactTitle),
+        contactPhone: pick(idx.contactPhone),
         claimedBy: pick(idx.claimedBy),
-        claimedAt: pick(idx.claimedAt),
+        claimedAt: claimedAt,
         status: pick(idx.status) || "new",
+        statusUpdatedAt: statusUpdatedAt,
+        // effective "last updated" = latest status change, else when claimed
+        lastUpdated: statusUpdatedAt || claimedAt,
       };
     }).filter(function (lead) { return lead.npi !== "" || lead.name !== ""; });
 
@@ -151,7 +177,25 @@ var SheetsStore = (function () {
       leads = leads.filter(function (lead) { return lead.claimedBy.toLowerCase() === who; });
     }
 
-    return leads.reverse(); // newest exports first
+    if (opts.updatedWithinDays) {
+      var days = Number(opts.updatedWithinDays);
+      if (!isNaN(days) && days > 0) {
+        var cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+        leads = leads.filter(function (lead) {
+          var t = Date.parse(lead.lastUpdated);
+          return !isNaN(t) && t >= cutoff;
+        });
+      }
+    }
+
+    // Most recently updated first (undated rows sink to the bottom).
+    leads.sort(function (a, b) {
+      var ta = Date.parse(a.lastUpdated) || 0;
+      var tb = Date.parse(b.lastUpdated) || 0;
+      return tb - ta;
+    });
+
+    return leads;
   }
 
   // Sets the Status columns on every row whose NPI matches. Rows exported
@@ -203,6 +247,8 @@ var SheetsStore = (function () {
       throw notFound;
     }
 
+    SpreadsheetApp.flush(); // force the write to persist before we return
+    applyStatusValidation_(sheet); // keep the dropdown on any newly-tracked rows
     return { npi: String(npi), status: status, rowsUpdated: updated };
   }
 

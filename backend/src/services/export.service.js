@@ -25,6 +25,7 @@ export const CSV_COLUMNS = [
   { key: "medicareClaims", label: "Medicare Claims" },
   { key: "medicareBeneficiaries", label: "Medicare Beneficiaries" },
   { key: "medicarePayment", label: "Medicare Payment $" },
+  { key: "contactPhone", label: "Contact Phone" },
 ];
 
 function escapeCsvValue(value) {
@@ -59,6 +60,7 @@ export function flattenCompany(company) {
     contactTitle: primaryContact?.title || "",
     contactRole: primaryContact?.roleCategory || "",
     contactSource: primaryContact?.source || "",
+    contactPhone: primaryContact?.phone || "",
     additionalContacts: Math.max((company.decisionMakers?.length || 1) - 1, 0),
     rating: company.places?.rating ?? "",
     scoreValue: company.score?.value ?? "",

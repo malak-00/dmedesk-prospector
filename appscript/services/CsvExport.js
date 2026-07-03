@@ -29,6 +29,7 @@ var CsvExport = (function () {
     { key: "medicareClaims", label: "Medicare Claims" },
     { key: "medicareBeneficiaries", label: "Medicare Beneficiaries" },
     { key: "medicarePayment", label: "Medicare Payment $" },
+    { key: "contactPhone", label: "Contact Phone" },
   ];
 
   function escapeCsvValue(value) {
@@ -63,6 +64,7 @@ var CsvExport = (function () {
       contactTitle: primaryContact ? primaryContact.title : "",
       contactRole: primaryContact ? primaryContact.roleCategory : "",
       contactSource: primaryContact ? primaryContact.source : "",
+      contactPhone: primaryContact && primaryContact.phone ? primaryContact.phone : "",
       additionalContacts: Math.max(((company.decisionMakers && company.decisionMakers.length) || 1) - 1, 0),
       rating: places.rating != null ? places.rating : "",
       scoreValue: score.value != null ? score.value : "",

@@ -2,15 +2,23 @@
 // that stores leads, with sessions held in CacheService (max 6 hours, then the
 // user signs in again -- roughly once per workday).
 //
-// Users tab layout (create it manually in the sheet):
+// Users tab layout (create it manually):
 //   Row 1 (header):  Username | Password | Display Name
 //   Row 2+:          one row per teammate
 //
-// Passwords are stored as plain text in that tab. That is a deliberate
-// pragmatic choice for an internal stopgap: the sheet is only readable by
-// its owner (teammates use the app, not the sheet), and the owner needs to
-// be able to set/reset passwords without a hashing tool. Do not reuse real
-// personal passwords here.
+// WHERE the Users tab lives:
+//   - Preferred: a SEPARATE spreadsheet that only you can open, whose ID is
+//     set in the AUTH_SHEET_ID script property. Because teammates never have
+//     access to that file, the plaintext passwords stay private even though
+//     everyone shares the leads sheet. This runs as you, so it can still read
+//     it.
+//   - Fallback: a "Users" tab in the main leads sheet (used only if
+//     AUTH_SHEET_ID is unset). Only safe if the leads sheet is private to
+//     you -- anyone who can open that sheet would see the passwords.
+//
+// Passwords are stored as plain text (the owner needs to set/reset them
+// without a hashing tool); keep them app-specific, not reused personal
+// passwords.
 
 var AuthNotConfiguredError = function () {
   var err = new Error("Sign-in is not configured (missing or empty 'Users' tab in the Google Sheet)");
@@ -23,10 +31,20 @@ var AuthService = (function () {
   var SESSION_TTL_SECONDS = 21600; // 6h -- CacheService's maximum
   var CACHE_PREFIX = "sess_";
 
-  function getUsers_() {
+  function getUsersSheet_() {
+    // Prefer the dedicated, owner-only spreadsheet if configured.
+    var authSheetId = Config.authSheetId();
+    if (authSheetId) {
+      var authBook = SpreadsheetApp.openById(authSheetId);
+      return authBook.getSheetByName(USERS_TAB) || authBook.getSheets()[0];
+    }
+    // Fallback: a "Users" tab in the main leads sheet.
     if (!Config.googleSheetId()) throw AuthNotConfiguredError();
-    var spreadsheet = SpreadsheetApp.openById(Config.googleSheetId());
-    var sheet = spreadsheet.getSheetByName(USERS_TAB);
+    return SpreadsheetApp.openById(Config.googleSheetId()).getSheetByName(USERS_TAB);
+  }
+
+  function getUsers_() {
+    var sheet = getUsersSheet_();
     if (!sheet || sheet.getLastRow() < 2) throw AuthNotConfiguredError();
 
     var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
