@@ -208,6 +208,7 @@ body {
 .results-table tbody tr.lead-row.is-selected:hover { background: var(--accent-soft); }
 .results-table td { padding: 11px 14px; vertical-align: middle; }
 .results-table a, .detail-row a { color: var(--accent-ink); text-underline-offset: 2px; }
+.muted-tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-2); }
 .empty-row td { text-align: center; color: var(--muted); padding: 40px 10px; font-style: italic; }
 
 .loading-row { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 40px 10px; color: var(--muted); }

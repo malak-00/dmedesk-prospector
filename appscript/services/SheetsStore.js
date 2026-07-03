@@ -144,7 +144,7 @@ var SheetsStore = (function () {
       name: col("Company Name"), npi: col("NPI"),
       city: col("City"), state: col("State"),
       contactName: col("Contact Name"), contactTitle: col("Contact Title"),
-      contactPhone: col("Contact Phone"),
+      contactPhone: col("Contact Phone"), companyPhone: col("Phone"),
       claimedBy: col("Claimed By"), claimedAt: col("Claimed At"),
       status: col("Status"), statusUpdatedAt: col("Status Updated At"),
     };
@@ -163,6 +163,7 @@ var SheetsStore = (function () {
         contactName: pick(idx.contactName),
         contactTitle: pick(idx.contactTitle),
         contactPhone: pick(idx.contactPhone),
+        companyPhone: pick(idx.companyPhone),
         claimedBy: pick(idx.claimedBy),
         claimedAt: claimedAt,
         status: pick(idx.status) || "new",

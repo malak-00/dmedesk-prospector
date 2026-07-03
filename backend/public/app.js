@@ -133,7 +133,7 @@ function rowHtml(company, index) {
       </td>
       <td class="mono">${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")}</td>
       <td>${primaryContact ? escapeHtml(primaryContact.name) : '<span style="color:var(--muted)">—</span>'}</td>
-      <td class="mono">${primaryContact?.phone ? escapeHtml(primaryContact.phone) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td class="mono">${phoneCell(primaryContact?.phone, company.phone)}</td>
       <td><span class="chevron ${isExpanded ? "open" : ""}">▸</span></td>
     </tr>
   `];
@@ -184,6 +184,16 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str ?? "";
   return div.innerHTML;
+}
+
+// Prefer the contact's direct line; fall back to the company's main number
+// (NPPES rarely publishes an official's direct phone).
+function phoneCell(contactPhone, companyPhone) {
+  const direct = (contactPhone || "").trim();
+  if (direct) return `<a href="tel:${escapeHtml(direct)}">${escapeHtml(direct)}</a>`;
+  const main = (companyPhone || "").trim();
+  if (main) return `<a href="tel:${escapeHtml(main)}">${escapeHtml(main)}</a> <span class="muted-tag">main</span>`;
+  return '<span style="color:var(--muted)">—</span>';
 }
 
 function medicareSummary(medicare) {

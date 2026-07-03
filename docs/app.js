@@ -197,6 +197,17 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Prefer the contact's direct line; fall back to the company's main number
+// (NPPES rarely publishes an official's direct phone). Marks the fallback so
+// reps know it's the switchboard, not a personal line.
+function phoneCell(contactPhone, companyPhone) {
+  const direct = (contactPhone || "").trim();
+  if (direct) return `<a href="tel:${escapeHtml(direct)}">${escapeHtml(direct)}</a>`;
+  const main = (companyPhone || "").trim();
+  if (main) return `<a href="tel:${escapeHtml(main)}">${escapeHtml(main)}</a> <span class="muted-tag">main</span>`;
+  return "—";
+}
+
 function medicareSummary(medicare) {
   if (!medicare || medicare.totalClaims == null) return "No CMS claims data found";
   const parts = [`${Number(medicare.totalClaims).toLocaleString()} claims`];
@@ -284,7 +295,7 @@ function rowHtml(company, index) {
       </td>
       <td class="mono">${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")}</td>
       <td>${primaryContact ? escapeHtml(primaryContact.name) : '<span style="color:var(--muted)">—</span>'}</td>
-      <td class="mono">${primaryContact?.phone ? escapeHtml(primaryContact.phone) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td class="mono">${phoneCell(primaryContact?.phone, company.phone)}</td>
       <td><span class="chevron ${isExpanded ? "open" : ""}">▸</span></td>
     </tr>
   `];
@@ -453,7 +464,7 @@ function renderClaimedLeads(leads) {
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
       </td>
       <td class="mono">${escapeHtml(lead.city)}, ${escapeHtml(lead.state)}</td>
-      <td class="mono">${lead.contactPhone ? `<a href="tel:${escapeHtml(lead.contactPhone)}">${escapeHtml(lead.contactPhone)}</a>` : "—"}</td>
+      <td class="mono">${phoneCell(lead.contactPhone, lead.companyPhone)}</td>
       <td>${escapeHtml(lead.claimedBy || "—")}</td>
       <td class="mono">${escapeHtml((lead.lastUpdated || "").slice(0, 10))}</td>
       <td>
