@@ -157,8 +157,11 @@ function rowHtml(company, index) {
               <h4>Decision makers (${company.decisionMakers?.length || 0})</h4>
               ${(company.decisionMakers || []).map((dm) => `
                 <div class="contact-item">
-                  ${escapeHtml(dm.name)}${dm.title ? ` — ${escapeHtml(dm.title)}` : ""}
-                  <span class="contact-role">${escapeHtml(dm.roleCategory)}</span>
+                  <div>
+                    ${escapeHtml(dm.name)}${dm.title ? ` — ${escapeHtml(dm.title)}` : ""}
+                    <span class="contact-role">${escapeHtml(dm.roleCategory)}</span>
+                  </div>
+                  ${dm.phone ? `<div class="mono contact-phone">${escapeHtml(dm.phone)}</div>` : ""}
                 </div>
               `).join("") || '<span style="color:var(--muted); font-size:13px;">None identified</span>'}
             </div>
