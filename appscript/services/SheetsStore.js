@@ -472,6 +472,39 @@ var SheetsStore = (function () {
     return { npi: String(npi), notes: finalNotes, rowsUpdated: matches.length };
   }
 
+  // Overwrites the ENTIRE Notes cell verbatim -- unlike addLeadNote (which
+  // only ever prepends), this backs editing/deleting a single call-log
+  // entry: the client reconstructs the full newline-joined text (with one
+  // line changed or removed) and this just stores exactly that, on every
+  // row (in whichever tab it lives in) whose NPI matches. Empty string is
+  // valid -- it means "no notes left" after deleting the last entry.
+  function replaceLeadNotes(npi, notesText) {
+    assertConfigured();
+    if (!npi) {
+      var noNpi = new Error("npi is required");
+      noNpi.status = 400;
+      throw noNpi;
+    }
+
+    var spreadsheet = openSpreadsheet_();
+    var matches = findLeadLocations_(spreadsheet, npi);
+    if (matches.length === 0) {
+      var notFound = new Error("No lead with NPI " + npi + " found in the sheet");
+      notFound.status = 404;
+      throw notFound;
+    }
+
+    var finalNotes = String(notesText || "");
+    matches.forEach(function (m) {
+      var colMap = ensureColumns_(m.sheet); // guarantees the Notes column exists
+      var notesCol = colIndex_(colMap, "Notes");
+      m.sheet.getRange(m.rowNumber, notesCol + 1).setValue(finalNotes);
+    });
+
+    SpreadsheetApp.flush(); // force the writes to persist before we return
+    return { npi: String(npi), notes: finalNotes, rowsUpdated: matches.length };
+  }
+
   // Sets (or clears, if reminderAt is "") a callback-reminder timestamp on
   // every row (in whichever tab it lives in) whose NPI matches. This is
   // purely a stored value the app surfaces (a badge in the Claimed Leads
@@ -568,6 +601,7 @@ var SheetsStore = (function () {
     listClaimedLeads: listClaimedLeads,
     updateLeadStatus: updateLeadStatus,
     addLeadNote: addLeadNote,
+    replaceLeadNotes: replaceLeadNotes,
     setLeadReminder: setLeadReminder,
     getKnownStatuses: getKnownStatuses,
     addSuggestion: addSuggestion,

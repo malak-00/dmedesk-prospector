@@ -120,6 +120,14 @@ function handleRequest_(e) {
         });
       }
 
+      case "leads/notes/replace": {
+        var replaceNotesBody = readJsonBody_(e);
+        return jsonResponse_({
+          success: true,
+          data: SheetsStore.replaceLeadNotes(replaceNotesBody.npi, replaceNotesBody.notes),
+        });
+      }
+
       case "leads/reminder": {
         var reminderBody = readJsonBody_(e);
         return jsonResponse_({

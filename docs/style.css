@@ -485,13 +485,30 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 }
 
 .notes-history-block { margin-top: 16px; }
-.notes-history { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; }
+.notes-history { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
 .notes-entry {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
   font-family: var(--font-mono); font-size: 12px; color: var(--ink);
   background: var(--surface-2); border-radius: var(--radius-sm);
   padding: 6px 9px;
 }
 .notes-entry:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+.notes-entry-text { flex: 1; min-width: 0; overflow-wrap: break-word; }
+.notes-entry-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.notes-entry-btn {
+  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+  background: none; border: 1px solid var(--hairline); border-radius: 4px;
+  color: var(--muted); padding: 2px 7px; cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.notes-entry-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+.notes-entry-editing { align-items: center; }
+.notes-entry-edit-input {
+  flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 12px;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--accent); border-radius: 4px; padding: 4px 7px;
+}
+.notes-entry-edit-input:focus { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
 
 /* ---------- Toast ---------- */
 

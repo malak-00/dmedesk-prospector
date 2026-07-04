@@ -94,6 +94,11 @@ const state = {
   claimedSortDir: 1,
   statuses: [],
   reminderTargetIndex: null,
+  // Which single call-log entry (if any) is currently showing its inline
+  // editor -- only one at a time app-wide. Re-rendering the detail panel
+  // (the same "recompute from state" approach used everywhere else in this
+  // view) is enough to show/hide it, no manual DOM patching needed.
+  editingNoteLine: null, // { claimedIndex, lineIndex } | null
   // npi -> reminderAt string already notified for. Keying on the exact
   // timestamp (not just the npi) means rescheduling a reminder makes it
   // eligible to notify again, instead of being silently skipped forever.
@@ -996,18 +1001,152 @@ function claimedLeadRowHtml(lead, index) {
 }
 
 // Notes are a running call log (newest entry first, one per line -- see
-// SheetsStore.addLeadNote), not a single value -- this is just "what to
-// show while collapsed" without rendering the whole history in the row.
-function latestNoteLine(notes) {
-  return notes ? notes.split("\n")[0] : "";
+// SheetsStore.addLeadNote/replaceLeadNotes), not a single value.
+function notesLines(notes) {
+  return (notes || "").split("\n").filter(Boolean);
 }
 
-function notesHistoryHtml(notes) {
-  const lines = (notes || "").split("\n").filter(Boolean);
+// "What to show while collapsed" without rendering the whole history in the row.
+function latestNoteLine(notes) {
+  return notesLines(notes)[0] || "";
+}
+
+function notesHistoryHtml(notes, claimedIndex) {
+  const lines = notesLines(notes);
   if (lines.length === 0) {
     return '<span style="color:var(--muted); font-size:13px;">No notes yet</span>';
   }
-  return `<div class="notes-history">${lines.map((line) => `<div class="notes-entry">${escapeHtml(line)}</div>`).join("")}</div>`;
+  return `<div class="notes-history">${lines.map((line, lineIndex) => {
+    const editing = state.editingNoteLine
+      && state.editingNoteLine.claimedIndex === claimedIndex
+      && state.editingNoteLine.lineIndex === lineIndex;
+
+    if (editing) {
+      return `
+        <div class="notes-entry notes-entry-editing">
+          <input type="text" class="notes-entry-edit-input" value="${escapeHtml(line)}" data-claimed-index="${claimedIndex}" data-line-index="${lineIndex}">
+          <span class="notes-entry-actions">
+            <button type="button" class="notes-entry-btn" data-note-save data-claimed-index="${claimedIndex}" data-line-index="${lineIndex}">Save</button>
+            <button type="button" class="notes-entry-btn" data-note-cancel>Cancel</button>
+          </span>
+        </div>`;
+    }
+
+    return `
+      <div class="notes-entry">
+        <span class="notes-entry-text">${escapeHtml(line)}</span>
+        <span class="notes-entry-actions">
+          <button type="button" class="notes-entry-btn" data-note-edit data-claimed-index="${claimedIndex}" data-line-index="${lineIndex}" title="Edit this entry">Edit</button>
+          <button type="button" class="notes-entry-btn" data-note-delete data-claimed-index="${claimedIndex}" data-line-index="${lineIndex}" title="Delete this entry">Delete</button>
+        </span>
+      </div>`;
+  }).join("")}</div>`;
+}
+
+// Keeps the collapsed row's one-line preview in sync after a note is added,
+// edited, or deleted -- removes the preview entirely once the last entry is gone.
+function updateNotesPreview(idx, notesText) {
+  const input = document.querySelector(`#claimedBody .notes-input[data-index="${idx}"]`);
+  if (!input) return;
+  const latest = latestNoteLine(notesText);
+  let preview = input.parentElement.querySelector(".notes-preview");
+  if (latest) {
+    if (!preview) {
+      preview = document.createElement("div");
+      preview.className = "notes-preview";
+      input.insertAdjacentElement("afterend", preview);
+    }
+    preview.textContent = latest;
+    preview.title = latest;
+  } else {
+    preview?.remove();
+  }
+}
+
+async function saveNoteEntryEdit(idx, lineIndex, newText) {
+  const trimmed = newText.trim();
+  if (!trimmed) {
+    showToast("A note entry can't be blank — use Delete instead", true);
+    return;
+  }
+  const lead = state.claimedLeads[idx];
+  const lines = notesLines(lead.notes);
+  lines[lineIndex] = trimmed;
+  try {
+    const data = await apiPost("leads/notes/replace", { npi: lead.npi, notes: lines.join("\n") });
+    lead.notes = data.notes;
+    state.editingNoteLine = null;
+    updateNotesPreview(idx, data.notes);
+    refreshClaimedDetailIfExpanded(idx);
+    showToast("Note updated");
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
+async function deleteNoteEntry(idx, lineIndex) {
+  if (!confirm("Delete this call log entry? This can't be undone.")) return;
+  const lead = state.claimedLeads[idx];
+  const lines = notesLines(lead.notes);
+  lines.splice(lineIndex, 1);
+  try {
+    const data = await apiPost("leads/notes/replace", { npi: lead.npi, notes: lines.join("\n") });
+    lead.notes = data.notes;
+    state.editingNoteLine = null;
+    updateNotesPreview(idx, data.notes);
+    refreshClaimedDetailIfExpanded(idx);
+    showToast("Note deleted");
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
+// Wires the Edit/Delete/Save/Cancel controls for whichever call-log entries
+// are currently rendered -- called every time the detail panel is (re)drawn,
+// same as the brief/reminder button wiring right below it.
+function wireNotesHistoryHandlers(idx) {
+  document.querySelectorAll(`[data-note-edit][data-claimed-index="${idx}"]`).forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.editingNoteLine = { claimedIndex: idx, lineIndex: Number(btn.dataset.lineIndex) };
+      refreshClaimedDetailIfExpanded(idx);
+    });
+  });
+  document.querySelectorAll(`[data-note-delete][data-claimed-index="${idx}"]`).forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteNoteEntry(idx, Number(btn.dataset.lineIndex));
+    });
+  });
+  document.querySelectorAll(`[data-note-save][data-claimed-index="${idx}"]`).forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const input = document.querySelector(`.notes-entry-edit-input[data-claimed-index="${idx}"][data-line-index="${btn.dataset.lineIndex}"]`);
+      saveNoteEntryEdit(idx, Number(btn.dataset.lineIndex), input.value);
+    });
+  });
+  document.querySelectorAll(`[data-note-cancel]`).forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.editingNoteLine = null;
+      refreshClaimedDetailIfExpanded(idx);
+    });
+  });
+  document.querySelectorAll(`.notes-entry-edit-input[data-claimed-index="${idx}"]`).forEach((input) => {
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        saveNoteEntryEdit(idx, Number(input.dataset.lineIndex), input.value);
+      } else if (e.key === "Escape") {
+        state.editingNoteLine = null;
+        refreshClaimedDetailIfExpanded(idx);
+      }
+    });
+  });
 }
 
 // Reconstructs a CompanyModel-shaped object from the flat fields stored in
@@ -1097,7 +1236,7 @@ function claimedDetailRowHtml(lead, index) {
         </div>
         <div class="detail-block notes-history-block">
           <h4>Call log</h4>
-          ${notesHistoryHtml(lead.notes)}
+          ${notesHistoryHtml(lead.notes, index)}
         </div>
         <div class="detail-block reminder-block">
           <h4>Callback reminder</h4>
@@ -1147,10 +1286,14 @@ function toggleClaimedRowDetail(idx) {
   if (state.claimedExpandedIndex === idx) {
     collapseClaimedRow(idx);
     state.claimedExpandedIndex = null;
+    if (state.editingNoteLine?.claimedIndex === idx) state.editingNoteLine = null;
     return;
   }
 
-  if (state.claimedExpandedIndex !== null) collapseClaimedRow(state.claimedExpandedIndex);
+  if (state.claimedExpandedIndex !== null) {
+    collapseClaimedRow(state.claimedExpandedIndex);
+    if (state.editingNoteLine?.claimedIndex === state.claimedExpandedIndex) state.editingNoteLine = null;
+  }
 
   state.claimedExpandedIndex = idx;
   row.querySelector(".chevron")?.classList.add("open");
@@ -1164,6 +1307,7 @@ function toggleClaimedRowDetail(idx) {
     e.stopPropagation();
     openReminderModal(idx);
   });
+  wireNotesHistoryHandlers(idx);
 }
 
 function attachClaimedRowHandlers() {
@@ -1238,17 +1382,7 @@ function attachClaimedRowHandlers() {
         const data = await apiPost("leads/notes", { npi, note });
         state.claimedLeads[idx].notes = data.notes;
         e.target.value = "";
-
-        const latest = latestNoteLine(data.notes);
-        let preview = e.target.parentElement.querySelector(".notes-preview");
-        if (!preview) {
-          preview = document.createElement("div");
-          preview.className = "notes-preview";
-          e.target.insertAdjacentElement("afterend", preview);
-        }
-        preview.textContent = latest;
-        preview.title = latest;
-
+        updateNotesPreview(idx, data.notes);
         refreshClaimedDetailIfExpanded(idx);
         showToast("Note added");
       } catch (err) {
