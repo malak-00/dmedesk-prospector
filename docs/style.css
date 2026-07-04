@@ -232,7 +232,7 @@ body {
    thead below. Giving it a real bounded height + its own scrollbar makes
    that correct instead of accidental: the results list scrolls in place,
    search filters stay put, and the sticky header genuinely pins within it. */
-.table-wrap { overflow: auto; max-height: 62vh; }
+.table-wrap { overflow: auto; max-height: 70vh; }
 .results-table { width: 100%; border-collapse: collapse; }
 .results-table thead th {
   position: sticky;
@@ -244,12 +244,12 @@ body {
   letter-spacing: 0.05em;
   color: var(--muted);
   font-weight: 600;
-  padding: 10px 14px;
+  padding: 14px 18px;
   background: var(--surface);
   border-bottom: 1px solid var(--hairline);
   white-space: nowrap;
 }
-.col-check { width: 36px; } .col-score { width: 68px; } .col-expand { width: 32px; }
+.col-check { width: 42px; } .col-score { width: 80px; } .col-expand { width: 40px; }
 
 .results-table thead th.sortable { cursor: pointer; user-select: none; }
 .results-table thead th.sortable:hover { color: var(--ink); }
@@ -264,7 +264,7 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .results-table tbody tr.lead-row:hover { background: var(--surface-2); }
 .results-table tbody tr.lead-row.is-selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .results-table tbody tr.lead-row.is-selected:hover { background: var(--accent-soft); }
-.results-table td { padding: 11px 14px; vertical-align: middle; }
+.results-table td { padding: 18px; vertical-align: middle; line-height: 1.5; font-size: 14px; }
 .results-table a, .detail-row a { color: var(--accent-ink); text-underline-offset: 2px; }
 .muted-tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-2); }
 .empty-row td { text-align: center; color: var(--muted); padding: 40px 10px; font-style: italic; }
@@ -286,15 +286,15 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 }
 @keyframes skeleton-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
-.company-name { font-weight: 600; }
-.company-taxonomy { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.company-name { font-weight: 600; font-size: 15px; }
+.company-taxonomy { font-size: 13px; color: var(--muted); margin-top: 3px; }
 .source-badges { display: flex; gap: 4px; margin-top: 4px; }
 .source-badge {
   font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.03em;
   color: var(--muted); background: var(--surface-2); border: 1px solid var(--hairline);
   padding: 1px 5px; border-radius: 4px;
 }
-.mono { font-family: var(--font-mono); font-size: 13px; }
+.mono { font-family: var(--font-mono); font-size: 14px; }
 .chevron { display: inline-block; transition: transform 0.15s ease; color: var(--muted); }
 .chevron.open { transform: rotate(90deg); color: var(--accent-ink); }
 
@@ -457,10 +457,10 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 /* ---------- Status select (claimed leads) ---------- */
 
 .status-select {
-  font-family: var(--font-mono); font-size: 12px;
+  font-family: var(--font-mono); font-size: 13px;
   background: var(--surface-2); color: var(--ink);
   border: 1px solid var(--hairline); border-radius: var(--radius-sm);
-  padding: 5px 8px; cursor: pointer;
+  padding: 8px 10px; cursor: pointer;
 }
 .status-select:focus { outline: none; border-color: var(--accent); }
 .status-select.status-interested { border-color: var(--score-high); color: var(--score-high); }
@@ -470,10 +470,10 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 /* ---------- Notes input (claimed leads) ---------- */
 
 .notes-input {
-  font-family: var(--font-ui); font-size: 12px;
+  font-family: var(--font-ui); font-size: 13px;
   background: var(--surface-2); color: var(--ink);
   border: 1px solid var(--hairline); border-radius: var(--radius-sm);
-  padding: 5px 8px; width: 100%; min-width: 140px;
+  padding: 8px 10px; width: 100%; min-width: 160px;
   transition: border-color 0.12s ease;
 }
 .notes-input::placeholder { color: var(--muted-2); }
@@ -481,8 +481,8 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .notes-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .notes-input:disabled { opacity: 0.6; }
 .notes-preview {
-  font-size: 11px; color: var(--muted); margin-top: 4px;
-  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; color: var(--muted); margin-top: 5px;
+  max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .notes-history-block { margin-top: 16px; }
