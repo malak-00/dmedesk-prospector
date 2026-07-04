@@ -2,7 +2,8 @@
 
 AI-powered lead intelligence platform for DME Desk. Searches the public NPPES
 NPI Registry for DMEPOS suppliers, enriches results with Foursquare Places
-data and website scraping, scores each lead, generates AI call briefs, and
+data, a free OpenStreetMap (Nominatim) lookup as a website fallback, and
+website scraping, scores each lead, generates AI call briefs, and
 exports to CSV or a shared Google Sheet (which also doubles as the
 cross-team dedup log, so two people don't chase the same lead).
 
@@ -86,9 +87,10 @@ All endpoints are mounted under `/api`:
 
 - `GET /api/search/nppes` — raw NPPES search
 - `GET /api/search/companies` — full pipeline: NPPES → dedup → enrich
-  (Foursquare) → optionally scrape → score → sort. Query params:
-  `organizationName, city, state, postalCode, taxonomyDescription, limit,
-  enrich, scrape`
+  (Foursquare, then OpenStreetMap as a website fallback) → optionally scrape
+  → score → sort. Query params:
+  `organizationName, city, state, postalCode, taxonomyDescription,
+  lastUpdatedYear, limit, enrich, scrape`
 - `GET /api/scrape/website?url=` — standalone scraper
 - `POST /api/brief/generate` — body `{ company: {...} }`
 - `POST /api/export/csv` — body `{ companies: [...] }`

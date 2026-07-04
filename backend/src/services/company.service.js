@@ -1,6 +1,7 @@
 import { searchProviders } from "./nppes.service.js";
 import { lookupByNpis } from "./cms.service.js";
 import foursquareService, { FoursquareNotConfiguredError } from "./foursquare.service.js";
+import { lookupWebsite as lookupOsmWebsite } from "./osm.service.js";
 import { scrapeCompanyWebsite } from "./scraper.service.js";
 import { createCompany } from "../models/company.model.js";
 import { scoreCompany } from "./scoring.service.js";
@@ -73,6 +74,23 @@ async function tryEnrichWithPlaces(company) {
       return company;
     }
     console.warn(`[company.service] Places enrichment failed for "${company.name}": ${err.message}`);
+    return company;
+  }
+}
+
+// Runs only when Foursquare didn't find a website -- OpenStreetMap often
+// has one for small local businesses that Foursquare's dataset misses.
+// Callers MUST run this sequentially (not Promise.all) -- lookupOsmWebsite
+// throttles itself to respect Nominatim's rate limit, which only works if
+// calls are actually made one at a time.
+async function tryEnrichWithOsm(company) {
+  if (company.website) return company;
+  try {
+    const website = await lookupOsmWebsite(company);
+    if (!website) return company;
+    return { ...company, website, sources: { ...company.sources, osm: true } };
+  } catch (err) {
+    console.warn(`[company.service] OSM enrichment failed for "${company.name}": ${err.message}`);
     return company;
   }
 }
@@ -186,6 +204,12 @@ export async function searchCompanies(
 
   if (enrichPlaces) {
     companies = await Promise.all(companies.map(tryEnrichWithPlaces));
+    // Sequential, not Promise.all -- OSM/Nominatim enforces its own rate limit.
+    const withOsm = [];
+    for (const company of companies) {
+      withOsm.push(await tryEnrichWithOsm(company));
+    }
+    companies = withOsm;
   }
   if (scrapeWebsites) {
     companies = await Promise.all(companies.map(tryEnrichWithScrape));

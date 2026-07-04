@@ -65,6 +65,23 @@ var CompanyService = (function () {
     }
   }
 
+  // Runs only when Foursquare didn't find a website -- OpenStreetMap often
+  // has one for small local businesses that Foursquare's dataset misses.
+  function tryEnrichWithOsm(company) {
+    if (company.website) return company;
+    try {
+      var website = OsmService.lookupWebsite(company);
+      if (!website) return company;
+      return Object.assign({}, company, {
+        website: website,
+        sources: Object.assign({}, company.sources, { osm: true }),
+      });
+    } catch (err) {
+      console.log("[CompanyService] OSM enrichment failed for \"" + company.name + "\": " + err.message);
+      return company;
+    }
+  }
+
   // Only runs if the company has a website (usually found via Places enrichment).
   // Merges scraped decision-makers with NPPES ones, deduped by name. NPPES
   // entries are never overwritten -- scraping only adds names NPPES doesn't have.
@@ -168,6 +185,7 @@ var CompanyService = (function () {
 
     if (enrichPlaces) {
       companies = companies.map(tryEnrichWithPlaces);
+      companies = companies.map(tryEnrichWithOsm);
     }
     if (scrapeWebsites) {
       companies = companies.map(tryEnrichWithScrape);
