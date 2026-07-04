@@ -120,6 +120,14 @@ function handleRequest_(e) {
         });
       }
 
+      case "leads/reminder": {
+        var reminderBody = readJsonBody_(e);
+        return jsonResponse_({
+          success: true,
+          data: SheetsStore.setLeadReminder(reminderBody.npi, reminderBody.reminderAt, session.displayName),
+        });
+      }
+
       case "suggestions/submit": {
         var suggestionBody = readJsonBody_(e);
         return jsonResponse_({

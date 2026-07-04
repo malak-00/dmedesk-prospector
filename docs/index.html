@@ -15,7 +15,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -227,12 +227,13 @@
                 <th class="sortable" data-sort-key="claimedBy">Claimed by<span class="sort-arrow"></span></th>
                 <th class="sortable" data-sort-key="updated">Updated<span class="sort-arrow"></span></th>
                 <th class="sortable" data-sort-key="status">Status<span class="sort-arrow"></span></th>
+                <th class="sortable" data-sort-key="reminder">Reminder<span class="sort-arrow"></span></th>
                 <th>Notes</th>
                 <th class="col-expand"></th>
               </tr>
             </thead>
             <tbody id="claimedBody">
-              <tr class="empty-row"><td colspan="8">Open this tab to load claimed leads.</td></tr>
+              <tr class="empty-row"><td colspan="9">Open this tab to load claimed leads.</td></tr>
             </tbody>
           </table>
         </div>
@@ -255,10 +256,28 @@
     </form>
   </div>
 
+  <div id="reminderOverlay" class="suggestion-overlay" hidden>
+    <form id="reminderForm" class="suggestion-card">
+      <h3>Set callback reminder</h3>
+      <p class="suggestion-hint">For <strong id="reminderContext"></strong> — shown as a badge in Claimed leads, no email is sent.</p>
+      <label class="field">
+        <span>Remind me on</span>
+        <input type="datetime-local" name="reminderAt" id="reminderAtInput" required>
+      </label>
+      <div class="suggestion-actions reminder-actions">
+        <button type="button" class="btn btn-ghost" id="reminderClearBtn" hidden>Clear reminder</button>
+        <div class="reminder-actions-right">
+          <button type="button" class="btn btn-ghost" id="reminderCancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="reminderSaveBtn">Save reminder</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=10"></script>
-  <script src="app.js?v=12"></script>
+  <script src="app.js?v=13"></script>
 </body>
 </html>

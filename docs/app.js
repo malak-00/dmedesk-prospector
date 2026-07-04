@@ -93,6 +93,7 @@ const state = {
   claimedSortKey: null,
   claimedSortDir: 1,
   statuses: [],
+  reminderTargetIndex: null,
 };
 
 function skeletonRows(count, colCount) {
@@ -143,8 +144,11 @@ const CLAIMED_SORT_COMPARATORS = {
   claimedBy: (a, b) => (a.claimedBy || "").localeCompare(b.claimedBy || ""),
   updated: (a, b) => (Date.parse(a.lastUpdated) || 0) - (Date.parse(b.lastUpdated) || 0),
   status: (a, b) => (a.status || "").localeCompare(b.status || ""),
+  // Leads with no reminder sort last in the default (ascending/soonest-first)
+  // direction, since Date.parse("") is NaN and falls back to Infinity.
+  reminder: (a, b) => (Date.parse(a.reminderAt) || Infinity) - (Date.parse(b.reminderAt) || Infinity),
 };
-const CLAIMED_DEFAULT_SORT_DIR = { company: 1, location: 1, claimedBy: 1, updated: -1, status: 1 };
+const CLAIMED_DEFAULT_SORT_DIR = { company: 1, location: 1, claimedBy: 1, updated: -1, status: 1, reminder: 1 };
 
 function sortClaimedLeads(key, defaultDir) {
   state.claimedSortDir = state.claimedSortKey === key ? state.claimedSortDir * -1 : defaultDir;
@@ -197,6 +201,13 @@ const els = {
   suggestionText: document.getElementById("suggestionText"),
   suggestionSubmitBtn: document.getElementById("suggestionSubmitBtn"),
   suggestionCancelBtn: document.getElementById("suggestionCancelBtn"),
+  reminderOverlay: document.getElementById("reminderOverlay"),
+  reminderForm: document.getElementById("reminderForm"),
+  reminderContext: document.getElementById("reminderContext"),
+  reminderAtInput: document.getElementById("reminderAtInput"),
+  reminderClearBtn: document.getElementById("reminderClearBtn"),
+  reminderCancelBtn: document.getElementById("reminderCancelBtn"),
+  reminderSaveBtn: document.getElementById("reminderSaveBtn"),
 };
 
 // Populate the "Year" filters with the current year and a few back.
@@ -746,6 +757,46 @@ function statusOptionHtml(status, selected) {
   return `<option value="${escapeHtml(status)}" ${selected ? "selected" : ""}>${escapeHtml(status)}</option>`;
 }
 
+// Matches "cbk", "call back", "call-back", "callback" (any casing) -- used
+// to auto-offer a reminder right after someone sets one of these statuses.
+function isCallbackStatus(status) {
+  return /\bcbk\b|call\s*-?\s*back/i.test(status || "");
+}
+
+// Reminders only ever "remind" someone while the app is open (no email/push
+// delivery), so the badge's whole job is to be scannable at a glance:
+// overdue is urgent, today is coming up, anything later is just FYI.
+function reminderUrgency(reminderAt) {
+  const t = Date.parse(reminderAt);
+  if (isNaN(t)) return null;
+  const now = Date.now();
+  if (t < now) return "overdue";
+  if (t - now < 24 * 60 * 60 * 1000) return "today";
+  return "upcoming";
+}
+
+function formatReminder(reminderAt) {
+  const d = new Date(reminderAt);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function reminderBadgeHtml(reminderAt) {
+  const urgency = reminderUrgency(reminderAt);
+  if (!urgency) return "";
+  return `<span class="reminder-badge reminder-${urgency}">🔔 ${escapeHtml(formatReminder(reminderAt))}</span>`;
+}
+
+// <input type="datetime-local"> wants "YYYY-MM-DDTHH:mm" in LOCAL time, not
+// the ISO/UTC string the sheet stores -- new Date(iso).toISOString() would
+// silently shift the displayed time by the browser's UTC offset.
+function toDatetimeLocalValue(reminderAt) {
+  const d = new Date(reminderAt);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 // Re-renders a row's expanded detail panel in place after its data changes
 // (e.g. a new note was added) -- a no-op if that row isn't expanded.
 function refreshClaimedDetailIfExpanded(idx) {
@@ -755,8 +806,63 @@ function refreshClaimedDetailIfExpanded(idx) {
   toggleClaimedRowDetail(idx);
 }
 
+/* ---------- Callback reminders ---------- */
+
+function openReminderModal(idx) {
+  const lead = state.claimedLeads[idx];
+  state.reminderTargetIndex = idx;
+  els.reminderContext.textContent = lead.name;
+  els.reminderAtInput.value = lead.reminderAt ? toDatetimeLocalValue(lead.reminderAt) : "";
+  els.reminderClearBtn.hidden = !lead.reminderAt;
+  els.reminderOverlay.hidden = false;
+  els.reminderAtInput.focus();
+}
+
+function closeReminderModal() {
+  els.reminderOverlay.hidden = true;
+  els.reminderForm.reset();
+  state.reminderTargetIndex = null;
+}
+
+// Swaps just the one cell (row badge) and, if applicable, the detail panel --
+// same "touch only what changed" approach used elsewhere in this view.
+function refreshClaimedRowReminderBadge(idx) {
+  const cell = document.querySelector(`#claimedBody .lead-row[data-claimed-index="${idx}"] .reminder-cell`);
+  if (cell) cell.innerHTML = reminderBadgeHtml(state.claimedLeads[idx].reminderAt);
+  refreshClaimedDetailIfExpanded(idx);
+}
+
+async function saveReminder(idx, reminderAt) {
+  const lead = state.claimedLeads[idx];
+  els.reminderSaveBtn.disabled = true;
+  try {
+    const data = await apiPost("leads/reminder", { npi: lead.npi, reminderAt });
+    lead.reminderAt = data.reminderAt;
+    closeReminderModal();
+    refreshClaimedRowReminderBadge(idx);
+    showToast(data.reminderAt ? "Reminder set" : "Reminder cleared");
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    els.reminderSaveBtn.disabled = false;
+  }
+}
+
+function handleReminderSubmit(evt) {
+  evt.preventDefault();
+  const idx = state.reminderTargetIndex;
+  if (idx == null || !els.reminderAtInput.value) return;
+  saveReminder(idx, new Date(els.reminderAtInput.value).toISOString());
+}
+
+function handleReminderClear() {
+  const idx = state.reminderTargetIndex;
+  if (idx == null) return;
+  saveReminder(idx, "");
+}
+
 async function loadClaimedLeads() {
-  els.claimedBody.innerHTML = skeletonRows(5, 8);
+  els.claimedBody.innerHTML = skeletonRows(5, 9);
   els.staleNudge.hidden = true;
   try {
     const params = {};
@@ -772,7 +878,7 @@ async function loadClaimedLeads() {
     updateSortIndicators(els.claimedTable, null, 1);
     renderClaimedLeads(data.leads || []);
   } catch (err) {
-    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(err.message)}</td></tr>`;
+    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="9">${escapeHtml(err.message)}</td></tr>`;
     showToast(err.message, true);
   }
 }
@@ -783,7 +889,7 @@ function renderClaimedLeads(leads) {
   els.claimedCount.textContent = `${leads.length} claimed lead${leads.length === 1 ? "" : "s"}`;
 
   if (leads.length === 0) {
-    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="8">Nothing claimed yet — export some leads to Sheets first.</td></tr>`;
+    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="9">Nothing claimed yet — export some leads to Sheets first.</td></tr>`;
     return;
   }
 
@@ -806,11 +912,12 @@ function claimedLeadRowHtml(lead, index) {
       <td>${escapeHtml(lead.claimedBy || "—")}</td>
       <td class="mono">${escapeHtml((lead.lastUpdated || "").slice(0, 10))}</td>
       <td onclick="event.stopPropagation()">
-        <select class="status-select status-${escapeHtml(lead.status).replace(/\s+/g, "-")}" data-npi="${escapeHtml(lead.npi)}">
+        <select class="status-select status-${escapeHtml(lead.status).replace(/\s+/g, "-")}" data-npi="${escapeHtml(lead.npi)}" data-index="${index}">
           ${state.statuses.map((s) => statusOptionHtml(s, s === lead.status)).join("")}
           <option value="${ADD_STATUS_SENTINEL}">+ Add new status…</option>
         </select>
       </td>
+      <td class="reminder-cell" onclick="event.stopPropagation()">${reminderBadgeHtml(lead.reminderAt)}</td>
       <td onclick="event.stopPropagation()">
         <input type="text" class="notes-input" data-npi="${escapeHtml(lead.npi)}" data-index="${index}" placeholder="Add a note…">
         ${latestNoteLine(lead.notes) ? `<div class="notes-preview" title="${escapeHtml(latestNoteLine(lead.notes))}">${escapeHtml(latestNoteLine(lead.notes))}</div>` : ""}
@@ -888,7 +995,7 @@ function claimedDetailRowHtml(lead, index) {
 
   return `
     <tr class="detail-row">
-      <td colspan="8">
+      <td colspan="9">
         <div class="detail-grid">
           <div class="detail-block">
             <h4>Details</h4>
@@ -923,6 +1030,13 @@ function claimedDetailRowHtml(lead, index) {
         <div class="detail-block notes-history-block">
           <h4>Call log</h4>
           ${notesHistoryHtml(lead.notes)}
+        </div>
+        <div class="detail-block reminder-block">
+          <h4>Callback reminder</h4>
+          ${lead.reminderAt
+            ? `<div class="reminder-current reminder-${reminderUrgency(lead.reminderAt)}">🔔 ${escapeHtml(formatReminder(lead.reminderAt))}</div>`
+            : '<span style="color:var(--muted); font-size:13px;">No reminder set</span>'}
+          <button type="button" class="btn btn-ghost btn-small" data-reminder-index="${index}">${lead.reminderAt ? "Edit reminder" : "Set reminder"}</button>
         </div>
         <div class="brief-box">
           <button class="btn btn-ghost btn-small" data-claimed-brief-index="${index}">Generate call brief</button>
@@ -978,6 +1092,10 @@ function toggleClaimedRowDetail(idx) {
     e.stopPropagation();
     generateClaimedBrief(idx);
   });
+  document.querySelector(`[data-reminder-index="${idx}"]`)?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openReminderModal(idx);
+  });
 }
 
 function attachClaimedRowHandlers() {
@@ -1022,6 +1140,10 @@ function attachClaimedRowHandlers() {
         e.target.className = `status-select status-${status.replace(/\s+/g, "-")}`;
         previousValue = status;
         showToast(`Status updated to "${status}"`);
+        // A callback-ish status is a strong signal this lead needs a
+        // follow-up time -- offer to set one right away, without forcing it
+        // (Cancel just leaves the status change in place, reminder-less).
+        if (isCallbackStatus(status)) openReminderModal(Number(e.target.dataset.index));
       } catch (err) {
         e.target.value = previousValue;
         showToast(err.message, true);
@@ -1135,6 +1257,10 @@ els.suggestBtn.addEventListener("click", openSuggestionBox);
 els.suggestionForm.addEventListener("submit", handleSuggestionSubmit);
 els.suggestionCancelBtn.addEventListener("click", closeSuggestionBox);
 els.suggestionOverlay.addEventListener("click", (e) => { if (e.target === els.suggestionOverlay) closeSuggestionBox(); });
+els.reminderForm.addEventListener("submit", handleReminderSubmit);
+els.reminderCancelBtn.addEventListener("click", closeReminderModal);
+els.reminderClearBtn.addEventListener("click", handleReminderClear);
+els.reminderOverlay.addEventListener("click", (e) => { if (e.target === els.reminderOverlay) closeReminderModal(); });
 els.devNoticeClose.addEventListener("click", () => { els.devNotice.hidden = true; });
 // Two toggle buttons exist (header + login card, so theme can be changed
 // even before signing in) -- both share the .theme-toggle class.

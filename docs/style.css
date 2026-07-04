@@ -398,6 +398,20 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .suggestion-card h3 { font-size: 16px; margin: 0; }
 .suggestion-hint { font-size: 13px; color: var(--muted); margin: 0; }
 .suggestion-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.reminder-actions.suggestion-actions { justify-content: space-between; }
+.reminder-actions-right { display: flex; gap: 10px; }
+
+/* ---------- Callback reminders ---------- */
+
+.reminder-badge, .reminder-current {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+  padding: 3px 8px; border-radius: 999px;
+}
+.reminder-badge.reminder-overdue, .reminder-current.reminder-overdue { background: var(--login-error-bg); color: var(--score-low); }
+.reminder-badge.reminder-today, .reminder-current.reminder-today { background: var(--accent-soft); color: var(--score-mid); }
+.reminder-badge.reminder-upcoming, .reminder-current.reminder-upcoming { background: var(--surface-2); color: var(--muted); }
+.reminder-block button { margin-top: 8px; }
 
 /* ---------- Theme toggle ---------- */
 

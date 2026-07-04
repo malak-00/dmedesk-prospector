@@ -30,6 +30,7 @@ var SheetsStore = (function () {
     { key: "statusUpdatedBy", label: "Status Updated By" },
     { key: "statusUpdatedAt", label: "Status Updated At" },
     { key: "notes", label: "Notes" },
+    { key: "reminderAt", label: "Reminder At" },
   ];
   // Starting set shown even on a brand-new tab. Not a strict allow-list --
   // teammates can add their own statuses from the app; getKnownStatusesAcrossSheets_()
@@ -200,7 +201,7 @@ var SheetsStore = (function () {
         if (c.key === "claimedBy") val = claimedBy || "";
         else if (c.key === "claimedAt") val = now;
         else if (c.key === "status") val = "new";
-        else if (c.key === "statusUpdatedBy" || c.key === "statusUpdatedAt" || c.key === "notes") val = "";
+        else if (c.key === "statusUpdatedBy" || c.key === "statusUpdatedAt" || c.key === "notes" || c.key === "reminderAt") val = "";
         else val = flat[c.key] != null ? flat[c.key] : "";
         row[ci] = val;
       });
@@ -274,7 +275,7 @@ var SheetsStore = (function () {
         medicarePayment: get("Medicare Payment $"), nppesLastUpdated: get("NPPES Last Updated"),
         claimedBy: get("Claimed By"), claimedAt: get("Claimed At"),
         status: get("Status"), statusUpdatedAt: get("Status Updated At"),
-        notes: get("Notes"),
+        notes: get("Notes"), reminderAt: get("Reminder At"),
       };
 
       var data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
@@ -315,6 +316,7 @@ var SheetsStore = (function () {
           statusUpdatedAt: statusUpdatedAt,
           lastUpdated: statusUpdatedAt || claimedAt,
           notes: pick(idx.notes),
+          reminderAt: pick(idx.reminderAt),
         };
         if (lead.npi !== "" || lead.name !== "") leads.push(lead);
       });
@@ -470,6 +472,43 @@ var SheetsStore = (function () {
     return { npi: String(npi), notes: finalNotes, rowsUpdated: matches.length };
   }
 
+  // Sets (or clears, if reminderAt is "") a callback-reminder timestamp on
+  // every row (in whichever tab it lives in) whose NPI matches. This is
+  // purely a stored value the app surfaces (a badge in the Claimed Leads
+  // list, sorted soonest-first) -- there's no email/push delivery, so it
+  // only "reminds" someone while they have the app open.
+  function setLeadReminder(npi, reminderAt, updatedBy) {
+    assertConfigured();
+    if (!npi) {
+      var noNpi = new Error("npi is required");
+      noNpi.status = 400;
+      throw noNpi;
+    }
+    var trimmed = String(reminderAt || "").trim();
+    if (trimmed && isNaN(Date.parse(trimmed))) {
+      var badDate = new Error("reminderAt must be a valid date/time, or empty to clear it");
+      badDate.status = 400;
+      throw badDate;
+    }
+
+    var spreadsheet = openSpreadsheet_();
+    var matches = findLeadLocations_(spreadsheet, npi);
+    if (matches.length === 0) {
+      var notFound = new Error("No lead with NPI " + npi + " found in the sheet");
+      notFound.status = 404;
+      throw notFound;
+    }
+
+    matches.forEach(function (m) {
+      var colMap = ensureColumns_(m.sheet); // guarantees the Reminder At column exists
+      var reminderCol = colIndex_(colMap, "Reminder At");
+      m.sheet.getRange(m.rowNumber, reminderCol + 1).setValue(trimmed);
+    });
+
+    SpreadsheetApp.flush(); // force the writes to persist before we return
+    return { npi: String(npi), reminderAt: trimmed, rowsUpdated: matches.length };
+  }
+
   var MAX_SUGGESTION_LENGTH = 2000;
   var SUGGESTION_HEADER_ = ["Timestamp", "Submitted By", "Suggestion"];
 
@@ -520,6 +559,7 @@ var SheetsStore = (function () {
     listClaimedLeads: listClaimedLeads,
     updateLeadStatus: updateLeadStatus,
     addLeadNote: addLeadNote,
+    setLeadReminder: setLeadReminder,
     getKnownStatuses: getKnownStatuses,
     addSuggestion: addSuggestion,
     DEFAULT_STATUSES: DEFAULT_STATUSES,
