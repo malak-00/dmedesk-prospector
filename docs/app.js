@@ -297,9 +297,9 @@ async function handleSuggestionSubmit(evt) {
 
   els.suggestionSubmitBtn.disabled = true;
   try {
-    await apiPost("suggestions/submit", { text });
+    const data = await apiPost("suggestions/submit", { text });
     closeSuggestionBox();
-    showToast("Thanks! Your suggestion was sent to Caroline.");
+    showToast("Thanks! Your suggestion was sent to Caroline.", false, data.sheetUrl);
   } catch (err) {
     showToast(err.message, true);
   } finally {

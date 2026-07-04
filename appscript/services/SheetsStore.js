@@ -516,17 +516,22 @@ var SheetsStore = (function () {
   // Users tab) when AUTH_SHEET_ID is configured, so teammates who all have
   // edit access to the shared leads sheet still can't read each other's
   // feedback -- only the owner (who holds AUTH_SHEET_ID) can. Falls back to
-  // a tab in the main leads sheet only if AUTH_SHEET_ID was never set.
+  // a tab in the main leads sheet only if AUTH_SHEET_ID was never set. This
+  // means a submitted suggestion normally does NOT show up in the shared
+  // Leads sheet at all -- that's by design, not a bug, but it's an easy
+  // thing to go looking for in the wrong spreadsheet, hence returning
+  // sheetUrl below so the app can link straight to wherever it actually landed.
   function getSuggestionsSheet_() {
     var authSheetId = Config.authSheetId();
-    var spreadsheet = authSheetId ? SpreadsheetApp.openById(authSheetId) : openSpreadsheet_();
+    var spreadsheetId = authSheetId || Config.googleSheetId();
+    var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
     var tabName = Config.suggestionsTabName();
     var sheet = spreadsheet.getSheetByName(tabName);
     if (!sheet) {
       sheet = spreadsheet.insertSheet(tabName);
       sheet.getRange(1, 1, 1, SUGGESTION_HEADER_.length).setValues([SUGGESTION_HEADER_]);
     }
-    return sheet;
+    return { sheet: sheet, spreadsheetId: spreadsheetId };
   }
 
   function addSuggestion(text, submittedBy) {
@@ -547,10 +552,14 @@ var SheetsStore = (function () {
       throw tooLong;
     }
 
-    var sheet = getSuggestionsSheet_();
+    var target = getSuggestionsSheet_();
     var now = new Date().toISOString();
-    sheet.appendRow([now, submittedBy || "", trimmed]);
-    return { submittedAt: now };
+    target.sheet.appendRow([now, submittedBy || "", trimmed]);
+    SpreadsheetApp.flush(); // force the write to persist before we return
+    return {
+      submittedAt: now,
+      sheetUrl: "https://docs.google.com/spreadsheets/d/" + target.spreadsheetId + "/edit#gid=" + target.sheet.getSheetId(),
+    };
   }
 
   return {
