@@ -174,7 +174,10 @@ async function fetchFreshProviders(criteria, desiredLimit, claimedNpis) {
     totalScanned += fetched;
     for (const provider of results) {
       if (fresh.length >= desiredLimit) break;
-      if (!provider.npi || !claimedNpis.has(String(provider.npi))) {
+      // An explicit NPI lookup is a deliberate "pull this exact lead"
+      // action -- it should never come back empty just because someone
+      // already claimed it, so dedup is skipped in that case only.
+      if (criteria.npi || !provider.npi || !claimedNpis.has(String(provider.npi))) {
         fresh.push(provider);
       }
     }

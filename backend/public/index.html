@@ -21,6 +21,10 @@
     <section class="search-panel" aria-label="Search filters">
       <form id="searchForm">
         <div class="field-grid">
+          <label class="field" title="Looks up this exact NPI directly and ignores every other filter below">
+            <span>NPI (exact lookup)</span>
+            <input type="text" name="npi" placeholder="1234567890" inputmode="numeric">
+          </label>
           <label class="field">
             <span>Company name (contains)</span>
             <input type="text" name="nameContains" placeholder="e.g. equipment">

@@ -128,6 +128,8 @@ function normalizeProvider(raw) {
  * Public search function used by the controller layer.
  *
  * @param {Object} criteria
+ * @param {string} [criteria.npi] - exact NPI lookup; when set, all other
+ *   filters (enumeration_type, taxonomy, name, year) are bypassed
  * @param {string} [criteria.organizationName]
  * @param {string} [criteria.city]
  * @param {string} [criteria.state]
@@ -138,6 +140,7 @@ function normalizeProvider(raw) {
  */
 export async function searchProviders(criteria = {}) {
   const {
+    npi,
     organizationName,
     nameContains,
     city,
@@ -149,13 +152,23 @@ export async function searchProviders(criteria = {}) {
     skip = 0,
   } = criteria;
 
+  // An exact NPI lookup is unambiguous -- it identifies at most one record,
+  // so none of the fuzzy name/taxonomy/year filters below should apply.
+  // Applying them anyway (e.g. a stale taxonomy dropdown left at its
+  // default) could silently hide the exact record the user asked for,
+  // which defeats the point of a "pull this specific lead" lookup.
+  // enumeration_type is also skipped so a sole-proprietor (NPI-1) lookup
+  // isn't excluded just because this app otherwise targets organizations.
+  const isExactNpiLookup = Boolean(npi);
+
   const params = {
-    enumeration_type: "NPI-2",
-    organization_name: organizationName || undefined,
-    city: city || undefined,
-    state: state || undefined,
-    postal_code: postalCode || undefined,
-    taxonomy_description: taxonomyDescription || undefined,
+    number: npi || undefined,
+    enumeration_type: isExactNpiLookup ? undefined : "NPI-2",
+    organization_name: isExactNpiLookup ? undefined : (organizationName || undefined),
+    city: isExactNpiLookup ? undefined : (city || undefined),
+    state: isExactNpiLookup ? undefined : (state || undefined),
+    postal_code: isExactNpiLookup ? undefined : (postalCode || undefined),
+    taxonomy_description: isExactNpiLookup ? undefined : (taxonomyDescription || undefined),
     limit,
     skip,
   };
@@ -171,33 +184,35 @@ export async function searchProviders(criteria = {}) {
   // length -- to decide whether NPPES has more pages.
   const rawCount = results.length;
 
-  // NPPES's taxonomy_description filter doesn't reliably behave as a strict
-  // match -- it can return unrelated taxonomies (pharmacy, home contractor,
-  // transport, etc.) alongside genuine matches when the term isn't an exact
-  // registered taxonomy string. Enforce it ourselves as a safety net so a
-  // DME search doesn't surface unrelated provider types.
-  if (taxonomyDescription) {
-    const term = taxonomyDescription.toLowerCase();
-    results = results.filter((r) => r.taxonomy?.description?.toLowerCase().includes(term));
-  }
+  if (!isExactNpiLookup) {
+    // NPPES's taxonomy_description filter doesn't reliably behave as a
+    // strict match -- it can return unrelated taxonomies (pharmacy, home
+    // contractor, transport, etc.) alongside genuine matches when the term
+    // isn't an exact registered taxonomy string. Enforce it ourselves as a
+    // safety net so a DME search doesn't surface unrelated provider types.
+    if (taxonomyDescription) {
+      const term = taxonomyDescription.toLowerCase();
+      results = results.filter((r) => r.taxonomy?.description?.toLowerCase().includes(term));
+    }
 
-  // NPPES's organization_name only matches from the start of the name
-  // (trailing wildcard allowed, leading wildcard not supported), so a
-  // "name contains" search can't be expressed in the API query at all --
-  // it has to be a local substring filter over fetched pages.
-  if (nameContains) {
-    const term = nameContains.toLowerCase();
-    results = results.filter((r) => r.name?.toLowerCase().includes(term));
-  }
+    // NPPES's organization_name only matches from the start of the name
+    // (trailing wildcard allowed, leading wildcard not supported), so a
+    // "name contains" search can't be expressed in the API query at all --
+    // it has to be a local substring filter over fetched pages.
+    if (nameContains) {
+      const term = nameContains.toLowerCase();
+      results = results.filter((r) => r.name?.toLowerCase().includes(term));
+    }
 
-  // Filters to providers whose NPPES record was last updated in a given
-  // year (the registry's own "Last Updated" field, not our claimed-lead
-  // tracking). NPPES has no server-side way to query this, so -- same as
-  // taxonomy/nameContains above -- it's a local filter and must not affect
-  // the rawCount-based pagination check.
-  if (lastUpdatedYear) {
-    const yearTerm = String(lastUpdatedYear);
-    results = results.filter((r) => r.lastUpdated?.slice(0, 4) === yearTerm);
+    // Filters to providers whose NPPES record was last updated in a given
+    // year (the registry's own "Last Updated" field, not our claimed-lead
+    // tracking). NPPES has no server-side way to query this, so -- same as
+    // taxonomy/nameContains above -- it's a local filter and must not affect
+    // the rawCount-based pagination check.
+    if (lastUpdatedYear) {
+      const yearTerm = String(lastUpdatedYear);
+      results = results.filter((r) => r.lastUpdated?.slice(0, 4) === yearTerm);
+    }
   }
 
   return {

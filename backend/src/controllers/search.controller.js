@@ -7,6 +7,7 @@ import { searchProviders } from "../services/nppes.service.js";
 export async function searchNppes(req, res, next) {
   try {
     const {
+      npi,
       organizationName,
       nameContains,
       city,
@@ -18,11 +19,11 @@ export async function searchNppes(req, res, next) {
     } = req.query;
 
     const hasAnyCriteria =
-      organizationName || nameContains || city || state || postalCode || taxonomyDescription;
+      npi || organizationName || nameContains || city || state || postalCode || taxonomyDescription;
 
     if (!hasAnyCriteria) {
       const error = new Error(
-        "At least one search parameter is required (organizationName, city, state, postalCode, or taxonomyDescription)"
+        "At least one search parameter is required (npi, organizationName, city, state, postalCode, or taxonomyDescription)"
       );
       error.status = 400;
       throw error;
@@ -36,6 +37,7 @@ export async function searchNppes(req, res, next) {
     }
 
     const result = await searchProviders({
+      npi,
       organizationName,
       nameContains,
       city,
@@ -62,6 +64,7 @@ import { searchCompanies } from "../services/company.service.js";
 export async function searchCompaniesHandler(req, res, next) {
   try {
     const {
+      npi,
       organizationName,
       nameContains,
       city,
@@ -75,11 +78,11 @@ export async function searchCompaniesHandler(req, res, next) {
     } = req.query;
 
     const hasAnyCriteria =
-      organizationName || nameContains || city || state || postalCode || taxonomyDescription;
+      npi || organizationName || nameContains || city || state || postalCode || taxonomyDescription;
 
     if (!hasAnyCriteria) {
       const error = new Error(
-        "At least one search parameter is required (organizationName, nameContains, city, state, postalCode, or taxonomyDescription)"
+        "At least one search parameter is required (npi, organizationName, nameContains, city, state, postalCode, or taxonomyDescription)"
       );
       error.status = 400;
       throw error;
@@ -97,7 +100,7 @@ export async function searchCompaniesHandler(req, res, next) {
 
 
     const result = await searchCompanies(
-  { organizationName, nameContains, city, state, postalCode, taxonomyDescription, lastUpdatedYear, limit: parsedLimit },
+  { npi, organizationName, nameContains, city, state, postalCode, taxonomyDescription, lastUpdatedYear, limit: parsedLimit },
   { enrichPlaces: shouldEnrich, scrapeWebsites: shouldScrape }
 );
 

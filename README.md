@@ -89,8 +89,9 @@ All endpoints are mounted under `/api`:
 - `GET /api/search/companies` — full pipeline: NPPES → dedup → enrich
   (Foursquare, then OpenStreetMap as a website fallback) → optionally scrape
   → score → sort. Query params:
-  `organizationName, city, state, postalCode, taxonomyDescription,
-  lastUpdatedYear, limit, enrich, scrape`
+  `npi, organizationName, city, state, postalCode, taxonomyDescription,
+  lastUpdatedYear, limit, enrich, scrape` (passing `npi` does an exact
+  lookup and ignores every other filter)
 - `GET /api/scrape/website?url=` — standalone scraper
 - `POST /api/brief/generate` — body `{ company: {...} }`
 - `POST /api/export/csv` — body `{ companies: [...] }`

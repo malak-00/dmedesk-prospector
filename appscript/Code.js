@@ -131,6 +131,7 @@ function requireSession_(params) {
 
 function readSearchCriteria_(params) {
   return {
+    npi: params.npi || undefined,
     organizationName: params.organizationName || undefined,
     nameContains: params.nameContains || undefined,
     city: params.city || undefined,
