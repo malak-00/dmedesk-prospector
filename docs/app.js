@@ -9,20 +9,29 @@
 
 const SESSION_STORAGE_KEY = "dmeProspectorSession";
 
+// One-time cleanup: earlier versions stored the session in localStorage,
+// which never expired on its own. Remove any leftover entry so it doesn't
+// sit around indefinitely (it's otherwise inert now -- getSession() below
+// no longer reads from localStorage).
+localStorage.removeItem(SESSION_STORAGE_KEY);
+
+// sessionStorage (not localStorage) is deliberate -- it's cleared when the
+// tab/browser closes, so signing in again is required next time rather than
+// silently staying signed in for up to the server's 6-hour session TTL.
 function getSession() {
   try {
-    return JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY)) || null;
+    return JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY)) || null;
   } catch {
     return null;
   }
 }
 
 function saveSession(session) {
-  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
 }
 
 function clearSession() {
-  localStorage.removeItem(SESSION_STORAGE_KEY);
+  sessionStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
 async function apiGet(path, params = {}) {
