@@ -9,16 +9,26 @@
 //   FOURSQUARE_SERVICE_API_KEY
 //   GEMINI_API_KEY
 //   GEMINI_MODEL                   -- defaults to gemini-2.5-flash
-//   GOOGLE_SHEET_TAB_NAME           -- defaults to "Leads"
+//   GOOGLE_SHEET_TAB_NAME           -- defaults to "Leads". LEGACY only: claims
+//                                     made before per-teammate tabs still live
+//                                     here and are still read, but nothing new
+//                                     is ever written to it -- every export now
+//                                     goes to its own "Claimed - <Display Name>"
+//                                     tab, created automatically.
 //   AUTH_SHEET_ID                  -- a SEPARATE, private spreadsheet holding
 //                                     the Users tab. Set this so teammates who
 //                                     use the leads sheet can't see passwords.
 //                                     If unset, falls back to a "Users" tab in
 //                                     the main leads sheet (only safe if that
-//                                     sheet is private to you).
-//   SUGGESTIONS_TAB_NAME            -- defaults to "Suggestions"; a tab in the
-//                                     main leads sheet where in-app suggestion/
-//                                     bug reports get appended.
+//                                     sheet is private to you). Also used to
+//                                     store in-app Suggestions (see below).
+//   SUGGESTIONS_TAB_NAME            -- defaults to "Suggestions". Lives in the
+//                                     AUTH_SHEET_ID spreadsheet when that's
+//                                     configured (so teammates who all have
+//                                     edit access to the leads sheet can't read
+//                                     each other's feedback -- only the owner
+//                                     can). Falls back to a tab in the main
+//                                     leads sheet only if AUTH_SHEET_ID is unset.
 
 var Config = (function () {
   function get(key, fallback) {

@@ -364,21 +364,16 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 }
 .login-error[hidden] { display: none; }
 
-/* ---------- Dev notice banner ---------- */
+/* ---------- Dev notice ---------- */
 
+/* A plain, always-there line rather than a dismissible banner -- nothing to
+   click away each time you sign in, so it doesn't turn into a daily chore. */
 .dev-notice {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  font-size: 13px; color: var(--ink);
-  background: var(--accent-soft); border: 1px solid var(--accent);
-  border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 16px;
+  font-size: 12px; color: var(--muted);
+  margin: 0 0 16px;
 }
 .dev-notice[hidden] { display: none; }
-.dev-notice strong { color: var(--accent-ink); }
-.dev-notice-close {
-  flex-shrink: 0; background: none; border: none; cursor: pointer;
-  font-size: 18px; line-height: 1; color: var(--muted); padding: 0 2px;
-}
-.dev-notice-close:hover { color: var(--ink); }
+.dev-notice strong { color: var(--ink); font-weight: 600; }
 
 /* ---------- Suggestion box ---------- */
 
