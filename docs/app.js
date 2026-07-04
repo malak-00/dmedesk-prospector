@@ -505,6 +505,14 @@ function renderResults(excludedAsClaimed) {
   updateSelectionUI();
 }
 
+function clearSelection() {
+  state.selected.clear();
+  els.selectAll.checked = false;
+  els.resultsBody.querySelectorAll(".row-check").forEach((box) => { box.checked = false; });
+  els.resultsBody.querySelectorAll(".lead-row").forEach((row) => row.classList.remove("is-selected"));
+  updateSelectionUI();
+}
+
 function updateSelectionUI() {
   const count = state.selected.size;
   els.selectionChip.hidden = count === 0;
@@ -717,6 +725,7 @@ async function exportSheets() {
     const data = await apiPost("export/sheets", { companies });
     showToast(`Added ${data.rowsAdded} row(s) claimed by ${data.claimedBy || "you"}`, false, data.sheetUrl);
     state.claimedLoaded = false; // claimed view is now stale
+    clearSelection(); // these leads are claimed now -- leave them unchecked rather than re-exportable at a click
     setStatus("ready", "Ready");
   } catch (err) {
     showToast(err.message, true);
@@ -1116,13 +1125,7 @@ els.selectAll.addEventListener("change", (e) => {
   });
   updateSelectionUI();
 });
-els.clearSelectionBtn.addEventListener("click", () => {
-  state.selected.clear();
-  els.selectAll.checked = false;
-  els.resultsBody.querySelectorAll(".row-check").forEach((box) => { box.checked = false; });
-  els.resultsBody.querySelectorAll(".lead-row").forEach((row) => row.classList.remove("is-selected"));
-  updateSelectionUI();
-});
+els.clearSelectionBtn.addEventListener("click", clearSelection);
 els.exportCsvBtn.addEventListener("click", exportCsv);
 els.exportSheetsBtn.addEventListener("click", exportSheets);
 
