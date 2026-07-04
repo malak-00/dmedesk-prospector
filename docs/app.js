@@ -190,6 +190,7 @@ const els = {
   staleNudge: document.getElementById("staleNudge"),
   lastUpdatedYearSelect: document.getElementById("lastUpdatedYearSelect"),
   devNotice: document.getElementById("devNotice"),
+  devNoticeClose: document.getElementById("devNoticeClose"),
   suggestBtn: document.getElementById("suggestBtn"),
   suggestionOverlay: document.getElementById("suggestionOverlay"),
   suggestionForm: document.getElementById("suggestionForm"),
@@ -1131,6 +1132,7 @@ els.suggestBtn.addEventListener("click", openSuggestionBox);
 els.suggestionForm.addEventListener("submit", handleSuggestionSubmit);
 els.suggestionCancelBtn.addEventListener("click", closeSuggestionBox);
 els.suggestionOverlay.addEventListener("click", (e) => { if (e.target === els.suggestionOverlay) closeSuggestionBox(); });
+els.devNoticeClose.addEventListener("click", () => { els.devNotice.hidden = true; });
 // Two toggle buttons exist (header + login card, so theme can be changed
 // even before signing in) -- both share the .theme-toggle class.
 document.querySelectorAll(".theme-toggle").forEach((btn) => btn.addEventListener("click", toggleTheme));
