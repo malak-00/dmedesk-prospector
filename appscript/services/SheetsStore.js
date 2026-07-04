@@ -147,8 +147,14 @@ var SheetsStore = (function () {
     return known;
   }
 
-  // Makes the Status column a real dropdown on one specific tab, using an
-  // already-computed (team-wide) list of known statuses.
+  // Makes the Status column a dropdown (for convenience) on one specific
+  // tab, using an already-computed (team-wide) list of known statuses.
+  // setAllowInvalid(true) is deliberate: with "reject input" (false), Apps
+  // Script itself throws when writing a value that isn't already in the
+  // list -- but a brand-new custom status is BY DEFINITION not in the list
+  // yet at the moment it's first written, so a strict rule would reject the
+  // very feature this supports. This keeps the dropdown as a convenience/
+  // suggestion, not a hard constraint.
   function applyStatusValidationTo_(sheet, colMap, knownStatuses) {
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return;
@@ -156,7 +162,7 @@ var SheetsStore = (function () {
     if (statusCol < 0) return;
     var rule = SpreadsheetApp.newDataValidation()
       .requireValueInList(knownStatuses, true)
-      .setAllowInvalid(false)
+      .setAllowInvalid(true)
       .build();
     sheet.getRange(2, statusCol + 1, lastRow - 1, 1).setDataValidation(rule);
   }
