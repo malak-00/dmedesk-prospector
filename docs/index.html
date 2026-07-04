@@ -15,7 +15,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -191,6 +191,10 @@
               <input type="checkbox" id="onlyMine">
               <span>Only mine</span>
             </label>
+            <label class="checkbox" title="Shows a browser notification the moment a callback reminder comes due -- works as long as you have this app open in a tab, even a different one">
+              <input type="checkbox" id="enableNotifications">
+              <span>Notify me for due reminders</span>
+            </label>
             <label class="inline-field">
               <span>Updated</span>
               <select id="updatedWithin">
@@ -278,6 +282,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=10"></script>
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>

@@ -94,6 +94,10 @@ const state = {
   claimedSortDir: 1,
   statuses: [],
   reminderTargetIndex: null,
+  // npi -> reminderAt string already notified for. Keying on the exact
+  // timestamp (not just the npi) means rescheduling a reminder makes it
+  // eligible to notify again, instead of being silently skipped forever.
+  notifiedReminders: new Map(),
 };
 
 function skeletonRows(count, colCount) {
@@ -188,6 +192,7 @@ const els = {
   claimedBody: document.getElementById("claimedBody"),
   claimedCount: document.getElementById("claimedCount"),
   onlyMine: document.getElementById("onlyMine"),
+  enableNotifications: document.getElementById("enableNotifications"),
   updatedWithin: document.getElementById("updatedWithin"),
   updatedYear: document.getElementById("updatedYear"),
   refreshClaimedBtn: document.getElementById("refreshClaimedBtn"),
@@ -861,6 +866,68 @@ function handleReminderClear() {
   saveReminder(idx, "");
 }
 
+// Real OS-level browser notifications, not a true push service: this only
+// fires while the app is open in some tab (any tab, not necessarily the
+// Claimed Leads one, and it doesn't need focus) -- there's no backend
+// capable of delivering a notification while the browser itself is closed
+// (that needs a service worker + VAPID-signed push, which Apps Script can't
+// sign). Good enough for "don't let a callback slip by during a shift."
+const NOTIFY_PREF_KEY = "dmeProspectorNotifyReminders";
+
+function notificationsSupported() {
+  return typeof Notification !== "undefined";
+}
+
+function initNotificationToggle() {
+  if (!notificationsSupported()) { els.enableNotifications.disabled = true; return; }
+  const wanted = localStorage.getItem(NOTIFY_PREF_KEY) === "true";
+  els.enableNotifications.checked = wanted && Notification.permission === "granted";
+}
+
+async function handleNotificationToggle(e) {
+  if (!e.target.checked) {
+    localStorage.setItem(NOTIFY_PREF_KEY, "false");
+    return;
+  }
+  if (!notificationsSupported()) {
+    showToast("Your browser doesn't support notifications", true);
+    e.target.checked = false;
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    showToast("Notifications were blocked — allow them in your browser's site settings to use this", true);
+    e.target.checked = false;
+    localStorage.setItem(NOTIFY_PREF_KEY, "false");
+    return;
+  }
+  localStorage.setItem(NOTIFY_PREF_KEY, "true");
+  showToast("You'll get a notification when a callback reminder comes due");
+  checkDueReminders();
+}
+
+// Scans whatever's currently loaded in memory (no extra network request) for
+// reminders that just became due, and fires one notification each -- keyed
+// by npi + exact reminderAt, so rescheduling a reminder makes it eligible to
+// notify again instead of being silently skipped forever.
+function checkDueReminders() {
+  if (!notificationsSupported() || Notification.permission !== "granted") return;
+  if (localStorage.getItem(NOTIFY_PREF_KEY) !== "true") return;
+  const now = Date.now();
+  state.claimedLeads.forEach((lead) => {
+    if (!lead.reminderAt) return;
+    const t = Date.parse(lead.reminderAt);
+    if (isNaN(t) || t > now) return;
+    if (state.notifiedReminders.get(lead.npi) === lead.reminderAt) return;
+    state.notifiedReminders.set(lead.npi, lead.reminderAt);
+    const notification = new Notification(`Callback due: ${lead.name}`, {
+      body: `Reminder was set for ${formatReminder(lead.reminderAt)}`,
+      tag: `dme-reminder-${lead.npi}`,
+    });
+    notification.onclick = () => window.focus();
+  });
+}
+
 async function loadClaimedLeads() {
   els.claimedBody.innerHTML = skeletonRows(5, 9);
   els.staleNudge.hidden = true;
@@ -887,6 +954,7 @@ function renderClaimedLeads(leads) {
   state.claimedLeads = leads;
   state.claimedExpandedIndex = null;
   els.claimedCount.textContent = `${leads.length} claimed lead${leads.length === 1 ? "" : "s"}`;
+  checkDueReminders();
 
   if (leads.length === 0) {
     els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="9">Nothing claimed yet — export some leads to Sheets first.</td></tr>`;
@@ -1282,8 +1350,16 @@ wireSortableHeaders(els.claimedTable, CLAIMED_DEFAULT_SORT_DIR, sortClaimedLeads
 // change wouldn't otherwise show up until a manual refresh.
 const STALE_AFTER_MS = 2 * 60 * 1000;
 setInterval(() => {
-  if (state.view !== "claimed" || !state.claimedLoadedAt) return;
-  els.staleNudge.hidden = Date.now() - state.claimedLoadedAt < STALE_AFTER_MS;
+  if (state.view === "claimed" && state.claimedLoadedAt) {
+    els.staleNudge.hidden = Date.now() - state.claimedLoadedAt < STALE_AFTER_MS;
+  }
+  // Runs regardless of which tab is active/focused -- claimed leads stay in
+  // memory once loaded once, so a reminder can still notify while you're
+  // working the Prospect tab in the same browser session.
+  checkDueReminders();
 }, 15000);
+
+els.enableNotifications.addEventListener("change", handleNotificationToggle);
+initNotificationToggle();
 
 if (getSession()) hideLogin(); else showLogin();
