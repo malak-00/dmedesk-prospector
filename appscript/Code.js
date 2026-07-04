@@ -47,18 +47,28 @@ function handleRequest_(e) {
       case "auth/logout":
         return jsonResponse_({ success: true, data: AuthService.logout(params.token) });
 
-      case "search/nppes":
-        return jsonResponse_({ success: true, data: NppesService.searchProviders(readSearchCriteria_(params)) });
+      case "search/nppes": {
+        var nppesCriteria = readSearchCriteria_(params);
+        if (!hasAnySearchCriteria_(nppesCriteria)) {
+          return errorResponse_(400, "At least one search parameter is required (npi, organizationName, city, state, postalCode, or taxonomyDescription)");
+        }
+        return jsonResponse_({ success: true, data: NppesService.searchProviders(nppesCriteria) });
+      }
 
-      case "search/companies":
+      case "search/companies": {
+        var companiesCriteria = readSearchCriteria_(params);
+        if (!hasAnySearchCriteria_(companiesCriteria)) {
+          return errorResponse_(400, "At least one search parameter is required (npi, organizationName, nameContains, city, state, postalCode, or taxonomyDescription)");
+        }
         return jsonResponse_({
           success: true,
-          data: CompanyService.searchCompanies(readSearchCriteria_(params), {
+          data: CompanyService.searchCompanies(companiesCriteria, {
             enrichPlaces: params.enrich !== "false",
             scrapeWebsites: params.scrape === "true",
             enrichCms: params.cms !== "false",
           }),
         });
+      }
 
       case "scrape/website":
         return jsonResponse_({ success: true, data: ScraperService.scrapeCompanyWebsite(params.url) });
@@ -127,6 +137,16 @@ function requireSession_(params) {
     throw unauthorized;
   }
   return session;
+}
+
+// Prevents an all-blank query from silently paging through the entire
+// national NPI-2 registry -- Node's controller already validates this; Apps
+// Script's router didn't.
+function hasAnySearchCriteria_(criteria) {
+  return Boolean(
+    criteria.npi || criteria.organizationName || criteria.nameContains ||
+    criteria.city || criteria.state || criteria.postalCode || criteria.taxonomyDescription
+  );
 }
 
 function readSearchCriteria_(params) {

@@ -1,5 +1,8 @@
 import axios from "axios";
 import config from "../config/index.js";
+import enrichmentCache from "./enrichmentCache.js";
+
+const CACHE_NAMESPACE = "fsq";
 
 const BASE_URL = "https://places-api.foursquare.com/places/search";
 const API_VERSION = "2025-06-17";
@@ -25,8 +28,14 @@ function assertConfigured() {
  * Looks up a business by name + locality string.
  * Returns null if not found. Throws FoursquareNotConfiguredError if no key set.
  */
-async function enrichCompany({ name, address }) {
+async function enrichCompany({ npi, name, address }) {
   assertConfigured();
+
+  const npiKey = npi != null ? String(npi) : null;
+  if (npiKey) {
+    const cached = enrichmentCache.get(CACHE_NAMESPACE, npiKey);
+    if (cached !== undefined) return cached;
+  }
 
   const near = [address?.city, address?.state].filter(Boolean).join(", ");
   if (!name || !near) return null;
@@ -63,16 +72,19 @@ async function enrichCompany({ name, address }) {
   }
 
   const place = response.data?.results?.[0];
-  if (!place) return null;
+  const result = place
+    ? {
+        placeId: place.fsq_place_id || null,
+        website: place.website || null,
+        phone: place.tel || null,
+        rating: typeof place.rating === "number" ? place.rating : null,
+        ratingCount: place.stats?.total_ratings ?? null,
+        isClosed: Boolean(place.date_closed),
+      }
+    : null;
 
-  return {
-    placeId: place.fsq_place_id || null,
-    website: place.website || null,
-    phone: place.tel || null,
-    rating: typeof place.rating === "number" ? place.rating : null,
-    ratingCount: place.stats?.total_ratings ?? null,
-    isClosed: Boolean(place.date_closed),
-  };
+  if (npiKey) enrichmentCache.put(CACHE_NAMESPACE, npiKey, result);
+  return result;
 }
 
 export { FoursquareNotConfiguredError };

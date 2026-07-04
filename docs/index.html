@@ -6,7 +6,7 @@
 <title>DME Desk Prospector</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -54,7 +54,7 @@
           <div class="field-grid">
             <label class="field" title="Looks up this exact NPI directly and ignores every other filter below">
               <span>NPI (exact lookup)</span>
-              <input type="text" name="npi" placeholder="1234567890" inputmode="numeric">
+              <input type="text" name="npi" placeholder="1234567890" inputmode="numeric" pattern="\d{10}" maxlength="10" title="NPI is exactly 10 digits">
             </label>
             <label class="field">
               <span>Company name (contains)</span>
@@ -78,8 +78,8 @@
             <label class="field field-wide">
               <span>Specialty / taxonomy</span>
               <select name="taxonomyDescription">
-                <option value="">All specialties</option>
-                <option value="Durable Medical Equipment" selected>Durable Medical Equipment &amp; Medical Supplies</option>
+                <option value="" selected>All specialties</option>
+                <option value="Durable Medical Equipment">Durable Medical Equipment &amp; Medical Supplies</option>
                 <option value="Oxygen Equipment">DME — Oxygen Equipment &amp; Supplies</option>
                 <option value="Prosthetic/Orthotic">Prosthetic/Orthotic Supplier</option>
                 <option value="Orthopedic">Orthopedics (any orthopedic specialty)</option>
@@ -213,8 +213,8 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="config.js?v=8"></script>
-  <script src="usLocations.js?v=8"></script>
-  <script src="app.js?v=8"></script>
+  <script src="config.js?v=9"></script>
+  <script src="usLocations.js?v=9"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

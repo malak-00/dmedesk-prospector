@@ -46,6 +46,7 @@ function fromNppesProvider(provider) {
 async function tryEnrichWithPlaces(company) {
   try {
     const data = await foursquareService.enrichCompany({
+      npi: company.npi,
       name: company.name,
       address: company.address,
     });

@@ -14,11 +14,12 @@ var NppesService = (function () {
     return parts.join("&");
   }
 
-  function fetchFromNppes(params) {
-    var url = BASE_URL + "?" + buildQueryString(
-      Object.assign({ version: Config.nppesVersion() }, params)
-    );
+  var MAX_ATTEMPTS = 2; // one retry, for transient failures only
+  var RETRY_DELAY_MS = 400;
 
+  // One attempt at the request. Never throws for a bad HTTP status -- callers
+  // decide whether that's retryable based on `retryable`.
+  function attemptFetch_(url) {
     var response;
     try {
       response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
@@ -26,7 +27,7 @@ var NppesService = (function () {
       var unreachable = new Error("Failed to reach NPPES API");
       unreachable.status = 504;
       unreachable.details = String(err);
-      throw unreachable;
+      return { ok: false, retryable: true, error: unreachable };
     }
 
     var code = response.getResponseCode();
@@ -34,10 +35,25 @@ var NppesService = (function () {
       var upstreamError = new Error("NPPES API responded with status " + code);
       upstreamError.status = 502;
       upstreamError.details = response.getContentText();
-      throw upstreamError;
+      // A 5xx is NPPES's own transient trouble, worth one retry; a 4xx is a
+      // real problem with the request itself and won't change on retry.
+      return { ok: false, retryable: code >= 500, error: upstreamError };
     }
 
-    return JSON.parse(response.getContentText());
+    return { ok: true, data: JSON.parse(response.getContentText()) };
+  }
+
+  function fetchFromNppes(params) {
+    var url = BASE_URL + "?" + buildQueryString(
+      Object.assign({ version: Config.nppesVersion() }, params)
+    );
+
+    for (var attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      var result = attemptFetch_(url);
+      if (result.ok) return result.data;
+      if (!result.retryable || attempt === MAX_ATTEMPTS) throw result.error;
+      Utilities.sleep(RETRY_DELAY_MS);
+    }
   }
 
   // NPPES exposes a provider's last-updated date two ways: basic.last_updated

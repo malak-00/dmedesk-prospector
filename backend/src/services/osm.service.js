@@ -1,4 +1,7 @@
 import axios from "axios";
+import enrichmentCache from "./enrichmentCache.js";
+
+const CACHE_NAMESPACE = "osm";
 
 // Free, keyless fallback for a company's website when Foursquare doesn't
 // have one. Foursquare's dataset is consumer/check-in oriented and often
@@ -31,8 +34,16 @@ async function throttle() {
  * Returns a website URL string, or null if not found.
  * Callers MUST await these one at a time (not Promise.all) -- the internal
  * throttle only serializes calls made in sequence within this process.
+ * Checks the cache first -- a cache hit skips the throttle entirely, since
+ * there's no reason to wait on a request that isn't actually happening.
  */
 export async function lookupWebsite(company) {
+  const npiKey = company.npi != null ? String(company.npi) : null;
+  if (npiKey) {
+    const cached = enrichmentCache.get(CACHE_NAMESPACE, npiKey);
+    if (cached !== undefined) return cached;
+  }
+
   const near = [company.address?.city, company.address?.state].filter(Boolean).join(", ");
   if (!company.name || !near) return null;
 
@@ -52,12 +63,13 @@ export async function lookupWebsite(company) {
 
     const place = response.data?.[0];
     const tags = place?.extratags;
-    if (!tags) return null;
+    const website = tags ? tags.website || tags["contact:website"] || null : null;
 
-    return tags.website || tags["contact:website"] || null;
+    if (npiKey) enrichmentCache.put(CACHE_NAMESPACE, npiKey, website);
+    return website;
   } catch (err) {
     console.warn(`[osm.service] Nominatim lookup failed for "${company.name}": ${err.message}`);
-    return null;
+    return null; // transient failure -- not cached, so the next search retries
   }
 }
 

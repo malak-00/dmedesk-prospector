@@ -76,6 +76,15 @@ function buildQuery(formData) {
   return params.toString();
 }
 
+// The whole search (NPPES fetch + Foursquare/OSM/CMS enrichment + optional
+// scraping) is one request -- there's no real progress to report. These
+// timed messages are an approximation, not a claim of exact server state,
+// but they at least stop "Searching NPPES registry…" from sitting there
+// unchanged while the much slower enrichment step runs.
+function searchStatusMsgEl() {
+  return document.getElementById("searchStatusMsg");
+}
+
 async function runSearch(evt) {
   evt.preventDefault();
   const formData = new FormData(els.form);
@@ -83,7 +92,12 @@ async function runSearch(evt) {
 
   els.searchBtn.disabled = true;
   setStatus("busy", "Searching…");
-  els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7"><div class="loading-row"><span class="spinner"></span> Searching NPPES registry…</div></td></tr>`;
+  els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7"><div class="loading-row"><span class="spinner"></span> <span id="searchStatusMsg">Searching NPPES registry…</span></div></td></tr>`;
+
+  const phaseTimers = [
+    setTimeout(() => { const el = searchStatusMsgEl(); if (el) el.textContent = "Enriching with Places, OSM & Medicare data…"; }, 2500),
+    setTimeout(() => { const el = searchStatusMsgEl(); if (el) el.textContent = "Still working — larger searches and scraping take longer…"; }, 8000),
+  ];
 
   try {
     const res = await fetch(`/api/search/companies?${query}`);
@@ -100,6 +114,7 @@ async function runSearch(evt) {
     setStatus("error", "Error");
     showToast(err.message, true);
   } finally {
+    phaseTimers.forEach(clearTimeout);
     els.searchBtn.disabled = false;
   }
 }
@@ -118,7 +133,7 @@ function renderResults(excludedAsClaimed = 0) {
     return;
   }
 
-  els.resultsBody.innerHTML = companies.map((c, i) => rowHtml(c, i)).join("");
+  els.resultsBody.innerHTML = companies.map((c, i) => leadRowHtml(c, i)).join("");
   attachRowHandlers();
   updateSelectionUI();
 }
@@ -131,66 +146,83 @@ function updateSelectionUI() {
   els.exportSheetsLabel.textContent = count > 0 ? `Send ${count} selected` : "Export to Sheets";
 }
 
-function rowHtml(company, index) {
+// Small badges showing which free enrichment sources actually contributed
+// data for this lead (Foursquare, OpenStreetMap, CMS Medicare, scraped
+// website) -- otherwise invisible, even though it affects how much to
+// trust a given website/rating.
+function sourceBadges(sources) {
+  if (!sources) return "";
+  const labels = [];
+  if (sources.places) labels.push("FSQ");
+  if (sources.osm) labels.push("OSM");
+  if (sources.cms) labels.push("CMS");
+  if (sources.website) labels.push("SITE");
+  if (labels.length === 0) return "";
+  return `<div class="source-badges">${labels.map((l) => `<span class="source-badge">${l}</span>`).join("")}</div>`;
+}
+
+function leadRowHtml(company, index) {
   const primaryContact = company.decisionMakers?.[0];
-  const isExpanded = state.expandedIndex === index;
   const isSelected = state.selected.has(index);
-  const rows = [`
+  return `
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>${scoreRing(company.score)}</td>
       <td>
         <div class="company-name">${escapeHtml(company.name)}</div>
         <div class="company-taxonomy">${escapeHtml(company.taxonomy?.description || "")}</div>
+        ${sourceBadges(company.sources)}
       </td>
       <td class="mono">${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")}</td>
       <td>${primaryContact ? escapeHtml(primaryContact.name) : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="mono">${phoneCell(primaryContact?.phone, company.phone)}</td>
-      <td><span class="chevron ${isExpanded ? "open" : ""}">▸</span></td>
+      <td><span class="chevron">▸</span></td>
     </tr>
-  `];
+  `;
+}
 
-  if (isExpanded) {
-    rows.push(`
-      <tr class="detail-row">
-        <td colspan="7">
-          <div class="detail-grid">
-            <div class="detail-block">
-              <h4>Details</h4>
-              <div class="mono" style="font-size:13px; line-height:1.8;">
-                NPI: ${escapeHtml(company.npi || "—")}<br>
-                ${escapeHtml(company.address?.line1 || "")}<br>
-                ${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")} ${escapeHtml(company.address?.postalCode || "")}<br>
-                Company phone: ${escapeHtml(company.phone || "—")}<br>
-                Website: ${company.website ? `<a href="${escapeHtml(company.website)}" target="_blank">${escapeHtml(company.website)}</a>` : "—"}<br>
-                Fax: ${escapeHtml(company.fax || "—")}<br>
-                NPPES last updated: ${escapeHtml(company.lastUpdated || "—")}<br>
-                Medicare (CMS): ${escapeHtml(medicareSummary(company.medicare))}
-              </div>
+function detailRowHtml(company, index) {
+  const sourcesList = company.sources
+    ? Object.keys(company.sources).filter((k) => company.sources[k]).map((k) => k.toUpperCase()).join(", ")
+    : "";
+  return `
+    <tr class="detail-row">
+      <td colspan="7">
+        <div class="detail-grid">
+          <div class="detail-block">
+            <h4>Details</h4>
+            <div class="mono" style="font-size:13px; line-height:1.8;">
+              NPI: ${escapeHtml(company.npi || "—")}<br>
+              ${escapeHtml(company.address?.line1 || "")}<br>
+              ${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")} ${escapeHtml(company.address?.postalCode || "")}<br>
+              Company phone: ${escapeHtml(company.phone || "—")}<br>
+              Website: ${company.website ? `<a href="${escapeHtml(company.website)}" target="_blank">${escapeHtml(company.website)}</a>` : "—"}<br>
+              Fax: ${escapeHtml(company.fax || "—")}<br>
+              NPPES last updated: ${escapeHtml(company.lastUpdated || "—")}<br>
+              Medicare (CMS): ${escapeHtml(medicareSummary(company.medicare))}<br>
+              Data sources: ${escapeHtml(sourcesList || "NPPES only")}
             </div>
-            <div class="detail-block">
-              <h4>Decision makers (${company.decisionMakers?.length || 0})</h4>
-              ${(company.decisionMakers || []).map((dm) => `
-                <div class="contact-item">
-                  <div>
-                    ${escapeHtml(dm.name)}${dm.title ? ` — ${escapeHtml(dm.title)}` : ""}
-                    <span class="contact-role">${escapeHtml(dm.roleCategory)}</span>
-                  </div>
-                  ${dm.phone ? `<div class="mono contact-phone">${escapeHtml(dm.phone)}</div>` : ""}
+          </div>
+          <div class="detail-block">
+            <h4>Decision makers (${company.decisionMakers?.length || 0})</h4>
+            ${(company.decisionMakers || []).map((dm) => `
+              <div class="contact-item">
+                <div>
+                  ${escapeHtml(dm.name)}${dm.title ? ` — ${escapeHtml(dm.title)}` : ""}
+                  <span class="contact-role">${escapeHtml(dm.roleCategory)}</span>
                 </div>
-              `).join("") || '<span style="color:var(--muted); font-size:13px;">None identified</span>'}
-            </div>
+                ${dm.phone ? `<div class="mono contact-phone">${escapeHtml(dm.phone)}</div>` : ""}
+              </div>
+            `).join("") || '<span style="color:var(--muted); font-size:13px;">None identified</span>'}
           </div>
-          <div class="brief-box">
-            <button class="btn btn-ghost btn-small" data-brief-index="${index}">Generate call brief</button>
-            <div class="brief-output" id="brief-${index}"></div>
-          </div>
-        </td>
-      </tr>
-    `);
-  }
-
-  return rows.join("");
+        </div>
+        <div class="brief-box">
+          <button class="btn btn-ghost btn-small" data-brief-index="${index}">Generate call brief</button>
+          <div class="brief-output" id="brief-${index}"></div>
+        </div>
+      </td>
+    </tr>
+  `;
 }
 
 function escapeHtml(str) {
@@ -219,11 +251,7 @@ function medicareSummary(medicare) {
 
 function attachRowHandlers() {
   document.querySelectorAll(".lead-row").forEach((row) => {
-    row.addEventListener("click", () => {
-      const idx = Number(row.dataset.index);
-      state.expandedIndex = state.expandedIndex === idx ? null : idx;
-      renderResults();
-    });
+    row.addEventListener("click", () => toggleRowDetail(Number(row.dataset.index)));
   });
 
   document.querySelectorAll(".row-check").forEach((box) => {
@@ -236,12 +264,37 @@ function attachRowHandlers() {
       updateSelectionUI();
     });
   });
+}
 
-  document.querySelectorAll("[data-brief-index]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      generateBrief(Number(btn.dataset.briefIndex));
-    });
+// Expands/collapses exactly one row's detail panel by inserting/removing
+// just that row's DOM node, instead of rebuilding and re-binding the whole
+// table (the old renderResults() call) for what's otherwise a single-row
+// change -- the table can get large enough for that to be noticeably janky.
+function collapseRow(idx) {
+  const row = document.querySelector(`.lead-row[data-index="${idx}"]`);
+  row?.querySelector(".chevron")?.classList.remove("open");
+  const detail = row?.nextElementSibling;
+  if (detail && detail.classList.contains("detail-row")) detail.remove();
+}
+
+function toggleRowDetail(idx) {
+  const row = document.querySelector(`.lead-row[data-index="${idx}"]`);
+  if (!row) return;
+
+  if (state.expandedIndex === idx) {
+    collapseRow(idx);
+    state.expandedIndex = null;
+    return;
+  }
+
+  if (state.expandedIndex !== null) collapseRow(state.expandedIndex);
+
+  state.expandedIndex = idx;
+  row.querySelector(".chevron")?.classList.add("open");
+  row.insertAdjacentHTML("afterend", detailRowHtml(state.companies[idx], idx));
+  document.querySelector(`[data-brief-index="${idx}"]`)?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    generateBrief(idx);
   });
 }
 
@@ -274,6 +327,7 @@ function getExportCompanies() {
 
 async function exportCsv() {
   const companies = getExportCompanies();
+  els.exportCsvBtn.disabled = true; // prevents a double-click from double-exporting
   setStatus("busy", "Exporting…");
   try {
     const res = await fetch("/api/export/csv", {
@@ -294,11 +348,18 @@ async function exportCsv() {
   } catch (err) {
     showToast(err.message, true);
     setStatus("error", "Error");
+  } finally {
+    els.exportCsvBtn.disabled = state.companies.length === 0;
   }
 }
 
 async function exportSheets() {
   const companies = getExportCompanies();
+  // Claiming leads is a shared, team-visible action with no undo -- confirm
+  // before writing, especially since "select none" silently means "all".
+  if (!confirm(`Export ${companies.length} lead(s) to the shared Sheet?`)) return;
+
+  els.exportSheetsBtn.disabled = true; // prevents a double-click from double-exporting
   setStatus("busy", "Sending to Sheets…");
   try {
     const res = await fetch("/api/export/sheets", {
@@ -313,6 +374,8 @@ async function exportSheets() {
   } catch (err) {
     showToast(err.message, true);
     setStatus("error", "Error");
+  } finally {
+    els.exportSheetsBtn.disabled = state.companies.length === 0;
   }
 }
 

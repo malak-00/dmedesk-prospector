@@ -10,6 +10,7 @@
 
 var CmsService = (function () {
   var DATASET_URL = "https://data.cms.gov/data-api/v1/dataset/a2d56d3f-3531-4315-9d87-e29986516b41/data";
+  var CACHE_NAMESPACE = "cms";
 
   // CMS occasionally shifts field casing between data years, so match keys
   // case-insensitively instead of hardcoding exact strings.
@@ -46,13 +47,22 @@ var CmsService = (function () {
   }
 
   // Returns a plain object mapping NPI -> medicare data (or null when CMS
-  // has nothing for that NPI). Never throws.
+  // has nothing for that NPI). Never throws. Skips any NPI already cached
+  // from a recent search, and only fetches the remainder.
   function lookupByNpis(npis) {
     var result = {};
     var valid = (npis || []).filter(Boolean).map(String);
     if (valid.length === 0) return result;
 
-    var requests = valid.map(function (npi) {
+    var toFetch = [];
+    valid.forEach(function (npi) {
+      var cached = EnrichmentCache.get(CACHE_NAMESPACE, npi);
+      if (cached !== undefined) result[npi] = cached;
+      else toFetch.push(npi);
+    });
+    if (toFetch.length === 0) return result;
+
+    var requests = toFetch.map(function (npi) {
       return {
         url: DATASET_URL + "?filter[Suplr_NPI]=" + encodeURIComponent(npi) + "&size=1",
         muteHttpExceptions: true,
@@ -63,13 +73,16 @@ var CmsService = (function () {
     try {
       responses = UrlFetchApp.fetchAll(requests);
     } catch (err) {
+      // Transient failure -- leave these NPIs uncached so the next search retries.
       console.log("[CmsService] Medicare lookup failed entirely: " + err.message);
-      valid.forEach(function (npi) { result[npi] = null; });
+      toFetch.forEach(function (npi) { result[npi] = null; });
       return result;
     }
 
-    for (var i = 0; i < valid.length; i++) {
-      result[valid[i]] = parseResponse_(responses[i]);
+    for (var i = 0; i < toFetch.length; i++) {
+      var data = parseResponse_(responses[i]);
+      result[toFetch[i]] = data;
+      EnrichmentCache.put(CACHE_NAMESPACE, toFetch[i], data);
     }
     return result;
   }

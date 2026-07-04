@@ -39,9 +39,24 @@ var CompanyService = (function () {
     });
   }
 
-  function tryEnrichWithPlaces(company) {
+  // Looks up every company in ONE batched Foursquare call (UrlFetchApp.fetchAll)
+  // instead of one serial round-trip per company -- the single biggest lever
+  // on search latency, since Apps Script has no other form of concurrency.
+  function applyPlacesEnrichment(companies) {
+    var dataByNpi;
     try {
-      var data = FoursquareService.enrichCompany(company);
+      dataByNpi = FoursquareService.enrichCompanies(companies);
+    } catch (err) {
+      if (err.name === "FoursquareNotConfiguredError") {
+        console.log("[CompanyService] Places enrichment skipped: FOURSQUARE_SERVICE_API_KEY not set");
+      } else {
+        console.log("[CompanyService] Places enrichment failed: " + err.message);
+      }
+      return companies;
+    }
+
+    return companies.map(function (company) {
+      var data = company.npi != null ? dataByNpi[String(company.npi)] : null;
       if (!data) return company;
 
       return Object.assign({}, company, {
@@ -55,14 +70,7 @@ var CompanyService = (function () {
         },
         sources: Object.assign({}, company.sources, { places: true }),
       });
-    } catch (err) {
-      if (err.name === "FoursquareNotConfiguredError") {
-        console.log("[CompanyService] Places enrichment skipped: FOURSQUARE_SERVICE_API_KEY not set");
-        return company;
-      }
-      console.log("[CompanyService] Places enrichment failed for \"" + company.name + "\": " + err.message);
-      return company;
-    }
+    });
   }
 
   // Runs only when Foursquare didn't find a website -- OpenStreetMap often
@@ -187,7 +195,7 @@ var CompanyService = (function () {
     var companies = providers.map(fromNppesProvider);
 
     if (enrichPlaces) {
-      companies = companies.map(tryEnrichWithPlaces);
+      companies = applyPlacesEnrichment(companies);
       companies = companies.map(tryEnrichWithOsm);
     }
     if (scrapeWebsites) {

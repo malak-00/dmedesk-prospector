@@ -31,35 +31,50 @@ function extractLastUpdated(raw, basic) {
   return parseNppesDate(basic.last_updated) || parseNppesDate(raw.last_updated_epoch);
 }
 
+const MAX_ATTEMPTS = 2; // one retry, for transient failures only
+const RETRY_DELAY_MS = 400;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Raw call to the NPPES NPI Registry API.
  * Kept private to this module — controllers never see raw NPPES shapes.
+ * Retries once on a network error or a 5xx (NPPES's own transient trouble);
+ * a 4xx is a real problem with the request and won't change on retry.
  */
 async function fetchFromNppes(params) {
-  try {
-    const response = await axios.get(NPPES_BASE_URL, {
-      params: {
-        version: config.nppesVersion,
-        ...params,
-      },
-      timeout: 10000,
-    });
-    return response.data;
-  } catch (err) {
-    // Distinguish "NPPES responded with an error" from "we couldn't reach it"
-    if (err.response) {
-      const error = new Error(
-        `NPPES API responded with status ${err.response.status}`
-      );
-      error.status = 502; // Bad Gateway — upstream provider failed
-      error.details = err.response.data;
-      throw error;
-    }
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await axios.get(NPPES_BASE_URL, {
+        params: {
+          version: config.nppesVersion,
+          ...params,
+        },
+        timeout: 10000,
+      });
+      return response.data;
+    } catch (err) {
+      // Distinguish "NPPES responded with an error" from "we couldn't reach it"
+      const retryable = !err.response || err.response.status >= 500;
+      if (!retryable || attempt === MAX_ATTEMPTS) {
+        if (err.response) {
+          const error = new Error(
+            `NPPES API responded with status ${err.response.status}`
+          );
+          error.status = 502; // Bad Gateway — upstream provider failed
+          error.details = err.response.data;
+          throw error;
+        }
 
-    const error = new Error("Failed to reach NPPES API");
-    error.status = 504; // Gateway Timeout
-    error.details = err.message;
-    throw error;
+        const error = new Error("Failed to reach NPPES API");
+        error.status = 504; // Gateway Timeout
+        error.details = err.message;
+        throw error;
+      }
+      await sleep(RETRY_DELAY_MS);
+    }
   }
 }
 
