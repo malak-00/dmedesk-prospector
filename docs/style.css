@@ -112,7 +112,7 @@ body {
 
 /* ---------- Layout ---------- */
 
-.app-main { max-width: 1180px; margin: 0 auto; padding: 20px 24px 48px; display: flex; flex-direction: column; gap: 18px; }
+.app-main { max-width: 1800px; margin: 0 auto; padding: 20px 24px 48px; display: flex; flex-direction: column; gap: 18px; }
 
 .search-panel, .results-panel {
   background: var(--surface);
@@ -226,17 +226,16 @@ body {
 
 /* ---------- Table ---------- */
 
-/* overflow-x:auto here implicitly forces overflow-y non-visible too (a CSS
-   quirk: you can't scroll one axis and leave the other truly visible), which
-   makes this box -- not the page -- the sticky positioning context for the
-   thead below. Giving it a real bounded height + its own scrollbar makes
-   that correct instead of accidental: the results list scrolls in place,
-   search filters stay put, and the sticky header genuinely pins within it. */
-.table-wrap { overflow: auto; max-height: 70vh; }
+/* Deliberately no overflow/max-height here anymore -- the table grows to its
+   full natural height and width, and the PAGE scrolls (both directions, if
+   ever needed) instead of a nested scrollbar inside the table box. That
+   makes the whole document -- not this box -- the sticky positioning context
+   for the thead below, which is why its `top` offset accounts for the app
+   header's own height instead of being 0. */
 .results-table { width: 100%; border-collapse: collapse; }
 .results-table thead th {
   position: sticky;
-  top: 0;
+  top: var(--header-h);
   z-index: 5;
   text-align: left;
   font-size: 11px;
