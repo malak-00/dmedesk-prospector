@@ -990,7 +990,7 @@ function claimedLeadRowHtml(lead, index) {
           <option value="${ADD_STATUS_SENTINEL}">+ Add new status…</option>
         </select>
       </td>
-      <td class="reminder-cell" onclick="event.stopPropagation()">${reminderBadgeHtml(lead.reminderAt)}</td>
+      <td class="reminder-cell">${reminderBadgeHtml(lead.reminderAt)}</td>
       <td onclick="event.stopPropagation()">
         <input type="text" class="notes-input" data-npi="${escapeHtml(lead.npi)}" data-index="${index}" placeholder="Add a note…">
         ${latestNoteLine(lead.notes) ? `<div class="notes-preview" title="${escapeHtml(latestNoteLine(lead.notes))}">${escapeHtml(latestNoteLine(lead.notes))}</div>` : ""}
