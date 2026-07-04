@@ -16,7 +16,19 @@ const els = {
   statusDot: document.querySelector(".status-dot"),
   statusText: document.getElementById("statusText"),
   toast: document.getElementById("toast"),
+  lastUpdatedYearSelect: document.getElementById("lastUpdatedYearSelect"),
 };
+
+// Populate the "Last updated (year)" filter with the current year and a few back.
+(function () {
+  const thisYear = new Date().getFullYear();
+  for (let y = thisYear; y >= thisYear - 5; y--) {
+    const opt = document.createElement("option");
+    opt.value = String(y);
+    opt.textContent = String(y);
+    els.lastUpdatedYearSelect.appendChild(opt);
+  }
+})();
 
 function setStatus(mode, text) {
   els.statusDot.className = `status-dot ${mode === "ready" ? "" : mode}`;
@@ -152,6 +164,7 @@ function rowHtml(company, index) {
                 Company phone: ${escapeHtml(company.phone || "—")}<br>
                 Website: ${company.website ? `<a href="${escapeHtml(company.website)}" target="_blank">${escapeHtml(company.website)}</a>` : "—"}<br>
                 Fax: ${escapeHtml(company.fax || "—")}<br>
+                NPPES last updated: ${escapeHtml(company.lastUpdated || "—")}<br>
                 Medicare (CMS): ${escapeHtml(medicareSummary(company.medicare))}
               </div>
             </div>

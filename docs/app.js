@@ -94,17 +94,20 @@ const els = {
   updatedWithin: document.getElementById("updatedWithin"),
   updatedYear: document.getElementById("updatedYear"),
   refreshClaimedBtn: document.getElementById("refreshClaimedBtn"),
+  lastUpdatedYearSelect: document.getElementById("lastUpdatedYearSelect"),
 };
 
-// Populate the "Year" filter with the current year and a few back.
+// Populate the "Year" filters with the current year and a few back.
 (function () {
   const thisYear = new Date().getFullYear();
-  for (let y = thisYear; y >= thisYear - 5; y--) {
-    const opt = document.createElement("option");
-    opt.value = String(y);
-    opt.textContent = String(y);
-    els.updatedYear.appendChild(opt);
-  }
+  [els.updatedYear, els.lastUpdatedYearSelect].forEach((select) => {
+    for (let y = thisYear; y >= thisYear - 5; y--) {
+      const opt = document.createElement("option");
+      opt.value = String(y);
+      opt.textContent = String(y);
+      select.appendChild(opt);
+    }
+  });
 })();
 
 /* ---------- Sign in ---------- */
@@ -326,6 +329,7 @@ function rowHtml(company, index) {
                 Company phone: ${escapeHtml(company.phone || "—")}<br>
                 Website: ${company.website ? `<a href="${escapeHtml(company.website)}" target="_blank">${escapeHtml(company.website)}</a>` : "—"}<br>
                 Fax: ${escapeHtml(company.fax || "—")}<br>
+                NPPES last updated: ${escapeHtml(company.lastUpdated || "—")}<br>
                 Medicare (CMS): ${escapeHtml(medicareSummary(company.medicare))}
               </div>
             </div>

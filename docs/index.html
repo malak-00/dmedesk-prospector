@@ -6,7 +6,7 @@
 <title>DME Desk Prospector</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -80,6 +80,12 @@
                 <option value="Prosthetic/Orthotic">Prosthetic/Orthotic Supplier</option>
                 <option value="Orthopedic">Orthopedics (any orthopedic specialty)</option>
                 <option value="Prosthetic">Prosthetics (any prosthetic specialty)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Last updated (year)</span>
+              <select name="lastUpdatedYear" id="lastUpdatedYearSelect">
+                <option value="">Any year</option>
               </select>
             </label>
             <label class="field">
@@ -203,8 +209,8 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="config.js?v=5"></script>
-  <script src="usLocations.js?v=5"></script>
-  <script src="app.js?v=5"></script>
+  <script src="config.js?v=6"></script>
+  <script src="usLocations.js?v=6"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

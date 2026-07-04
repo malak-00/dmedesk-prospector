@@ -34,6 +34,7 @@ var CompanyService = (function () {
       fax: provider.fax,
       taxonomy: provider.taxonomy,
       decisionMakers: nppesDM ? [nppesDM] : [],
+      lastUpdated: provider.lastUpdated,
       sources: { nppes: true },
     });
   }

@@ -13,6 +13,7 @@ export async function searchNppes(req, res, next) {
       state,
       postalCode,
       taxonomyDescription,
+      lastUpdatedYear,
       limit,
     } = req.query;
 
@@ -41,6 +42,7 @@ export async function searchNppes(req, res, next) {
       state,
       postalCode,
       taxonomyDescription,
+      lastUpdatedYear,
       limit: parsedLimit,
     });
 
@@ -66,6 +68,7 @@ export async function searchCompaniesHandler(req, res, next) {
       state,
       postalCode,
       taxonomyDescription,
+      lastUpdatedYear,
       limit,
       enrich,
       scrape
@@ -94,7 +97,7 @@ export async function searchCompaniesHandler(req, res, next) {
 
 
     const result = await searchCompanies(
-  { organizationName, nameContains, city, state, postalCode, taxonomyDescription, limit: parsedLimit },
+  { organizationName, nameContains, city, state, postalCode, taxonomyDescription, lastUpdatedYear, limit: parsedLimit },
   { enrichPlaces: shouldEnrich, scrapeWebsites: shouldScrape }
 );
 

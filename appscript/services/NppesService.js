@@ -40,6 +40,34 @@ var NppesService = (function () {
     return JSON.parse(response.getContentText());
   }
 
+  // NPPES exposes a provider's last-updated date two ways: basic.last_updated
+  // as a ready-to-use "YYYY-MM-DD" string (what the public registry site
+  // displays), and a top-level last_updated_epoch (seconds) as a fallback.
+  // Handle both shapes rather than assuming one.
+  function parseNppesDate_(value) {
+    if (value === undefined || value === null || value === "") return null;
+    var str = String(value);
+
+    var iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return iso[0];
+
+    var mdy = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (mdy) return mdy[3] + "-" + mdy[1] + "-" + mdy[2];
+
+    if (/^\d+$/.test(str)) {
+      var n = Number(str);
+      if (n < 1e11) n = n * 1000; // seconds -> ms
+      var d = new Date(n);
+      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    }
+
+    return null;
+  }
+
+  function extractLastUpdated_(raw, basic) {
+    return parseNppesDate_(basic.last_updated) || parseNppesDate_(raw.last_updated_epoch);
+  }
+
   // Normalizes a single raw NPPES result into a lean, predictable shape --
   // same intent as the Node version, not yet the final unified Company model.
   function normalizeProvider(raw) {
@@ -97,6 +125,7 @@ var NppesService = (function () {
         state: primaryTaxonomy.state || null,
       },
       authorizedOfficial: authorizedOfficial,
+      lastUpdated: extractLastUpdated_(raw, basic), // "YYYY-MM-DD" or null
     };
   }
 
@@ -144,6 +173,18 @@ var NppesService = (function () {
       var nameTerm = criteria.nameContains.toLowerCase();
       results = results.filter(function (r) {
         return r.name && r.name.toLowerCase().indexOf(nameTerm) !== -1;
+      });
+    }
+
+    // Filters to providers whose NPPES record was last updated in a given
+    // year (the registry's own "Last Updated" field, not our claimed-lead
+    // tracking). NPPES has no server-side way to query this, so -- same as
+    // taxonomy/nameContains above -- it's a local filter and must not affect
+    // the rawCount-based pagination check.
+    if (criteria.lastUpdatedYear) {
+      var yearTerm = String(criteria.lastUpdatedYear);
+      results = results.filter(function (r) {
+        return r.lastUpdated && r.lastUpdated.slice(0, 4) === yearTerm;
       });
     }
 

@@ -38,6 +38,7 @@ var CompanyModel = (function () {
       decisionMakers: opts.decisionMakers || [], // [{ name, title, roleCategory, phone, source, sourceUrl }]
       // { totalClaims, totalServices, totalBeneficiaries, medicarePayment, medicareAllowed } or null
       medicare: opts.medicare != null ? opts.medicare : null,
+      lastUpdated: opts.lastUpdated != null ? opts.lastUpdated : null, // NPPES's own "Last Updated" date, "YYYY-MM-DD" or null
       sources: {
         nppes: Boolean(sources.nppes),
         places: Boolean(sources.places),

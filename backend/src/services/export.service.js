@@ -26,6 +26,7 @@ export const CSV_COLUMNS = [
   { key: "medicareBeneficiaries", label: "Medicare Beneficiaries" },
   { key: "medicarePayment", label: "Medicare Payment $" },
   { key: "contactPhone", label: "Contact Phone" },
+  { key: "nppesLastUpdated", label: "NPPES Last Updated" },
 ];
 
 function escapeCsvValue(value) {
@@ -69,6 +70,7 @@ export function flattenCompany(company) {
     medicareClaims: company.medicare?.totalClaims ?? "",
     medicareBeneficiaries: company.medicare?.totalBeneficiaries ?? "",
     medicarePayment: company.medicare?.medicarePayment ?? "",
+    nppesLastUpdated: company.lastUpdated || "",
   };
 }
 

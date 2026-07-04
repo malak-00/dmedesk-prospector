@@ -13,6 +13,7 @@ export function createCompany({
   isClosed = null,
   decisionMakers = [],
   medicare = null,
+  lastUpdated = null,
   sources = {},
 } = {}) {
   return {
@@ -39,6 +40,7 @@ export function createCompany({
     decisionMakers, // [{ name, title, roleCategory, phone, source, sourceUrl }]
     // { totalClaims, totalServices, totalBeneficiaries, medicarePayment, medicareAllowed } or null
     medicare,
+    lastUpdated, // NPPES's own "Last Updated" date, "YYYY-MM-DD" or null
     sources: {
       nppes: Boolean(sources.nppes),
       places: Boolean(sources.places),

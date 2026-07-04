@@ -3,6 +3,34 @@ import config from "../config/index.js";
 
 const NPPES_BASE_URL = "https://npiregistry.cms.hhs.gov/api/";
 
+// NPPES exposes a provider's last-updated date two ways: basic.last_updated
+// as a ready-to-use "YYYY-MM-DD" string (what the public registry site
+// displays), and a top-level last_updated_epoch (seconds) as a fallback.
+// Handle both shapes rather than assuming one.
+function parseNppesDate(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const str = String(value);
+
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return iso[0];
+
+  const mdy = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (mdy) return `${mdy[3]}-${mdy[1]}-${mdy[2]}`;
+
+  if (/^\d+$/.test(str)) {
+    let n = Number(str);
+    if (n < 1e11) n = n * 1000; // seconds -> ms
+    const d = new Date(n);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+
+  return null;
+}
+
+function extractLastUpdated(raw, basic) {
+  return parseNppesDate(basic.last_updated) || parseNppesDate(raw.last_updated_epoch);
+}
+
 /**
  * Raw call to the NPPES NPI Registry API.
  * Kept private to this module — controllers never see raw NPPES shapes.
@@ -54,6 +82,8 @@ function normalizeProvider(raw) {
 
   const isOrganization = raw.enumeration_type === "NPI-2";
 
+  const lastUpdated = extractLastUpdated(raw, basic);
+
   const authorizedOfficial =
   isOrganization && basic.authorized_official_last_name
     ? {
@@ -89,7 +119,8 @@ function normalizeProvider(raw) {
       license: primaryTaxonomy.license || null,
       state: primaryTaxonomy.state || null,
     },
-    authorizedOfficial
+    authorizedOfficial,
+    lastUpdated, // "YYYY-MM-DD" or null
   };
 }
 
@@ -113,6 +144,7 @@ export async function searchProviders(criteria = {}) {
     state,
     postalCode,
     taxonomyDescription,
+    lastUpdatedYear,
     limit = 20,
     skip = 0,
   } = criteria;
@@ -156,6 +188,16 @@ export async function searchProviders(criteria = {}) {
   if (nameContains) {
     const term = nameContains.toLowerCase();
     results = results.filter((r) => r.name?.toLowerCase().includes(term));
+  }
+
+  // Filters to providers whose NPPES record was last updated in a given
+  // year (the registry's own "Last Updated" field, not our claimed-lead
+  // tracking). NPPES has no server-side way to query this, so -- same as
+  // taxonomy/nameContains above -- it's a local filter and must not affect
+  // the rawCount-based pagination check.
+  if (lastUpdatedYear) {
+    const yearTerm = String(lastUpdatedYear);
+    results = results.filter((r) => r.lastUpdated?.slice(0, 4) === yearTerm);
   }
 
   return {

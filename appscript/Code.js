@@ -137,6 +137,7 @@ function readSearchCriteria_(params) {
     state: params.state || undefined,
     postalCode: params.postalCode || undefined,
     taxonomyDescription: params.taxonomyDescription || undefined,
+    lastUpdatedYear: params.lastUpdatedYear || undefined,
     limit: params.limit ? Number(params.limit) : undefined,
     skip: params.skip ? Number(params.skip) : undefined,
   };
