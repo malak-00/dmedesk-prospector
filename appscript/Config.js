@@ -16,6 +16,9 @@
 //                                     If unset, falls back to a "Users" tab in
 //                                     the main leads sheet (only safe if that
 //                                     sheet is private to you).
+//   SUGGESTIONS_TAB_NAME            -- defaults to "Suggestions"; a tab in the
+//                                     main leads sheet where in-app suggestion/
+//                                     bug reports get appended.
 
 var Config = (function () {
   function get(key, fallback) {
@@ -31,5 +34,6 @@ var Config = (function () {
     googleSheetId: function () { return get("GOOGLE_SHEET_ID"); },
     googleSheetTabName: function () { return get("GOOGLE_SHEET_TAB_NAME", "Leads"); },
     authSheetId: function () { return get("AUTH_SHEET_ID"); },
+    suggestionsTabName: function () { return get("SUGGESTIONS_TAB_NAME", "Suggestions"); },
   };
 })();

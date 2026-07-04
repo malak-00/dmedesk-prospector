@@ -189,6 +189,14 @@ const els = {
   refreshClaimedBtn: document.getElementById("refreshClaimedBtn"),
   staleNudge: document.getElementById("staleNudge"),
   lastUpdatedYearSelect: document.getElementById("lastUpdatedYearSelect"),
+  devNotice: document.getElementById("devNotice"),
+  devNoticeClose: document.getElementById("devNoticeClose"),
+  suggestBtn: document.getElementById("suggestBtn"),
+  suggestionOverlay: document.getElementById("suggestionOverlay"),
+  suggestionForm: document.getElementById("suggestionForm"),
+  suggestionText: document.getElementById("suggestionText"),
+  suggestionSubmitBtn: document.getElementById("suggestionSubmitBtn"),
+  suggestionCancelBtn: document.getElementById("suggestionCancelBtn"),
 };
 
 // Populate the "Year" filters with the current year and a few back.
@@ -209,6 +217,8 @@ const els = {
 function showLogin() {
   els.loginOverlay.hidden = false;
   els.userChip.hidden = true;
+  els.suggestBtn.hidden = true;
+  els.devNotice.hidden = true;
   els.loginForm.querySelector("input[name=username]")?.focus();
 }
 
@@ -218,6 +228,8 @@ function hideLogin() {
   if (session) {
     els.userName.textContent = session.displayName;
     els.userChip.hidden = false;
+    els.suggestBtn.hidden = false;
+    els.devNotice.hidden = false; // shown fresh on every sign-in/page open, not persisted
   }
 }
 
@@ -248,6 +260,35 @@ async function handleSignOut() {
   try { await apiPost("auth/logout", {}); } catch { /* best effort */ }
   clearSession();
   showLogin();
+}
+
+/* ---------- Suggestion box ---------- */
+
+function openSuggestionBox() {
+  els.suggestionOverlay.hidden = false;
+  els.suggestionText.focus();
+}
+
+function closeSuggestionBox() {
+  els.suggestionOverlay.hidden = true;
+  els.suggestionForm.reset();
+}
+
+async function handleSuggestionSubmit(evt) {
+  evt.preventDefault();
+  const text = els.suggestionText.value.trim();
+  if (!text) return;
+
+  els.suggestionSubmitBtn.disabled = true;
+  try {
+    await apiPost("suggestions/submit", { text });
+    closeSuggestionBox();
+    showToast("Thanks! Your suggestion was sent to Caroline.");
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    els.suggestionSubmitBtn.disabled = false;
+  }
 }
 
 /* ---------- View tabs ---------- */
@@ -1087,6 +1128,11 @@ els.exportSheetsBtn.addEventListener("click", exportSheets);
 
 els.loginForm.addEventListener("submit", handleLogin);
 els.signOutBtn.addEventListener("click", handleSignOut);
+els.suggestBtn.addEventListener("click", openSuggestionBox);
+els.suggestionForm.addEventListener("submit", handleSuggestionSubmit);
+els.suggestionCancelBtn.addEventListener("click", closeSuggestionBox);
+els.suggestionOverlay.addEventListener("click", (e) => { if (e.target === els.suggestionOverlay) closeSuggestionBox(); });
+els.devNoticeClose.addEventListener("click", () => { els.devNotice.hidden = true; });
 // Two toggle buttons exist (header + login card, so theme can be changed
 // even before signing in) -- both share the .theme-toggle class.
 document.querySelectorAll(".theme-toggle").forEach((btn) => btn.addEventListener("click", toggleTheme));

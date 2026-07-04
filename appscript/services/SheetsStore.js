@@ -418,6 +418,43 @@ var SheetsStore = (function () {
     return { npi: String(npi), notes: finalNotes, rowsUpdated: updated };
   }
 
+  var MAX_SUGGESTION_LENGTH = 2000;
+  var SUGGESTION_HEADER_ = ["Timestamp", "Submitted By", "Suggestion"];
+
+  // Separate tab (same spreadsheet as the leads) so in-app suggestion/bug
+  // reports land somewhere the sheet owner will see them, without touching
+  // the Leads tab's own columns.
+  function getSuggestionsSheet_() {
+    var spreadsheet = SpreadsheetApp.openById(Config.googleSheetId());
+    var tabName = Config.suggestionsTabName();
+    var sheet = spreadsheet.getSheetByName(tabName);
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet(tabName);
+      sheet.getRange(1, 1, 1, SUGGESTION_HEADER_.length).setValues([SUGGESTION_HEADER_]);
+    }
+    return sheet;
+  }
+
+  function addSuggestion(text, submittedBy) {
+    assertConfigured();
+    var trimmed = String(text || "").trim();
+    if (!trimmed) {
+      var badText = new Error("suggestion text is required");
+      badText.status = 400;
+      throw badText;
+    }
+    if (trimmed.length > MAX_SUGGESTION_LENGTH) {
+      var tooLong = new Error("suggestion must be " + MAX_SUGGESTION_LENGTH + " characters or fewer");
+      tooLong.status = 400;
+      throw tooLong;
+    }
+
+    var sheet = getSuggestionsSheet_();
+    var now = new Date().toISOString();
+    sheet.appendRow([now, submittedBy || "", trimmed]);
+    return { submittedAt: now };
+  }
+
   return {
     exportCompaniesToSheet: exportCompaniesToSheet,
     getClaimedNpis: getClaimedNpis,
@@ -425,6 +462,7 @@ var SheetsStore = (function () {
     updateLeadStatus: updateLeadStatus,
     addLeadNote: addLeadNote,
     getKnownStatuses: getKnownStatuses,
+    addSuggestion: addSuggestion,
     DEFAULT_STATUSES: DEFAULT_STATUSES,
   };
 })();

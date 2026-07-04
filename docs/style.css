@@ -131,7 +131,7 @@ body {
 .field-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 16px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 500; }
 .field-wide { grid-column: span 2; }
-.field input, .field select {
+.field input, .field select, .field textarea {
   font-family: var(--font-ui);
   font-size: 14px;
   padding: 9px 11px;
@@ -141,13 +141,14 @@ body {
   color: var(--ink);
   transition: border-color 0.12s ease, background 0.12s ease;
 }
+.field textarea { resize: vertical; min-height: 90px; }
 .field select { appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239AA2B1' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; padding-right: 30px; cursor: pointer; }
 /* A CSS var can't be interpolated inside a quoted data-URI string, so the
    dropdown arrow's stroke color needs its own literal override per theme. */
 [data-theme="light"] .field select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235B6472' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); }
-.field input::placeholder { color: var(--muted-2); }
-.field input:hover, .field select:hover { border-color: var(--hairline-hover); }
-.field input:focus, .field select:focus {
+.field input::placeholder, .field textarea::placeholder { color: var(--muted-2); }
+.field input:hover, .field select:hover, .field textarea:hover { border-color: var(--hairline-hover); }
+.field input:focus, .field select:focus, .field textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -180,6 +181,7 @@ body {
 .btn-primary:hover:not(:disabled) { background: var(--accent-ink); }
 .btn-ghost { background: transparent; border-color: var(--hairline); color: var(--ink); }
 .btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+.btn[hidden] { display: none; }
 .btn-small { padding: 6px 11px; font-size: 12px; }
 
 .link-btn {
@@ -361,6 +363,41 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
   border-radius: var(--radius-sm); padding: 8px 11px;
 }
 .login-error[hidden] { display: none; }
+
+/* ---------- Dev notice banner ---------- */
+
+.dev-notice {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-size: 13px; color: var(--ink);
+  background: var(--accent-soft); border: 1px solid var(--accent);
+  border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 16px;
+}
+.dev-notice[hidden] { display: none; }
+.dev-notice strong { color: var(--accent-ink); }
+.dev-notice-close {
+  flex-shrink: 0; background: none; border: none; cursor: pointer;
+  font-size: 18px; line-height: 1; color: var(--muted); padding: 0 2px;
+}
+.dev-notice-close:hover { color: var(--ink); }
+
+/* ---------- Suggestion box ---------- */
+
+.suggestion-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.45); padding: 24px;
+}
+.suggestion-overlay[hidden] { display: none; }
+.suggestion-card {
+  display: flex; flex-direction: column; gap: 14px;
+  width: min(440px, 100%);
+  background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
+  padding: 24px 26px;
+}
+.suggestion-card h3 { font-size: 16px; margin: 0; }
+.suggestion-hint { font-size: 13px; color: var(--muted); margin: 0; }
+.suggestion-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 /* ---------- Theme toggle ---------- */
 

@@ -120,6 +120,14 @@ function handleRequest_(e) {
         });
       }
 
+      case "suggestions/submit": {
+        var suggestionBody = readJsonBody_(e);
+        return jsonResponse_({
+          success: true,
+          data: SheetsStore.addSuggestion(suggestionBody.text, session.displayName),
+        });
+      }
+
       default:
         return errorResponse_(404, "Unknown path: " + path);
     }
