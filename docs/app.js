@@ -7,6 +7,21 @@
 // - every response is HTTP 200; success/failure is the `success` field in
 //   the JSON body, and body.status 401 means the session expired
 
+const THEME_STORAGE_KEY = "dmeProspectorTheme";
+
+// The <head> inline script already set data-theme before first paint (to
+// avoid a flash of the wrong theme); this just wires up the toggle button
+// to flip it and remember the choice for next time.
+function setTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+  setTheme(current === "light" ? "dark" : "light");
+}
+
 const SESSION_STORAGE_KEY = "dmeProspectorSession";
 
 // One-time cleanup: earlier versions stored the session in localStorage,
@@ -67,16 +82,82 @@ const state = {
   companies: [],
   selected: new Set(),
   expandedIndex: null,
+  excludedAsClaimed: 0,
+  sortKey: null,
+  sortDir: 1,
   view: "search",
   claimedLoaded: false,
   claimedLeads: [],
   claimedExpandedIndex: null,
+  claimedLoadedAt: null,
+  claimedSortKey: null,
+  claimedSortDir: 1,
   statuses: [],
 };
+
+function skeletonRows(count, colCount) {
+  const widths = [85, 55, 70, 90, 60]; // varied widths so it doesn't look like a rigid grid
+  const row = `<tr class="skeleton-row">${Array.from({ length: colCount }, (_, i) =>
+    `<td><div class="skeleton-bar" style="width:${widths[i % widths.length]}%"></div></td>`
+  ).join("")}</tr>`;
+  return Array.from({ length: count }, () => row).join("");
+}
+
+/* ---------- Sortable columns (both tables) ---------- */
+
+// Clears any previous sort-asc/sort-desc classes in a table's header and
+// marks the currently active one, so the arrow indicator stays in sync.
+function updateSortIndicators(table, sortKey, sortDir) {
+  table.querySelectorAll("th[data-sort-key]").forEach((th) => {
+    th.classList.remove("sort-asc", "sort-desc");
+    if (th.dataset.sortKey === sortKey) th.classList.add(sortDir > 0 ? "sort-asc" : "sort-desc");
+  });
+}
+
+function wireSortableHeaders(table, defaultDirs, onSort) {
+  table.querySelectorAll("th[data-sort-key]").forEach((th) => {
+    th.addEventListener("click", () => onSort(th.dataset.sortKey, defaultDirs[th.dataset.sortKey] ?? 1));
+  });
+}
+
+const PROSPECT_SORT_COMPARATORS = {
+  score: (a, b) => (a.score?.value ?? -1) - (b.score?.value ?? -1),
+  company: (a, b) => (a.name || "").localeCompare(b.name || ""),
+  location: (a, b) =>
+    `${a.address?.state || ""}|${a.address?.city || ""}`.localeCompare(`${b.address?.state || ""}|${b.address?.city || ""}`),
+};
+const PROSPECT_DEFAULT_SORT_DIR = { score: -1, company: 1, location: 1 };
+
+function sortProspectResults(key, defaultDir) {
+  state.sortDir = state.sortKey === key ? state.sortDir * -1 : defaultDir;
+  state.sortKey = key;
+  state.companies.sort((a, b) => PROSPECT_SORT_COMPARATORS[key](a, b) * state.sortDir);
+  state.expandedIndex = null; // row indices shift after a sort
+  updateSortIndicators(els.resultsTable, state.sortKey, state.sortDir);
+  renderResults();
+}
+
+const CLAIMED_SORT_COMPARATORS = {
+  company: (a, b) => (a.name || "").localeCompare(b.name || ""),
+  location: (a, b) => `${a.state || ""}|${a.city || ""}`.localeCompare(`${b.state || ""}|${b.city || ""}`),
+  claimedBy: (a, b) => (a.claimedBy || "").localeCompare(b.claimedBy || ""),
+  updated: (a, b) => (Date.parse(a.lastUpdated) || 0) - (Date.parse(b.lastUpdated) || 0),
+  status: (a, b) => (a.status || "").localeCompare(b.status || ""),
+};
+const CLAIMED_DEFAULT_SORT_DIR = { company: 1, location: 1, claimedBy: 1, updated: -1, status: 1 };
+
+function sortClaimedLeads(key, defaultDir) {
+  state.claimedSortDir = state.claimedSortKey === key ? state.claimedSortDir * -1 : defaultDir;
+  state.claimedSortKey = key;
+  state.claimedLeads.sort((a, b) => CLAIMED_SORT_COMPARATORS[key](a, b) * state.claimedSortDir);
+  updateSortIndicators(els.claimedTable, state.claimedSortKey, state.claimedSortDir);
+  renderClaimedLeads(state.claimedLeads);
+}
 
 const els = {
   form: document.getElementById("searchForm"),
   searchBtn: document.getElementById("searchBtn"),
+  resultsTable: document.getElementById("resultsTable"),
   resultsBody: document.getElementById("resultsBody"),
   resultsCount: document.getElementById("resultsCount"),
   selectAll: document.getElementById("selectAll"),
@@ -99,12 +180,14 @@ const els = {
   signOutBtn: document.getElementById("signOutBtn"),
   viewSearch: document.getElementById("viewSearch"),
   viewClaimed: document.getElementById("viewClaimed"),
+  claimedTable: document.getElementById("claimedTable"),
   claimedBody: document.getElementById("claimedBody"),
   claimedCount: document.getElementById("claimedCount"),
   onlyMine: document.getElementById("onlyMine"),
   updatedWithin: document.getElementById("updatedWithin"),
   updatedYear: document.getElementById("updatedYear"),
   refreshClaimedBtn: document.getElementById("refreshClaimedBtn"),
+  staleNudge: document.getElementById("staleNudge"),
   lastUpdatedYearSelect: document.getElementById("lastUpdatedYearSelect"),
 };
 
@@ -223,6 +306,39 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Human-readable labels for ScoringService's breakdown keys -- the
+// breakdown was already computed server-side and sent down with every
+// company, just never rendered anywhere until now.
+const SCORE_FACTOR_LABELS = {
+  hasPhone: "Has phone number",
+  hasFax: "Has fax number",
+  hasWebsite: "Has a website",
+  activeStatus: "Confirmed open (Places)",
+  completeAddress: "Complete address on file",
+  placesVerified: "Verified on Foursquare",
+  goodRating: "Good rating (8+/10)",
+  establishedPresence: "Established (10+ reviews)",
+  hasDecisionMaker: "Contact identified",
+  medicareActive: "Active Medicare biller",
+};
+
+function scoreTooltipHtml(score) {
+  if (!score?.breakdown) return "";
+  const rows = Object.entries(score.breakdown).map(([key, points]) => {
+    const earned = points > 0;
+    const label = SCORE_FACTOR_LABELS[key] || key;
+    return `<div class="score-tooltip-row ${earned ? "earned" : ""}">
+      <span class="score-tooltip-mark">${earned ? "✓" : "✗"}</span>
+      <span class="score-tooltip-label">${escapeHtml(label)}</span>
+    </div>`;
+  }).join("");
+  return `
+    <div class="score-tooltip">
+      <div class="score-tooltip-title">${score.value ?? 0}/${score.maxPossible ?? "?"} points</div>
+      ${rows}
+    </div>`;
+}
+
 // Prefer the contact's direct line; fall back to the company's main number
 // (NPPES rarely publishes an official's direct phone). Marks the fallback so
 // reps know it's the switchboard, not a personal line.
@@ -263,10 +379,40 @@ function searchStatusMsgEl() {
   return document.getElementById("searchStatusMsg");
 }
 
+// Remembers the last search filters for this tab session only (sessionStorage,
+// not localStorage) -- flipping to Claimed leads and back shouldn't lose what
+// was typed, but a brand-new session should still start from a blank form.
+const SEARCH_FILTERS_KEY = "dmeProspectorLastSearch";
+
+function saveSearchFormState() {
+  const formData = new FormData(els.form);
+  const values = {};
+  for (const el of els.form.elements) {
+    if (!el.name) continue;
+    values[el.name] = el.type === "checkbox" ? el.checked : formData.get(el.name) || "";
+  }
+  sessionStorage.setItem(SEARCH_FILTERS_KEY, JSON.stringify(values));
+}
+
+function restoreSearchFormState() {
+  const raw = sessionStorage.getItem(SEARCH_FILTERS_KEY);
+  if (!raw) return;
+  let values;
+  try { values = JSON.parse(raw); } catch { return; }
+  for (const el of els.form.elements) {
+    if (!el.name || !(el.name in values)) continue;
+    if (el.type === "checkbox") el.checked = Boolean(values[el.name]);
+    else el.value = values[el.name];
+  }
+  refreshCityOptions(); // programmatic .value assignment above doesn't fire the state select's own change listener
+  if (values.city) cityInput.value = values.city;
+}
+
 async function runSearch(evt) {
   evt.preventDefault();
   const formData = new FormData(els.form);
   const params = buildSearchParams(formData);
+  saveSearchFormState();
 
   els.searchBtn.disabled = true;
   setStatus("busy", "Searching…");
@@ -283,6 +429,9 @@ async function runSearch(evt) {
     state.companies = data.companies;
     state.selected.clear();
     state.expandedIndex = null;
+    state.sortKey = null; // fresh results start in the server's own order (score desc)
+    state.sortDir = 1;
+    updateSortIndicators(els.resultsTable, null, 1);
     renderResults(data.excludedAsClaimed || 0);
     setStatus("ready", "Ready");
   } catch (err) {
@@ -295,9 +444,10 @@ async function runSearch(evt) {
   }
 }
 
-function renderResults(excludedAsClaimed = 0) {
+function renderResults(excludedAsClaimed) {
+  if (excludedAsClaimed !== undefined) state.excludedAsClaimed = excludedAsClaimed; // remembered across re-renders (e.g. a sort click)
   const { companies } = state;
-  const excludedNote = excludedAsClaimed > 0 ? ` (${excludedAsClaimed} already claimed, filtered out)` : "";
+  const excludedNote = state.excludedAsClaimed > 0 ? ` (${state.excludedAsClaimed} already claimed, filtered out)` : "";
   els.resultsCount.textContent = `${companies.length} lead${companies.length === 1 ? "" : "s"} found${excludedNote}`;
   els.exportCsvBtn.disabled = companies.length === 0;
   els.exportSheetsBtn.disabled = companies.length === 0;
@@ -341,9 +491,14 @@ function leadRowHtml(company, index) {
   const primaryContact = company.decisionMakers?.[0];
   const isSelected = state.selected.has(index);
   return `
-    <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}">
+    <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}" tabindex="0" aria-expanded="false">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
-      <td>${scoreRing(company.score)}</td>
+      <td>
+        <div class="score-ring-wrap" tabindex="0">
+          ${scoreRing(company.score)}
+          ${scoreTooltipHtml(company.score)}
+        </div>
+      </td>
       <td>
         <div class="company-name">${escapeHtml(company.name)}</div>
         <div class="company-taxonomy">${escapeHtml(company.taxonomy?.description || "")}</div>
@@ -408,6 +563,12 @@ function attachRowHandlers() {
   // double-bind onto its rows too.
   els.resultsBody.querySelectorAll(".lead-row").forEach((row) => {
     row.addEventListener("click", () => toggleRowDetail(Number(row.dataset.index)));
+    row.addEventListener("keydown", (e) => {
+      if (e.target !== row) return; // let checkboxes/inputs inside the row handle their own keys
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      toggleRowDetail(Number(row.dataset.index));
+    });
   });
 
   els.resultsBody.querySelectorAll(".row-check").forEach((box) => {
@@ -429,6 +590,7 @@ function attachRowHandlers() {
 function collapseRow(idx) {
   const row = document.querySelector(`.lead-row[data-index="${idx}"]`);
   row?.querySelector(".chevron")?.classList.remove("open");
+  row?.setAttribute("aria-expanded", "false");
   const detail = row?.nextElementSibling;
   if (detail && detail.classList.contains("detail-row")) detail.remove();
 }
@@ -447,6 +609,7 @@ function toggleRowDetail(idx) {
 
   state.expandedIndex = idx;
   row.querySelector(".chevron")?.classList.add("open");
+  row.setAttribute("aria-expanded", "true");
   row.insertAdjacentHTML("afterend", detailRowHtml(state.companies[idx], idx));
   document.querySelector(`[data-brief-index="${idx}"]`)?.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -524,8 +687,27 @@ async function exportSheets() {
 
 /* ---------- Claimed leads view ---------- */
 
+// A sentinel option value, never a real status, that means "prompt for a
+// new custom status" when selected -- lets teammates introduce their own
+// statuses from the app instead of being stuck with the built-in list.
+const ADD_STATUS_SENTINEL = "__add_new_status__";
+
+function statusOptionHtml(status, selected) {
+  return `<option value="${escapeHtml(status)}" ${selected ? "selected" : ""}>${escapeHtml(status)}</option>`;
+}
+
+// Re-renders a row's expanded detail panel in place after its data changes
+// (e.g. a new note was added) -- a no-op if that row isn't expanded.
+function refreshClaimedDetailIfExpanded(idx) {
+  if (state.claimedExpandedIndex !== idx) return;
+  collapseClaimedRow(idx);
+  state.claimedExpandedIndex = null;
+  toggleClaimedRowDetail(idx);
+}
+
 async function loadClaimedLeads() {
-  els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="8"><div class="loading-row"><span class="spinner"></span> Loading claimed leads…</div></td></tr>`;
+  els.claimedBody.innerHTML = skeletonRows(5, 8);
+  els.staleNudge.hidden = true;
   try {
     const params = {};
     if (els.onlyMine.checked) params.mine = "true";
@@ -534,6 +716,10 @@ async function loadClaimedLeads() {
     const data = await apiGet("leads/list", params);
     state.statuses = data.statuses || [];
     state.claimedLoaded = true;
+    state.claimedLoadedAt = Date.now();
+    state.claimedSortKey = null; // fresh data starts in the server's own order (last updated desc)
+    state.claimedSortDir = 1;
+    updateSortIndicators(els.claimedTable, null, 1);
     renderClaimedLeads(data.leads || []);
   } catch (err) {
     els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(err.message)}</td></tr>`;
@@ -560,7 +746,7 @@ function claimedLeadRowHtml(lead, index) {
     ? `${escapeHtml(lead.contactName)}${lead.contactTitle ? ` — ${escapeHtml(lead.contactTitle)}` : ""}`
     : "";
   return `
-    <tr class="lead-row" data-claimed-index="${index}">
+    <tr class="lead-row" data-claimed-index="${index}" tabindex="0" aria-expanded="false">
       <td>
         <div class="company-name">${escapeHtml(lead.name)}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
@@ -571,15 +757,32 @@ function claimedLeadRowHtml(lead, index) {
       <td class="mono">${escapeHtml((lead.lastUpdated || "").slice(0, 10))}</td>
       <td onclick="event.stopPropagation()">
         <select class="status-select status-${escapeHtml(lead.status).replace(/\s+/g, "-")}" data-npi="${escapeHtml(lead.npi)}">
-          ${state.statuses.map((s) => `<option value="${escapeHtml(s)}" ${s === lead.status ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+          ${state.statuses.map((s) => statusOptionHtml(s, s === lead.status)).join("")}
+          <option value="${ADD_STATUS_SENTINEL}">+ Add new status…</option>
         </select>
       </td>
       <td onclick="event.stopPropagation()">
-        <input type="text" class="notes-input" data-npi="${escapeHtml(lead.npi)}" placeholder="Add a note…" value="${escapeHtml(lead.notes || "")}">
+        <input type="text" class="notes-input" data-npi="${escapeHtml(lead.npi)}" data-index="${index}" placeholder="Add a note…">
+        ${latestNoteLine(lead.notes) ? `<div class="notes-preview" title="${escapeHtml(latestNoteLine(lead.notes))}">${escapeHtml(latestNoteLine(lead.notes))}</div>` : ""}
       </td>
       <td><span class="chevron">▸</span></td>
     </tr>
   `;
+}
+
+// Notes are a running call log (newest entry first, one per line -- see
+// SheetsStore.addLeadNote), not a single value -- this is just "what to
+// show while collapsed" without rendering the whole history in the row.
+function latestNoteLine(notes) {
+  return notes ? notes.split("\n")[0] : "";
+}
+
+function notesHistoryHtml(notes) {
+  const lines = (notes || "").split("\n").filter(Boolean);
+  if (lines.length === 0) {
+    return '<span style="color:var(--muted); font-size:13px;">No notes yet</span>';
+  }
+  return `<div class="notes-history">${lines.map((line) => `<div class="notes-entry">${escapeHtml(line)}</div>`).join("")}</div>`;
 }
 
 // Reconstructs a CompanyModel-shaped object from the flat fields stored in
@@ -667,6 +870,10 @@ function claimedDetailRowHtml(lead, index) {
             ${Number(lead.additionalContacts) > 0 ? `<div style="font-size:12px; color:var(--muted); margin-top:8px;">+${escapeHtml(lead.additionalContacts)} other contact(s) found (see Sheet)</div>` : ""}
           </div>
         </div>
+        <div class="detail-block notes-history-block">
+          <h4>Call log</h4>
+          ${notesHistoryHtml(lead.notes)}
+        </div>
         <div class="brief-box">
           <button class="btn btn-ghost btn-small" data-claimed-brief-index="${index}">Generate call brief</button>
           <div class="brief-output" id="claimed-brief-${index}"></div>
@@ -696,6 +903,7 @@ async function generateClaimedBrief(index) {
 function collapseClaimedRow(idx) {
   const row = document.querySelector(`#claimedBody .lead-row[data-claimed-index="${idx}"]`);
   row?.querySelector(".chevron")?.classList.remove("open");
+  row?.setAttribute("aria-expanded", "false");
   const detail = row?.nextElementSibling;
   if (detail && detail.classList.contains("detail-row")) detail.remove();
 }
@@ -714,6 +922,7 @@ function toggleClaimedRowDetail(idx) {
 
   state.claimedExpandedIndex = idx;
   row.querySelector(".chevron")?.classList.add("open");
+  row.setAttribute("aria-expanded", "true");
   row.insertAdjacentHTML("afterend", claimedDetailRowHtml(state.claimedLeads[idx], idx));
   document.querySelector(`[data-claimed-brief-index="${idx}"]`)?.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -724,18 +933,47 @@ function toggleClaimedRowDetail(idx) {
 function attachClaimedRowHandlers() {
   document.querySelectorAll("#claimedBody .lead-row").forEach((row) => {
     row.addEventListener("click", () => toggleClaimedRowDetail(Number(row.dataset.claimedIndex)));
+    row.addEventListener("keydown", (e) => {
+      if (e.target !== row) return; // let the status select / notes input handle their own keys
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      toggleClaimedRowDetail(Number(row.dataset.claimedIndex));
+    });
   });
 
   els.claimedBody.querySelectorAll(".status-select").forEach((select) => {
+    var previousValue = select.value;
     select.addEventListener("change", async (e) => {
       const npi = e.target.dataset.npi;
-      const status = e.target.value;
+      let status = e.target.value;
+
+      if (status === ADD_STATUS_SENTINEL) {
+        const custom = (prompt("New status name (e.g. \"follow-up 2wk\"):") || "").trim();
+        if (!custom) { e.target.value = previousValue; return; } // cancelled
+        status = custom;
+        if (!state.statuses.includes(status)) {
+          state.statuses.push(status);
+          // Every other status dropdown on screen should offer the new
+          // status too, without waiting for a full reload.
+          document.querySelectorAll(".status-select").forEach((otherSelect) => {
+            if (otherSelect === e.target) return;
+            otherSelect.insertAdjacentHTML("beforeend", statusOptionHtml(status, false));
+          });
+        }
+        // Replace the sentinel option with a real one for this status.
+        e.target.querySelector(`option[value="${CSS.escape(ADD_STATUS_SENTINEL)}"]`)?.remove();
+        e.target.insertAdjacentHTML("beforeend", statusOptionHtml(status, true));
+        e.target.value = status;
+      }
+
       e.target.disabled = true;
       try {
         await apiPost("leads/status", { npi, status });
         e.target.className = `status-select status-${status.replace(/\s+/g, "-")}`;
+        previousValue = status;
         showToast(`Status updated to "${status}"`);
       } catch (err) {
+        e.target.value = previousValue;
         showToast(err.message, true);
       } finally {
         e.target.disabled = false;
@@ -743,20 +981,36 @@ function attachClaimedRowHandlers() {
     });
   });
 
+  // Each Enter adds one new timestamped, attributed entry to the lead's
+  // call log (see SheetsStore.addLeadNote) -- the field is always "type the
+  // next note", not an editable copy of the last one.
   els.claimedBody.querySelectorAll(".notes-input").forEach((input) => {
-    input.dataset.savedValue = input.value;
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") e.target.blur(); // Enter saves & unfocuses, like most quick-note fields
-    });
-    input.addEventListener("blur", async (e) => {
+    input.addEventListener("keydown", async (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const note = e.target.value.trim();
+      if (!note) return;
+
       const npi = e.target.dataset.npi;
-      const notes = e.target.value;
-      if (notes === e.target.dataset.savedValue) return; // unchanged, nothing to save
+      const idx = Number(e.target.dataset.index);
       e.target.disabled = true;
       try {
-        await apiPost("leads/notes", { npi, notes });
-        e.target.dataset.savedValue = notes;
-        showToast("Note saved");
+        const data = await apiPost("leads/notes", { npi, note });
+        state.claimedLeads[idx].notes = data.notes;
+        e.target.value = "";
+
+        const latest = latestNoteLine(data.notes);
+        let preview = e.target.parentElement.querySelector(".notes-preview");
+        if (!preview) {
+          preview = document.createElement("div");
+          preview.className = "notes-preview";
+          e.target.insertAdjacentElement("afterend", preview);
+        }
+        preview.textContent = latest;
+        preview.title = latest;
+
+        refreshClaimedDetailIfExpanded(idx);
+        showToast("Note added");
       } catch (err) {
         showToast(err.message, true);
       } finally {
@@ -806,6 +1060,7 @@ stateSelect.addEventListener("change", () => {
   refreshCityOptions();
 });
 refreshCityOptions();
+restoreSearchFormState();
 
 /* ---------- Wiring ---------- */
 
@@ -832,6 +1087,9 @@ els.exportSheetsBtn.addEventListener("click", exportSheets);
 
 els.loginForm.addEventListener("submit", handleLogin);
 els.signOutBtn.addEventListener("click", handleSignOut);
+// Two toggle buttons exist (header + login card, so theme can be changed
+// even before signing in) -- both share the .theme-toggle class.
+document.querySelectorAll(".theme-toggle").forEach((btn) => btn.addEventListener("click", toggleTheme));
 document.querySelectorAll(".view-tabs .tab").forEach((tab) => {
   tab.addEventListener("click", () => switchView(tab.dataset.view));
 });
@@ -839,5 +1097,18 @@ els.onlyMine.addEventListener("change", loadClaimedLeads);
 els.updatedWithin.addEventListener("change", loadClaimedLeads);
 els.updatedYear.addEventListener("change", loadClaimedLeads);
 els.refreshClaimedBtn.addEventListener("click", loadClaimedLeads);
+els.staleNudge.addEventListener("click", loadClaimedLeads);
+
+wireSortableHeaders(els.resultsTable, PROSPECT_DEFAULT_SORT_DIR, sortProspectResults);
+wireSortableHeaders(els.claimedTable, CLAIMED_DEFAULT_SORT_DIR, sortClaimedLeads);
+
+// Nudges the user to refresh the Claimed tab after it's been sitting open
+// for a while -- teammates share one sheet, so a colleague's status/claim
+// change wouldn't otherwise show up until a manual refresh.
+const STALE_AFTER_MS = 2 * 60 * 1000;
+setInterval(() => {
+  if (state.view !== "claimed" || !state.claimedLoadedAt) return;
+  els.staleNudge.hidden = Date.now() - state.claimedLoadedAt < STALE_AFTER_MS;
+}, 15000);
 
 if (getSession()) hideLogin(); else showLogin();

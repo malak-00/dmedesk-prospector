@@ -20,7 +20,12 @@ var SheetsStore = (function () {
     { key: "statusUpdatedAt", label: "Status Updated At" },
     { key: "notes", label: "Notes" },
   ];
-  var ALLOWED_STATUSES = ["new", "called", "voicemail", "interested", "not interested", "do not call"];
+  // Starting set shown even on a brand-new sheet. Not a strict allow-list --
+  // teammates can add their own statuses from the app; getKnownStatuses_()
+  // below unions this with whatever's actually been used so the dropdown
+  // (both in the app and the sheet's own data validation) stays current.
+  var DEFAULT_STATUSES = ["new", "called", "voicemail", "interested", "not interested", "do not call"];
+  var MAX_STATUS_LENGTH = 40;
 
   function columnDefs_() {
     return CsvExport.CSV_COLUMNS.concat(TRACKING_COLUMNS);
@@ -79,17 +84,47 @@ var SheetsStore = (function () {
     return i == null ? -1 : i;
   }
 
-  // Makes the Status column a real dropdown in the sheet itself.
+  // Distinct statuses actually present in the sheet, unioned with the
+  // defaults -- this is what makes a custom status "stick" as a real
+  // option everywhere (app dropdown + the sheet's own data validation)
+  // once anyone has used it, not just a one-off free-text value.
+  function getKnownStatuses_(sheet, colMap) {
+    var statusCol = colIndex_(colMap, "Status");
+    var lastRow = sheet.getLastRow();
+    var seen = {};
+    var known = [];
+    DEFAULT_STATUSES.forEach(function (s) { if (!seen[s]) { seen[s] = true; known.push(s); } });
+
+    if (statusCol >= 0 && lastRow >= 2) {
+      var values = sheet.getRange(2, statusCol + 1, lastRow - 1, 1).getValues();
+      values.forEach(function (row) {
+        var s = String(row[0] || "").trim();
+        if (s && !seen[s]) { seen[s] = true; known.push(s); }
+      });
+    }
+    return known;
+  }
+
+  // Makes the Status column a real dropdown in the sheet itself, including
+  // any custom statuses teammates have already used.
   function applyStatusValidation_(sheet, colMap) {
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return;
     var statusCol = colIndex_(colMap, "Status");
     if (statusCol < 0) return;
     var rule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(ALLOWED_STATUSES, true)
+      .requireValueInList(getKnownStatuses_(sheet, colMap), true)
       .setAllowInvalid(false)
       .build();
     sheet.getRange(2, statusCol + 1, lastRow - 1, 1).setDataValidation(rule);
+  }
+
+  // Public: the full set of statuses the app should offer in its dropdown.
+  function getKnownStatuses() {
+    assertConfigured();
+    var sheet = getSheet_();
+    var colMap = buildColMap_(sheet);
+    return getKnownStatuses_(sheet, colMap);
   }
 
   function exportCompaniesToSheet(companies, claimedBy) {
@@ -264,7 +299,9 @@ var SheetsStore = (function () {
     return leads;
   }
 
-  // Sets the Status columns on every row whose NPI matches.
+  // Sets the Status columns on every row whose NPI matches. `status` isn't
+  // restricted to DEFAULT_STATUSES -- any short, non-empty value is
+  // accepted, so teammates can introduce their own statuses from the app.
   function updateLeadStatus(npi, status, updatedBy) {
     assertConfigured();
     if (!npi) {
@@ -272,11 +309,18 @@ var SheetsStore = (function () {
       noNpi.status = 400;
       throw noNpi;
     }
-    if (ALLOWED_STATUSES.indexOf(String(status)) === -1) {
-      var badStatus = new Error("status must be one of: " + ALLOWED_STATUSES.join(", "));
+    var trimmedStatus = String(status || "").trim();
+    if (!trimmedStatus) {
+      var badStatus = new Error("status is required");
       badStatus.status = 400;
       throw badStatus;
     }
+    if (trimmedStatus.length > MAX_STATUS_LENGTH) {
+      var tooLong = new Error("status must be " + MAX_STATUS_LENGTH + " characters or fewer");
+      tooLong.status = 400;
+      throw tooLong;
+    }
+    status = trimmedStatus;
 
     var sheet = getSheet_();
     var colMap = ensureColumns_(sheet); // guarantees the Status columns exist
@@ -317,14 +361,22 @@ var SheetsStore = (function () {
     return { npi: String(npi), status: status, rowsUpdated: updated };
   }
 
-  // Sets the Notes column on every row whose NPI matches -- freeform text,
-  // no allowed-value list (unlike Status). An empty string clears the note.
-  function updateLeadNotes(npi, notes) {
+  // Prepends a timestamped, attributed entry to the Notes column on every
+  // row whose NPI matches -- a running call log rather than a single value
+  // that gets overwritten each time, so a rep can see the history of
+  // previous calls to this lead, not just the last note left.
+  function addLeadNote(npi, noteText, addedBy) {
     assertConfigured();
     if (!npi) {
       var noNpi = new Error("npi is required");
       noNpi.status = 400;
       throw noNpi;
+    }
+    var trimmedNote = String(noteText || "").trim();
+    if (!trimmedNote) {
+      var badNote = new Error("note text is required");
+      badNote.status = 400;
+      throw badNote;
     }
 
     var sheet = getSheet_();
@@ -340,11 +392,18 @@ var SheetsStore = (function () {
     var notesCol = colIndex_(colMap, "Notes");
 
     var npis = sheet.getRange(2, npiCol + 1, lastRow - 1, 1).getValues();
+    var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+    var entry = stamp + (addedBy ? " — " + addedBy : "") + ": " + trimmedNote;
     var updated = 0;
+    var finalNotes = entry;
 
     for (var i = 0; i < npis.length; i++) {
       if (String(npis[i][0]) === String(npi)) {
-        sheet.getRange(i + 2, notesCol + 1).setValue(notes || "");
+        var rowNumber = i + 2;
+        var cell = sheet.getRange(rowNumber, notesCol + 1);
+        var existing = String(cell.getValue() || "").trim();
+        finalNotes = existing ? entry + "\n" + existing : entry; // newest entry on top
+        cell.setValue(finalNotes);
         updated++;
       }
     }
@@ -356,7 +415,7 @@ var SheetsStore = (function () {
     }
 
     SpreadsheetApp.flush(); // force the write to persist before we return
-    return { npi: String(npi), notes: notes || "", rowsUpdated: updated };
+    return { npi: String(npi), notes: finalNotes, rowsUpdated: updated };
   }
 
   return {
@@ -364,7 +423,8 @@ var SheetsStore = (function () {
     getClaimedNpis: getClaimedNpis,
     listClaimedLeads: listClaimedLeads,
     updateLeadStatus: updateLeadStatus,
-    updateLeadNotes: updateLeadNotes,
-    ALLOWED_STATUSES: ALLOWED_STATUSES,
+    addLeadNote: addLeadNote,
+    getKnownStatuses: getKnownStatuses,
+    DEFAULT_STATUSES: DEFAULT_STATUSES,
   };
 })();

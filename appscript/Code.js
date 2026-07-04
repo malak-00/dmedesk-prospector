@@ -100,7 +100,7 @@ function handleRequest_(e) {
         if (params.updatedYear) opts.updatedYear = params.updatedYear;
         return jsonResponse_({
           success: true,
-          data: { leads: SheetsStore.listClaimedLeads(opts), statuses: SheetsStore.ALLOWED_STATUSES },
+          data: { leads: SheetsStore.listClaimedLeads(opts), statuses: SheetsStore.getKnownStatuses() },
         });
       }
 
@@ -116,7 +116,7 @@ function handleRequest_(e) {
         var notesBody = readJsonBody_(e);
         return jsonResponse_({
           success: true,
-          data: SheetsStore.updateLeadNotes(notesBody.npi, notesBody.notes),
+          data: SheetsStore.addLeadNote(notesBody.npi, notesBody.note, session.displayName),
         });
       }
 
