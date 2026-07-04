@@ -158,6 +158,13 @@ async function fetchFreshProviders(criteria, desiredLimit, claimedNpis) {
   const fresh = [];
   let skip = 0;
   let totalScanned = 0;
+  // Counts ONLY providers actually skipped for being claimed -- deliberately
+  // NOT "totalScanned - fresh.length", which used to also fold in providers
+  // that never matched a local nameContains/taxonomy/year filter (rawCount
+  // is pre-filter) and ones simply never looked at because desiredLimit was
+  // already hit mid-page. That made "already claimed" wildly overcount
+  // whenever a search had a narrow filter, even with zero actual claims.
+  let excludedAsClaimed = 0;
 
   while (fresh.length < desiredLimit && skip <= NPPES_MAX_SKIP) {
     const { results, rawCount } = await searchProviders({
@@ -178,7 +185,10 @@ async function fetchFreshProviders(criteria, desiredLimit, claimedNpis) {
       // An explicit NPI lookup is a deliberate "pull this exact lead"
       // action -- it should never come back empty just because someone
       // already claimed it, so dedup is skipped in that case only.
-      if (criteria.npi || !provider.npi || !claimedNpis.has(String(provider.npi))) {
+      const isClaimed = !criteria.npi && provider.npi && claimedNpis.has(String(provider.npi));
+      if (isClaimed) {
+        excludedAsClaimed++;
+      } else {
         fresh.push(provider);
       }
     }
@@ -187,7 +197,7 @@ async function fetchFreshProviders(criteria, desiredLimit, claimedNpis) {
     skip += NPPES_PAGE_SIZE;
   }
 
-  return { fresh, totalScanned };
+  return { fresh, totalScanned, excludedAsClaimed };
 }
 
 export async function searchCompanies(
@@ -197,13 +207,12 @@ export async function searchCompanies(
   const desiredLimit = criteria.limit || 20;
   const claimedNpis = await getClaimedNpisSafe();
 
-  const { fresh: providers, totalScanned } = await fetchFreshProviders(
+  const { fresh: providers, totalScanned, excludedAsClaimed } = await fetchFreshProviders(
     criteria,
     desiredLimit,
     claimedNpis
   );
 
-  const excludedAsClaimed = totalScanned - providers.length;
   let companies = providers.map(fromNppesProvider);
 
   if (enrichPlaces) {

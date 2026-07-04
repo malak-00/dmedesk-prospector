@@ -144,6 +144,13 @@ var CompanyService = (function () {
     var fresh = [];
     var skip = 0;
     var totalScanned = 0;
+    // Counts ONLY providers actually skipped for being claimed -- deliberately
+    // NOT "totalScanned - fresh.length", which used to also fold in providers
+    // that never matched a local nameContains/taxonomy/year filter (rawCount
+    // is pre-filter) and ones simply never looked at because desiredLimit was
+    // already hit mid-page. That made "already claimed" wildly overcount
+    // whenever a search had a narrow filter, even with zero actual claims.
+    var excludedAsClaimed = 0;
 
     while (fresh.length < desiredLimit && skip <= NPPES_MAX_SKIP) {
       var result = NppesService.searchProviders(
@@ -164,7 +171,10 @@ var CompanyService = (function () {
         // An explicit NPI lookup is a deliberate "pull this exact lead"
         // action -- it should never come back empty just because someone
         // already claimed it, so dedup is skipped in that case only.
-        if (criteria.npi || !provider.npi || !claimedNpis.has(String(provider.npi))) {
+        var isClaimed = !criteria.npi && provider.npi && claimedNpis.has(String(provider.npi));
+        if (isClaimed) {
+          excludedAsClaimed++;
+        } else {
           fresh.push(provider);
         }
       }
@@ -173,7 +183,7 @@ var CompanyService = (function () {
       skip += NPPES_PAGE_SIZE;
     }
 
-    return { fresh: fresh, totalScanned: totalScanned };
+    return { fresh: fresh, totalScanned: totalScanned, excludedAsClaimed: excludedAsClaimed };
   }
 
   // options: { enrichPlaces = true, scrapeWebsites = false, enrichCms = true }
@@ -190,8 +200,7 @@ var CompanyService = (function () {
     var fetchResult = fetchFreshProviders(criteria, desiredLimit, claimedNpis);
     var providers = fetchResult.fresh;
     var totalScanned = fetchResult.totalScanned;
-
-    var excludedAsClaimed = totalScanned - providers.length;
+    var excludedAsClaimed = fetchResult.excludedAsClaimed;
     var companies = providers.map(fromNppesProvider);
 
     if (enrichPlaces) {
