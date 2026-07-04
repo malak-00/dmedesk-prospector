@@ -1362,4 +1362,20 @@ setInterval(() => {
 els.enableNotifications.addEventListener("change", handleNotificationToggle);
 initNotificationToggle();
 
+// One-off diagnostic, not part of the UI -- callable from the browser
+// console (F12) when a search comes back with no Foursquare/Places data, to
+// see exactly what's happening (missing key vs. an auth/quota error from
+// Foursquare itself) without needing access to the Apps Script project's
+// own Executions log. Usage: open the console and run `debugFoursquare()`.
+window.debugFoursquare = async function () {
+  try {
+    const data = await apiGet("debug/foursquare");
+    console.log("Foursquare diagnostic:", data);
+    return data;
+  } catch (err) {
+    console.error("Foursquare diagnostic failed:", err.message);
+    return { error: err.message };
+  }
+};
+
 if (getSession()) hideLogin(); else showLogin();

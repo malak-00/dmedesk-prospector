@@ -145,5 +145,38 @@ var FoursquareService = (function () {
     return results;
   }
 
-  return { enrichCompanies: enrichCompanies };
+  // One-off diagnostic: makes a single real request with a known-good query
+  // and reports back the raw status/body, so a live auth/config problem can
+  // be seen from the browser (Network tab / console) without needing access
+  // to the Apps Script project's own Executions log.
+  function testConnection() {
+    if (!Config.foursquareApiKey()) return { configured: false };
+
+    var url = BASE_URL +
+      "?query=" + encodeURIComponent("coffee") +
+      "&near=" + encodeURIComponent("New York, NY") +
+      "&fields=" + encodeURIComponent(FIELDS) +
+      "&limit=1";
+
+    try {
+      var response = UrlFetchApp.fetch(url, {
+        muteHttpExceptions: true,
+        headers: {
+          Authorization: "Bearer " + Config.foursquareApiKey(),
+          "X-Places-Api-Version": API_VERSION,
+          Accept: "application/json",
+        },
+      });
+      var body = response.getContentText();
+      return {
+        configured: true,
+        status: response.getResponseCode(),
+        body: body.length > 500 ? body.slice(0, 500) + "…" : body,
+      };
+    } catch (err) {
+      return { configured: true, status: null, error: String(err) };
+    }
+  }
+
+  return { enrichCompanies: enrichCompanies, testConnection: testConnection };
 })();

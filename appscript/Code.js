@@ -136,6 +136,9 @@ function handleRequest_(e) {
         });
       }
 
+      case "debug/foursquare":
+        return jsonResponse_({ success: true, data: FoursquareService.testConnection() });
+
       default:
         return errorResponse_(404, "Unknown path: " + path);
     }
