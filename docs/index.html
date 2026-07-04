@@ -6,7 +6,7 @@
 <title>DME Desk Prospector</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -200,10 +200,12 @@
                 <th>Claimed by</th>
                 <th>Updated</th>
                 <th>Status</th>
+                <th>Notes</th>
+                <th class="col-expand"></th>
               </tr>
             </thead>
             <tbody id="claimedBody">
-              <tr class="empty-row"><td colspan="6">Open this tab to load claimed leads.</td></tr>
+              <tr class="empty-row"><td colspan="8">Open this tab to load claimed leads.</td></tr>
             </tbody>
           </table>
         </div>
@@ -213,8 +215,8 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="config.js?v=9"></script>
-  <script src="usLocations.js?v=9"></script>
-  <script src="app.js?v=9"></script>
+  <script src="config.js?v=10"></script>
+  <script src="usLocations.js?v=10"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

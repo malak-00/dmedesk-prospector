@@ -318,6 +318,20 @@ body {
 .status-select.status-not-interested, .status-select.status-do-not-call { border-color: var(--score-low); color: var(--score-low); }
 .status-select.status-called, .status-select.status-voicemail { border-color: var(--score-mid); color: var(--score-mid); }
 
+/* ---------- Notes input (claimed leads) ---------- */
+
+.notes-input {
+  font-family: var(--font-ui); font-size: 12px;
+  background: var(--surface-2); color: var(--ink);
+  border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+  padding: 5px 8px; width: 100%; min-width: 140px;
+  transition: border-color 0.12s ease;
+}
+.notes-input::placeholder { color: var(--muted-2); }
+.notes-input:hover { border-color: #3A4150; }
+.notes-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.notes-input:disabled { opacity: 0.6; }
+
 /* ---------- Toast ---------- */
 
 .toast {

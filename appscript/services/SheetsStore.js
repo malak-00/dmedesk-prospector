@@ -18,6 +18,7 @@ var SheetsStore = (function () {
     { key: "status", label: "Status" },
     { key: "statusUpdatedBy", label: "Status Updated By" },
     { key: "statusUpdatedAt", label: "Status Updated At" },
+    { key: "notes", label: "Notes" },
   ];
   var ALLOWED_STATUSES = ["new", "called", "voicemail", "interested", "not interested", "do not call"];
 
@@ -117,7 +118,7 @@ var SheetsStore = (function () {
         if (c.key === "claimedBy") val = claimedBy || "";
         else if (c.key === "claimedAt") val = now;
         else if (c.key === "status") val = "new";
-        else if (c.key === "statusUpdatedBy" || c.key === "statusUpdatedAt") val = "";
+        else if (c.key === "statusUpdatedBy" || c.key === "statusUpdatedAt" || c.key === "notes") val = "";
         else val = flat[c.key] != null ? flat[c.key] : "";
         row[ci] = val;
       });
@@ -174,11 +175,19 @@ var SheetsStore = (function () {
 
     var idx = {
       name: get("Company Name"), npi: get("NPI"),
-      city: get("City"), state: get("State"),
+      addressLine1: get("Address"), city: get("City"), state: get("State"), postalCode: get("Postal Code"),
+      taxonomy: get("Specialty"), website: get("Website"), email: get("Email"), fax: get("Fax"),
       contactName: get("Contact Name"), contactTitle: get("Contact Title"),
+      contactRole: get("Contact Role"), contactSource: get("Contact Source"),
+      additionalContacts: get("Additional Contacts Found"),
       contactPhone: get("Contact Phone"), companyPhone: get("Phone"),
+      rating: get("Rating"), scoreValue: get("Score"), scorePercentage: get("Score %"),
+      sources: get("Data Sources"),
+      medicareClaims: get("Medicare Claims"), medicareBeneficiaries: get("Medicare Beneficiaries"),
+      medicarePayment: get("Medicare Payment $"), nppesLastUpdated: get("NPPES Last Updated"),
       claimedBy: get("Claimed By"), claimedAt: get("Claimed At"),
       status: get("Status"), statusUpdatedAt: get("Status Updated At"),
+      notes: get("Notes"),
     };
 
     var data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
@@ -190,17 +199,35 @@ var SheetsStore = (function () {
         rowNumber: i + 2,
         name: pick(idx.name),
         npi: pick(idx.npi),
+        addressLine1: pick(idx.addressLine1),
         city: pick(idx.city),
         state: pick(idx.state),
+        postalCode: pick(idx.postalCode),
+        taxonomy: pick(idx.taxonomy),
+        website: pick(idx.website),
+        email: pick(idx.email),
+        fax: pick(idx.fax),
         contactName: pick(idx.contactName),
         contactTitle: pick(idx.contactTitle),
+        contactRole: pick(idx.contactRole),
+        contactSource: pick(idx.contactSource),
+        additionalContacts: pick(idx.additionalContacts),
         contactPhone: pick(idx.contactPhone),
         companyPhone: pick(idx.companyPhone),
+        rating: pick(idx.rating),
+        scoreValue: pick(idx.scoreValue),
+        scorePercentage: pick(idx.scorePercentage),
+        sources: pick(idx.sources),
+        medicareClaims: pick(idx.medicareClaims),
+        medicareBeneficiaries: pick(idx.medicareBeneficiaries),
+        medicarePayment: pick(idx.medicarePayment),
+        nppesLastUpdated: pick(idx.nppesLastUpdated),
         claimedBy: pick(idx.claimedBy),
         claimedAt: claimedAt,
         status: pick(idx.status) || "new",
         statusUpdatedAt: statusUpdatedAt,
         lastUpdated: statusUpdatedAt || claimedAt,
+        notes: pick(idx.notes),
       };
     }).filter(function (lead) { return lead.npi !== "" || lead.name !== ""; });
 
@@ -290,11 +317,54 @@ var SheetsStore = (function () {
     return { npi: String(npi), status: status, rowsUpdated: updated };
   }
 
+  // Sets the Notes column on every row whose NPI matches -- freeform text,
+  // no allowed-value list (unlike Status). An empty string clears the note.
+  function updateLeadNotes(npi, notes) {
+    assertConfigured();
+    if (!npi) {
+      var noNpi = new Error("npi is required");
+      noNpi.status = 400;
+      throw noNpi;
+    }
+
+    var sheet = getSheet_();
+    var colMap = ensureColumns_(sheet); // guarantees the Notes column exists
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      var empty = new Error("No leads in the sheet yet");
+      empty.status = 404;
+      throw empty;
+    }
+
+    var npiCol = colIndex_(colMap, "NPI");
+    var notesCol = colIndex_(colMap, "Notes");
+
+    var npis = sheet.getRange(2, npiCol + 1, lastRow - 1, 1).getValues();
+    var updated = 0;
+
+    for (var i = 0; i < npis.length; i++) {
+      if (String(npis[i][0]) === String(npi)) {
+        sheet.getRange(i + 2, notesCol + 1).setValue(notes || "");
+        updated++;
+      }
+    }
+
+    if (updated === 0) {
+      var notFound = new Error("No lead with NPI " + npi + " found in the sheet");
+      notFound.status = 404;
+      throw notFound;
+    }
+
+    SpreadsheetApp.flush(); // force the write to persist before we return
+    return { npi: String(npi), notes: notes || "", rowsUpdated: updated };
+  }
+
   return {
     exportCompaniesToSheet: exportCompaniesToSheet,
     getClaimedNpis: getClaimedNpis,
     listClaimedLeads: listClaimedLeads,
     updateLeadStatus: updateLeadStatus,
+    updateLeadNotes: updateLeadNotes,
     ALLOWED_STATUSES: ALLOWED_STATUSES,
   };
 })();

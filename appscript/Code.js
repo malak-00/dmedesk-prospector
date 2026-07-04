@@ -112,6 +112,14 @@ function handleRequest_(e) {
         });
       }
 
+      case "leads/notes": {
+        var notesBody = readJsonBody_(e);
+        return jsonResponse_({
+          success: true,
+          data: SheetsStore.updateLeadNotes(notesBody.npi, notesBody.notes),
+        });
+      }
+
       default:
         return errorResponse_(404, "Unknown path: " + path);
     }

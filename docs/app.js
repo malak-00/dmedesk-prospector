@@ -69,6 +69,8 @@ const state = {
   expandedIndex: null,
   view: "search",
   claimedLoaded: false,
+  claimedLeads: [],
+  claimedExpandedIndex: null,
   statuses: [],
 };
 
@@ -400,11 +402,15 @@ function detailRowHtml(company, index) {
 }
 
 function attachRowHandlers() {
-  document.querySelectorAll(".lead-row").forEach((row) => {
+  // Scoped to #resultsBody -- the Claimed Leads table also uses ".lead-row"
+  // (for shared hover/selection styling) and stays in the DOM under
+  // [hidden] when that tab isn't active, so an unscoped query here would
+  // double-bind onto its rows too.
+  els.resultsBody.querySelectorAll(".lead-row").forEach((row) => {
     row.addEventListener("click", () => toggleRowDetail(Number(row.dataset.index)));
   });
 
-  document.querySelectorAll(".row-check").forEach((box) => {
+  els.resultsBody.querySelectorAll(".row-check").forEach((box) => {
     box.addEventListener("change", (e) => {
       const idx = Number(e.target.dataset.index);
       const row = e.target.closest(".lead-row");
@@ -519,7 +525,7 @@ async function exportSheets() {
 /* ---------- Claimed leads view ---------- */
 
 async function loadClaimedLeads() {
-  els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="6"><div class="loading-row"><span class="spinner"></span> Loading claimed leads…</div></td></tr>`;
+  els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="8"><div class="loading-row"><span class="spinner"></span> Loading claimed leads…</div></td></tr>`;
   try {
     const params = {};
     if (els.onlyMine.checked) params.mine = "true";
@@ -530,25 +536,31 @@ async function loadClaimedLeads() {
     state.claimedLoaded = true;
     renderClaimedLeads(data.leads || []);
   } catch (err) {
-    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="6">${escapeHtml(err.message)}</td></tr>`;
+    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(err.message)}</td></tr>`;
     showToast(err.message, true);
   }
 }
 
 function renderClaimedLeads(leads) {
+  state.claimedLeads = leads;
+  state.claimedExpandedIndex = null;
   els.claimedCount.textContent = `${leads.length} claimed lead${leads.length === 1 ? "" : "s"}`;
 
   if (leads.length === 0) {
-    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="6">Nothing claimed yet — export some leads to Sheets first.</td></tr>`;
+    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="8">Nothing claimed yet — export some leads to Sheets first.</td></tr>`;
     return;
   }
 
-  els.claimedBody.innerHTML = leads.map((lead) => {
-    const contactLine = lead.contactName
-      ? `${escapeHtml(lead.contactName)}${lead.contactTitle ? ` — ${escapeHtml(lead.contactTitle)}` : ""}`
-      : "";
-    return `
-    <tr>
+  els.claimedBody.innerHTML = leads.map((lead, i) => claimedLeadRowHtml(lead, i)).join("");
+  attachClaimedRowHandlers();
+}
+
+function claimedLeadRowHtml(lead, index) {
+  const contactLine = lead.contactName
+    ? `${escapeHtml(lead.contactName)}${lead.contactTitle ? ` — ${escapeHtml(lead.contactTitle)}` : ""}`
+    : "";
+  return `
+    <tr class="lead-row" data-claimed-index="${index}">
       <td>
         <div class="company-name">${escapeHtml(lead.name)}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
@@ -557,14 +569,162 @@ function renderClaimedLeads(leads) {
       <td class="mono">${phoneCell(lead.contactPhone, lead.companyPhone)}</td>
       <td>${escapeHtml(lead.claimedBy || "—")}</td>
       <td class="mono">${escapeHtml((lead.lastUpdated || "").slice(0, 10))}</td>
-      <td>
+      <td onclick="event.stopPropagation()">
         <select class="status-select status-${escapeHtml(lead.status).replace(/\s+/g, "-")}" data-npi="${escapeHtml(lead.npi)}">
           ${state.statuses.map((s) => `<option value="${escapeHtml(s)}" ${s === lead.status ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
         </select>
       </td>
+      <td onclick="event.stopPropagation()">
+        <input type="text" class="notes-input" data-npi="${escapeHtml(lead.npi)}" placeholder="Add a note…" value="${escapeHtml(lead.notes || "")}">
+      </td>
+      <td><span class="chevron">▸</span></td>
     </tr>
   `;
-  }).join("");
+}
+
+// Reconstructs a CompanyModel-shaped object from the flat fields stored in
+// the sheet, so the same brief/generate endpoint used in the Prospect view
+// works here too -- useful for the exact case this view is meant for
+// (dialing straight from claimed leads without the Sheet open).
+function companyLikeFromClaimedLead(lead) {
+  const activeSources = (lead.sources || "").split(";").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const hasMedicare = lead.medicareClaims !== "" && lead.medicareClaims != null;
+  return {
+    name: lead.name,
+    npi: lead.npi,
+    address: { line1: lead.addressLine1, city: lead.city, state: lead.state, postalCode: lead.postalCode },
+    taxonomy: { description: lead.taxonomy },
+    website: lead.website || null,
+    phone: lead.companyPhone || null,
+    fax: lead.fax || null,
+    decisionMakers: lead.contactName
+      ? [{ name: lead.contactName, title: lead.contactTitle, roleCategory: lead.contactRole || "staff", phone: lead.contactPhone || null }]
+      : [],
+    places: { rating: lead.rating !== "" ? Number(lead.rating) : null },
+    medicare: hasMedicare
+      ? {
+          totalClaims: Number(lead.medicareClaims),
+          totalBeneficiaries: lead.medicareBeneficiaries !== "" ? Number(lead.medicareBeneficiaries) : null,
+          medicarePayment: lead.medicarePayment !== "" ? Number(lead.medicarePayment) : null,
+        }
+      : null,
+    score: {
+      value: lead.scoreValue !== "" ? Number(lead.scoreValue) : null,
+      percentage: lead.scorePercentage !== "" ? Number(lead.scorePercentage) : null,
+    },
+    sources: {
+      nppes: true,
+      places: activeSources.includes("places"),
+      osm: activeSources.includes("osm"),
+      cms: activeSources.includes("cms"),
+      website: activeSources.includes("website"),
+    },
+  };
+}
+
+function claimedDetailRowHtml(lead, index) {
+  const sourcesList = lead.sources
+    ? lead.sources.split(";").map((s) => s.trim().toUpperCase()).filter(Boolean).join(", ")
+    : "";
+  const scoreLine = lead.scorePercentage !== "" ? `${lead.scorePercentage}% (${lead.scoreValue || "?"} pts)` : "Not scored";
+  const medicareLine = lead.medicareClaims !== ""
+    ? `${Number(lead.medicareClaims).toLocaleString()} claims` +
+      (lead.medicareBeneficiaries !== "" ? `, ${Number(lead.medicareBeneficiaries).toLocaleString()} beneficiaries` : "") +
+      (lead.medicarePayment !== "" ? `, $${Math.round(Number(lead.medicarePayment)).toLocaleString()} paid` : "")
+    : "No CMS claims data found";
+
+  return `
+    <tr class="detail-row">
+      <td colspan="8">
+        <div class="detail-grid">
+          <div class="detail-block">
+            <h4>Details</h4>
+            <div class="mono" style="font-size:13px; line-height:1.8;">
+              NPI: ${escapeHtml(lead.npi || "—")}<br>
+              ${escapeHtml(lead.addressLine1 || "")}<br>
+              ${escapeHtml(lead.city || "")}, ${escapeHtml(lead.state || "")} ${escapeHtml(lead.postalCode || "")}<br>
+              Company phone: ${escapeHtml(lead.companyPhone || "—")}<br>
+              Website: ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank">${escapeHtml(lead.website)}</a>` : "—"}<br>
+              Fax: ${escapeHtml(lead.fax || "—")}<br>
+              Specialty: ${escapeHtml(lead.taxonomy || "—")}<br>
+              Score: ${escapeHtml(scoreLine)}<br>
+              Medicare (CMS): ${escapeHtml(medicareLine)}<br>
+              NPPES last updated: ${escapeHtml(lead.nppesLastUpdated || "—")}<br>
+              Data sources: ${escapeHtml(sourcesList || "NPPES only")}
+            </div>
+          </div>
+          <div class="detail-block">
+            <h4>Contact</h4>
+            ${lead.contactName ? `
+              <div class="contact-item">
+                <div>
+                  ${escapeHtml(lead.contactName)}${lead.contactTitle ? ` — ${escapeHtml(lead.contactTitle)}` : ""}
+                  ${lead.contactRole ? `<span class="contact-role">${escapeHtml(lead.contactRole)}</span>` : ""}
+                </div>
+                ${lead.contactPhone ? `<div class="mono contact-phone">${escapeHtml(lead.contactPhone)}</div>` : ""}
+              </div>
+            ` : '<span style="color:var(--muted); font-size:13px;">None identified</span>'}
+            ${Number(lead.additionalContacts) > 0 ? `<div style="font-size:12px; color:var(--muted); margin-top:8px;">+${escapeHtml(lead.additionalContacts)} other contact(s) found (see Sheet)</div>` : ""}
+          </div>
+        </div>
+        <div class="brief-box">
+          <button class="btn btn-ghost btn-small" data-claimed-brief-index="${index}">Generate call brief</button>
+          <div class="brief-output" id="claimed-brief-${index}"></div>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+async function generateClaimedBrief(index) {
+  const lead = state.claimedLeads[index];
+  const company = companyLikeFromClaimedLead(lead);
+  const output = document.getElementById(`claimed-brief-${index}`);
+  output.className = "brief-output visible";
+  output.textContent = "Generating brief…";
+
+  try {
+    const data = await apiPost("brief/generate", { company });
+    output.textContent = data.brief;
+  } catch (err) {
+    output.textContent = `Could not generate brief: ${err.message}`;
+  }
+}
+
+// Same "touch only the one row that changed" approach as the Prospect
+// table -- see toggleRowDetail/collapseRow above.
+function collapseClaimedRow(idx) {
+  const row = document.querySelector(`#claimedBody .lead-row[data-claimed-index="${idx}"]`);
+  row?.querySelector(".chevron")?.classList.remove("open");
+  const detail = row?.nextElementSibling;
+  if (detail && detail.classList.contains("detail-row")) detail.remove();
+}
+
+function toggleClaimedRowDetail(idx) {
+  const row = document.querySelector(`#claimedBody .lead-row[data-claimed-index="${idx}"]`);
+  if (!row) return;
+
+  if (state.claimedExpandedIndex === idx) {
+    collapseClaimedRow(idx);
+    state.claimedExpandedIndex = null;
+    return;
+  }
+
+  if (state.claimedExpandedIndex !== null) collapseClaimedRow(state.claimedExpandedIndex);
+
+  state.claimedExpandedIndex = idx;
+  row.querySelector(".chevron")?.classList.add("open");
+  row.insertAdjacentHTML("afterend", claimedDetailRowHtml(state.claimedLeads[idx], idx));
+  document.querySelector(`[data-claimed-brief-index="${idx}"]`)?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    generateClaimedBrief(idx);
+  });
+}
+
+function attachClaimedRowHandlers() {
+  document.querySelectorAll("#claimedBody .lead-row").forEach((row) => {
+    row.addEventListener("click", () => toggleClaimedRowDetail(Number(row.dataset.claimedIndex)));
+  });
 
   els.claimedBody.querySelectorAll(".status-select").forEach((select) => {
     select.addEventListener("change", async (e) => {
@@ -575,6 +735,28 @@ function renderClaimedLeads(leads) {
         await apiPost("leads/status", { npi, status });
         e.target.className = `status-select status-${status.replace(/\s+/g, "-")}`;
         showToast(`Status updated to "${status}"`);
+      } catch (err) {
+        showToast(err.message, true);
+      } finally {
+        e.target.disabled = false;
+      }
+    });
+  });
+
+  els.claimedBody.querySelectorAll(".notes-input").forEach((input) => {
+    input.dataset.savedValue = input.value;
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") e.target.blur(); // Enter saves & unfocuses, like most quick-note fields
+    });
+    input.addEventListener("blur", async (e) => {
+      const npi = e.target.dataset.npi;
+      const notes = e.target.value;
+      if (notes === e.target.dataset.savedValue) return; // unchanged, nothing to save
+      e.target.disabled = true;
+      try {
+        await apiPost("leads/notes", { npi, notes });
+        e.target.dataset.savedValue = notes;
+        showToast("Note saved");
       } catch (err) {
         showToast(err.message, true);
       } finally {
@@ -629,7 +811,7 @@ refreshCityOptions();
 
 els.form.addEventListener("submit", runSearch);
 els.selectAll.addEventListener("change", (e) => {
-  document.querySelectorAll(".row-check").forEach((box) => {
+  els.resultsBody.querySelectorAll(".row-check").forEach((box) => {
     box.checked = e.target.checked;
     const idx = Number(box.dataset.index);
     const row = box.closest(".lead-row");
@@ -641,8 +823,8 @@ els.selectAll.addEventListener("change", (e) => {
 els.clearSelectionBtn.addEventListener("click", () => {
   state.selected.clear();
   els.selectAll.checked = false;
-  document.querySelectorAll(".row-check").forEach((box) => { box.checked = false; });
-  document.querySelectorAll(".lead-row").forEach((row) => row.classList.remove("is-selected"));
+  els.resultsBody.querySelectorAll(".row-check").forEach((box) => { box.checked = false; });
+  els.resultsBody.querySelectorAll(".lead-row").forEach((row) => row.classList.remove("is-selected"));
   updateSelectionUI();
 });
 els.exportCsvBtn.addEventListener("click", exportCsv);
