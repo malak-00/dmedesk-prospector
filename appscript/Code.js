@@ -178,16 +178,25 @@ function requireSession_(params) {
 // national NPI-2 registry -- Node's controller already validates this; Apps
 // Script's router didn't.
 //
-// `state` deliberately does NOT count on its own here: NPPES rejects a bare
-// state (paired only with the enumeration_type=NPI-2 this app always sends)
-// with "Field state requires additional search criteria" -- it has to be
-// paired with one of the fields below. Catching that client-side gives a
-// clear, immediate message instead of a round-trip to NPPES for a rejection.
+// `state`/`states` deliberately does NOT count on its own here: NPPES
+// rejects a bare state (paired only with the enumeration_type=NPI-2 this app
+// always sends) with "Field state requires additional search criteria" --
+// it has to be paired with one of the fields below. Catching that
+// client-side gives a clear, immediate message instead of a round-trip to
+// NPPES for a rejection.
 function hasAnySearchCriteria_(criteria) {
   return Boolean(
     criteria.npi || criteria.organizationName || criteria.nameContains ||
-    criteria.city || criteria.postalCode || criteria.taxonomyDescription
+    criteria.city || criteria.postalCode ||
+    criteria.taxonomyDescription || (criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length)
   );
+}
+
+// A comma-joined query param (e.g. "?states=FL,GA,TX") -> a clean array,
+// dropping any blank segments. Empty input (param absent) returns [].
+function parseCommaList_(value) {
+  if (!value) return [];
+  return String(value).split(",").map(function (s) { return s.trim(); }).filter(Boolean);
 }
 
 function readSearchCriteria_(params) {
@@ -197,8 +206,10 @@ function readSearchCriteria_(params) {
     nameContains: params.nameContains || undefined,
     city: params.city || undefined,
     state: params.state || undefined,
+    states: parseCommaList_(params.states),
     postalCode: params.postalCode || undefined,
     taxonomyDescription: params.taxonomyDescription || undefined,
+    taxonomyDescriptions: parseCommaList_(params.taxonomyDescriptions),
     lastUpdatedYear: params.lastUpdatedYear || undefined,
     limit: params.limit ? Number(params.limit) : undefined,
     skip: params.skip ? Number(params.skip) : undefined,

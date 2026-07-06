@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -87,9 +87,15 @@
             </label>
             <label class="field">
               <span>State</span>
-              <select name="state" id="stateSelect">
-                <option value="">All states</option>
-              </select>
+              <div class="multiselect" id="stateMultiselect">
+                <button type="button" class="multiselect-toggle" aria-haspopup="true" aria-expanded="false">All states</button>
+                <div class="multiselect-panel" hidden>
+                  <div class="multiselect-actions">
+                    <button type="button" class="link-btn" id="stateClearBtn">Clear</button>
+                  </div>
+                  <div class="multiselect-options" id="stateOptions"></div>
+                </div>
+              </div>
             </label>
             <label class="field">
               <span>City</span>
@@ -102,14 +108,41 @@
             </label>
             <label class="field field-wide">
               <span>Specialty / taxonomy</span>
-              <select name="taxonomyDescription">
-                <option value="" selected>All specialties</option>
-                <option value="Durable Medical Equipment">Durable Medical Equipment &amp; Medical Supplies</option>
-                <option value="Oxygen Equipment">DME — Oxygen Equipment &amp; Supplies</option>
-                <option value="Prosthetic/Orthotic">Prosthetic/Orthotic Supplier</option>
-                <option value="Orthopedic">Orthopedics (any orthopedic specialty)</option>
-                <option value="Prosthetic">Prosthetics (any prosthetic specialty)</option>
-              </select>
+              <div class="multiselect" id="taxonomyMultiselect">
+                <button type="button" class="multiselect-toggle" aria-haspopup="true" aria-expanded="false">All specialties</button>
+                <div class="multiselect-panel" hidden>
+                  <div class="multiselect-actions">
+                    <button type="button" class="link-btn" id="taxonomySelectAllBtn">Select all</button>
+                    <button type="button" class="link-btn" id="taxonomyClearBtn">Clear</button>
+                  </div>
+                  <div class="multiselect-options">
+                    <label class="multiselect-option">
+                      <input type="checkbox" id="taxonomyAllCheckbox" checked>
+                      <span>All specialties</span>
+                    </label>
+                    <label class="multiselect-option is-divider">
+                      <input type="checkbox" name="taxonomyDescriptions" value="Durable Medical Equipment">
+                      <span>Durable Medical Equipment &amp; Medical Supplies</span>
+                    </label>
+                    <label class="multiselect-option">
+                      <input type="checkbox" name="taxonomyDescriptions" value="Oxygen Equipment">
+                      <span>DME — Oxygen Equipment &amp; Supplies</span>
+                    </label>
+                    <label class="multiselect-option">
+                      <input type="checkbox" name="taxonomyDescriptions" value="Prosthetic/Orthotic">
+                      <span>Prosthetic/Orthotic Supplier</span>
+                    </label>
+                    <label class="multiselect-option">
+                      <input type="checkbox" name="taxonomyDescriptions" value="Orthopedic">
+                      <span>Orthopedics (any orthopedic specialty)</span>
+                    </label>
+                    <label class="multiselect-option">
+                      <input type="checkbox" name="taxonomyDescriptions" value="Prosthetic">
+                      <span>Prosthetics (any prosthetic specialty)</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
             </label>
             <label class="field">
               <span>Last updated (year)</span>
@@ -210,6 +243,12 @@
                 <option value="">Any year</option>
               </select>
             </label>
+            <label class="inline-field">
+              <span>Status</span>
+              <select id="statusFilter">
+                <option value="">All statuses</option>
+              </select>
+            </label>
           </div>
           <div class="results-actions">
             <button type="button" class="link-btn stale-nudge" id="staleNudge" hidden>Results may be stale —</button>
@@ -280,7 +319,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="config.js?v=10"></script>
-  <script src="usLocations.js?v=10"></script>
-  <script src="app.js?v=17"></script>
+  <script src="usLocations.js?v=11"></script>
+  <script src="app.js?v=18"></script>
 </body>
 </html>

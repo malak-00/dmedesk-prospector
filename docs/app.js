@@ -88,6 +88,12 @@ const state = {
   view: "search",
   claimedLoaded: false,
   claimedLeads: [],
+  // The full, unfiltered set fetched from the server -- state.claimedLeads
+  // (what's actually rendered, indexed 1:1 with row DOM elements) is derived
+  // from this by applying the status filter, so changing the status filter
+  // never needs a re-fetch, just a re-derive + re-render.
+  claimedLeadsAll: [],
+  statusFilter: "",
   claimedExpandedIndex: null,
   claimedLoadedAt: null,
   claimedSortKey: null,
@@ -200,6 +206,7 @@ const els = {
   enableNotifications: document.getElementById("enableNotifications"),
   updatedWithin: document.getElementById("updatedWithin"),
   updatedYear: document.getElementById("updatedYear"),
+  statusFilter: document.getElementById("statusFilter"),
   refreshClaimedBtn: document.getElementById("refreshClaimedBtn"),
   staleNudge: document.getElementById("staleNudge"),
   lastUpdatedYearSelect: document.getElementById("lastUpdatedYearSelect"),
@@ -422,10 +429,21 @@ function medicareSummary(medicare) {
 
 /* ---------- Search ---------- */
 
+// "states" and "taxonomyDescriptions" are multi-valued (several checkboxes
+// sharing one `name`) -- FormData.entries() would yield one params[key]
+// assignment per checked box, each overwriting the last, so they're pulled
+// out via getAll() and sent as a single comma-joined value instead.
+const MULTI_VALUE_FIELDS = ["states", "taxonomyDescriptions"];
+
 function buildSearchParams(formData) {
   const params = {};
   for (const [key, value] of formData.entries()) {
+    if (MULTI_VALUE_FIELDS.includes(key)) continue;
     if (value !== "" && value !== null) params[key] = value;
+  }
+  for (const key of MULTI_VALUE_FIELDS) {
+    const values = formData.getAll(key).filter(Boolean);
+    if (values.length) params[key] = values.join(",");
   }
   if (!formData.get("enrich")) params.enrich = "false";
   if (formData.get("scrape")) params.scrape = "true";
@@ -450,9 +468,10 @@ function saveSearchFormState() {
   const formData = new FormData(els.form);
   const values = {};
   for (const el of els.form.elements) {
-    if (!el.name) continue;
+    if (!el.name || MULTI_VALUE_FIELDS.includes(el.name)) continue;
     values[el.name] = el.type === "checkbox" ? el.checked : formData.get(el.name) || "";
   }
+  for (const key of MULTI_VALUE_FIELDS) values[key] = formData.getAll(key);
   sessionStorage.setItem(SEARCH_FILTERS_KEY, JSON.stringify(values));
 }
 
@@ -462,11 +481,24 @@ function restoreSearchFormState() {
   let values;
   try { values = JSON.parse(raw); } catch { return; }
   for (const el of els.form.elements) {
-    if (!el.name || !(el.name in values)) continue;
+    if (!el.name || !(el.name in values) || MULTI_VALUE_FIELDS.includes(el.name)) continue;
     if (el.type === "checkbox") el.checked = Boolean(values[el.name]);
     else el.value = values[el.name];
   }
-  refreshCityOptions(); // programmatic .value assignment above doesn't fire the state select's own change listener
+  if (Array.isArray(values.states)) {
+    stateOptionsContainer.querySelectorAll('input[name="states"]').forEach((cb) => {
+      cb.checked = values.states.includes(cb.value);
+    });
+    updateStateSummary();
+  }
+  if (Array.isArray(values.taxonomyDescriptions)) {
+    taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => {
+      cb.checked = values.taxonomyDescriptions.includes(cb.value);
+    });
+    taxonomyAllCheckbox.checked = values.taxonomyDescriptions.length === 0;
+    updateTaxonomySummary();
+  }
+  refreshCityOptions(); // programmatic checkbox state above doesn't fire the state options' own change listener
   if (values.city) cityInput.value = values.city;
 }
 
@@ -961,6 +993,22 @@ function checkDueReminders() {
   });
 }
 
+// Keeps the current selection if it's still a known status; otherwise falls
+// back to "All statuses" -- a custom status could in principle disappear if
+// no lead uses it anymore between loads.
+function populateStatusFilterOptions() {
+  const current = els.statusFilter.value;
+  els.statusFilter.innerHTML =
+    `<option value="">All statuses</option>` +
+    state.statuses.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+  els.statusFilter.value = state.statuses.includes(current) ? current : "";
+  state.statusFilter = els.statusFilter.value;
+}
+
+function applyStatusFilter(leads) {
+  return state.statusFilter ? leads.filter((lead) => lead.status === state.statusFilter) : leads;
+}
+
 async function loadClaimedLeads() {
   els.claimedBody.innerHTML = skeletonRows(5, 9);
   els.staleNudge.hidden = true;
@@ -971,12 +1019,14 @@ async function loadClaimedLeads() {
     if (els.updatedYear.value) params.updatedYear = els.updatedYear.value;
     const data = await apiGet("leads/list", params);
     state.statuses = data.statuses || [];
+    populateStatusFilterOptions();
     state.claimedLoaded = true;
     state.claimedLoadedAt = Date.now();
     state.claimedSortKey = null; // fresh data starts in the server's own order (last updated desc)
     state.claimedSortDir = 1;
     updateSortIndicators(els.claimedTable, null, 1);
-    renderClaimedLeads(data.leads || []);
+    state.claimedLeadsAll = data.leads || [];
+    renderClaimedLeads(applyStatusFilter(state.claimedLeadsAll));
   } catch (err) {
     els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="9">${escapeHtml(err.message)}</td></tr>`;
     showToast(err.message, true);
@@ -1378,6 +1428,10 @@ function attachClaimedRowHandlers() {
       try {
         await apiPost("leads/status", { npi, status });
         e.target.className = `status-select status-${status.replace(/\s+/g, "-")}`;
+        // Same object reference as in state.claimedLeadsAll -- keeps the
+        // status filter (and anything else reading state.claimedLeads)
+        // correct without waiting for a full reload.
+        state.claimedLeads[Number(e.target.dataset.index)].status = status;
         previousValue = status;
         showToast(`Status updated to "${status}"`);
         // A callback-ish status is a strong signal this lead needs a
@@ -1441,27 +1495,127 @@ const US_STATE_NAMES = {
   WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
 };
 
-const stateSelect = document.getElementById("stateSelect");
 const cityInput = document.getElementById("cityInput");
 const cityOptions = document.getElementById("cityOptions");
 
+// Generic open/close behavior for a checkbox-dropdown multi-select: click the
+// toggle button to open, click anywhere outside (or Escape) to close. Reused
+// by both the State and Specialty fields below.
+function setupMultiselectToggle(containerEl) {
+  const toggle = containerEl.querySelector(".multiselect-toggle");
+  const panel = containerEl.querySelector(".multiselect-panel");
+
+  function open() {
+    panel.hidden = false;
+    toggle.setAttribute("aria-expanded", "true");
+    containerEl.classList.add("open");
+  }
+  function close() {
+    panel.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+    containerEl.classList.remove("open");
+  }
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (panel.hidden) open(); else close();
+  });
+  document.addEventListener("click", (e) => {
+    if (!containerEl.contains(e.target)) close();
+  });
+  containerEl.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { close(); toggle.focus(); }
+  });
+}
+
+function updateMultiselectSummary(containerEl, checkboxSelector, emptyLabel, checkedNoun) {
+  const toggle = containerEl.querySelector(".multiselect-toggle");
+  const checked = [...containerEl.querySelectorAll(checkboxSelector + ":checked")];
+  if (checked.length === 0) toggle.textContent = emptyLabel;
+  else if (checked.length === 1) toggle.textContent = checked[0].nextElementSibling.textContent;
+  else toggle.textContent = `${checked.length} ${checkedNoun} selected`;
+}
+
+/* State multi-select */
+
+const stateMultiselect = document.getElementById("stateMultiselect");
+const stateOptionsContainer = document.getElementById("stateOptions");
+setupMultiselectToggle(stateMultiselect);
+
 for (const [code, name] of Object.entries(US_STATE_NAMES)) {
-  const opt = document.createElement("option");
-  opt.value = code;
-  opt.textContent = `${code} — ${name}`;
-  stateSelect.appendChild(opt);
+  const label = document.createElement("label");
+  label.className = "multiselect-option";
+  label.innerHTML = `<input type="checkbox" name="states" value="${code}"><span>${code} — ${name}</span>`;
+  stateOptionsContainer.appendChild(label);
+}
+
+function updateStateSummary() {
+  updateMultiselectSummary(stateMultiselect, 'input[name="states"]', "All states", "states");
 }
 
 function refreshCityOptions() {
-  const cities = US_CITIES_BY_STATE[stateSelect.value] || [];
+  const checkedStates = [...stateOptionsContainer.querySelectorAll('input[name="states"]:checked')].map((cb) => cb.value);
+  const cities = checkedStates.length
+    ? [...new Set(checkedStates.flatMap((code) => US_CITIES_BY_STATE[code] || []))].sort()
+    : [];
   cityOptions.innerHTML = cities.map((c) => `<option value="${c}"></option>`).join("");
 }
 
-stateSelect.addEventListener("change", () => {
-  cityInput.value = ""; // stale city from the previous state would silently mis-filter
+stateOptionsContainer.addEventListener("change", () => {
+  cityInput.value = ""; // stale city from a state that's no longer checked would silently mis-filter
+  updateStateSummary();
   refreshCityOptions();
 });
+document.getElementById("stateClearBtn").addEventListener("click", () => {
+  stateOptionsContainer.querySelectorAll('input[name="states"]:checked').forEach((cb) => { cb.checked = false; });
+  cityInput.value = "";
+  updateStateSummary();
+  refreshCityOptions();
+});
+updateStateSummary();
 refreshCityOptions();
+
+/* Specialty/taxonomy multi-select -- "All specialties" is mutually exclusive
+   with the specific checkboxes below it (picking one clears "All", and
+   checking "All" clears every specific pick), since "no filter" and "OR of
+   these specific filters" are two different underlying queries, not a
+   spectrum -- there's no meaningful "All + Prosthetic" combination. */
+
+const taxonomyMultiselect = document.getElementById("taxonomyMultiselect");
+const taxonomyAllCheckbox = document.getElementById("taxonomyAllCheckbox");
+setupMultiselectToggle(taxonomyMultiselect);
+
+function updateTaxonomySummary() {
+  const toggle = taxonomyMultiselect.querySelector(".multiselect-toggle");
+  const checked = [...taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]:checked')];
+  if (taxonomyAllCheckbox.checked || checked.length === 0) toggle.textContent = "All specialties";
+  else if (checked.length === 1) toggle.textContent = checked[0].nextElementSibling.textContent;
+  else toggle.textContent = `${checked.length} specialties selected`;
+}
+
+taxonomyAllCheckbox.addEventListener("change", () => {
+  if (taxonomyAllCheckbox.checked) {
+    taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => { cb.checked = false; });
+  }
+  updateTaxonomySummary();
+});
+taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => {
+  cb.addEventListener("change", () => {
+    if (cb.checked) taxonomyAllCheckbox.checked = false; // picking a specific one cancels "All"
+    updateTaxonomySummary();
+  });
+});
+document.getElementById("taxonomySelectAllBtn").addEventListener("click", () => {
+  taxonomyAllCheckbox.checked = false;
+  taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => { cb.checked = true; });
+  updateTaxonomySummary();
+});
+document.getElementById("taxonomyClearBtn").addEventListener("click", () => {
+  taxonomyAllCheckbox.checked = true;
+  taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => { cb.checked = false; });
+  updateTaxonomySummary();
+});
+updateTaxonomySummary();
+
 restoreSearchFormState();
 
 /* ---------- Wiring ---------- */
@@ -1501,6 +1655,16 @@ document.querySelectorAll(".view-tabs .tab").forEach((tab) => {
 els.onlyMine.addEventListener("change", loadClaimedLeads);
 els.updatedWithin.addEventListener("change", loadClaimedLeads);
 els.updatedYear.addEventListener("change", loadClaimedLeads);
+// Status is filtered client-side over the already-fetched list (no new
+// server round-trip needed, unlike the other filters above which change
+// what the server itself returns).
+els.statusFilter.addEventListener("change", () => {
+  state.statusFilter = els.statusFilter.value;
+  state.claimedSortKey = null; // matches the other filters' "fresh view resets sort" behavior
+  state.claimedSortDir = 1;
+  updateSortIndicators(els.claimedTable, null, 1);
+  renderClaimedLeads(applyStatusFilter(state.claimedLeadsAll));
+});
 els.refreshClaimedBtn.addEventListener("click", loadClaimedLeads);
 els.staleNudge.addEventListener("click", loadClaimedLeads);
 

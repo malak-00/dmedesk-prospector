@@ -1,8 +1,15 @@
 import { searchProviders } from "../services/nppes.service.js";
 
+// A comma-joined query param (e.g. "?states=FL,GA,TX") -> a clean array,
+// dropping any blank segments. Empty/missing input returns [].
+function parseCommaList(value) {
+  if (!value) return [];
+  return String(value).split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 /**
  * GET /api/search/nppes
- * Query params: organizationName, city, state, postalCode, taxonomyDescription, limit
+ * Query params: organizationName, city, state(s), postalCode, taxonomyDescription(s), limit
  */
 export async function searchNppes(req, res, next) {
   try {
@@ -12,20 +19,25 @@ export async function searchNppes(req, res, next) {
       nameContains,
       city,
       state,
+      states,
       postalCode,
       taxonomyDescription,
+      taxonomyDescriptions,
       lastUpdatedYear,
       limit,
     } = req.query;
 
-    // `state` deliberately does NOT count on its own here: NPPES rejects a
-    // bare state (paired only with the enumeration_type=NPI-2 this app
-    // always sends) with "Field state requires additional search criteria"
-    // -- it has to be paired with one of the fields below. Catching that
-    // client-side gives a clear, immediate message instead of a round-trip
-    // to NPPES for a rejection.
+    const taxonomyDescriptionsList = parseCommaList(taxonomyDescriptions);
+
+    // `state`/`states` deliberately does NOT count on its own here: NPPES
+    // rejects a bare state (paired only with the enumeration_type=NPI-2
+    // this app always sends) with "Field state requires additional search
+    // criteria" -- it has to be paired with one of the fields below.
+    // Catching that client-side gives a clear, immediate message instead of
+    // a round-trip to NPPES for a rejection.
     const hasEnoughCriteria =
-      npi || organizationName || nameContains || city || postalCode || taxonomyDescription;
+      npi || organizationName || nameContains || city || postalCode ||
+      taxonomyDescription || taxonomyDescriptionsList.length;
 
     if (!hasEnoughCriteria) {
       const error = new Error(
@@ -48,8 +60,10 @@ export async function searchNppes(req, res, next) {
       nameContains,
       city,
       state,
+      states: parseCommaList(states),
       postalCode,
       taxonomyDescription,
+      taxonomyDescriptions: taxonomyDescriptionsList,
       lastUpdatedYear,
       limit: parsedLimit,
     });
@@ -75,22 +89,27 @@ export async function searchCompaniesHandler(req, res, next) {
       nameContains,
       city,
       state,
+      states,
       postalCode,
       taxonomyDescription,
+      taxonomyDescriptions,
       lastUpdatedYear,
       limit,
       enrich,
       scrape
     } = req.query;
 
-    // `state` deliberately does NOT count on its own here: NPPES rejects a
-    // bare state (paired only with the enumeration_type=NPI-2 this app
-    // always sends) with "Field state requires additional search criteria"
-    // -- it has to be paired with one of the fields below. Catching that
-    // client-side gives a clear, immediate message instead of a round-trip
-    // to NPPES for a rejection.
+    const taxonomyDescriptionsList = parseCommaList(taxonomyDescriptions);
+
+    // `state`/`states` deliberately does NOT count on its own here: NPPES
+    // rejects a bare state (paired only with the enumeration_type=NPI-2
+    // this app always sends) with "Field state requires additional search
+    // criteria" -- it has to be paired with one of the fields below.
+    // Catching that client-side gives a clear, immediate message instead of
+    // a round-trip to NPPES for a rejection.
     const hasEnoughCriteria =
-      npi || organizationName || nameContains || city || postalCode || taxonomyDescription;
+      npi || organizationName || nameContains || city || postalCode ||
+      taxonomyDescription || taxonomyDescriptionsList.length;
 
     if (!hasEnoughCriteria) {
       const error = new Error(
@@ -110,11 +129,14 @@ export async function searchCompaniesHandler(req, res, next) {
     const shouldEnrich = enrich !== "false"; // enrich by default
     const shouldScrape = scrape === "true"; // opt-in: scraping is slower, off by default
 
-
     const result = await searchCompanies(
-  { npi, organizationName, nameContains, city, state, postalCode, taxonomyDescription, lastUpdatedYear, limit: parsedLimit },
-  { enrichPlaces: shouldEnrich, scrapeWebsites: shouldScrape }
-);
+      {
+        npi, organizationName, nameContains, city, state, states: parseCommaList(states),
+        postalCode, taxonomyDescription, taxonomyDescriptions: taxonomyDescriptionsList,
+        lastUpdatedYear, limit: parsedLimit,
+      },
+      { enrichPlaces: shouldEnrich, scrapeWebsites: shouldScrape }
+    );
 
     res.json({ success: true, ...result });
   } catch (err) {

@@ -181,11 +181,43 @@ var CompanyService = (function () {
     }
   }
 
-  // Pages through NPPES, filtering out already-claimed NPIs, until we have
-  // `desiredLimit` fresh leads or NPPES runs out of results / hits its skip cap.
+  // NPPES only accepts ONE state and ONE taxonomy_description per request --
+  // there's no server-side "OR" across values. Multi-select on either field
+  // is implemented by running one query variant per combination (cartesian
+  // product) and merging the results, rather than by widening a single
+  // query and filtering locally: sending only one taxonomy to NPPES would
+  // have it pre-filter out every OTHER selected taxonomy's real matches
+  // before they ever reach this app.
+  //
+  // A single-value legacy criteria.state/taxonomyDescription (no
+  // states/taxonomyDescriptions array) still produces exactly one variant,
+  // so this is a no-op for every search that isn't using multi-select.
+  function buildCriteriaVariants_(criteria) {
+    var states = (criteria.states && criteria.states.length) ? criteria.states : [criteria.state || undefined];
+    var taxonomies = (criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length)
+      ? criteria.taxonomyDescriptions
+      : [criteria.taxonomyDescription || undefined];
+
+    var variants = [];
+    states.forEach(function (state) {
+      taxonomies.forEach(function (taxonomyDescription) {
+        variants.push(Object.assign({}, criteria, { state: state, taxonomyDescription: taxonomyDescription }));
+      });
+    });
+    return variants;
+  }
+
+  // Pages through NPPES (across every state x taxonomy variant, in the
+  // multi-select case), filtering out already-claimed NPIs, until we have
+  // `desiredLimit` fresh leads or every variant runs out of results / hits
+  // its skip cap.
   function fetchFreshProviders(criteria, desiredLimit, claimedNpis) {
+    // An explicit NPI lookup ignores state/taxonomy entirely (see
+    // NppesService.searchProviders), so multiple variants would just repeat
+    // the identical lookup -- always exactly one variant in that case.
+    var variants = criteria.npi ? [criteria] : buildCriteriaVariants_(criteria);
+
     var fresh = [];
-    var skip = 0;
     var totalScanned = 0;
     // Counts ONLY providers actually skipped for being claimed -- deliberately
     // NOT "totalScanned - fresh.length", which used to also fold in providers
@@ -194,36 +226,48 @@ var CompanyService = (function () {
     // already hit mid-page. That made "already claimed" wildly overcount
     // whenever a search had a narrow filter, even with zero actual claims.
     var excludedAsClaimed = 0;
+    // Dedupes across variants -- e.g. a company whose registered taxonomy
+    // happens to match two different selected specialties would otherwise
+    // be fetched (and counted) once per matching variant.
+    var seenNpis = {};
 
-    while (fresh.length < desiredLimit && skip <= NPPES_MAX_SKIP) {
-      var result = NppesService.searchProviders(
-        Object.assign({}, criteria, { limit: NPPES_PAGE_SIZE, skip: skip })
-      );
-      var results = result.results;
+    for (var v = 0; v < variants.length && fresh.length < desiredLimit; v++) {
+      var variant = variants[v];
+      var skip = 0;
 
-      // Last-page checks must use rawCount (what NPPES actually returned),
-      // not results.length -- local taxonomy/keyword filters can trim a full
-      // page and would otherwise end pagination early.
-      var fetched = result.rawCount != null ? result.rawCount : results.length;
-      if (fetched === 0) break; // NPPES has no more matches at all
+      while (fresh.length < desiredLimit && skip <= NPPES_MAX_SKIP) {
+        var result = NppesService.searchProviders(
+          Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip: skip })
+        );
+        var results = result.results;
 
-      totalScanned += fetched;
-      for (var i = 0; i < results.length; i++) {
-        if (fresh.length >= desiredLimit) break;
-        var provider = results[i];
-        // An explicit NPI lookup is a deliberate "pull this exact lead"
-        // action -- it should never come back empty just because someone
-        // already claimed it, so dedup is skipped in that case only.
-        var isClaimed = !criteria.npi && provider.npi && claimedNpis.has(String(provider.npi));
-        if (isClaimed) {
-          excludedAsClaimed++;
-        } else {
-          fresh.push(provider);
+        // Last-page checks must use rawCount (what NPPES actually returned),
+        // not results.length -- local taxonomy/keyword filters can trim a full
+        // page and would otherwise end pagination early.
+        var fetched = result.rawCount != null ? result.rawCount : results.length;
+        if (fetched === 0) break; // NPPES has no more matches for this variant
+
+        totalScanned += fetched;
+        for (var i = 0; i < results.length; i++) {
+          if (fresh.length >= desiredLimit) break;
+          var provider = results[i];
+          if (provider.npi && Object.prototype.hasOwnProperty.call(seenNpis, String(provider.npi))) continue;
+
+          // An explicit NPI lookup is a deliberate "pull this exact lead"
+          // action -- it should never come back empty just because someone
+          // already claimed it, so dedup is skipped in that case only.
+          var isClaimed = !criteria.npi && provider.npi && claimedNpis.has(String(provider.npi));
+          if (isClaimed) {
+            excludedAsClaimed++;
+          } else {
+            fresh.push(provider);
+          }
+          if (provider.npi) seenNpis[String(provider.npi)] = true;
         }
-      }
 
-      if (fetched < NPPES_PAGE_SIZE) break; // last page from NPPES
-      skip += NPPES_PAGE_SIZE;
+        if (fetched < NPPES_PAGE_SIZE) break; // last page from NPPES for this variant
+        skip += NPPES_PAGE_SIZE;
+      }
     }
 
     return { fresh: fresh, totalScanned: totalScanned, excludedAsClaimed: excludedAsClaimed };
