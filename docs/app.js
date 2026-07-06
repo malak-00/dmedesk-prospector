@@ -1060,12 +1060,20 @@ async function handleNotificationToggle(e) {
 // reminders that just became due, and fires one notification each -- keyed
 // by npi + exact reminderAt, so rescheduling a reminder makes it eligible to
 // notify again instead of being silently skipped forever.
+//
+// Only notifies for leads claimed by the SIGNED-IN user -- state.claimedLeads
+// can include every teammate's claimed leads (whenever "Only mine" is
+// unchecked), and a reminder is only ever meant for whoever set it, not
+// everyone currently viewing the shared list.
 function checkDueReminders() {
   if (!notificationsSupported() || Notification.permission !== "granted") return;
   if (localStorage.getItem(NOTIFY_PREF_KEY) !== "true") return;
+  const myName = getSession()?.displayName;
+  if (!myName) return;
   const now = Date.now();
   state.claimedLeads.forEach((lead) => {
     if (!lead.reminderAt) return;
+    if (lead.claimedBy !== myName) return;
     const t = Date.parse(lead.reminderAt);
     if (isNaN(t) || t > now) return;
     if (state.notifiedReminders.get(lead.npi) === lead.reminderAt) return;
