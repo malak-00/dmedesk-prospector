@@ -40,7 +40,22 @@ var NppesService = (function () {
       return { ok: false, retryable: code >= 500, error: upstreamError };
     }
 
-    return { ok: true, data: JSON.parse(response.getContentText()) };
+    var data = JSON.parse(response.getContentText());
+
+    // NPPES rejects some query shapes (e.g. a bare state with no name,
+    // taxonomy, or NPI) with an HTTP 200 whose body is just an "Errors"
+    // array instead of a real 4xx -- left unchecked, that silently looks
+    // like "zero real results" to the rest of the pipeline instead of the
+    // rejection it actually is. Surface it as a real, non-retryable error.
+    if (Array.isArray(data.Errors) && data.Errors.length > 0) {
+      var rejectionError = new Error(
+        "NPPES rejected the search: " + data.Errors.map(function (e) { return e.description; }).join("; ")
+      );
+      rejectionError.status = 400;
+      return { ok: false, retryable: false, error: rejectionError };
+    }
+
+    return { ok: true, data: data };
   }
 
   function fetchFromNppes(params) {

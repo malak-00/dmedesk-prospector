@@ -43,6 +43,49 @@ function fromNppesProvider(provider) {
   });
 }
 
+// A dedup key only for companies where NPPES's own authorized official is
+// known -- a scraped/website contact isn't reliable enough to key an
+// automatic merge on, so this runs right after fromNppesProvider (before any
+// enrichment adds other decision makers). Returns null when there's no
+// official to compare, which callers treat as "never merge this row".
+function branchDedupKey(company) {
+  const official = company.decisionMakers?.[0];
+  if (!official?.name) return null;
+  const namePart = String(company.name || "").trim().toLowerCase();
+  const officialPart = official.name.trim().toLowerCase();
+  if (!namePart || !officialPart) return null;
+  return `${namePart}|${officialPart}`;
+}
+
+// Chains with a large employer (same company name AND same NPPES authorized
+// official, exactly) can register a separate NPI per branch location, which
+// otherwise shows up as several near-identical rows for what a rep considers
+// one lead. Folds those into a single row carrying every branch's
+// NPI/address/phone/fax, keeping the first-seen branch's fields (name,
+// taxonomy, etc.) as the row's primary display data. Runs before enrichment
+// so Places/OSM/scrape/CMS calls aren't repeated per branch -- only the
+// primary branch gets enriched.
+function mergeDuplicateBranches(companies) {
+  const keyToIndex = new Map();
+  const merged = [];
+
+  for (const company of companies) {
+    const key = branchDedupKey(company);
+    const branch = { npi: company.npi, address: company.address, phone: company.phone, fax: company.fax };
+
+    if (key && keyToIndex.has(key)) {
+      merged[keyToIndex.get(key)].locations.push(branch);
+      continue;
+    }
+
+    const withLocations = { ...company, locations: [branch] };
+    if (key) keyToIndex.set(key, merged.length);
+    merged.push(withLocations);
+  }
+
+  return merged;
+}
+
 async function tryEnrichWithPlaces(company) {
   try {
     const data = await foursquareService.enrichCompany({
@@ -214,6 +257,9 @@ export async function searchCompanies(
   );
 
   let companies = providers.map(fromNppesProvider);
+  // An explicit NPI lookup already identifies one exact record -- merging
+  // would be a no-op at best and confusing at worst, so it's skipped there.
+  if (!criteria.npi) companies = mergeDuplicateBranches(companies);
 
   if (enrichPlaces) {
     companies = await Promise.all(companies.map(tryEnrichWithPlaces));

@@ -570,7 +570,7 @@ function leadRowHtml(company, index) {
         </div>
       </td>
       <td>
-        <div class="company-name">${escapeHtml(company.name)}</div>
+        <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}</div>
         <div class="company-taxonomy">${escapeHtml(company.taxonomy?.description || "")}</div>
         ${sourceBadges(company.sources)}
       </td>
@@ -579,6 +579,33 @@ function leadRowHtml(company, index) {
       <td class="mono">${phoneCell(primaryContact?.phone, company.phone)}</td>
       <td><span class="chevron">▸</span></td>
     </tr>
+  `;
+}
+
+// Shown next to the company name when NPPES has multiple branches (same
+// name, same authorized official) folded into this one row -- see
+// CompanyService's mergeDuplicateBranches_.
+function locationsBadge(locations) {
+  if (!locations || locations.length <= 1) return "";
+  return ` <span class="locations-badge" title="Same company and authorized official, ${locations.length} branch locations">${locations.length} locations</span>`;
+}
+
+function branchLocationsHtml(locations) {
+  if (!locations || locations.length <= 1) return "";
+  return `
+    <div class="detail-block">
+      <h4>Branch locations (${locations.length})</h4>
+      ${locations.map((loc) => `
+        <div class="contact-item">
+          <div class="mono" style="font-size:13px; line-height:1.6;">
+            NPI: ${escapeHtml(loc.npi || "—")}<br>
+            ${escapeHtml(loc.address?.line1 || "")}<br>
+            ${escapeHtml(loc.address?.city || "")}, ${escapeHtml(loc.address?.state || "")} ${escapeHtml(loc.address?.postalCode || "")}<br>
+            ${escapeHtml(loc.phone || "—")}
+          </div>
+        </div>
+      `).join("")}
+    </div>
   `;
 }
 
@@ -604,6 +631,7 @@ function detailRowHtml(company, index) {
               Data sources: ${escapeHtml(sourcesList || "NPPES only")}
             </div>
           </div>
+          ${branchLocationsHtml(company.locations)}
           <div class="detail-block">
             <h4>Decision makers (${company.decisionMakers?.length || 0})</h4>
             ${(company.decisionMakers || []).map((dm) => `
