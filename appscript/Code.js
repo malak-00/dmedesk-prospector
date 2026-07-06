@@ -50,7 +50,7 @@ function handleRequest_(e) {
       case "search/nppes": {
         var nppesCriteria = readSearchCriteria_(params);
         if (!hasAnySearchCriteria_(nppesCriteria)) {
-          return errorResponse_(400, "At least one search parameter is required (npi, organizationName, city, state, postalCode, or taxonomyDescription)");
+          return errorResponse_(400, "At least one of NPI, organization name, city, postal code, or specialty is required -- a state alone isn't specific enough for NPPES");
         }
         return jsonResponse_({ success: true, data: NppesService.searchProviders(nppesCriteria) });
       }
@@ -58,7 +58,7 @@ function handleRequest_(e) {
       case "search/companies": {
         var companiesCriteria = readSearchCriteria_(params);
         if (!hasAnySearchCriteria_(companiesCriteria)) {
-          return errorResponse_(400, "At least one search parameter is required (npi, organizationName, nameContains, city, state, postalCode, or taxonomyDescription)");
+          return errorResponse_(400, "At least one of NPI, company name, city, postal code, or specialty is required -- a state alone isn't specific enough for NPPES");
         }
         return jsonResponse_({
           success: true,
@@ -177,10 +177,16 @@ function requireSession_(params) {
 // Prevents an all-blank query from silently paging through the entire
 // national NPI-2 registry -- Node's controller already validates this; Apps
 // Script's router didn't.
+//
+// `state` deliberately does NOT count on its own here: NPPES rejects a bare
+// state (paired only with the enumeration_type=NPI-2 this app always sends)
+// with "Field state requires additional search criteria" -- it has to be
+// paired with one of the fields below. Catching that client-side gives a
+// clear, immediate message instead of a round-trip to NPPES for a rejection.
 function hasAnySearchCriteria_(criteria) {
   return Boolean(
     criteria.npi || criteria.organizationName || criteria.nameContains ||
-    criteria.city || criteria.state || criteria.postalCode || criteria.taxonomyDescription
+    criteria.city || criteria.postalCode || criteria.taxonomyDescription
   );
 }
 

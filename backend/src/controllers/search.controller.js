@@ -18,12 +18,18 @@ export async function searchNppes(req, res, next) {
       limit,
     } = req.query;
 
-    const hasAnyCriteria =
-      npi || organizationName || nameContains || city || state || postalCode || taxonomyDescription;
+    // `state` deliberately does NOT count on its own here: NPPES rejects a
+    // bare state (paired only with the enumeration_type=NPI-2 this app
+    // always sends) with "Field state requires additional search criteria"
+    // -- it has to be paired with one of the fields below. Catching that
+    // client-side gives a clear, immediate message instead of a round-trip
+    // to NPPES for a rejection.
+    const hasEnoughCriteria =
+      npi || organizationName || nameContains || city || postalCode || taxonomyDescription;
 
-    if (!hasAnyCriteria) {
+    if (!hasEnoughCriteria) {
       const error = new Error(
-        "At least one search parameter is required (npi, organizationName, city, state, postalCode, or taxonomyDescription)"
+        "At least one of NPI, organization name, city, postal code, or specialty is required -- a state alone isn't specific enough for NPPES"
       );
       error.status = 400;
       throw error;
@@ -77,12 +83,18 @@ export async function searchCompaniesHandler(req, res, next) {
       scrape
     } = req.query;
 
-    const hasAnyCriteria =
-      npi || organizationName || nameContains || city || state || postalCode || taxonomyDescription;
+    // `state` deliberately does NOT count on its own here: NPPES rejects a
+    // bare state (paired only with the enumeration_type=NPI-2 this app
+    // always sends) with "Field state requires additional search criteria"
+    // -- it has to be paired with one of the fields below. Catching that
+    // client-side gives a clear, immediate message instead of a round-trip
+    // to NPPES for a rejection.
+    const hasEnoughCriteria =
+      npi || organizationName || nameContains || city || postalCode || taxonomyDescription;
 
-    if (!hasAnyCriteria) {
+    if (!hasEnoughCriteria) {
       const error = new Error(
-        "At least one search parameter is required (npi, organizationName, nameContains, city, state, postalCode, or taxonomyDescription)"
+        "At least one of NPI, company name, city, postal code, or specialty is required -- a state alone isn't specific enough for NPPES"
       );
       error.status = 400;
       throw error;
