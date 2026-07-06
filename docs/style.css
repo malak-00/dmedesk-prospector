@@ -115,6 +115,15 @@ body {
 /* no overflow:hidden here -- it would clip position:sticky in the table header */
 .results-panel { padding: 0; }
 .results-toolbar { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+/* Deliberately still no overflow-x here either: ANY non-visible overflow
+   value on this element (even just on one axis) makes it the sticky
+   positioning ancestor for the thead th's below, instead of the page --
+   and thead's `top: var(--header-h)` offset is calibrated for the page
+   being that ancestor. Re-adding overflow here shoved the sticky header
+   57px down INTO the table body instead of clearing the fixed app header.
+   The real fix for a too-wide table is table-layout: fixed + real column
+   widths (see #claimedTable below) so it can't exceed 100% in the first
+   place. */
 .table-wrap { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 
 /* ---------- Search form ---------- */
@@ -306,6 +315,24 @@ body {
   white-space: nowrap;
 }
 .col-check { width: 42px; } .col-score { width: 80px; } .col-expand { width: 40px; }
+
+/* Fixed layout + real column widths (summing to 100%) instead of the
+   default auto-layout: with 9 columns including a free-text Notes input,
+   auto-layout let the table's natural width exceed the panel's, and since
+   .table-wrap can't safely clip/scroll that overflow (see the comment on
+   .table-wrap above), it just rendered outside the rounded card. Fixed
+   layout caps the table at 100% and wraps/truncates cell content instead. */
+.claimed-table { table-layout: fixed; }
+.claimed-table thead th { white-space: normal; } /* header labels wrap instead of truncating in a narrow fixed column */
+.col-claimed-company { width: 18%; }
+.col-claimed-location { width: 8%; }
+.col-claimed-phone { width: 11%; }
+.col-claimed-by { width: 7%; }
+.col-claimed-updated { width: 8%; }
+.col-claimed-status { width: 13%; }
+.col-claimed-reminder { width: 8%; }
+.col-claimed-notes { width: 24%; }
+.claimed-table .col-expand { width: 3%; }
 
 .results-table thead th.sortable { cursor: pointer; user-select: none; }
 .results-table thead th.sortable:hover { color: var(--ink); }
@@ -521,7 +548,7 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
   font-family: var(--font-mono); font-size: 13px;
   background: var(--surface-2); color: var(--ink);
   border: 1px solid var(--hairline); border-radius: var(--radius-sm);
-  padding: 8px 10px; cursor: pointer;
+  padding: 8px 10px; cursor: pointer; width: 100%; box-sizing: border-box;
 }
 .status-select:focus { outline: none; border-color: var(--accent); }
 .status-select.status-interested { border-color: var(--score-high); color: var(--score-high); }
@@ -534,7 +561,7 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
   font-family: var(--font-ui); font-size: 13px;
   background: var(--surface-2); color: var(--ink);
   border: 1px solid var(--hairline); border-radius: var(--radius-sm);
-  padding: 8px 10px; width: 100%; min-width: 160px;
+  padding: 8px 10px; width: 100%; box-sizing: border-box;
   transition: border-color 0.12s ease;
 }
 .notes-input::placeholder { color: var(--muted-2); }
@@ -543,7 +570,7 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .notes-input:disabled { opacity: 0.6; }
 .notes-preview {
   font-size: 12px; color: var(--muted); margin-top: 5px;
-  max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .notes-history-block { margin-top: 16px; }

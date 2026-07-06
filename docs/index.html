@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -260,17 +260,17 @@
         </div>
 
         <div class="table-wrap">
-          <table class="results-table" id="claimedTable">
+          <table class="results-table claimed-table" id="claimedTable">
             <thead>
               <tr>
-                <th class="sortable" data-sort-key="company">Company / contact<span class="sort-arrow"></span></th>
-                <th class="sortable" data-sort-key="location">Location<span class="sort-arrow"></span></th>
-                <th>Contact phone</th>
-                <th class="sortable" data-sort-key="claimedBy">Claimed by<span class="sort-arrow"></span></th>
-                <th class="sortable" data-sort-key="updated">Updated<span class="sort-arrow"></span></th>
-                <th class="sortable" data-sort-key="status">Status<span class="sort-arrow"></span></th>
-                <th class="sortable" data-sort-key="reminder">Reminder<span class="sort-arrow"></span></th>
-                <th>Notes</th>
+                <th class="col-claimed-company sortable" data-sort-key="company">Company / contact<span class="sort-arrow"></span></th>
+                <th class="col-claimed-location sortable" data-sort-key="location">Location<span class="sort-arrow"></span></th>
+                <th class="col-claimed-phone">Contact phone</th>
+                <th class="col-claimed-by sortable" data-sort-key="claimedBy">Claimed by<span class="sort-arrow"></span></th>
+                <th class="col-claimed-updated sortable" data-sort-key="updated">Updated<span class="sort-arrow"></span></th>
+                <th class="col-claimed-status sortable" data-sort-key="status">Status<span class="sort-arrow"></span></th>
+                <th class="col-claimed-reminder sortable" data-sort-key="reminder">Reminder<span class="sort-arrow"></span></th>
+                <th class="col-claimed-notes">Notes</th>
                 <th class="col-expand"></th>
               </tr>
             </thead>
