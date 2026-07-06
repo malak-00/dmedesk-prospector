@@ -7,6 +7,18 @@ function parseCommaList(value) {
   return String(value).split(",").map((s) => s.trim()).filter(Boolean);
 }
 
+// The "Search more" button's opaque per-variant resume-position map, sent
+// back exactly as searchCompanies returned it on the previous response.
+function parseVariantSkips(value) {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 /**
  * GET /api/search/nppes
  * Query params: organizationName, city, state(s), postalCode, taxonomyDescription(s), limit
@@ -96,7 +108,9 @@ export async function searchCompaniesHandler(req, res, next) {
       lastUpdatedYear,
       limit,
       enrich,
-      scrape
+      scrape,
+      variantSkips,
+      excludeNpis,
     } = req.query;
 
     const taxonomyDescriptionsList = parseCommaList(taxonomyDescriptions);
@@ -134,6 +148,8 @@ export async function searchCompaniesHandler(req, res, next) {
         npi, organizationName, nameContains, city, state, states: parseCommaList(states),
         postalCode, taxonomyDescription, taxonomyDescriptions: taxonomyDescriptionsList,
         lastUpdatedYear, limit: parsedLimit,
+        variantSkips: parseVariantSkips(variantSkips),
+        excludeNpis: parseCommaList(excludeNpis),
       },
       { enrichPlaces: shouldEnrich, scrapeWebsites: shouldScrape }
     );

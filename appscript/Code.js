@@ -199,6 +199,18 @@ function parseCommaList_(value) {
   return String(value).split(",").map(function (s) { return s.trim(); }).filter(Boolean);
 }
 
+// The "Search more" button's opaque per-variant resume-position map, sent
+// back exactly as CompanyService returned it on the previous response.
+function parseVariantSkips_(value) {
+  if (!value) return {};
+  try {
+    var parsed = JSON.parse(value);
+    return (parsed && typeof parsed === "object") ? parsed : {};
+  } catch (err) {
+    return {};
+  }
+}
+
 function readSearchCriteria_(params) {
   return {
     npi: params.npi || undefined,
@@ -213,6 +225,8 @@ function readSearchCriteria_(params) {
     lastUpdatedYear: params.lastUpdatedYear || undefined,
     limit: params.limit ? Number(params.limit) : undefined,
     skip: params.skip ? Number(params.skip) : undefined,
+    variantSkips: parseVariantSkips_(params.variantSkips),
+    excludeNpis: parseCommaList_(params.excludeNpis),
   };
 }
 

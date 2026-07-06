@@ -207,10 +207,27 @@ var CompanyService = (function () {
     return variants;
   }
 
+  // A stable key identifying one query variant, used to remember (across
+  // separate "Search more" requests) exactly which NPPES skip depth this
+  // variant last stopped at.
+  function variantKey_(variant) {
+    return (variant.state || "") + "|" + (variant.taxonomyDescription || "");
+  }
+
   // Pages through NPPES (across every state x taxonomy variant, in the
   // multi-select case), filtering out already-claimed NPIs, until we have
   // `desiredLimit` fresh leads or every variant runs out of results / hits
   // its skip cap.
+  //
+  // `criteria.variantSkips` (an opaque map from variantKey_() -> skip)
+  // resumes each variant from wherever a previous call for this exact
+  // search left off, instead of always starting at 0 -- this is what backs
+  // the frontend's "Search more" button (rerun the identical filters and see
+  // leads beyond what's already been shown, rather than the same top
+  // results every time). Returned back to the caller so it can be replayed
+  // on the next "Search more" click. `criteria.excludeNpis` similarly skips
+  // any NPI already shown earlier in this search session, so a company
+  // reachable through more than one variant can't reappear either.
   function fetchFreshProviders(criteria, desiredLimit, claimedNpis) {
     // An explicit NPI lookup ignores state/taxonomy entirely (see
     // NppesService.searchProviders), so multiple variants would just repeat
@@ -228,12 +245,18 @@ var CompanyService = (function () {
     var excludedAsClaimed = 0;
     // Dedupes across variants -- e.g. a company whose registered taxonomy
     // happens to match two different selected specialties would otherwise
-    // be fetched (and counted) once per matching variant.
+    // be fetched (and counted) once per matching variant. Seeded with
+    // whatever's already been shown in an earlier "Search more" click for
+    // this exact search, so continuing doesn't repeat those either.
     var seenNpis = {};
+    (criteria.excludeNpis || []).forEach(function (npi) { seenNpis[String(npi)] = true; });
+
+    var variantSkips = Object.assign({}, criteria.variantSkips || {});
 
     for (var v = 0; v < variants.length && fresh.length < desiredLimit; v++) {
       var variant = variants[v];
-      var skip = 0;
+      var key = variantKey_(variant);
+      var skip = variantSkips[key] || 0;
 
       while (fresh.length < desiredLimit && skip <= NPPES_MAX_SKIP) {
         var result = NppesService.searchProviders(
@@ -268,9 +291,11 @@ var CompanyService = (function () {
         if (fetched < NPPES_PAGE_SIZE) break; // last page from NPPES for this variant
         skip += NPPES_PAGE_SIZE;
       }
+
+      variantSkips[key] = skip; // remember exactly where this variant stopped for next time
     }
 
-    return { fresh: fresh, totalScanned: totalScanned, excludedAsClaimed: excludedAsClaimed };
+    return { fresh: fresh, totalScanned: totalScanned, excludedAsClaimed: excludedAsClaimed, variantSkips: variantSkips };
   }
 
   // options: { enrichPlaces = true, scrapeWebsites = false, enrichCms = true }
@@ -322,6 +347,7 @@ var CompanyService = (function () {
       scannedFromRegistry: totalScanned,
       excludedAsClaimed: excludedAsClaimed,
       exhaustedRegistry: providers.length < desiredLimit,
+      variantSkips: fetchResult.variantSkips,
       companies: companies,
     };
   }

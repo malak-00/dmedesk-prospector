@@ -85,6 +85,10 @@ const state = {
   excludedAsClaimed: 0,
   sortKey: null,
   sortDir: 1,
+  // "Search more" bookkeeping -- see the functions near runSearch/searchMore.
+  lastSearchParams: null,
+  searchMoreVariantSkips: {},
+  searchMoreSeenNpis: [],
   view: "search",
   claimedLoaded: false,
   claimedLeads: [],
@@ -180,6 +184,8 @@ const els = {
   resultsBody: document.getElementById("resultsBody"),
   resultsCount: document.getElementById("resultsCount"),
   selectAll: document.getElementById("selectAll"),
+  searchMoreBtn: document.getElementById("searchMoreBtn"),
+  searchMoreLabel: document.getElementById("searchMoreLabel"),
   exportCsvBtn: document.getElementById("exportCsvBtn"),
   exportSheetsBtn: document.getElementById("exportSheetsBtn"),
   exportCsvLabel: document.getElementById("exportCsvLabel"),
@@ -502,15 +508,44 @@ function restoreSearchFormState() {
   if (values.city) cityInput.value = values.city;
 }
 
-async function runSearch(evt) {
-  evt.preventDefault();
-  const formData = new FormData(els.form);
-  const params = buildSearchParams(formData);
-  saveSearchFormState();
+/* ---------- Search more (session-scoped pagination memory) ---------- */
+// Lets a rep click through the SAME filters again to see leads beyond what
+// they've already been shown, instead of getting the same top results every
+// time. The server resumes each underlying NPPES query variant (one per
+// state x specialty combo, in the multi-select case) from wherever it left
+// off last time -- see CompanyService.searchCompanies's variantSkips -- and
+// also skips any NPI already returned earlier in this tab's session, so a
+// company reachable through more than one variant can't reappear either.
+// None of this is persisted beyond the tab (matches the existing
+// sessionStorage-scoped search-filter memory) -- a genuinely new search
+// (via the Search leads button) always starts over from scratch.
+function collectNpisFromCompanies(companies) {
+  const npis = [];
+  for (const c of companies) {
+    if (c.npi) npis.push(String(c.npi));
+    for (const loc of c.locations || []) {
+      if (loc.npi) npis.push(String(loc.npi));
+    }
+  }
+  return npis;
+}
 
+function updateSearchMoreButton(exhausted) {
+  els.searchMoreBtn.hidden = false;
+  els.searchMoreBtn.disabled = exhausted;
+  els.searchMoreLabel.textContent = exhausted ? "No more leads found" : "Search more";
+  els.searchMoreBtn.title = exhausted
+    ? "This search has no more unclaimed leads left in the registry"
+    : "Keeps the same filters and pages deeper into the registry, skipping every lead you've already seen for this search";
+}
+
+async function executeSearch(params, { isMore = false } = {}) {
   els.searchBtn.disabled = true;
-  setStatus("busy", "Searching…");
-  els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7"><div class="loading-row"><span class="spinner"></span> <span id="searchStatusMsg">Searching NPPES registry…</span></div></td></tr>`;
+  els.searchMoreBtn.disabled = true;
+  setStatus("busy", isMore ? "Searching more…" : "Searching…");
+  if (!isMore) {
+    els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7"><div class="loading-row"><span class="spinner"></span> <span id="searchStatusMsg">Searching NPPES registry…</span></div></td></tr>`;
+  }
 
   const phaseTimers = [
     setTimeout(() => { const el = searchStatusMsgEl(); if (el) el.textContent = "Enriching with Places, OSM & Medicare data…"; }, 2500),
@@ -518,24 +553,74 @@ async function runSearch(evt) {
   ];
 
   try {
-    const data = await apiGet("search/companies", params);
+    const requestParams = { ...params };
+    if (isMore) {
+      if (Object.keys(state.searchMoreVariantSkips).length) requestParams.variantSkips = JSON.stringify(state.searchMoreVariantSkips);
+      if (state.searchMoreSeenNpis.length) requestParams.excludeNpis = state.searchMoreSeenNpis.join(",");
+    }
 
-    state.companies = data.companies;
-    state.selected.clear();
-    state.expandedIndex = null;
-    state.sortKey = null; // fresh results start in the server's own order (score desc)
-    state.sortDir = 1;
-    updateSortIndicators(els.resultsTable, null, 1);
-    renderResults(data.excludedAsClaimed || 0);
+    const data = await apiGet("search/companies", requestParams);
+
+    state.searchMoreVariantSkips = data.variantSkips || {};
+    state.searchMoreSeenNpis = state.searchMoreSeenNpis.concat(collectNpisFromCompanies(data.companies));
+
+    if (isMore && data.companies.length === 0) {
+      // Nothing new to show -- leave the current table exactly as it was
+      // instead of replacing it with an empty state.
+      showToast("No more leads found for this search");
+    } else {
+      state.companies = data.companies;
+      state.selected.clear();
+      state.expandedIndex = null;
+      state.sortKey = null; // fresh results start in the server's own order (score desc)
+      state.sortDir = 1;
+      updateSortIndicators(els.resultsTable, null, 1);
+      renderResults(data.excludedAsClaimed || 0);
+    }
+
+    if (!isMore && data.companies.length === 0) {
+      els.searchMoreBtn.hidden = true; // nothing was found at all -- no point offering to page deeper
+    } else {
+      updateSearchMoreButton(data.exhaustedRegistry);
+    }
+
+    state.lastSearchParams = params;
     setStatus("ready", "Ready");
   } catch (err) {
-    els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(err.message)}</td></tr>`;
+    if (!isMore) els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(err.message)}</td></tr>`;
     setStatus("error", "Error");
     showToast(err.message, true);
+    // A failed click always leaves it re-clickable -- reaching here means it
+    // was enabled (not exhausted) when clicked, since an exhausted button is
+    // disabled and can't be clicked in the first place.
+    els.searchMoreBtn.disabled = false;
   } finally {
+    // Deliberately NOT touching els.searchMoreBtn.disabled here -- the
+    // success path above already set its final disabled state based on
+    // whether the registry is now exhausted, and unconditionally clearing
+    // it here would silently re-enable an exhausted button on every search.
     phaseTimers.forEach(clearTimeout);
     els.searchBtn.disabled = false;
   }
+}
+
+async function searchMore() {
+  if (!state.lastSearchParams) return;
+  await executeSearch(state.lastSearchParams, { isMore: true });
+}
+
+async function runSearch(evt) {
+  evt.preventDefault();
+  const formData = new FormData(els.form);
+  const params = buildSearchParams(formData);
+  saveSearchFormState();
+
+  // A brand-new search always starts over from scratch -- only "Search
+  // more" continues from a remembered position.
+  state.searchMoreVariantSkips = {};
+  state.searchMoreSeenNpis = [];
+
+  await executeSearch(params);
 }
 
 function renderResults(excludedAsClaimed) {
@@ -1632,6 +1717,7 @@ els.selectAll.addEventListener("change", (e) => {
   updateSelectionUI();
 });
 els.clearSelectionBtn.addEventListener("click", clearSelection);
+els.searchMoreBtn.addEventListener("click", searchMore);
 els.exportCsvBtn.addEventListener("click", exportCsv);
 els.exportSheetsBtn.addEventListener("click", exportSheets);
 
