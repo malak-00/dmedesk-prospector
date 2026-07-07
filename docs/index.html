@@ -194,7 +194,7 @@
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 6.5h12M2 10.5h12M6.5 2v12" stroke="currentColor" stroke-width="1.4"/></svg>
               <span id="exportSheetsLabel">Export to Sheets</span>
             </button>
-            <button class="btn btn-ghost" id="sendDisconnectedBtn" disabled title="Sends the checked (or, if none checked, all) leads straight to the shared Disconnected tab, skipping the normal per-teammate Claimed tab">
+            <button class="btn btn-ghost" id="sendDisconnectedBtn" disabled title="Sends the checked leads straight to the shared Disconnected tab, skipping the normal per-teammate Claimed tab. Check at least one lead first.">
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
               <span id="sendDisconnectedLabel">Send to Disconnected</span>
             </button>
@@ -264,7 +264,7 @@
           </div>
           <div class="results-actions">
             <button type="button" class="link-btn stale-nudge" id="staleNudge" hidden>Results may be stale —</button>
-            <button class="btn btn-ghost" id="claimedSendDisconnectedBtn" disabled title="Moves the checked (or, if none checked, all shown) leads out of their current Claimed tab and into the shared Disconnected tab">
+            <button class="btn btn-ghost" id="claimedSendDisconnectedBtn" disabled title="Moves the checked leads out of their current Claimed tab and into the shared Disconnected tab. Check at least one lead first.">
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
               <span>Send to Disconnected</span>
             </button>
@@ -337,6 +337,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=21"></script>
+  <script src="app.js?v=22"></script>
 </body>
 </html>

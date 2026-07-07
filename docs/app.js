@@ -638,7 +638,6 @@ function renderResults(excludedAsClaimed) {
   els.resultsCount.textContent = `${companies.length} lead${companies.length === 1 ? "" : "s"} found${excludedNote}`;
   els.exportCsvBtn.disabled = companies.length === 0;
   els.exportSheetsBtn.disabled = companies.length === 0;
-  els.sendDisconnectedBtn.disabled = companies.length === 0;
   els.selectAll.checked = companies.length > 0 && state.selected.size === companies.length;
 
   if (companies.length === 0) {
@@ -666,6 +665,10 @@ function updateSelectionUI() {
   els.selectionCount.textContent = `${count} selected`;
   els.exportCsvLabel.textContent = count > 0 ? `Export ${count} selected` : "Export CSV";
   els.exportSheetsLabel.textContent = count > 0 ? `Send ${count} selected` : "Export to Sheets";
+  // Unlike the export buttons above, Send to Disconnected has no "nothing
+  // checked -> act on everything" fallback -- it stays disabled until at
+  // least one lead is actually checked.
+  els.sendDisconnectedBtn.disabled = count === 0;
   els.sendDisconnectedLabel.textContent = count > 0 ? `Send ${count} to Disconnected` : "Send to Disconnected";
 }
 
@@ -865,6 +868,26 @@ function getExportCompanies() {
   return state.companies;
 }
 
+// Unlike getExportCompanies() above, this has no "nothing checked -> use
+// everything" fallback -- sending leads to Disconnected is a one-way move,
+// so it always requires an explicit, deliberate selection.
+function getSelectedProspectCompanies() {
+  return [...state.selected].map((i) => state.companies[i]);
+}
+
+// Removes just-claimed or just-disconnected companies from the in-memory
+// Prospect results so they disappear from the table immediately, instead of
+// lingering until the next search -- matched by the primary company's NPI
+// (not branch-location NPIs), since that's how Prospect rows are keyed.
+function removeCompaniesFromProspect(companies) {
+  const npisToRemove = new Set(companies.map((c) => c.npi).filter(Boolean));
+  if (npisToRemove.size === 0) return;
+  state.companies = state.companies.filter((c) => !npisToRemove.has(c.npi));
+  state.selected.clear();
+  state.expandedIndex = null;
+  renderResults();
+}
+
 async function exportCsv() {
   const companies = getExportCompanies();
   els.exportCsvBtn.disabled = true; // prevents a double-click from double-exporting
@@ -901,7 +924,7 @@ async function exportSheets() {
     const data = await apiPost("export/sheets", { companies });
     showToast(`Added ${data.rowsAdded} row(s) claimed by ${data.claimedBy || "you"}`, false, data.sheetUrl);
     state.claimedLoaded = false; // claimed view is now stale
-    clearSelection(); // these leads are claimed now -- leave them unchecked rather than re-exportable at a click
+    removeCompaniesFromProspect(companies); // claimed leads shouldn't linger in the Prospect view
     setStatus("ready", "Ready");
   } catch (err) {
     showToast(err.message, true);
@@ -913,23 +936,29 @@ async function exportSheets() {
 
 // Sends leads STRAIGHT to the shared Disconnected tab -- these were never
 // claimed, so there's no per-teammate Claimed tab to remove them from
-// first, just a fresh row landing directly in Disconnected.
+// first, just a fresh row landing directly in Disconnected. Deliberately
+// requires an explicit checked selection (no "nothing checked -> send
+// everything shown" fallback) since this is a one-way move.
 async function sendProspectToDisconnected() {
-  const companies = getExportCompanies();
-  if (!confirm(`Send ${companies.length} lead(s) straight to the shared Disconnected tab?`)) return;
+  const companies = getSelectedProspectCompanies();
+  if (companies.length === 0) {
+    showToast("Check at least one lead to send to Disconnected", true);
+    return;
+  }
+  if (!confirm(`Send ${companies.length} lead(s) straight to the shared Disconnected tab? This can't be undone.`)) return;
 
   els.sendDisconnectedBtn.disabled = true; // prevents a double-click from double-sending
   setStatus("busy", "Sending to Disconnected…");
   try {
     const data = await apiPost("export/disconnected", { companies });
     showToast(`Sent ${data.rowsAdded} lead(s) to Disconnected`, false, data.sheetUrl);
-    clearSelection();
+    removeCompaniesFromProspect(companies);
     setStatus("ready", "Ready");
   } catch (err) {
     showToast(err.message, true);
     setStatus("error", "Error");
   } finally {
-    els.sendDisconnectedBtn.disabled = state.companies.length === 0;
+    els.sendDisconnectedBtn.disabled = state.selected.size === 0;
   }
 }
 
@@ -1146,28 +1175,33 @@ function updateClaimedSelectionUI() {
   const count = state.claimedSelected.size;
   els.claimedSelectionChip.hidden = count === 0;
   els.claimedSelectionCount.textContent = `${count} selected`;
+  // No "nothing checked -> act on everything" fallback here -- moving a
+  // lead to Disconnected is a one-way move, so it stays disabled until at
+  // least one lead is actually checked.
+  els.claimedSendDisconnectedBtn.disabled = count === 0;
 }
 
 // Returns whichever leads a "Send to Disconnected" click should act on --
-// the checked subset, or (nothing checked) every currently-shown lead --
-// matching the same "selection, or everything" convention as the Prospect
-// tab's export buttons.
+// only the checked subset. Deliberately has no "nothing checked -> every
+// currently-shown lead" fallback, unlike the Prospect tab's export buttons.
 function getDisconnectClaimedLeads() {
-  if (state.claimedSelected.size > 0) {
-    return [...state.claimedSelected].map((i) => state.claimedLeads[i]);
-  }
-  return state.claimedLeads;
+  return [...state.claimedSelected].map((i) => state.claimedLeads[i]);
 }
 
 // Moves already-claimed leads OUT of wherever they currently live (a
 // teammate's own Claimed tab) and INTO the shared Disconnected tab --
 // unlike the Prospect version, this is a genuine move, not a fresh append,
 // so the affected rows disappear from every teammate's Claimed Leads view.
+// Requires an explicit checked selection -- no "nothing checked -> move
+// everything shown" fallback, since this is a one-way move.
 async function sendClaimedToDisconnected() {
   const leads = getDisconnectClaimedLeads();
-  if (leads.length === 0) return;
+  if (leads.length === 0) {
+    showToast("Check at least one lead to send to Disconnected", true);
+    return;
+  }
   const npis = leads.map((l) => l.npi).filter(Boolean);
-  if (!confirm(`Move ${leads.length} lead(s) out of Claimed and into the shared Disconnected tab?`)) return;
+  if (!confirm(`Move ${leads.length} lead(s) out of Claimed and into the shared Disconnected tab? This can't be undone.`)) return;
 
   els.claimedSendDisconnectedBtn.disabled = true; // prevents a double-click from double-moving
   setStatus("busy", "Moving to Disconnected…");
@@ -1181,7 +1215,7 @@ async function sendClaimedToDisconnected() {
     showToast(err.message, true);
     setStatus("error", "Error");
   } finally {
-    els.claimedSendDisconnectedBtn.disabled = state.claimedLeads.length === 0;
+    els.claimedSendDisconnectedBtn.disabled = state.claimedSelected.size === 0;
   }
 }
 
@@ -1217,7 +1251,6 @@ function renderClaimedLeads(leads) {
   // sort, or status-filter change).
   state.claimedSelected.clear();
   els.claimedCount.textContent = `${leads.length} claimed lead${leads.length === 1 ? "" : "s"}`;
-  els.claimedSendDisconnectedBtn.disabled = leads.length === 0;
   checkDueReminders();
 
   if (leads.length === 0) {
