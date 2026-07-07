@@ -637,7 +637,6 @@ function renderResults(excludedAsClaimed) {
   const excludedNote = state.excludedAsClaimed > 0 ? ` (${state.excludedAsClaimed} already claimed, filtered out)` : "";
   els.resultsCount.textContent = `${companies.length} lead${companies.length === 1 ? "" : "s"} found${excludedNote}`;
   els.exportCsvBtn.disabled = companies.length === 0;
-  els.exportSheetsBtn.disabled = companies.length === 0;
   els.selectAll.checked = companies.length > 0 && state.selected.size === companies.length;
 
   if (companies.length === 0) {
@@ -664,10 +663,11 @@ function updateSelectionUI() {
   els.selectionChip.hidden = count === 0;
   els.selectionCount.textContent = `${count} selected`;
   els.exportCsvLabel.textContent = count > 0 ? `Export ${count} selected` : "Export CSV";
+  // Unlike Export CSV above, Export to Sheets (claiming) and Send to
+  // Disconnected have no "nothing checked -> act on everything" fallback --
+  // both stay disabled until at least one lead is actually checked.
+  els.exportSheetsBtn.disabled = count === 0;
   els.exportSheetsLabel.textContent = count > 0 ? `Send ${count} selected` : "Export to Sheets";
-  // Unlike the export buttons above, Send to Disconnected has no "nothing
-  // checked -> act on everything" fallback -- it stays disabled until at
-  // least one lead is actually checked.
   els.sendDisconnectedBtn.disabled = count === 0;
   els.sendDisconnectedLabel.textContent = count > 0 ? `Send ${count} to Disconnected` : "Send to Disconnected";
 }
@@ -912,10 +912,14 @@ async function exportCsv() {
 }
 
 async function exportSheets() {
-  const companies = getExportCompanies();
+  const companies = getSelectedProspectCompanies();
+  if (companies.length === 0) {
+    showToast("Check at least one lead to send to Sheets", true);
+    return;
+  }
   const who = getSession()?.displayName || "you";
   // Claiming leads is a shared, team-visible action with no undo -- confirm
-  // before writing, especially since "select none" silently means "all".
+  // before writing.
   if (!confirm(`Export ${companies.length} lead(s) to the shared Sheet, claimed by ${who}?`)) return;
 
   els.exportSheetsBtn.disabled = true; // prevents a double-click from double-claiming
@@ -930,7 +934,7 @@ async function exportSheets() {
     showToast(err.message, true);
     setStatus("error", "Error");
   } finally {
-    els.exportSheetsBtn.disabled = state.companies.length === 0;
+    els.exportSheetsBtn.disabled = state.selected.size === 0;
   }
 }
 
