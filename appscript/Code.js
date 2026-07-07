@@ -93,6 +93,22 @@ function handleRequest_(e) {
         });
       }
 
+      case "export/disconnected": {
+        var disconnectedBody = readJsonBody_(e);
+        return jsonResponse_({
+          success: true,
+          data: SheetsStore.exportCompaniesToDisconnected(disconnectedBody.companies, session.displayName),
+        });
+      }
+
+      case "leads/disconnect": {
+        var disconnectBody = readJsonBody_(e);
+        return jsonResponse_({
+          success: true,
+          data: SheetsStore.moveClaimedLeadsToDisconnected(disconnectBody.npis, session.displayName),
+        });
+      }
+
       case "leads/list": {
         var opts = {};
         if (params.mine === "true") opts.claimedBy = session.displayName;

@@ -39,44 +39,69 @@ var CompanyService = (function () {
     });
   }
 
-  // A dedup key only for companies where NPPES's own authorized official is
-  // known -- a scraped/website contact isn't reliable enough to key an
-  // automatic merge on, so this runs right after fromNppesProvider (before
-  // any enrichment adds other decision makers). Returns null when there's no
-  // official to compare, which callers treat as "never merge this row".
-  function branchDedupKey_(company) {
+  // Two independent, exact (never "contains") dedup keys for companies where
+  // NPPES's own authorized official is known -- a scraped/website contact
+  // isn't reliable enough to key an automatic merge on, so this runs right
+  // after fromNppesProvider (before any enrichment adds other decision
+  // makers). Either key alone is enough to merge two rows together:
+  //  - namePhone: the official's name + phone match exactly -- catches the
+  //    same owner/officer operating under a genuinely different registered
+  //    company name (a DBA, a renamed entity, etc.).
+  //  - companyName: the company name + official's name match exactly -- the
+  //    original behavior, for branches sharing a name but with no phone on
+  //    file (or a phone that happens to differ per location).
+  // A key is null when it can't be computed (missing official/phone/etc.),
+  // which callers treat as "this key never merges anything".
+  function branchDedupKeys_(company) {
     var official = company.decisionMakers && company.decisionMakers[0];
-    if (!official || !official.name) return null;
+    if (!official || !official.name) return { namePhone: null, companyName: null };
     var namePart = String(company.name || "").trim().toLowerCase();
     var officialPart = official.name.trim().toLowerCase();
-    if (!namePart || !officialPart) return null;
-    return namePart + "|" + officialPart;
+    var phonePart = official.phone ? String(official.phone).trim() : "";
+
+    return {
+      namePhone: (officialPart && phonePart) ? (officialPart + "|" + phonePart) : null,
+      companyName: (namePart && officialPart) ? (namePart + "|" + officialPart) : null,
+    };
   }
 
-  // Chains with a large employer (same company name AND same NPPES
-  // authorized official, exactly) can register a separate NPI per branch
+  // Chains with a large employer can register a separate NPI per branch
   // location, which otherwise shows up as several near-identical rows for
   // what a rep considers one lead. Folds those into a single row carrying
   // every branch's NPI/address/phone/fax, keeping the first-seen branch's
-  // fields (name, taxonomy, etc.) as the row's primary display data.
-  // Runs before enrichment so Places/OSM/scrape/CMS calls aren't repeated
-  // per branch -- only the primary branch gets enriched.
+  // fields (name, taxonomy, etc.) as the row's primary display data. Two
+  // rows merge if EITHER branchDedupKeys_() key matches -- this company's
+  // own two keys are then both registered against whichever group it joined
+  // (or a brand-new group), so a third row matching via the OTHER key still
+  // joins the same group. Runs before enrichment so Places/OSM/scrape/CMS
+  // calls aren't repeated per branch -- only the primary branch gets enriched.
   function mergeDuplicateBranches_(companies) {
-    var keyToIndex = {};
+    var keyToIndex = {}; // "np:"/"cn:" prefixed key -> index into `merged`
     var merged = [];
 
     companies.forEach(function (company) {
-      var key = branchDedupKey_(company);
+      var keys = branchDedupKeys_(company);
       var branch = { npi: company.npi, address: company.address, phone: company.phone, fax: company.fax };
 
-      if (key && Object.prototype.hasOwnProperty.call(keyToIndex, key)) {
-        merged[keyToIndex[key]].locations.push(branch);
-        return;
+      var namePhoneKey = keys.namePhone ? ("np:" + keys.namePhone) : null;
+      var companyNameKey = keys.companyName ? ("cn:" + keys.companyName) : null;
+
+      var matchIndex = null;
+      if (namePhoneKey && Object.prototype.hasOwnProperty.call(keyToIndex, namePhoneKey)) {
+        matchIndex = keyToIndex[namePhoneKey];
+      } else if (companyNameKey && Object.prototype.hasOwnProperty.call(keyToIndex, companyNameKey)) {
+        matchIndex = keyToIndex[companyNameKey];
       }
 
-      var withLocations = Object.assign({}, company, { locations: [branch] });
-      if (key) keyToIndex[key] = merged.length;
-      merged.push(withLocations);
+      if (matchIndex != null) {
+        merged[matchIndex].locations.push(branch);
+      } else {
+        matchIndex = merged.length;
+        merged.push(Object.assign({}, company, { locations: [branch] }));
+      }
+
+      if (namePhoneKey) keyToIndex[namePhoneKey] = matchIndex;
+      if (companyNameKey) keyToIndex[companyNameKey] = matchIndex;
     });
 
     return merged;

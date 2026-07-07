@@ -324,7 +324,8 @@ body {
    layout caps the table at 100% and wraps/truncates cell content instead. */
 .claimed-table { table-layout: fixed; }
 .claimed-table thead th { white-space: normal; } /* header labels wrap instead of truncating in a narrow fixed column */
-.col-claimed-company { width: 18%; }
+.col-claimed-check { width: 4%; }
+.col-claimed-company { width: 14%; }
 .col-claimed-location { width: 8%; }
 .col-claimed-phone { width: 11%; }
 .col-claimed-by { width: 7%; }

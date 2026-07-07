@@ -44,6 +44,15 @@ var SheetsStore = (function () {
   // store can find "all of them" without a fixed list of names.
   var CLAIMED_TAB_PREFIX = "Claimed - ";
 
+  // A single shared tab (not per-teammate) that checked leads get sent to --
+  // from Prospect (never claimed) or moved out of a Claimed tab -- when a
+  // rep finds the number's disconnected/dead. Deliberately excluded from
+  // allClaimedSheets_() (the active-pipeline list + status dropdown), so a
+  // lead sent here disappears from the normal Claimed Leads view, but IS
+  // still counted for search-dedup (see allDedupSheets_()) so it doesn't
+  // resurface in a future search.
+  var DISCONNECTED_TAB_NAME = "Disconnected";
+
   function columnDefs_() {
     return CsvExport.CSV_COLUMNS.concat(TRACKING_COLUMNS);
   }
@@ -84,6 +93,24 @@ var SheetsStore = (function () {
       var name = s.getName();
       return name.indexOf(CLAIMED_TAB_PREFIX) === 0 || name === legacyName;
     });
+  }
+
+  // Gets (or creates) the single shared Disconnected tab.
+  function getDisconnectedSheet_(spreadsheet) {
+    var sheet = spreadsheet.getSheetByName(DISCONNECTED_TAB_NAME);
+    if (!sheet) sheet = spreadsheet.insertSheet(DISCONNECTED_TAB_NAME);
+    return sheet;
+  }
+
+  // Every sheet that counts toward "already handled, don't resurface in a
+  // fresh search" -- every claimed-leads tab PLUS the shared Disconnected
+  // tab. Deliberately separate from allClaimedSheets_() above, which must
+  // NOT include Disconnected (see the comment on DISCONNECTED_TAB_NAME).
+  function allDedupSheets_(spreadsheet) {
+    var sheets = allClaimedSheets_(spreadsheet).slice();
+    var disconnected = spreadsheet.getSheetByName(DISCONNECTED_TAB_NAME);
+    if (disconnected) sheets.push(disconnected);
+    return sheets;
   }
 
   // 0-based map of header label (lowercased) -> column index for a given sheet.
@@ -174,17 +201,11 @@ var SheetsStore = (function () {
     return getKnownStatusesAcrossSheets_(openSpreadsheet_());
   }
 
-  function exportCompaniesToSheet(companies, claimedBy) {
-    assertConfigured();
-    companies = companies || [];
-    if (!Array.isArray(companies) || companies.length === 0) {
-      var error = new Error("At least one company is required to export");
-      error.status = 400;
-      throw error;
-    }
-
-    var spreadsheet = openSpreadsheet_();
-    var sheet = getUserSheet_(spreadsheet, claimedBy);
+  // Shared by exportCompaniesToSheet (per-teammate Claimed tab, status
+  // "new") and exportCompaniesToDisconnected (shared Disconnected tab,
+  // status "disconnected") -- appends one fresh row per company, filling
+  // every tracking column with sensible starting values.
+  function appendCompaniesToSheet_(companies, sheet, defaultStatus, actorName) {
     var colMap = ensureColumns_(sheet);
     var width = sheet.getLastColumn();
     var now = new Date().toISOString();
@@ -198,9 +219,9 @@ var SheetsStore = (function () {
         var ci = colIndex_(colMap, c.label);
         if (ci < 0) return;
         var val;
-        if (c.key === "claimedBy") val = claimedBy || "";
+        if (c.key === "claimedBy") val = actorName || "";
         else if (c.key === "claimedAt") val = now;
-        else if (c.key === "status") val = "new";
+        else if (c.key === "status") val = defaultStatus;
         else if (c.key === "statusUpdatedBy" || c.key === "statusUpdatedAt" || c.key === "notes" || c.key === "reminderAt") val = "";
         else val = flat[c.key] != null ? flat[c.key] : "";
         row[ci] = val;
@@ -210,26 +231,128 @@ var SheetsStore = (function () {
 
     var startRow = sheet.getLastRow() + 1;
     sheet.getRange(startRow, 1, rows.length, width).setValues(rows);
+    return { rowsAdded: rows.length, colMap: colMap };
+  }
+
+  function exportCompaniesToSheet(companies, claimedBy) {
+    assertConfigured();
+    companies = companies || [];
+    if (!Array.isArray(companies) || companies.length === 0) {
+      var error = new Error("At least one company is required to export");
+      error.status = 400;
+      throw error;
+    }
+
+    var spreadsheet = openSpreadsheet_();
+    var sheet = getUserSheet_(spreadsheet, claimedBy);
+    var result = appendCompaniesToSheet_(companies, sheet, "new", claimedBy);
     var knownStatuses = getKnownStatusesAcrossSheets_(spreadsheet);
-    applyStatusValidationTo_(sheet, colMap, knownStatuses);
+    applyStatusValidationTo_(sheet, result.colMap, knownStatuses);
 
     return {
       tab: sheet.getName(),
-      rowsAdded: rows.length,
+      rowsAdded: result.rowsAdded,
       claimedBy: claimedBy || null,
       sheetUrl: "https://docs.google.com/spreadsheets/d/" + Config.googleSheetId() + "/edit#gid=" + sheet.getSheetId(),
     };
   }
 
-  // Reads the NPI column (by label) across every teammate's tab and returns
-  // the set of NPIs already claimed by anyone, so search results can filter
-  // them out.
+  // Sends leads STRAIGHT to the shared Disconnected tab without ever
+  // visiting a per-teammate Claimed tab -- used from the Prospect view,
+  // where these companies were never claimed in the first place.
+  function exportCompaniesToDisconnected(companies, submittedBy) {
+    assertConfigured();
+    companies = companies || [];
+    if (!Array.isArray(companies) || companies.length === 0) {
+      var error = new Error("At least one company is required to send to Disconnected");
+      error.status = 400;
+      throw error;
+    }
+
+    var spreadsheet = openSpreadsheet_();
+    var sheet = getDisconnectedSheet_(spreadsheet);
+    var result = appendCompaniesToSheet_(companies, sheet, "disconnected", submittedBy);
+
+    return {
+      tab: sheet.getName(),
+      rowsAdded: result.rowsAdded,
+      sheetUrl: "https://docs.google.com/spreadsheets/d/" + Config.googleSheetId() + "/edit#gid=" + sheet.getSheetId(),
+    };
+  }
+
+  // Moves already-claimed leads OUT of wherever they currently live (a
+  // teammate's Claimed tab) and INTO the shared Disconnected tab, preserving
+  // their existing Notes/Claimed By/Claimed At but overwriting Status to
+  // "disconnected" -- used from the Claimed Leads view. Columns are copied
+  // by LABEL (not position), since the source and destination tabs' column
+  // order can drift independently over time as custom columns get appended.
+  function moveClaimedLeadsToDisconnected(npis, movedBy) {
+    assertConfigured();
+    npis = (npis || []).map(String).filter(Boolean);
+    if (npis.length === 0) {
+      var error = new Error("At least one NPI is required");
+      error.status = 400;
+      throw error;
+    }
+
+    var spreadsheet = openSpreadsheet_();
+    var disconnectedSheet = getDisconnectedSheet_(spreadsheet);
+    var disconnectedColMap = ensureColumns_(disconnectedSheet);
+    var now = new Date().toISOString();
+    var defs = columnDefs_();
+    var movedCount = 0;
+    var notFound = [];
+
+    npis.forEach(function (npi) {
+      // Re-looked-up fresh for EACH npi (not batched upfront) so a deletion
+      // from an earlier npi in this same loop can't leave a later npi's
+      // remembered row number pointing at the wrong row.
+      var matches = findLeadLocations_(spreadsheet, npi);
+      if (matches.length === 0) { notFound.push(npi); return; }
+
+      matches
+        .sort(function (a, b) { return b.rowNumber - a.rowNumber; }) // delete bottom-up within a sheet
+        .forEach(function (m) {
+          var sourceColMap = buildColMap_(m.sheet);
+          var width = m.sheet.getLastColumn();
+          var rowValues = m.sheet.getRange(m.rowNumber, 1, 1, width).getValues()[0];
+
+          var destWidth = disconnectedSheet.getLastColumn();
+          var destRow = [];
+          for (var i = 0; i < destWidth; i++) destRow.push("");
+          defs.forEach(function (c) {
+            var srcIdx = colIndex_(sourceColMap, c.label);
+            var destIdx = colIndex_(disconnectedColMap, c.label);
+            if (srcIdx < 0 || destIdx < 0) return;
+            destRow[destIdx] = rowValues[srcIdx];
+          });
+
+          var statusIdx = colIndex_(disconnectedColMap, "Status");
+          var statusByIdx = colIndex_(disconnectedColMap, "Status Updated By");
+          var statusAtIdx = colIndex_(disconnectedColMap, "Status Updated At");
+          if (statusIdx >= 0) destRow[statusIdx] = "disconnected";
+          if (statusByIdx >= 0) destRow[statusByIdx] = movedBy || "";
+          if (statusAtIdx >= 0) destRow[statusAtIdx] = now;
+
+          disconnectedSheet.getRange(disconnectedSheet.getLastRow() + 1, 1, 1, destWidth).setValues([destRow]);
+          m.sheet.deleteRow(m.rowNumber);
+          movedCount++;
+        });
+    });
+
+    SpreadsheetApp.flush();
+    return { movedCount: movedCount, notFound: notFound };
+  }
+
+  // Reads the NPI column (by label) across every teammate's tab AND the
+  // shared Disconnected tab, and returns the set of NPIs already handled by
+  // anyone, so search results can filter them out.
   function getClaimedNpis() {
     assertConfigured();
     var spreadsheet = openSpreadsheet_();
     var claimed = new Set();
 
-    allClaimedSheets_(spreadsheet).forEach(function (sheet) {
+    allDedupSheets_(spreadsheet).forEach(function (sheet) {
       var lastRow = sheet.getLastRow();
       if (lastRow < 2) return;
       var colMap = buildColMap_(sheet);
@@ -597,6 +720,8 @@ var SheetsStore = (function () {
 
   return {
     exportCompaniesToSheet: exportCompaniesToSheet,
+    exportCompaniesToDisconnected: exportCompaniesToDisconnected,
+    moveClaimedLeadsToDisconnected: moveClaimedLeadsToDisconnected,
     getClaimedNpis: getClaimedNpis,
     listClaimedLeads: listClaimedLeads,
     updateLeadStatus: updateLeadStatus,

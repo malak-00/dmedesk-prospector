@@ -98,6 +98,7 @@ const state = {
   // never needs a re-fetch, just a re-derive + re-render.
   claimedLeadsAll: [],
   statusFilter: "",
+  claimedSelected: new Set(),
   claimedExpandedIndex: null,
   claimedLoadedAt: null,
   claimedSortKey: null,
@@ -190,6 +191,8 @@ const els = {
   exportSheetsBtn: document.getElementById("exportSheetsBtn"),
   exportCsvLabel: document.getElementById("exportCsvLabel"),
   exportSheetsLabel: document.getElementById("exportSheetsLabel"),
+  sendDisconnectedBtn: document.getElementById("sendDisconnectedBtn"),
+  sendDisconnectedLabel: document.getElementById("sendDisconnectedLabel"),
   selectionChip: document.getElementById("selectionChip"),
   selectionCount: document.getElementById("selectionCount"),
   clearSelectionBtn: document.getElementById("clearSelectionBtn"),
@@ -208,6 +211,11 @@ const els = {
   claimedTable: document.getElementById("claimedTable"),
   claimedBody: document.getElementById("claimedBody"),
   claimedCount: document.getElementById("claimedCount"),
+  claimedSelectAll: document.getElementById("claimedSelectAll"),
+  claimedSelectionChip: document.getElementById("claimedSelectionChip"),
+  claimedSelectionCount: document.getElementById("claimedSelectionCount"),
+  claimedClearSelectionBtn: document.getElementById("claimedClearSelectionBtn"),
+  claimedSendDisconnectedBtn: document.getElementById("claimedSendDisconnectedBtn"),
   onlyMine: document.getElementById("onlyMine"),
   enableNotifications: document.getElementById("enableNotifications"),
   updatedWithin: document.getElementById("updatedWithin"),
@@ -630,6 +638,7 @@ function renderResults(excludedAsClaimed) {
   els.resultsCount.textContent = `${companies.length} lead${companies.length === 1 ? "" : "s"} found${excludedNote}`;
   els.exportCsvBtn.disabled = companies.length === 0;
   els.exportSheetsBtn.disabled = companies.length === 0;
+  els.sendDisconnectedBtn.disabled = companies.length === 0;
   els.selectAll.checked = companies.length > 0 && state.selected.size === companies.length;
 
   if (companies.length === 0) {
@@ -657,6 +666,7 @@ function updateSelectionUI() {
   els.selectionCount.textContent = `${count} selected`;
   els.exportCsvLabel.textContent = count > 0 ? `Export ${count} selected` : "Export CSV";
   els.exportSheetsLabel.textContent = count > 0 ? `Send ${count} selected` : "Export to Sheets";
+  els.sendDisconnectedLabel.textContent = count > 0 ? `Send ${count} to Disconnected` : "Send to Disconnected";
 }
 
 // Small badges showing which free enrichment sources actually contributed
@@ -901,6 +911,28 @@ async function exportSheets() {
   }
 }
 
+// Sends leads STRAIGHT to the shared Disconnected tab -- these were never
+// claimed, so there's no per-teammate Claimed tab to remove them from
+// first, just a fresh row landing directly in Disconnected.
+async function sendProspectToDisconnected() {
+  const companies = getExportCompanies();
+  if (!confirm(`Send ${companies.length} lead(s) straight to the shared Disconnected tab?`)) return;
+
+  els.sendDisconnectedBtn.disabled = true; // prevents a double-click from double-sending
+  setStatus("busy", "Sending to Disconnected…");
+  try {
+    const data = await apiPost("export/disconnected", { companies });
+    showToast(`Sent ${data.rowsAdded} lead(s) to Disconnected`, false, data.sheetUrl);
+    clearSelection();
+    setStatus("ready", "Ready");
+  } catch (err) {
+    showToast(err.message, true);
+    setStatus("error", "Error");
+  } finally {
+    els.sendDisconnectedBtn.disabled = state.companies.length === 0;
+  }
+}
+
 /* ---------- Claimed leads view ---------- */
 
 // A sentinel option value, never a real status, that means "prompt for a
@@ -1102,8 +1134,59 @@ function applyStatusFilter(leads) {
   return state.statusFilter ? leads.filter((lead) => lead.status === state.statusFilter) : leads;
 }
 
+function clearClaimedSelection() {
+  state.claimedSelected.clear();
+  els.claimedSelectAll.checked = false;
+  els.claimedBody.querySelectorAll(".claimed-row-check").forEach((box) => { box.checked = false; });
+  els.claimedBody.querySelectorAll(".lead-row").forEach((row) => row.classList.remove("is-selected"));
+  updateClaimedSelectionUI();
+}
+
+function updateClaimedSelectionUI() {
+  const count = state.claimedSelected.size;
+  els.claimedSelectionChip.hidden = count === 0;
+  els.claimedSelectionCount.textContent = `${count} selected`;
+}
+
+// Returns whichever leads a "Send to Disconnected" click should act on --
+// the checked subset, or (nothing checked) every currently-shown lead --
+// matching the same "selection, or everything" convention as the Prospect
+// tab's export buttons.
+function getDisconnectClaimedLeads() {
+  if (state.claimedSelected.size > 0) {
+    return [...state.claimedSelected].map((i) => state.claimedLeads[i]);
+  }
+  return state.claimedLeads;
+}
+
+// Moves already-claimed leads OUT of wherever they currently live (a
+// teammate's own Claimed tab) and INTO the shared Disconnected tab --
+// unlike the Prospect version, this is a genuine move, not a fresh append,
+// so the affected rows disappear from every teammate's Claimed Leads view.
+async function sendClaimedToDisconnected() {
+  const leads = getDisconnectClaimedLeads();
+  if (leads.length === 0) return;
+  const npis = leads.map((l) => l.npi).filter(Boolean);
+  if (!confirm(`Move ${leads.length} lead(s) out of Claimed and into the shared Disconnected tab?`)) return;
+
+  els.claimedSendDisconnectedBtn.disabled = true; // prevents a double-click from double-moving
+  setStatus("busy", "Moving to Disconnected…");
+  try {
+    const data = await apiPost("leads/disconnect", { npis });
+    showToast(`Moved ${data.movedCount} lead(s) to Disconnected`);
+    clearClaimedSelection();
+    await loadClaimedLeads(); // moved rows should disappear from this view now
+    setStatus("ready", "Ready");
+  } catch (err) {
+    showToast(err.message, true);
+    setStatus("error", "Error");
+  } finally {
+    els.claimedSendDisconnectedBtn.disabled = state.claimedLeads.length === 0;
+  }
+}
+
 async function loadClaimedLeads() {
-  els.claimedBody.innerHTML = skeletonRows(5, 9);
+  els.claimedBody.innerHTML = skeletonRows(5, 10);
   els.staleNudge.hidden = true;
   try {
     const params = {};
@@ -1121,7 +1204,7 @@ async function loadClaimedLeads() {
     state.claimedLeadsAll = data.leads || [];
     renderClaimedLeads(applyStatusFilter(state.claimedLeadsAll));
   } catch (err) {
-    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="9">${escapeHtml(err.message)}</td></tr>`;
+    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="10">${escapeHtml(err.message)}</td></tr>`;
     showToast(err.message, true);
   }
 }
@@ -1129,24 +1212,33 @@ async function loadClaimedLeads() {
 function renderClaimedLeads(leads) {
   state.claimedLeads = leads;
   state.claimedExpandedIndex = null;
+  // Indices are about to be rebuilt from scratch -- a remembered selection
+  // would silently point at the wrong rows otherwise (e.g. after a reload,
+  // sort, or status-filter change).
+  state.claimedSelected.clear();
   els.claimedCount.textContent = `${leads.length} claimed lead${leads.length === 1 ? "" : "s"}`;
+  els.claimedSendDisconnectedBtn.disabled = leads.length === 0;
   checkDueReminders();
 
   if (leads.length === 0) {
-    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="9">Nothing claimed yet — export some leads to Sheets first.</td></tr>`;
+    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="10">Nothing claimed yet — export some leads to Sheets first.</td></tr>`;
+    updateClaimedSelectionUI();
     return;
   }
 
   els.claimedBody.innerHTML = leads.map((lead, i) => claimedLeadRowHtml(lead, i)).join("");
   attachClaimedRowHandlers();
+  updateClaimedSelectionUI();
 }
 
 function claimedLeadRowHtml(lead, index) {
   const contactLine = lead.contactName
     ? `${escapeHtml(lead.contactName)}${lead.contactTitle ? ` — ${escapeHtml(lead.contactTitle)}` : ""}`
     : "";
+  const isSelected = state.claimedSelected.has(index);
   return `
-    <tr class="lead-row" data-claimed-index="${index}" tabindex="0" aria-expanded="false">
+    <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-claimed-index="${index}" tabindex="0" aria-expanded="false">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="claimed-row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
         <div class="company-name">${escapeHtml(lead.name)}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
@@ -1373,7 +1465,7 @@ function claimedDetailRowHtml(lead, index) {
 
   return `
     <tr class="detail-row">
-      <td colspan="9">
+      <td colspan="10">
         <div class="detail-grid">
           <div class="detail-block">
             <h4>Details</h4>
@@ -1489,6 +1581,17 @@ function attachClaimedRowHandlers() {
       if (e.key !== "Enter" && e.key !== " ") return;
       e.preventDefault();
       toggleClaimedRowDetail(Number(row.dataset.claimedIndex));
+    });
+  });
+
+  els.claimedBody.querySelectorAll(".claimed-row-check").forEach((box) => {
+    box.addEventListener("change", (e) => {
+      const idx = Number(e.target.dataset.index);
+      const row = e.target.closest(".lead-row");
+      if (e.target.checked) { state.claimedSelected.add(idx); row?.classList.add("is-selected"); }
+      else { state.claimedSelected.delete(idx); row?.classList.remove("is-selected"); }
+      els.claimedSelectAll.checked = state.claimedLeads.length > 0 && state.claimedSelected.size === state.claimedLeads.length;
+      updateClaimedSelectionUI();
     });
   });
 
@@ -1728,6 +1831,7 @@ els.clearSelectionBtn.addEventListener("click", clearSelection);
 els.searchMoreBtn.addEventListener("click", searchMore);
 els.exportCsvBtn.addEventListener("click", exportCsv);
 els.exportSheetsBtn.addEventListener("click", exportSheets);
+els.sendDisconnectedBtn.addEventListener("click", sendProspectToDisconnected);
 
 els.loginForm.addEventListener("submit", handleLogin);
 els.signOutBtn.addEventListener("click", handleSignOut);
@@ -1761,6 +1865,18 @@ els.statusFilter.addEventListener("change", () => {
 });
 els.refreshClaimedBtn.addEventListener("click", loadClaimedLeads);
 els.staleNudge.addEventListener("click", loadClaimedLeads);
+els.claimedSelectAll.addEventListener("change", (e) => {
+  els.claimedBody.querySelectorAll(".claimed-row-check").forEach((box) => {
+    box.checked = e.target.checked;
+    const idx = Number(box.dataset.index);
+    const row = box.closest(".lead-row");
+    if (e.target.checked) { state.claimedSelected.add(idx); row?.classList.add("is-selected"); }
+    else { state.claimedSelected.delete(idx); row?.classList.remove("is-selected"); }
+  });
+  updateClaimedSelectionUI();
+});
+els.claimedClearSelectionBtn.addEventListener("click", clearClaimedSelection);
+els.claimedSendDisconnectedBtn.addEventListener("click", sendClaimedToDisconnected);
 
 wireSortableHeaders(els.resultsTable, PROSPECT_DEFAULT_SORT_DIR, sortProspectResults);
 wireSortableHeaders(els.claimedTable, CLAIMED_DEFAULT_SORT_DIR, sortClaimedLeads);

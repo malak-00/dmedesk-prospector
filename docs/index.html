@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -194,6 +194,10 @@
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 6.5h12M2 10.5h12M6.5 2v12" stroke="currentColor" stroke-width="1.4"/></svg>
               <span id="exportSheetsLabel">Export to Sheets</span>
             </button>
+            <button class="btn btn-ghost" id="sendDisconnectedBtn" disabled title="Sends the checked (or, if none checked, all) leads straight to the shared Disconnected tab, skipping the normal per-teammate Claimed tab">
+              <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              <span id="sendDisconnectedLabel">Send to Disconnected</span>
+            </button>
           </div>
         </div>
 
@@ -223,6 +227,10 @@
         <div class="results-toolbar">
           <div class="results-meta">
             <div class="results-count" id="claimedCount">Claimed leads</div>
+            <div class="selection-chip" id="claimedSelectionChip" hidden>
+              <span id="claimedSelectionCount">0 selected</span>
+              <button type="button" class="link-btn" id="claimedClearSelectionBtn">Clear</button>
+            </div>
             <label class="checkbox">
               <input type="checkbox" id="onlyMine">
               <span>Only mine</span>
@@ -256,6 +264,10 @@
           </div>
           <div class="results-actions">
             <button type="button" class="link-btn stale-nudge" id="staleNudge" hidden>Results may be stale —</button>
+            <button class="btn btn-ghost" id="claimedSendDisconnectedBtn" disabled title="Moves the checked (or, if none checked, all shown) leads out of their current Claimed tab and into the shared Disconnected tab">
+              <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              <span>Send to Disconnected</span>
+            </button>
             <button class="btn btn-ghost" id="refreshClaimedBtn">
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <span>Refresh</span>
@@ -267,6 +279,7 @@
           <table class="results-table claimed-table" id="claimedTable">
             <thead>
               <tr>
+                <th class="col-claimed-check"><input type="checkbox" id="claimedSelectAll"></th>
                 <th class="col-claimed-company sortable" data-sort-key="company">Company / contact<span class="sort-arrow"></span></th>
                 <th class="col-claimed-location sortable" data-sort-key="location">Location<span class="sort-arrow"></span></th>
                 <th class="col-claimed-phone">Contact phone</th>
@@ -279,7 +292,7 @@
               </tr>
             </thead>
             <tbody id="claimedBody">
-              <tr class="empty-row"><td colspan="9">Open this tab to load claimed leads.</td></tr>
+              <tr class="empty-row"><td colspan="10">Open this tab to load claimed leads.</td></tr>
             </tbody>
           </table>
         </div>
@@ -324,6 +337,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=20"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>
