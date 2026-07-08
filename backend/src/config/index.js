@@ -7,6 +7,10 @@ const config = {
   nodeEnv: process.env.NODE_ENV || "development",
   nppesVersion: process.env.NPPES_VERSION || "2.1",
   foursquareApiKey: process.env.FOURSQUARE_SERVICE_API_KEY || null,
+  // Powers yelp.service.js, a second "Places"-style enrichment source tried
+  // only for companies Foursquare didn't cover. Get a key at serpapi.com --
+  // 250 searches/month free, paid plans beyond that. Safe to leave unset.
+  serpapiApiKey: process.env.SERPAPI_API_KEY || null,
   geminiApiKey: process.env.GEMINI_API_KEY || null,
   geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
   googleServiceAccountKeyPath: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || null,
