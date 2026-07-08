@@ -320,6 +320,24 @@ function renderExcludeKeywordsChips() {
   syncExcludeKeywordsHiddenInput();
 }
 
+// Persists the current chip list to the signed-in user's saved default
+// (server-side, a column in the Users sheet) -- called automatically after
+// every add/remove so a removed chip actually stays gone after a reload
+// instead of silently reappearing (it was previously only cleared from view
+// until the next explicit "Save as default" click, which read as "clicking
+// x doesn't really remove it"). Silent by default since it fires on every
+// single edit; the explicit Save button below still shows a toast.
+async function persistExcludeKeywords({ silent = true } = {}) {
+  const excludeKeywords = excludeKeywordsAsString();
+  try {
+    const data = await apiPost("auth/exclude-keywords", { excludeKeywords });
+    saveSession({ ...getSession(), excludeKeywords: data.excludeKeywords });
+    if (!silent) showToast(excludeKeywords ? "Saved as your default exclude keywords" : "Default exclude keywords cleared");
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
 // Case-insensitive dedupe -- matches how the search filter itself matches
 // (see NppesService's local exclusion filter), so "Wheelchair" and
 // "wheelchair" are treated as the same entry instead of two chips that
@@ -331,11 +349,13 @@ function addExcludeKeywordChip(raw) {
   if (alreadyHave) return;
   excludeKeywordsChips.push(kw);
   renderExcludeKeywordsChips();
+  persistExcludeKeywords();
 }
 
 function removeExcludeKeywordChip(value) {
   excludeKeywordsChips = excludeKeywordsChips.filter((kw) => kw !== value);
   renderExcludeKeywordsChips();
+  persistExcludeKeywords();
 }
 
 // Replaces the whole chip set at once (restoring from sessionStorage or from
@@ -617,25 +637,18 @@ function restoreSearchFormState() {
   if (values.city) cityInput.value = values.city;
 }
 
-// Persists the Exclude keywords field as the signed-in user's own default --
-// stored server-side (a column in the Users sheet, not sessionStorage), so
-// it follows them to any device/browser next time they sign in, unlike the
-// rest of the search form's session-scoped memory above.
+// Every add/remove already auto-persists (see persistExcludeKeywords) -- this
+// button is now just an explicit "confirm it saved" affordance, plus a way
+// to commit whatever's still sitting in the entry field (typed but not yet
+// turned into a chip) so clicking it never silently drops that text.
 async function saveExcludeKeywordsDefault() {
-  // Commits whatever's still sitting in the entry field (typed but not yet
-  // turned into a chip) so clicking Save never silently drops it.
   if (els.excludeKeywordsEntry.value.trim()) {
-    addExcludeKeywordChip(els.excludeKeywordsEntry.value);
+    addExcludeKeywordChip(els.excludeKeywordsEntry.value); // adds + auto-persists
     els.excludeKeywordsEntry.value = "";
   }
-  const excludeKeywords = excludeKeywordsAsString();
   els.saveExcludeKeywordsBtn.disabled = true;
   try {
-    const data = await apiPost("auth/exclude-keywords", { excludeKeywords });
-    saveSession({ ...getSession(), excludeKeywords: data.excludeKeywords });
-    showToast(excludeKeywords ? "Saved as your default exclude keywords" : "Default exclude keywords cleared");
-  } catch (err) {
-    showToast(err.message, true);
+    await persistExcludeKeywords({ silent: false });
   } finally {
     els.saveExcludeKeywordsBtn.disabled = false;
   }
