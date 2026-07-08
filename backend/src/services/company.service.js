@@ -1,7 +1,6 @@
 import { searchProviders } from "./nppes.service.js";
 import { lookupByNpis } from "./cms.service.js";
 import foursquareService, { FoursquareNotConfiguredError } from "./foursquare.service.js";
-import yelpService, { YelpNotConfiguredError } from "./yelp.service.js";
 import { lookupWebsite as lookupOsmWebsite } from "./osm.service.js";
 import { scrapeCompanyWebsite } from "./scraper.service.js";
 import { createCompany } from "../models/company.model.js";
@@ -13,7 +12,6 @@ const NPPES_PAGE_SIZE = 200; // NPPES hard cap per request
 const NPPES_MAX_SKIP = 1000; // NPPES hard cap on pagination depth
 
 let hasWarnedNoKey = false;
-let hasWarnedNoYelpKey = false;
 let hasWarnedNoDedup = false;
 
 function buildNppesDecisionMaker(provider) {
@@ -145,46 +143,6 @@ async function tryEnrichWithPlaces(company) {
       return company;
     }
     console.warn(`[company.service] Places enrichment failed for "${company.name}": ${err.message}`);
-    return company;
-  }
-}
-
-// A SECOND "Places"-style enrichment attempt, via SerpApi's Yelp Search API,
-// used only for companies tryEnrichWithPlaces above didn't already enrich
-// (Foursquare found no match, or Foursquare itself failed/is unconfigured).
-// Unlike Foursquare, every request here is a billed SerpApi search, so this
-// deliberately never runs for a company Foursquare already covered.
-async function tryEnrichWithYelp(company) {
-  if (company.sources?.places) return company; // Foursquare already covered this one
-  try {
-    const data = await yelpService.enrichCompany({
-      npi: company.npi,
-      name: company.name,
-      address: company.address,
-    });
-    if (!data) return company;
-
-    return {
-      ...company,
-      website: data.website ?? company.website,
-      phone: company.phone || data.phone || null,
-      places: {
-        placeId: data.placeId,
-        rating: data.rating,
-        ratingCount: data.ratingCount,
-        isClosed: data.isClosed,
-      },
-      sources: { ...company.sources, places: true, yelp: true },
-    };
-  } catch (err) {
-    if (err instanceof YelpNotConfiguredError) {
-      if (!hasWarnedNoYelpKey) {
-        console.warn("[company.service] Yelp enrichment skipped: SERPAPI_API_KEY not set");
-        hasWarnedNoYelpKey = true;
-      }
-      return company;
-    }
-    console.warn(`[company.service] Yelp enrichment failed for "${company.name}": ${err.message}`);
     return company;
   }
 }
@@ -398,7 +356,6 @@ export async function searchCompanies(
 
   if (enrichPlaces) {
     companies = await Promise.all(companies.map(tryEnrichWithPlaces));
-    companies = await Promise.all(companies.map(tryEnrichWithYelp));
     // Sequential, not Promise.all -- OSM/Nominatim enforces its own rate limit.
     const withOsm = [];
     for (const company of companies) {

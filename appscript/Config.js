@@ -7,14 +7,6 @@
 // Optional (feature degrades gracefully if unset, same as the Node version):
 //   NPPES_VERSION                  -- defaults to 2.1
 //   FOURSQUARE_SERVICE_API_KEY
-//   SERPAPI_API_KEY                -- powers YelpService, a SECOND "Places"-
-//                                     style enrichment source tried only for
-//                                     companies Foursquare didn't cover (see
-//                                     CompanyService.applyPlacesEnrichment_).
-//                                     Get a key at serpapi.com -- 250
-//                                     searches/month free, paid plans beyond
-//                                     that. Safe to leave unset; enrichment
-//                                     just skips this second pass.
 //   GEMINI_API_KEY
 //   GEMINI_MODEL                   -- defaults to gemini-2.5-flash
 //   GOOGLE_SHEET_TAB_NAME           -- defaults to "Leads". LEGACY only: claims
@@ -47,7 +39,6 @@ var Config = (function () {
   return {
     nppesVersion: function () { return get("NPPES_VERSION", "2.1"); },
     foursquareApiKey: function () { return get("FOURSQUARE_SERVICE_API_KEY"); },
-    serpapiApiKey: function () { return get("SERPAPI_API_KEY"); },
     geminiApiKey: function () { return get("GEMINI_API_KEY"); },
     geminiModel: function () { return get("GEMINI_MODEL", "gemini-2.5-flash"); },
     googleSheetId: function () { return get("GOOGLE_SHEET_ID"); },

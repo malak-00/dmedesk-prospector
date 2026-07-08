@@ -110,53 +110,22 @@ var CompanyService = (function () {
   // Looks up every company in ONE batched Foursquare call (UrlFetchApp.fetchAll)
   // instead of one serial round-trip per company -- the single biggest lever
   // on search latency, since Apps Script has no other form of concurrency.
-  //
-  // Foursquare is tried FIRST because it's free (Yelp/SerpApi below bills
-  // per search) -- Yelp is only ever called for whatever's left after
-  // Foursquare: companies it found no match for, plus every company if
-  // Foursquare itself is unconfigured or its whole batch call failed (e.g.
-  // its free monthly quota is exhausted). This means Yelp calls scale with
-  // "how much Foursquare couldn't cover" rather than firing on every search
-  // regardless of need.
   function applyPlacesEnrichment(companies) {
-    var fsqByNpi = {};
+    var dataByNpi;
     try {
-      fsqByNpi = FoursquareService.enrichCompanies(companies);
+      dataByNpi = FoursquareService.enrichCompanies(companies);
     } catch (err) {
       if (err.name === "FoursquareNotConfiguredError") {
-        console.log("[CompanyService] Foursquare enrichment skipped: FOURSQUARE_SERVICE_API_KEY not set");
+        console.log("[CompanyService] Places enrichment skipped: FOURSQUARE_SERVICE_API_KEY not set");
       } else {
-        console.log("[CompanyService] Foursquare enrichment failed: " + err.message);
+        console.log("[CompanyService] Places enrichment failed: " + err.message);
       }
-      // fsqByNpi stays {} -- every company below falls through to Yelp.
-    }
-
-    var needsYelp = companies.filter(function (company) {
-      var data = company.npi != null ? fsqByNpi[String(company.npi)] : null;
-      return !data;
-    });
-
-    var yelpByNpi = {};
-    if (needsYelp.length) {
-      try {
-        yelpByNpi = YelpService.enrichCompanies(needsYelp);
-      } catch (err) {
-        if (err.name === "YelpNotConfiguredError") {
-          console.log("[CompanyService] Yelp enrichment skipped: SERPAPI_API_KEY not set");
-        } else {
-          console.log("[CompanyService] Yelp enrichment failed: " + err.message);
-        }
-      }
+      return companies;
     }
 
     return companies.map(function (company) {
-      var npi = company.npi != null ? String(company.npi) : null;
-      var fsqData = npi ? fsqByNpi[npi] : null;
-      var data = fsqData || (npi ? yelpByNpi[npi] : null);
+      var data = company.npi != null ? dataByNpi[String(company.npi)] : null;
       if (!data) return company;
-
-      var sourcesUpdate = { places: true };
-      if (!fsqData) sourcesUpdate.yelp = true; // this company's data specifically came from Yelp, not Foursquare
 
       return Object.assign({}, company, {
         website: data.website != null ? data.website : company.website,
@@ -167,7 +136,7 @@ var CompanyService = (function () {
           ratingCount: data.ratingCount,
           isClosed: data.isClosed,
         },
-        sources: Object.assign({}, company.sources, sourcesUpdate),
+        sources: Object.assign({}, company.sources, { places: true }),
       });
     });
   }
