@@ -133,7 +133,64 @@ body {
 .field-wide { grid-column: span 2; }
 .field-with-action { display: flex; align-items: center; gap: 10px; }
 .field-with-action input { flex: 1; min-width: 0; }
+.field-with-action .chip-input { flex: 1; min-width: 0; }
 .field-with-action .link-btn { flex-shrink: 0; white-space: nowrap; }
+
+/* ---------- Keyword chip input (Exclude keywords) ---------- */
+
+.chip-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 6px 8px;
+  cursor: text;
+  transition: border-color 0.12s ease;
+}
+.chip-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* display:contents so the chip <span>s inside participate directly in the
+   parent's flex/wrap layout, right alongside the entry input below --
+   without this, the chips would be stuck in their own single-line box. */
+.chip-input > span { display: contents; }
+.chip-input input {
+  flex: 1;
+  min-width: 100px;
+  border: none;
+  background: transparent;
+  padding: 3px 2px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+}
+.chip-input input::placeholder { color: var(--muted-2); }
+.keyword-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border-radius: 999px;
+  padding: 3px 6px 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.keyword-chip-remove {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px;
+  border-radius: 50%;
+  display: inline-flex;
+}
+.keyword-chip-remove:hover { background: rgba(0,0,0,0.15); }
 .field input, .field select, .field textarea {
   font-family: var(--font-ui);
   font-size: 14px;

@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=23">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -160,13 +160,17 @@
               <span>Limit (&lt;50)</span>
               <input type="number" name="limit" value="20" min="1" max="50">
             </label>
-            <label class="field field-wide" title="Excludes any company whose name contains one of these (comma-separated, case-insensitive). Saved as your personal default across sessions/devices once you click Save.">
-              <span>Exclude keywords</span>
+            <div class="field field-wide" title="Excludes any company whose name contains one of these (case-insensitive). Press Enter after each one. Saved as your personal default across sessions/devices once you click Save.">
+              <label for="excludeKeywordsEntry">Exclude keywords</label>
               <div class="field-with-action">
-                <input type="text" name="excludeKeywords" id="excludeKeywordsInput" placeholder="e.g. wheelchair, rehab, hospice">
+                <div class="chip-input" id="excludeKeywordsChipInput">
+                  <span id="excludeKeywordsChipList"></span>
+                  <input type="text" id="excludeKeywordsEntry" placeholder="Type a keyword, press Enter">
+                </div>
+                <input type="hidden" name="excludeKeywords" id="excludeKeywordsInput">
                 <button type="button" class="link-btn" id="saveExcludeKeywordsBtn">Save as default</button>
               </div>
-            </label>
+            </div>
           </div>
           <div class="field-row">
             <label class="checkbox">
@@ -350,6 +354,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=25"></script>
+  <script src="app.js?v=26"></script>
 </body>
 </html>

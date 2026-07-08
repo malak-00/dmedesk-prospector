@@ -224,6 +224,8 @@ const els = {
   refreshClaimedBtn: document.getElementById("refreshClaimedBtn"),
   staleNudge: document.getElementById("staleNudge"),
   excludeKeywordsInput: document.getElementById("excludeKeywordsInput"),
+  excludeKeywordsChipList: document.getElementById("excludeKeywordsChipList"),
+  excludeKeywordsEntry: document.getElementById("excludeKeywordsEntry"),
   saveExcludeKeywordsBtn: document.getElementById("saveExcludeKeywordsBtn"),
   devNotice: document.getElementById("devNotice"),
   devNoticeClose: document.getElementById("devNoticeClose"),
@@ -278,15 +280,79 @@ function hideLogin() {
   }
 }
 
-// Pre-fills the Exclude keywords field with the signed-in user's saved
-// default (see AuthService.setExcludeKeywords) -- but ONLY if the field is
-// currently blank, so it never clobbers something already restored from
-// this tab's own session-scoped search-filter memory (restoreSearchFormState)
-// or typed by hand moments ago.
+// Pre-fills the Exclude keywords chips with the signed-in user's saved
+// default (see AuthService.setExcludeKeywords) -- but ONLY if there are no
+// chips yet, so it never clobbers something already restored from this
+// tab's own session-scoped search-filter memory (restoreSearchFormState) or
+// typed by hand moments ago.
 function applyExcludeKeywordsDefaultIfBlank() {
-  if (els.excludeKeywordsInput.value.trim()) return;
+  if (excludeKeywordsChips.length > 0) return;
   const saved = getSession()?.excludeKeywords;
-  if (saved) els.excludeKeywordsInput.value = saved;
+  if (saved) setExcludeKeywordsChips(saved.split(","));
+}
+
+/* ---------- Exclude keywords: chip/tag input ---------- */
+// Each keyword is its own removable chip (not one comma-separated blob) so
+// it's clear at a glance what's currently excluded and easy to drop just one
+// -- the entry field itself never gets consumed/hidden by adding a chip, so
+// typing the next keyword right after is always available. The canonical
+// list lives in this array; a hidden <input name="excludeKeywords"> is kept
+// in sync as a comma-joined string purely so the existing generic form
+// save/restore/submit code (which reads plain form-element values) doesn't
+// need its own special case for this field.
+let excludeKeywordsChips = [];
+
+function excludeKeywordsAsString() {
+  return excludeKeywordsChips.join(", ");
+}
+
+function syncExcludeKeywordsHiddenInput() {
+  els.excludeKeywordsInput.value = excludeKeywordsAsString();
+}
+
+function renderExcludeKeywordsChips() {
+  els.excludeKeywordsChipList.innerHTML = excludeKeywordsChips.map((kw) => `
+    <span class="keyword-chip">${escapeHtml(kw)}<button type="button" class="keyword-chip-remove" data-value="${escapeHtml(kw)}" aria-label="Remove ${escapeHtml(kw)}">&times;</button></span>
+  `).join("");
+  els.excludeKeywordsChipList.querySelectorAll(".keyword-chip-remove").forEach((btn) => {
+    btn.addEventListener("click", () => removeExcludeKeywordChip(btn.dataset.value));
+  });
+  syncExcludeKeywordsHiddenInput();
+}
+
+// Case-insensitive dedupe -- matches how the search filter itself matches
+// (see NppesService's local exclusion filter), so "Wheelchair" and
+// "wheelchair" are treated as the same entry instead of two chips that
+// exclude the same thing.
+function addExcludeKeywordChip(raw) {
+  const kw = raw.trim();
+  if (!kw) return;
+  const alreadyHave = excludeKeywordsChips.some((existing) => existing.toLowerCase() === kw.toLowerCase());
+  if (alreadyHave) return;
+  excludeKeywordsChips.push(kw);
+  renderExcludeKeywordsChips();
+}
+
+function removeExcludeKeywordChip(value) {
+  excludeKeywordsChips = excludeKeywordsChips.filter((kw) => kw !== value);
+  renderExcludeKeywordsChips();
+}
+
+// Replaces the whole chip set at once (restoring from sessionStorage or from
+// the signed-in user's saved default) -- still de-duped case-insensitively,
+// keeping the first-seen casing when two entries only differ by case.
+function setExcludeKeywordsChips(list) {
+  const seen = new Set();
+  excludeKeywordsChips = [];
+  (list || []).forEach((raw) => {
+    const kw = String(raw).trim();
+    if (!kw) return;
+    const lower = kw.toLowerCase();
+    if (seen.has(lower)) return;
+    seen.add(lower);
+    excludeKeywordsChips.push(kw);
+  });
+  renderExcludeKeywordsChips();
 }
 
 async function handleLogin(evt) {
@@ -533,6 +599,12 @@ function restoreSearchFormState() {
     });
     updateYearSummary();
   }
+  // The generic loop above just set the hidden input's raw string value --
+  // rebuild the actual chip UI from it (the hidden input is a sync target,
+  // not the source of truth).
+  if (typeof values.excludeKeywords === "string") {
+    setExcludeKeywordsChips(values.excludeKeywords.split(","));
+  }
   refreshCityOptions(); // programmatic checkbox state above doesn't fire the state options' own change listener
   if (values.city) cityInput.value = values.city;
 }
@@ -542,7 +614,13 @@ function restoreSearchFormState() {
 // it follows them to any device/browser next time they sign in, unlike the
 // rest of the search form's session-scoped memory above.
 async function saveExcludeKeywordsDefault() {
-  const excludeKeywords = els.excludeKeywordsInput.value.trim();
+  // Commits whatever's still sitting in the entry field (typed but not yet
+  // turned into a chip) so clicking Save never silently drops it.
+  if (els.excludeKeywordsEntry.value.trim()) {
+    addExcludeKeywordChip(els.excludeKeywordsEntry.value);
+    els.excludeKeywordsEntry.value = "";
+  }
+  const excludeKeywords = excludeKeywordsAsString();
   els.saveExcludeKeywordsBtn.disabled = true;
   try {
     const data = await apiPost("auth/exclude-keywords", { excludeKeywords });
@@ -1932,6 +2010,25 @@ restoreSearchFormState();
 
 els.form.addEventListener("submit", runSearch);
 els.saveExcludeKeywordsBtn.addEventListener("click", saveExcludeKeywordsDefault);
+els.excludeKeywordsEntry.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === ",") {
+    e.preventDefault(); // Enter would otherwise submit the search form
+    addExcludeKeywordChip(els.excludeKeywordsEntry.value);
+    els.excludeKeywordsEntry.value = "";
+  } else if (e.key === "Backspace" && !els.excludeKeywordsEntry.value && excludeKeywordsChips.length) {
+    // Backspace on an empty entry removes the last chip -- standard
+    // tag-input convenience so you don't have to aim for each chip's x.
+    removeExcludeKeywordChip(excludeKeywordsChips[excludeKeywordsChips.length - 1]);
+  }
+});
+els.excludeKeywordsEntry.addEventListener("blur", () => {
+  // Commits a typed-but-not-Entered keyword on blur, so clicking straight
+  // into "Search leads" right after typing doesn't silently drop it.
+  if (els.excludeKeywordsEntry.value.trim()) {
+    addExcludeKeywordChip(els.excludeKeywordsEntry.value);
+    els.excludeKeywordsEntry.value = "";
+  }
+});
 els.selectAll.addEventListener("change", (e) => {
   els.resultsBody.querySelectorAll(".row-check").forEach((box) => {
     box.checked = e.target.checked;
