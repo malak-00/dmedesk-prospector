@@ -47,6 +47,14 @@ function handleRequest_(e) {
       case "auth/logout":
         return jsonResponse_({ success: true, data: AuthService.logout(params.token) });
 
+      case "auth/exclude-keywords": {
+        var excludeKeywordsBody = readJsonBody_(e);
+        return jsonResponse_({
+          success: true,
+          data: AuthService.setExcludeKeywords(params.token, excludeKeywordsBody.excludeKeywords),
+        });
+      }
+
       case "search/nppes": {
         var nppesCriteria = readSearchCriteria_(params);
         if (!hasAnySearchCriteria_(nppesCriteria)) {
@@ -239,6 +247,8 @@ function readSearchCriteria_(params) {
     taxonomyDescription: params.taxonomyDescription || undefined,
     taxonomyDescriptions: parseCommaList_(params.taxonomyDescriptions),
     lastUpdatedYear: params.lastUpdatedYear || undefined,
+    lastUpdatedYears: parseCommaList_(params.lastUpdatedYears),
+    excludeKeywords: parseCommaList_(params.excludeKeywords),
     limit: params.limit ? Number(params.limit) : undefined,
     skip: params.skip ? Number(params.skip) : undefined,
     variantSkips: parseVariantSkips_(params.variantSkips),

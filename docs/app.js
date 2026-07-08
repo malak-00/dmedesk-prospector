@@ -223,7 +223,8 @@ const els = {
   statusFilter: document.getElementById("statusFilter"),
   refreshClaimedBtn: document.getElementById("refreshClaimedBtn"),
   staleNudge: document.getElementById("staleNudge"),
-  lastUpdatedYearSelect: document.getElementById("lastUpdatedYearSelect"),
+  excludeKeywordsInput: document.getElementById("excludeKeywordsInput"),
+  saveExcludeKeywordsBtn: document.getElementById("saveExcludeKeywordsBtn"),
   devNotice: document.getElementById("devNotice"),
   devNoticeClose: document.getElementById("devNoticeClose"),
   suggestBtn: document.getElementById("suggestBtn"),
@@ -241,17 +242,18 @@ const els = {
   reminderSaveBtn: document.getElementById("reminderSaveBtn"),
 };
 
-// Populate the "Year" filters with the current year and a few back.
+// Populate the Claimed Leads "Year" filter (by last STATUS UPDATE, so a
+// handful of recent years is plenty -- unlike the Prospect search's NPPES
+// "last updated" year multi-select below, which covers the registry's much
+// longer history).
 (function () {
   const thisYear = new Date().getFullYear();
-  [els.updatedYear, els.lastUpdatedYearSelect].forEach((select) => {
-    for (let y = thisYear; y >= thisYear - 5; y--) {
-      const opt = document.createElement("option");
-      opt.value = String(y);
-      opt.textContent = String(y);
-      select.appendChild(opt);
-    }
-  });
+  for (let y = thisYear; y >= thisYear - 5; y--) {
+    const opt = document.createElement("option");
+    opt.value = String(y);
+    opt.textContent = String(y);
+    els.updatedYear.appendChild(opt);
+  }
 })();
 
 /* ---------- Sign in ---------- */
@@ -272,7 +274,19 @@ function hideLogin() {
     els.userChip.hidden = false;
     els.suggestBtn.hidden = false;
     els.devNotice.hidden = false; // shown fresh on every sign-in/page open, not persisted
+    applyExcludeKeywordsDefaultIfBlank();
   }
+}
+
+// Pre-fills the Exclude keywords field with the signed-in user's saved
+// default (see AuthService.setExcludeKeywords) -- but ONLY if the field is
+// currently blank, so it never clobbers something already restored from
+// this tab's own session-scoped search-filter memory (restoreSearchFormState)
+// or typed by hand moments ago.
+function applyExcludeKeywordsDefaultIfBlank() {
+  if (els.excludeKeywordsInput.value.trim()) return;
+  const saved = getSession()?.excludeKeywords;
+  if (saved) els.excludeKeywordsInput.value = saved;
 }
 
 async function handleLogin(evt) {
@@ -286,7 +300,7 @@ async function handleLogin(evt) {
       username: formData.get("username"),
       password: formData.get("password"),
     });
-    saveSession({ token: data.token, username: data.username, displayName: data.displayName });
+    saveSession({ token: data.token, username: data.username, displayName: data.displayName, excludeKeywords: data.excludeKeywords });
     els.loginForm.reset();
     hideLogin();
     showToast(`Welcome, ${data.displayName}`);
@@ -443,11 +457,12 @@ function medicareSummary(medicare) {
 
 /* ---------- Search ---------- */
 
-// "states" and "taxonomyDescriptions" are multi-valued (several checkboxes
-// sharing one `name`) -- FormData.entries() would yield one params[key]
-// assignment per checked box, each overwriting the last, so they're pulled
-// out via getAll() and sent as a single comma-joined value instead.
-const MULTI_VALUE_FIELDS = ["states", "taxonomyDescriptions"];
+// "states", "taxonomyDescriptions", and "lastUpdatedYears" are multi-valued
+// (several checkboxes sharing one `name`) -- FormData.entries() would yield
+// one params[key] assignment per checked box, each overwriting the last, so
+// they're pulled out via getAll() and sent as a single comma-joined value
+// instead.
+const MULTI_VALUE_FIELDS = ["states", "taxonomyDescriptions", "lastUpdatedYears"];
 
 function buildSearchParams(formData) {
   const params = {};
@@ -512,8 +527,32 @@ function restoreSearchFormState() {
     taxonomyAllCheckbox.checked = values.taxonomyDescriptions.length === 0;
     updateTaxonomySummary();
   }
+  if (Array.isArray(values.lastUpdatedYears)) {
+    yearOptionsContainer.querySelectorAll('input[name="lastUpdatedYears"]').forEach((cb) => {
+      cb.checked = values.lastUpdatedYears.includes(cb.value);
+    });
+    updateYearSummary();
+  }
   refreshCityOptions(); // programmatic checkbox state above doesn't fire the state options' own change listener
   if (values.city) cityInput.value = values.city;
+}
+
+// Persists the Exclude keywords field as the signed-in user's own default --
+// stored server-side (a column in the Users sheet, not sessionStorage), so
+// it follows them to any device/browser next time they sign in, unlike the
+// rest of the search form's session-scoped memory above.
+async function saveExcludeKeywordsDefault() {
+  const excludeKeywords = els.excludeKeywordsInput.value.trim();
+  els.saveExcludeKeywordsBtn.disabled = true;
+  try {
+    const data = await apiPost("auth/exclude-keywords", { excludeKeywords });
+    saveSession({ ...getSession(), excludeKeywords: data.excludeKeywords });
+    showToast(excludeKeywords ? "Saved as your default exclude keywords" : "Default exclude keywords cleared");
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    els.saveExcludeKeywordsBtn.disabled = false;
+  }
 }
 
 /* ---------- Search more (session-scoped pagination memory) ---------- */
@@ -672,14 +711,18 @@ function updateSelectionUI() {
   els.sendDisconnectedLabel.textContent = count > 0 ? `Send ${count} to Disconnected` : "Send to Disconnected";
 }
 
-// Small badges showing which free enrichment sources actually contributed
-// data for this lead (Foursquare, OpenStreetMap, CMS Medicare, scraped
-// website) -- otherwise invisible, even though it affects how much to
-// trust a given website/rating.
+// Small badges showing which enrichment sources actually contributed data
+// for this lead (Foursquare or, as a paid fallback for whatever Foursquare
+// didn't cover, Yelp -- OpenStreetMap, CMS Medicare, scraped website) --
+// otherwise invisible, even though it affects how much to trust a given
+// website/rating.
 function sourceBadges(sources) {
   if (!sources) return "";
   const labels = [];
-  if (sources.places) labels.push("FSQ");
+  // sources.places is true for either engine -- sources.yelp distinguishes
+  // which one actually supplied THIS company's data (see CompanyService's
+  // applyPlacesEnrichment_: Yelp only ever fills in what Foursquare missed).
+  if (sources.places) labels.push(sources.yelp ? "YELP" : "FSQ");
   if (sources.osm) labels.push("OSM");
   if (sources.cms) labels.push("CMS");
   if (sources.website) labels.push("SITE");
@@ -1807,6 +1850,40 @@ document.getElementById("stateClearBtn").addEventListener("click", () => {
 updateStateSummary();
 refreshCityOptions();
 
+/* "Last updated (year)" multi-select -- NPPES's own per-record "last
+   updated" year, going back to 2015 (well before this app existed) since
+   unlike the Claimed Leads "Updated" filter, this covers the registry's
+   whole history, not just recent rep activity. Purely a local filter (see
+   NppesService.searchProviders), so no NPPES query-variant fanout is
+   needed -- any number of years can be OR'd together in one pass. */
+
+const YEAR_RANGE_START = 2015;
+
+const yearMultiselect = document.getElementById("yearMultiselect");
+const yearOptionsContainer = document.getElementById("yearOptions");
+setupMultiselectToggle(yearMultiselect);
+
+(function () {
+  const thisYear = new Date().getFullYear();
+  for (let y = thisYear; y >= YEAR_RANGE_START; y--) {
+    const label = document.createElement("label");
+    label.className = "multiselect-option";
+    label.innerHTML = `<input type="checkbox" name="lastUpdatedYears" value="${y}"><span>${y}</span>`;
+    yearOptionsContainer.appendChild(label);
+  }
+})();
+
+function updateYearSummary() {
+  updateMultiselectSummary(yearMultiselect, 'input[name="lastUpdatedYears"]', "Any year", "years");
+}
+
+yearOptionsContainer.addEventListener("change", updateYearSummary);
+document.getElementById("yearClearBtn").addEventListener("click", () => {
+  yearOptionsContainer.querySelectorAll('input[name="lastUpdatedYears"]:checked').forEach((cb) => { cb.checked = false; });
+  updateYearSummary();
+});
+updateYearSummary();
+
 /* Specialty/taxonomy multi-select -- "All specialties" is mutually exclusive
    with the specific checkboxes below it (picking one clears "All", and
    checking "All" clears every specific pick), since "no filter" and "OR of
@@ -1854,6 +1931,7 @@ restoreSearchFormState();
 /* ---------- Wiring ---------- */
 
 els.form.addEventListener("submit", runSearch);
+els.saveExcludeKeywordsBtn.addEventListener("click", saveExcludeKeywordsDefault);
 els.selectAll.addEventListener("change", (e) => {
   els.resultsBody.querySelectorAll(".row-check").forEach((box) => {
     box.checked = e.target.checked;

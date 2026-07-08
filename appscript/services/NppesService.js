@@ -218,15 +218,31 @@ var NppesService = (function () {
         });
       }
 
-      // Filters to providers whose NPPES record was last updated in a given
-      // year (the registry's own "Last Updated" field, not our claimed-lead
-      // tracking). NPPES has no server-side way to query this, so -- same as
+      // Filters to providers whose NPPES record was last updated in one of
+      // the given years (the registry's own "Last Updated" field, not our
+      // claimed-lead tracking) -- an OR match across every year checked, not
+      // an AND. NPPES has no server-side way to query this, so -- same as
       // taxonomy/nameContains above -- it's a local filter and must not
-      // affect the rawCount-based pagination check.
-      if (criteria.lastUpdatedYear) {
-        var yearTerm = String(criteria.lastUpdatedYear);
+      // affect the rawCount-based pagination check. `lastUpdatedYears` (an
+      // array, from the multi-select) is preferred; the older singular
+      // `lastUpdatedYear` is still honored for back-compat.
+      var yearTerms = (criteria.lastUpdatedYears && criteria.lastUpdatedYears.length)
+        ? criteria.lastUpdatedYears.map(String)
+        : (criteria.lastUpdatedYear ? [String(criteria.lastUpdatedYear)] : []);
+      if (yearTerms.length) {
         results = results.filter(function (r) {
-          return r.lastUpdated && r.lastUpdated.slice(0, 4) === yearTerm;
+          return r.lastUpdated && yearTerms.indexOf(r.lastUpdated.slice(0, 4)) !== -1;
+        });
+      }
+
+      // Excludes any provider whose organization name contains one of the
+      // user's saved/typed exclusion keywords (e.g. "wheelchair, rehab") --
+      // a local filter, same reasoning as nameContains above, just inverted.
+      if (criteria.excludeKeywords && criteria.excludeKeywords.length) {
+        var excludeTerms = criteria.excludeKeywords.map(function (k) { return String(k).toLowerCase(); });
+        results = results.filter(function (r) {
+          var nameLower = (r.name || "").toLowerCase();
+          return !excludeTerms.some(function (term) { return term && nameLower.indexOf(term) !== -1; });
         });
       }
     }

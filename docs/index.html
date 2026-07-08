@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=22">
+<link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -146,13 +146,26 @@
             </label>
             <label class="field">
               <span>Last updated (year)</span>
-              <select name="lastUpdatedYear" id="lastUpdatedYearSelect">
-                <option value="">Any year</option>
-              </select>
+              <div class="multiselect" id="yearMultiselect">
+                <button type="button" class="multiselect-toggle" aria-haspopup="true" aria-expanded="false">Any year</button>
+                <div class="multiselect-panel" hidden>
+                  <div class="multiselect-actions">
+                    <button type="button" class="link-btn" id="yearClearBtn">Clear</button>
+                  </div>
+                  <div class="multiselect-options" id="yearOptions"></div>
+                </div>
+              </div>
             </label>
             <label class="field">
               <span>Limit (&lt;50)</span>
               <input type="number" name="limit" value="20" min="1" max="50">
+            </label>
+            <label class="field field-wide" title="Excludes any company whose name contains one of these (comma-separated, case-insensitive). Saved as your personal default across sessions/devices once you click Save.">
+              <span>Exclude keywords</span>
+              <div class="field-with-action">
+                <input type="text" name="excludeKeywords" id="excludeKeywordsInput" placeholder="e.g. wheelchair, rehab, hospice">
+                <button type="button" class="link-btn" id="saveExcludeKeywordsBtn">Save as default</button>
+              </div>
             </label>
           </div>
           <div class="field-row">
@@ -337,6 +350,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=23"></script>
+  <script src="app.js?v=25"></script>
 </body>
 </html>

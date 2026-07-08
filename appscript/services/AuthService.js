@@ -3,8 +3,16 @@
 // user signs in again -- roughly once per workday).
 //
 // Users tab layout (create it manually):
-//   Row 1 (header):  Username | Password | Display Name
+//   Row 1 (header):  Username | Password | Display Name | Exclude Keywords
 //   Row 2+:          one row per teammate
+//
+// "Exclude Keywords" is optional and free-text (a comma-separated list, e.g.
+// "wheelchair, rehab, hospice") -- it's the signed-in user's own persisted
+// default for the Prospect search's "exclude keywords" filter, so it follows
+// them across sessions/devices instead of resetting every time (see
+// setExcludeKeywords below, and NppesService's local exclusion filter).
+// Existing Users tabs without this 4th column still work fine -- it just
+// reads as an empty string until someone sets it.
 //
 // WHERE the Users tab lives:
 //   - Preferred: a SEPARATE spreadsheet that only you can open, whose ID is
@@ -30,6 +38,7 @@ var AuthService = (function () {
   var USERS_TAB = "Users";
   var SESSION_TTL_SECONDS = 21600; // 6h -- CacheService's maximum
   var CACHE_PREFIX = "sess_";
+  var MAX_EXCLUDE_KEYWORDS_LENGTH = 500;
 
   function getUsersSheet_() {
     // Prefer the dedicated, owner-only spreadsheet if configured.
@@ -43,20 +52,28 @@ var AuthService = (function () {
     return SpreadsheetApp.openById(Config.googleSheetId()).getSheetByName(USERS_TAB);
   }
 
+  // Reads 4 columns even though older Users tabs may only have 3 populated
+  // -- Sheets happily returns an empty cell for a column beyond what's been
+  // written to, so this is safe and lets "Exclude Keywords" be added to an
+  // existing tab at any time without a migration step.
   function getUsers_() {
     var sheet = getUsersSheet_();
     if (!sheet || sheet.getLastRow() < 2) throw AuthNotConfiguredError();
 
-    var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
-    return rows
-      .filter(function (r) { return r[0] !== "" && r[1] !== ""; })
-      .map(function (r) {
-        return {
-          username: String(r[0]).trim(),
-          password: String(r[1]),
-          displayName: String(r[2] || r[0]).trim(),
-        };
+    var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
+    var users = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (r[0] === "" || r[1] === "") continue;
+      users.push({
+        rowNumber: i + 2,
+        username: String(r[0]).trim(),
+        password: String(r[1]),
+        displayName: String(r[2] || r[0]).trim(),
+        excludeKeywords: String(r[3] || "").trim(),
       });
+    }
+    return users;
   }
 
   // Compare via SHA-256 digests so the comparison itself doesn't leak
@@ -94,10 +111,10 @@ var AuthService = (function () {
     }
 
     var token = Utilities.getUuid() + "-" + Utilities.getUuid();
-    var session = { username: match.username, displayName: match.displayName };
+    var session = { username: match.username, displayName: match.displayName, excludeKeywords: match.excludeKeywords };
     CacheService.getScriptCache().put(CACHE_PREFIX + token, JSON.stringify(session), SESSION_TTL_SECONDS);
 
-    return { token: token, username: match.username, displayName: match.displayName };
+    return { token: token, username: match.username, displayName: match.displayName, excludeKeywords: match.excludeKeywords };
   }
 
   function getSession(token) {
@@ -116,5 +133,45 @@ var AuthService = (function () {
     return { signedOut: true };
   }
 
-  return { login: login, getSession: getSession, logout: logout };
+  // Persists the signed-in user's default "exclude keywords" search filter
+  // to their row in the Users tab (so it follows them to any device/browser
+  // next time they sign in), and refreshes it in their CURRENT session cache
+  // too, so getSession() reflects the change immediately without requiring
+  // a fresh login.
+  function setExcludeKeywords(token, text) {
+    var session = getSession(token);
+    if (!session) {
+      var unauthorized = new Error("Not signed in (or session expired)");
+      unauthorized.status = 401;
+      throw unauthorized;
+    }
+
+    var trimmed = String(text || "").trim();
+    if (trimmed.length > MAX_EXCLUDE_KEYWORDS_LENGTH) {
+      var tooLong = new Error("Exclude keywords must be " + MAX_EXCLUDE_KEYWORDS_LENGTH + " characters or fewer");
+      tooLong.status = 400;
+      throw tooLong;
+    }
+
+    var sheet = getUsersSheet_();
+    var users = getUsers_();
+    var match = null;
+    for (var i = 0; i < users.length; i++) {
+      if (users[i].username === session.username) { match = users[i]; break; }
+    }
+    if (!match) {
+      var notFound = new Error("User not found");
+      notFound.status = 404;
+      throw notFound;
+    }
+
+    sheet.getRange(match.rowNumber, 4).setValue(trimmed);
+
+    session.excludeKeywords = trimmed;
+    CacheService.getScriptCache().put(CACHE_PREFIX + token, JSON.stringify(session), SESSION_TTL_SECONDS);
+
+    return { excludeKeywords: trimmed };
+  }
+
+  return { login: login, getSession: getSession, logout: logout, setExcludeKeywords: setExcludeKeywords };
 })();
