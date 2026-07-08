@@ -367,6 +367,13 @@ async function handleLogin(evt) {
       password: formData.get("password"),
     });
     saveSession({ token: data.token, username: data.username, displayName: data.displayName, excludeKeywords: data.excludeKeywords });
+    // Unconditionally resets to THIS user's own saved value (never "only if
+    // blank" -- a fresh login is a hard boundary) -- otherwise, signing out
+    // and signing back in as someone else in the same tab would leave the
+    // previous person's chips sitting in memory and wrongly carry over,
+    // since applyExcludeKeywordsDefaultIfBlank() below only fills in a
+    // default when there are no chips yet.
+    setExcludeKeywordsChips(data.excludeKeywords ? data.excludeKeywords.split(",") : []);
     els.loginForm.reset();
     hideLogin();
     showToast(`Welcome, ${data.displayName}`);
@@ -381,6 +388,7 @@ async function handleLogin(evt) {
 async function handleSignOut() {
   try { await apiPost("auth/logout", {}); } catch { /* best effort */ }
   clearSession();
+  setExcludeKeywordsChips([]); // don't leave this account's chips sitting in memory for whoever signs in next
   showLogin();
 }
 
