@@ -211,6 +211,7 @@ function requireSession_(params) {
 function hasAnySearchCriteria_(criteria) {
   return Boolean(
     criteria.npi || criteria.organizationName || criteria.nameContains ||
+    (criteria.nameContainsTerms && criteria.nameContainsTerms.length) ||
     criteria.city || criteria.postalCode ||
     criteria.taxonomyDescription || (criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length)
   );
@@ -240,6 +241,7 @@ function readSearchCriteria_(params) {
     npi: params.npi || undefined,
     organizationName: params.organizationName || undefined,
     nameContains: params.nameContains || undefined,
+    nameContainsTerms: parseCommaList_(params.nameContainsTerms),
     city: params.city || undefined,
     state: params.state || undefined,
     states: parseCommaList_(params.states),

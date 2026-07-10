@@ -210,11 +210,18 @@ var NppesService = (function () {
       // NPPES's organization_name only matches from the start of the name
       // (trailing wildcard allowed, leading wildcard not supported), so a
       // "name contains" search can't be expressed in the API query at all --
-      // it has to be a local substring filter over fetched pages.
-      if (criteria.nameContains) {
-        var nameTerm = criteria.nameContains.toLowerCase();
+      // it has to be a local substring filter over fetched pages. An OR
+      // match across every keyword typed, not an AND -- matches how
+      // excludeKeywords below combines multiple entries. `nameContainsTerms`
+      // (an array, from the multi-keyword chip input) is preferred; the
+      // older singular `nameContains` is still honored for back-compat.
+      var nameTerms = (criteria.nameContainsTerms && criteria.nameContainsTerms.length)
+        ? criteria.nameContainsTerms.map(function (t) { return String(t).toLowerCase(); })
+        : (criteria.nameContains ? [String(criteria.nameContains).toLowerCase()] : []);
+      if (nameTerms.length) {
         results = results.filter(function (r) {
-          return r.name && r.name.toLowerCase().indexOf(nameTerm) !== -1;
+          var nameLower = (r.name || "").toLowerCase();
+          return nameTerms.some(function (term) { return term && nameLower.indexOf(term) !== -1; });
         });
       }
 

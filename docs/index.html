@@ -81,10 +81,14 @@
               <span>NPI (exact lookup)</span>
               <input type="text" name="npi" placeholder="1234567890" inputmode="numeric" pattern="\d{10}" maxlength="10" title="NPI is exactly 10 digits">
             </label>
-            <label class="field">
-              <span>Company name (contains)</span>
-              <input type="text" name="nameContains" placeholder="e.g. equipment">
-            </label>
+            <div class="field" title="Matches any company whose name contains at least one of these (case-insensitive). Press Enter after each one. Only remembered for this browser tab -- not saved to your account.">
+              <label for="nameContainsEntry">Company name (contains)</label>
+              <div class="chip-input" id="nameContainsChipInput">
+                <span id="nameContainsChipList"></span>
+                <input type="text" id="nameContainsEntry" placeholder="e.g. equipment, press Enter">
+              </div>
+              <input type="hidden" name="nameContainsTerms" id="nameContainsInput">
+            </div>
             <label class="field">
               <span>State</span>
               <div class="multiselect" id="stateMultiselect">
@@ -354,6 +358,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=26"></script>
+  <script src="app.js?v=27"></script>
 </body>
 </html>
