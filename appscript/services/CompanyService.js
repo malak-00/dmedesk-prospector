@@ -9,6 +9,18 @@
 var CompanyService = (function () {
   var NPPES_PAGE_SIZE = 200; // NPPES hard cap per request
   var NPPES_MAX_SKIP = 1000; // NPPES hard cap on pagination depth
+  // Hard cap on how many NPPES page-fetches ONE request is allowed to make,
+  // across every state x taxonomy variant combined. Without this, a broad
+  // multi-specialty search (several variants) combined with deep "Search
+  // more" pagination (each variant's remembered skip already pushed far in
+  // by earlier clicks) can add up to dozens of sequential NPPES calls in a
+  // single execution -- slow enough that Apps Script's response-delivery
+  // layer can fail outright (a raw "Failed to fetch"/CORS error to the
+  // browser) instead of the app ever getting a chance to return a clean
+  // result. Hitting this budget just means "found what we could this round,
+  // there may be more" -- NOT "genuinely out of results" -- see
+  // fetchFreshProviders' hitScanBudget tracking below.
+  var MAX_NPPES_FETCHES_PER_REQUEST = 30;
 
   function buildNppesDecisionMaker(provider) {
     var off = provider.authorizedOfficial;
@@ -277,13 +289,21 @@ var CompanyService = (function () {
     (criteria.excludeNpis || []).forEach(function (npi) { seenNpis[String(npi)] = true; });
 
     var variantSkips = Object.assign({}, criteria.variantSkips || {});
+    var fetchesUsed = 0;
+    var hitScanBudget = false;
 
-    for (var v = 0; v < variants.length && fresh.length < desiredLimit; v++) {
+    for (var v = 0; v < variants.length && fresh.length < desiredLimit && !hitScanBudget; v++) {
       var variant = variants[v];
       var key = variantKey_(variant);
       var skip = variantSkips[key] || 0;
 
       while (fresh.length < desiredLimit && skip <= NPPES_MAX_SKIP) {
+        if (fetchesUsed >= MAX_NPPES_FETCHES_PER_REQUEST) {
+          hitScanBudget = true; // stop paging THIS variant -- budget spent, not necessarily out of real results
+          break;
+        }
+        fetchesUsed++;
+
         var result = NppesService.searchProviders(
           Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip: skip })
         );
@@ -320,7 +340,13 @@ var CompanyService = (function () {
       variantSkips[key] = skip; // remember exactly where this variant stopped for next time
     }
 
-    return { fresh: fresh, totalScanned: totalScanned, excludedAsClaimed: excludedAsClaimed, variantSkips: variantSkips };
+    return {
+      fresh: fresh,
+      totalScanned: totalScanned,
+      excludedAsClaimed: excludedAsClaimed,
+      variantSkips: variantSkips,
+      hitScanBudget: hitScanBudget,
+    };
   }
 
   // options: { enrichPlaces = true, scrapeWebsites = false, enrichCms = true }
@@ -371,7 +397,12 @@ var CompanyService = (function () {
       count: companies.length,
       scannedFromRegistry: totalScanned,
       excludedAsClaimed: excludedAsClaimed,
-      exhaustedRegistry: providers.length < desiredLimit,
+      // Finding fewer than desired normally means the registry is genuinely
+      // exhausted -- EXCEPT when the scan budget cut things short first, in
+      // which case there may well be more, we just didn't get to look this
+      // round (the frontend leaves "Search more" clickable in that case, so
+      // the next click picks up right where this one's variantSkips stopped).
+      exhaustedRegistry: providers.length < desiredLimit && !fetchResult.hitScanBudget,
       variantSkips: fetchResult.variantSkips,
       companies: companies,
     };

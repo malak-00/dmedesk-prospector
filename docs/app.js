@@ -733,9 +733,17 @@ async function executeSearch(params, { isMore = false } = {}) {
     state.lastSearchParams = params;
     setStatus("ready", "Ready");
   } catch (err) {
-    if (!isMore) els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(err.message)}</td></tr>`;
+    // A raw fetch()-level failure (network drop, or the connection getting cut
+    // mid-response on an especially slow search) surfaces as a TypeError with
+    // an unhelpful browser message like "Failed to fetch" -- broad multi-
+    // specialty searches paged many "Search more" clicks deep can take long
+    // enough to trigger this. Give a concrete, actionable message instead.
+    const message = err instanceof TypeError
+      ? "Lost connection or the search took too long — try narrowing your filters (fewer specialties/states) or click Search more again."
+      : err.message;
+    if (!isMore) els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(message)}</td></tr>`;
     setStatus("error", "Error");
-    showToast(err.message, true);
+    showToast(message, true);
     // A failed click always leaves it re-clickable -- reaching here means it
     // was enabled (not exhausted) when clicked, since an exhausted button is
     // disabled and can't be clicked in the first place.
