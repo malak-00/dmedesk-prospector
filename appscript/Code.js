@@ -74,6 +74,13 @@ function handleRequest_(e) {
             enrichPlaces: params.enrich !== "false",
             scrapeWebsites: params.scrape === "true",
             enrichCms: params.cms !== "false",
+            username: session.username,
+            // True only for an explicit "Search more" continuation (the
+            // frontend already sent its own remembered variantSkips) -- a
+            // plain fresh Search never does, which is exactly when
+            // CompanyService should fall back to this user's persisted
+            // SearchProgress bookmark instead of always restarting at skip 0.
+            clientProvidedVariantSkips: Boolean(params.variantSkips),
           }),
         });
       }

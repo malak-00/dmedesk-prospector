@@ -85,6 +85,16 @@ const state = {
   excludedAsClaimed: 0,
   sortKey: null,
   sortDir: 1,
+  // Every fetched batch of Prospect results, kept around instead of thrown
+  // away -- a fresh "Search" starts a new list (index 0 = the newest
+  // results), and each "Search more" click APPENDS one more page rather
+  // than replacing the table, so earlier pages stay one click away via the
+  // page-nav UI instead of disappearing. state.companies is always just a
+  // reference to resultPages[currentPage].companies (see applyCurrentPage
+  // below) -- existing sort/select code keeps working unchanged since it's
+  // still the same array, just swapped out on page-nav clicks.
+  resultPages: [],
+  currentPage: 0,
   // "Search more" bookkeeping -- see the functions near runSearch/searchMore.
   lastSearchParams: null,
   searchMoreVariantSkips: {},
@@ -187,6 +197,10 @@ const els = {
   selectAll: document.getElementById("selectAll"),
   searchMoreBtn: document.getElementById("searchMoreBtn"),
   searchMoreLabel: document.getElementById("searchMoreLabel"),
+  pageNav: document.getElementById("pageNav"),
+  pageInfo: document.getElementById("pageInfo"),
+  pagePrevBtn: document.getElementById("pagePrevBtn"),
+  pageNextBtn: document.getElementById("pageNextBtn"),
   exportCsvBtn: document.getElementById("exportCsvBtn"),
   exportSheetsBtn: document.getElementById("exportSheetsBtn"),
   exportCsvLabel: document.getElementById("exportCsvLabel"),
@@ -773,13 +787,20 @@ async function executeSearch(params, { isMore = false } = {}) {
       // instead of replacing it with an empty state.
       showToast("No more leads found for this search");
     } else {
-      state.companies = data.companies;
-      state.selected.clear();
-      state.expandedIndex = null;
+      const page = { companies: data.companies, excludedAsClaimed: data.excludedAsClaimed || 0 };
+      if (isMore) {
+        // Appends a new page instead of overwriting -- earlier pages stay
+        // exactly as they were, one click away via the page-nav below.
+        state.resultPages.push(page);
+      } else {
+        // A brand-new search starts a fresh page list -- see runSearch's
+        // comment on why this no longer means "the same leads every time".
+        state.resultPages = [page];
+      }
       state.sortKey = null; // fresh results start in the server's own order (score desc)
       state.sortDir = 1;
       updateSortIndicators(els.resultsTable, null, 1);
-      renderResults(data.excludedAsClaimed || 0);
+      goToPage(state.resultPages.length - 1);
     }
 
     if (!isMore && data.companies.length === 0) {
@@ -827,12 +848,45 @@ async function runSearch(evt) {
   const params = buildSearchParams(formData);
   saveSearchFormState();
 
-  // A brand-new search always starts over from scratch -- only "Search
-  // more" continues from a remembered position.
+  // Resets this browser tab's OWN "Search more" bookkeeping -- a brand-new
+  // search never sends variantSkips of its own, only "Search more" clicks
+  // within the resulting page-nav session do. That's deliberate: it's
+  // exactly what lets the server fall back to this signed-in user's own
+  // persisted SearchProgress bookmark (see CompanyService.searchCompanies),
+  // so a plain Search for filters you've searched before continues from
+  // wherever you left off rather than always re-showing the same
+  // top-of-registry leads.
   state.searchMoreVariantSkips = {};
   state.searchMoreSeenNpis = [];
 
   await executeSearch(params);
+}
+
+// Switches which fetched page is on screen -- no re-fetch, just a re-render.
+// Clears selection/expansion (they're tied to row indices, which don't carry
+// meaning across pages) but leaves every page's own data untouched, so
+// flipping back to an earlier page shows exactly what it showed originally.
+function goToPage(index) {
+  if (index < 0 || index >= state.resultPages.length) return;
+  state.currentPage = index;
+  state.selected.clear();
+  state.expandedIndex = null;
+  applyCurrentPage();
+}
+
+function applyCurrentPage() {
+  const page = state.resultPages[state.currentPage];
+  state.companies = page ? page.companies : [];
+  renderResults(page ? page.excludedAsClaimed : 0);
+  updatePageNav();
+}
+
+function updatePageNav() {
+  const total = state.resultPages.length;
+  els.pageNav.hidden = total <= 1;
+  els.pageInfo.textContent = `Page ${state.currentPage + 1} of ${total}`;
+  els.pagePrevBtn.disabled = state.currentPage <= 0;
+  els.pageNextBtn.disabled = state.currentPage >= total - 1;
 }
 
 function renderResults(excludedAsClaimed) {
@@ -1091,6 +1145,12 @@ function removeCompaniesFromProspect(companies) {
   const npisToRemove = new Set(companies.map((c) => c.npi).filter(Boolean));
   if (npisToRemove.size === 0) return;
   state.companies = state.companies.filter((c) => !npisToRemove.has(c.npi));
+  // state.companies is normally just a reference to the current page's own
+  // array (see applyCurrentPage) -- the filter above makes a NEW array, so
+  // the page's stored copy needs updating too, or navigating away and back
+  // via the page-nav would silently bring the just-removed rows back.
+  const currentPageEntry = state.resultPages[state.currentPage];
+  if (currentPageEntry) currentPageEntry.companies = state.companies;
   state.selected.clear();
   state.expandedIndex = null;
   renderResults();
@@ -2113,6 +2173,8 @@ els.selectAll.addEventListener("change", (e) => {
 });
 els.clearSelectionBtn.addEventListener("click", clearSelection);
 els.searchMoreBtn.addEventListener("click", searchMore);
+els.pagePrevBtn.addEventListener("click", () => goToPage(state.currentPage - 1));
+els.pageNextBtn.addEventListener("click", () => goToPage(state.currentPage + 1));
 els.exportCsvBtn.addEventListener("click", exportCsv);
 els.exportSheetsBtn.addEventListener("click", exportSheets);
 els.sendDisconnectedBtn.addEventListener("click", sendProspectToDisconnected);

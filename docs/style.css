@@ -126,6 +126,19 @@ body {
    place. */
 .table-wrap { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 
+.page-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--hairline);
+  background: var(--surface);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.page-nav[hidden] { display: none; }
+#pageInfo { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+
 /* ---------- Search form ---------- */
 
 .field-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 16px; }

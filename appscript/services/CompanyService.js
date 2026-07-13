@@ -87,11 +87,19 @@ var CompanyService = (function () {
   // (or a brand-new group), so a third row matching via the OTHER key still
   // joins the same group. Runs before enrichment so Places/OSM/scrape/CMS
   // calls aren't repeated per branch -- only the primary branch gets enriched.
-  function mergeDuplicateBranches_(companies) {
+  //
+  // Built as an incremental accumulator (not a one-shot array->array
+  // function) so fetchFreshProviders below can feed it companies one at a
+  // time AS they're fetched and check its post-merge distinct count against
+  // desiredLimit -- otherwise "search for 50" can fetch exactly 50 raw NPIs
+  // that merge down to fewer distinct companies (several branches of the
+  // same chain collapsing into one row), silently returning fewer leads
+  // than asked for even though the registry had plenty more to fetch.
+  function createBranchMerger_() {
     var keyToIndex = {}; // "np:"/"cn:" prefixed key -> index into `merged`
     var merged = [];
 
-    companies.forEach(function (company) {
+    function add(company) {
       var keys = branchDedupKeys_(company);
       var branch = { npi: company.npi, address: company.address, phone: company.phone, fax: company.fax };
 
@@ -114,9 +122,21 @@ var CompanyService = (function () {
 
       if (namePhoneKey) keyToIndex[namePhoneKey] = matchIndex;
       if (companyNameKey) keyToIndex[companyNameKey] = matchIndex;
-    });
+    }
 
-    return merged;
+    return {
+      add: add,
+      list: function () { return merged; },
+      get length() { return merged.length; },
+    };
+  }
+
+  // Kept as the array-in/array-out entry point for anywhere that already has
+  // a full company list up front (not building one up incrementally).
+  function mergeDuplicateBranches_(companies) {
+    var merger = createBranchMerger_();
+    companies.forEach(merger.add);
+    return merger.list();
   }
 
   // Looks up every company in ONE batched Foursquare call (UrlFetchApp.fetchAll)
@@ -218,6 +238,29 @@ var CompanyService = (function () {
     }
   }
 
+  // Guards against SearchProgressService being unavailable (older test
+  // harnesses that eval only CompanyService.js/NppesService.js won't define
+  // the global at all) as well as any runtime failure -- a resume/persist
+  // hiccup should never take down an otherwise-working search.
+  function getSearchProgressSafe_(username, criteria) {
+    if (typeof SearchProgressService === "undefined") return null;
+    try {
+      return SearchProgressService.getProgress(username, criteria);
+    } catch (err) {
+      console.log("[CompanyService] SearchProgress resume failed: " + err.message);
+      return null;
+    }
+  }
+
+  function saveSearchProgressSafe_(username, criteria, variantSkips, seenNpis) {
+    if (typeof SearchProgressService === "undefined") return;
+    try {
+      SearchProgressService.saveProgress(username, criteria, variantSkips, seenNpis);
+    } catch (err) {
+      console.log("[CompanyService] SearchProgress save failed: " + err.message);
+    }
+  }
+
   // NPPES only accepts ONE state and ONE taxonomy_description per request --
   // there's no server-side "OR" across values. Multi-select on either field
   // is implemented by running one query variant per combination (cartesian
@@ -253,25 +296,39 @@ var CompanyService = (function () {
 
   // Pages through NPPES (across every state x taxonomy variant, in the
   // multi-select case), filtering out already-claimed NPIs, until we have
-  // `desiredLimit` fresh leads or every variant runs out of results / hits
+  // `desiredLimit` distinct COMPANIES (after branch-merging -- see
+  // createBranchMerger_ above) or every variant runs out of results / hits
   // its skip cap.
+  //
+  // The stopping condition is deliberately the post-merge count, not the raw
+  // fetched-provider count: several branches of the same chain can collapse
+  // into a single merged row, so stopping as soon as `desiredLimit` raw
+  // providers were fetched can hand back fewer distinct companies than asked
+  // for (e.g. "search for 50" landing on 44). Merging incrementally, as each
+  // provider is accepted, means the loop can tell the difference and keep
+  // fetching until it actually has `desiredLimit` rows to show. An explicit
+  // NPI lookup never merges (see createBranchMerger_'s caller in
+  // searchCompanies) -- that's a single exact record, not a broad scan.
   //
   // `criteria.variantSkips` (an opaque map from variantKey_() -> skip)
   // resumes each variant from wherever a previous call for this exact
   // search left off, instead of always starting at 0 -- this is what backs
   // the frontend's "Search more" button (rerun the identical filters and see
   // leads beyond what's already been shown, rather than the same top
-  // results every time). Returned back to the caller so it can be replayed
-  // on the next "Search more" click. `criteria.excludeNpis` similarly skips
-  // any NPI already shown earlier in this search session, so a company
-  // reachable through more than one variant can't reappear either.
+  // results every time), and (see searchCompanies) what a resumed
+  // SearchProgress bookmark seeds a brand-new "Search" with too. Returned
+  // back to the caller so it can be persisted/replayed. `criteria.excludeNpis`
+  // similarly skips any NPI already shown earlier, so a company reachable
+  // through more than one variant can't reappear either.
   function fetchFreshProviders(criteria, desiredLimit, claimedNpis) {
     // An explicit NPI lookup ignores state/taxonomy entirely (see
     // NppesService.searchProviders), so multiple variants would just repeat
     // the identical lookup -- always exactly one variant in that case.
     var variants = criteria.npi ? [criteria] : buildCriteriaVariants_(criteria);
+    var mergeBranches = !criteria.npi;
+    var merger = createBranchMerger_();
 
-    var fresh = [];
+    var fresh = []; // raw accepted providers, in fetch order -- exact-NPI path returns these 1:1 mapped, no merge
     var totalScanned = 0;
     // Counts ONLY providers actually skipped for being claimed -- deliberately
     // NOT "totalScanned - fresh.length", which used to also fold in providers
@@ -283,8 +340,9 @@ var CompanyService = (function () {
     // Dedupes across variants -- e.g. a company whose registered taxonomy
     // happens to match two different selected specialties would otherwise
     // be fetched (and counted) once per matching variant. Seeded with
-    // whatever's already been shown in an earlier "Search more" click for
-    // this exact search, so continuing doesn't repeat those either.
+    // whatever's already been shown earlier (an in-session "Search more"
+    // click, or a resumed SearchProgress bookmark), so continuing doesn't
+    // repeat those either.
     var seenNpis = {};
     (criteria.excludeNpis || []).forEach(function (npi) { seenNpis[String(npi)] = true; });
 
@@ -292,12 +350,14 @@ var CompanyService = (function () {
     var fetchesUsed = 0;
     var hitScanBudget = false;
 
-    for (var v = 0; v < variants.length && fresh.length < desiredLimit && !hitScanBudget; v++) {
+    function acceptedCount() { return mergeBranches ? merger.length : fresh.length; }
+
+    for (var v = 0; v < variants.length && acceptedCount() < desiredLimit && !hitScanBudget; v++) {
       var variant = variants[v];
       var key = variantKey_(variant);
       var skip = variantSkips[key] || 0;
 
-      while (fresh.length < desiredLimit && skip <= NPPES_MAX_SKIP) {
+      while (acceptedCount() < desiredLimit && skip <= NPPES_MAX_SKIP) {
         if (fetchesUsed >= MAX_NPPES_FETCHES_PER_REQUEST) {
           hitScanBudget = true; // stop paging THIS variant -- budget spent, not necessarily out of real results
           break;
@@ -317,7 +377,7 @@ var CompanyService = (function () {
 
         totalScanned += fetched;
         for (var i = 0; i < results.length; i++) {
-          if (fresh.length >= desiredLimit) break;
+          if (acceptedCount() >= desiredLimit) break;
           var provider = results[i];
           if (provider.npi && Object.prototype.hasOwnProperty.call(seenNpis, String(provider.npi))) continue;
 
@@ -329,6 +389,7 @@ var CompanyService = (function () {
             excludedAsClaimed++;
           } else {
             fresh.push(provider);
+            if (mergeBranches) merger.add(fromNppesProvider(provider));
           }
           if (provider.npi) seenNpis[String(provider.npi)] = true;
         }
@@ -341,15 +402,31 @@ var CompanyService = (function () {
     }
 
     return {
-      fresh: fresh,
+      companies: mergeBranches ? merger.list() : fresh.map(fromNppesProvider),
       totalScanned: totalScanned,
       excludedAsClaimed: excludedAsClaimed,
       variantSkips: variantSkips,
       hitScanBudget: hitScanBudget,
+      allSeenNpis: Object.keys(seenNpis),
     };
   }
 
-  // options: { enrichPlaces = true, scrapeWebsites = false, enrichCms = true }
+  // options: { enrichPlaces = true, scrapeWebsites = false, enrichCms = true,
+  //            username, clientProvidedVariantSkips }
+  //
+  // `username` + `clientProvidedVariantSkips` back the SearchProgress
+  // auto-resume: a brand-new "Search" (frontend sends no variantSkips of its
+  // own -- clientProvidedVariantSkips is false) for a filter set this user
+  // has searched before picks up from their last remembered position instead
+  // of always restarting at the top of the registry. An explicit "Search
+  // more" click already carries its own variantSkips/excludeNpis from the
+  // current browsing session (clientProvidedVariantSkips is true) and takes
+  // priority -- the bookmark is only ever a fallback for when the client
+  // didn't already say exactly where to resume. Either way, the bookmark is
+  // updated afterward so a FUTURE plain "Search" continues from wherever
+  // this request (fresh or "more") left off. Skipped entirely for an exact
+  // NPI lookup (criteria.npi) -- that always identifies the same single
+  // record, so there's nothing to resume.
   function searchCompanies(criteria, options) {
     criteria = criteria || {};
     options = options || {};
@@ -360,14 +437,30 @@ var CompanyService = (function () {
     var desiredLimit = criteria.limit || 20;
     var claimedNpis = getClaimedNpisSafe();
 
-    var fetchResult = fetchFreshProviders(criteria, desiredLimit, claimedNpis);
-    var providers = fetchResult.fresh;
+    var trackProgress = Boolean(options.username) && !criteria.npi;
+    var effectiveCriteria = criteria;
+    if (trackProgress && !options.clientProvidedVariantSkips) {
+      var progress = getSearchProgressSafe_(options.username, criteria);
+      if (progress) {
+        effectiveCriteria = Object.assign({}, criteria, {
+          variantSkips: progress.variantSkips,
+          excludeNpis: (criteria.excludeNpis || []).concat(progress.seenNpis),
+        });
+      }
+    }
+
+    var fetchResult = fetchFreshProviders(effectiveCriteria, desiredLimit, claimedNpis);
     var totalScanned = fetchResult.totalScanned;
     var excludedAsClaimed = fetchResult.excludedAsClaimed;
-    var companies = providers.map(fromNppesProvider);
-    // An explicit NPI lookup already identifies one exact record -- merging
-    // would be a no-op at best and confusing at worst, so it's skipped there.
-    if (!criteria.npi) companies = mergeDuplicateBranches_(companies);
+    // Already merged (or, for an exact NPI lookup, mapped 1:1) INSIDE the
+    // fetch loop -- see fetchFreshProviders -- so `companies.length` here is
+    // the real, final count the loop was actually targeting against
+    // desiredLimit, not a pre-merge count that can shrink further below.
+    var companies = fetchResult.companies;
+
+    if (trackProgress) {
+      saveSearchProgressSafe_(options.username, criteria, fetchResult.variantSkips, fetchResult.allSeenNpis);
+    }
 
     if (enrichPlaces) {
       companies = applyPlacesEnrichment(companies);
@@ -402,7 +495,7 @@ var CompanyService = (function () {
       // which case there may well be more, we just didn't get to look this
       // round (the frontend leaves "Search more" clickable in that case, so
       // the next click picks up right where this one's variantSkips stopped).
-      exhaustedRegistry: providers.length < desiredLimit && !fetchResult.hitScanBudget,
+      exhaustedRegistry: companies.length < desiredLimit && !fetchResult.hitScanBudget,
       variantSkips: fetchResult.variantSkips,
       companies: companies,
     };
