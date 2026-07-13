@@ -178,6 +178,9 @@ function handleRequest_(e) {
       case "debug/foursquare":
         return jsonResponse_({ success: true, data: FoursquareService.testConnection() });
 
+      case "debug/suggestion-email":
+        return jsonResponse_({ success: true, data: SheetsStore.testSuggestionEmail() });
+
       default:
         return errorResponse_(404, "Unknown path: " + path);
     }

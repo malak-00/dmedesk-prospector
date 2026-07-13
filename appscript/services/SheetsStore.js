@@ -707,6 +707,32 @@ var SheetsStore = (function () {
     }
   }
 
+  // Unlike notifySuggestionByEmail_ above, this DOESN'T swallow failures --
+  // it exists purely so the app can surface the real reason mail isn't
+  // going out (a missing one-time OAuth grant for MailApp, the daily quota
+  // being used up, etc.) instead of that error only ever reaching the Apps
+  // Script execution log where nobody using the deployed Web App can see it.
+  function testSuggestionEmail() {
+    var to = Config.suggestionNotifyEmail();
+    if (!to) return { configured: false };
+
+    try {
+      MailApp.sendEmail({
+        to: to,
+        subject: "DME Desk Prospector -- test email",
+        body: "If you got this, suggestion emails are working. Sent to: " + to,
+      });
+      return {
+        configured: true,
+        sent: true,
+        to: to,
+        remainingDailyQuota: MailApp.getRemainingDailyQuota(),
+      };
+    } catch (err) {
+      return { configured: true, sent: false, to: to, error: err.message };
+    }
+  }
+
   function addSuggestion(text, submittedBy) {
     if (!Config.authSheetId() && !Config.googleSheetId()) {
       var notConfigured = new Error("Suggestions storage is not configured (missing AUTH_SHEET_ID or GOOGLE_SHEET_ID)");
@@ -748,6 +774,7 @@ var SheetsStore = (function () {
     setLeadReminder: setLeadReminder,
     getKnownStatuses: getKnownStatuses,
     addSuggestion: addSuggestion,
+    testSuggestionEmail: testSuggestionEmail,
     DEFAULT_STATUSES: DEFAULT_STATUSES,
   };
 })();
