@@ -195,6 +195,25 @@ var NppesService = (function () {
     var rawCount = results.length;
 
     if (!isExactNpiLookup) {
+      // NPPES's state filter can match against ANY address it has on file
+      // for a provider (e.g. a mailing address), not specifically the
+      // practice/service-location address this app actually displays --
+      // so a provider whose mailing address is in the requested state but
+      // whose registered LOCATION address is somewhere else entirely can
+      // still come back from the query. Enforce the state ourselves,
+      // against the same primaryAddress (address_purpose "LOCATION",
+      // normalizeProvider's fallback otherwise) that's shown in the UI, so
+      // a search for one state never surfaces a lead actually located in
+      // another. This is a single, exact state per call -- CompanyService's
+      // multi-select runs one NppesService call per selected state, never
+      // several at once -- so a straight equality check is enough.
+      if (criteria.state) {
+        var stateUpper = String(criteria.state).toUpperCase();
+        results = results.filter(function (r) {
+          return r.address && r.address.state && String(r.address.state).toUpperCase() === stateUpper;
+        });
+      }
+
       // NPPES's taxonomy_description filter doesn't reliably behave as a
       // strict match -- it can return unrelated taxonomies (pharmacy, home
       // contractor, transport, etc.) alongside genuine matches when the term
