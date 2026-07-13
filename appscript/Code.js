@@ -23,6 +23,22 @@ function doPost(e) {
   return handleRequest_(e);
 }
 
+// One-time setup helper -- NOT called by the Web App itself. Select this
+// function in the editor's function dropdown (top toolbar, next to Run) and
+// click Run once: since it calls MailApp directly with nothing else in the
+// way, Apps Script will show an "Authorization required" consent screen the
+// first time (approve it) -- this is what actually grants the send_mail
+// scope, unlike running doGet()/doPost() with no arguments, which fails at
+// the sign-in check before ever reaching any code that uses MailApp, so it
+// never prompts for this permission at all.
+function grantMailAuthorization() {
+  MailApp.sendEmail(
+    Config.suggestionNotifyEmail(),
+    "DME Desk Prospector -- authorization test",
+    "If you're reading this, MailApp is authorized and suggestion emails will work from now on."
+  );
+}
+
 var PUBLIC_PATHS_ = ["health", "auth/login"];
 
 function handleRequest_(e) {
