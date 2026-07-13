@@ -381,10 +381,16 @@ var CompanyService = (function () {
           var provider = results[i];
           if (provider.npi && Object.prototype.hasOwnProperty.call(seenNpis, String(provider.npi))) continue;
 
-          // An explicit NPI lookup is a deliberate "pull this exact lead"
-          // action -- it should never come back empty just because someone
-          // already claimed it, so dedup is skipped in that case only.
-          var isClaimed = !criteria.npi && provider.npi && claimedNpis.has(String(provider.npi));
+          // Claimed-lead exclusion applies uniformly across every search
+          // type, including an exact NPI lookup -- a claimed lead has
+          // already been pulled into someone's pipeline, so Prospect (the
+          // "not yet claimed" view) should never surface it again just
+          // because it was looked up by its exact NPI instead of by name/
+          // city/specialty. excludedAsClaimed still increments here, so a
+          // claimed NPI's lookup correctly reports "0 leads found (1
+          // already claimed, filtered out)" instead of a bare, unexplained
+          // "0 leads found".
+          var isClaimed = provider.npi && claimedNpis.has(String(provider.npi));
           if (isClaimed) {
             excludedAsClaimed++;
           } else {
