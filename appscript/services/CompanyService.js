@@ -294,9 +294,13 @@ var CompanyService = (function () {
     return (variant.state || "") + "|" + (variant.taxonomyDescription || "");
   }
 
-  // Pages through NPPES (across every state x taxonomy variant, in the
-  // multi-select case), filtering out already-claimed NPIs, until we have
-  // `desiredLimit` distinct COMPANIES (after branch-merging -- see
+  // Pages through NPPES (round-robin across every state x taxonomy variant,
+  // in the multi-select case -- one page from each variant per round, not
+  // fully draining variant 0 before ever touching variant 1, so a search
+  // across several states/specialties surfaces leads from ALL of them
+  // instead of letting whichever variant is listed first silently satisfy
+  // the whole desiredLimit), filtering out already-claimed NPIs, until we
+  // have `desiredLimit` distinct COMPANIES (after branch-merging -- see
   // createBranchMerger_ above) or every variant runs out of results / hits
   // its skip cap.
   //
@@ -352,16 +356,50 @@ var CompanyService = (function () {
 
     function acceptedCount() { return mergeBranches ? merger.length : fresh.length; }
 
-    for (var v = 0; v < variants.length && acceptedCount() < desiredLimit && !hitScanBudget; v++) {
-      var variant = variants[v];
-      var key = variantKey_(variant);
-      var skip = variantSkips[key] || 0;
+    // Tracks which variants have nothing left worth fetching -- either NPPES
+    // itself just ran out (an empty or short/last page) or this variant's
+    // skip has already reached NPPES_MAX_SKIP -- so later rounds stop
+    // bothering to re-query a fully-drained state/specialty.
+    var variantExhausted = variants.map(function (variant) {
+      return (variantSkips[variantKey_(variant)] || 0) > NPPES_MAX_SKIP;
+    });
 
-      while (acceptedCount() < desiredLimit && skip <= NPPES_MAX_SKIP) {
+    function anyVariantLeft() {
+      return variantExhausted.some(function (done) { return !done; });
+    }
+
+    // Round-robin across every variant -- one page from variant 0, then one
+    // page from variant 1, ... back to variant 0 -- instead of fully
+    // draining one variant before ever touching the next. Selecting several
+    // states/specialties should surface leads from ALL of them, not just
+    // whichever variant happens to be listed first: with a "finish variant 0
+    // first" order, a state with an abundant supply of fresh matches could
+    // single-handedly satisfy desiredLimit before a SECOND selected state
+    // was ever queried at all -- effectively hiding it from every result,
+    // and getting worse the more states/specialties were selected.
+    while (acceptedCount() < desiredLimit && !hitScanBudget && anyVariantLeft()) {
+      // Recomputed every round from what's still needed and how many
+      // variants are still in play -- a fair-share cap on how much of THIS
+      // round's page each variant is allowed to contribute, so one variant
+      // with a huge page of matches can't single-handedly fill desiredLimit
+      // before its round-robin turn even reaches the next variant. Shrinks
+      // to "no cap" once only one variant is left un-exhausted, so the tail
+      // end of a search doesn't waste fetches trickling in a few at a time
+      // when there's nothing left to interleave with anyway.
+      var remainingVariants = variantExhausted.filter(function (done) { return !done; }).length;
+      var roundQuota = Math.max(1, Math.ceil((desiredLimit - acceptedCount()) / remainingVariants));
+
+      for (var v = 0; v < variants.length; v++) {
+        if (variantExhausted[v]) continue;
+        if (acceptedCount() >= desiredLimit) break;
         if (fetchesUsed >= MAX_NPPES_FETCHES_PER_REQUEST) {
-          hitScanBudget = true; // stop paging THIS variant -- budget spent, not necessarily out of real results
+          hitScanBudget = true; // stop paging -- budget spent, not necessarily out of real results
           break;
         }
+
+        var variant = variants[v];
+        var key = variantKey_(variant);
+        var skip = variantSkips[key] || 0;
         fetchesUsed++;
 
         var result = NppesService.searchProviders(
@@ -373,38 +411,44 @@ var CompanyService = (function () {
         // not results.length -- local taxonomy/keyword filters can trim a full
         // page and would otherwise end pagination early.
         var fetched = result.rawCount != null ? result.rawCount : results.length;
-        if (fetched === 0) break; // NPPES has no more matches for this variant
 
-        totalScanned += fetched;
-        for (var i = 0; i < results.length; i++) {
-          if (acceptedCount() >= desiredLimit) break;
-          var provider = results[i];
-          if (provider.npi && Object.prototype.hasOwnProperty.call(seenNpis, String(provider.npi))) continue;
+        if (fetched === 0) {
+          variantExhausted[v] = true; // NPPES has no more matches for this variant
+        } else {
+          totalScanned += fetched;
+          var acceptedBeforeThisTurn = acceptedCount();
+          for (var i = 0; i < results.length; i++) {
+            if (acceptedCount() >= desiredLimit) break;
+            if (acceptedCount() - acceptedBeforeThisTurn >= roundQuota) break; // this variant's fair share for this round is used up
+            var provider = results[i];
+            if (provider.npi && Object.prototype.hasOwnProperty.call(seenNpis, String(provider.npi))) continue;
 
-          // Claimed-lead exclusion applies uniformly across every search
-          // type, including an exact NPI lookup -- a claimed lead has
-          // already been pulled into someone's pipeline, so Prospect (the
-          // "not yet claimed" view) should never surface it again just
-          // because it was looked up by its exact NPI instead of by name/
-          // city/specialty. excludedAsClaimed still increments here, so a
-          // claimed NPI's lookup correctly reports "0 leads found (1
-          // already claimed, filtered out)" instead of a bare, unexplained
-          // "0 leads found".
-          var isClaimed = provider.npi && claimedNpis.has(String(provider.npi));
-          if (isClaimed) {
-            excludedAsClaimed++;
-          } else {
-            fresh.push(provider);
-            if (mergeBranches) merger.add(fromNppesProvider(provider));
+            // Claimed-lead exclusion applies uniformly across every search
+            // type, including an exact NPI lookup -- a claimed lead has
+            // already been pulled into someone's pipeline, so Prospect (the
+            // "not yet claimed" view) should never surface it again just
+            // because it was looked up by its exact NPI instead of by name/
+            // city/specialty. excludedAsClaimed still increments here, so a
+            // claimed NPI's lookup correctly reports "0 leads found (1
+            // already claimed, filtered out)" instead of a bare, unexplained
+            // "0 leads found".
+            var isClaimed = provider.npi && claimedNpis.has(String(provider.npi));
+            if (isClaimed) {
+              excludedAsClaimed++;
+            } else {
+              fresh.push(provider);
+              if (mergeBranches) merger.add(fromNppesProvider(provider));
+            }
+            if (provider.npi) seenNpis[String(provider.npi)] = true;
           }
-          if (provider.npi) seenNpis[String(provider.npi)] = true;
+
+          if (fetched < NPPES_PAGE_SIZE) variantExhausted[v] = true; // last page from NPPES for this variant
+          skip += NPPES_PAGE_SIZE;
         }
 
-        if (fetched < NPPES_PAGE_SIZE) break; // last page from NPPES for this variant
-        skip += NPPES_PAGE_SIZE;
+        variantSkips[key] = skip; // remember exactly where this variant stopped for next time
+        if (skip > NPPES_MAX_SKIP) variantExhausted[v] = true;
       }
-
-      variantSkips[key] = skip; // remember exactly where this variant stopped for next time
     }
 
     return {
