@@ -690,6 +690,23 @@ var SheetsStore = (function () {
     return { sheet: sheet, spreadsheetId: spreadsheetId };
   }
 
+  // Best-effort only -- a suggestion is already safely logged to the sheet
+  // before this runs, so a mail failure (MailApp's daily send quota used up,
+  // a transient error, etc.) should never make the submission itself fail.
+  function notifySuggestionByEmail_(text, submittedBy, sheetUrl) {
+    var to = Config.suggestionNotifyEmail();
+    if (!to) return;
+    try {
+      MailApp.sendEmail({
+        to: to,
+        subject: "DME Desk Prospector suggestion from " + (submittedBy || "someone"),
+        body: (submittedBy || "Someone") + " sent a suggestion:\n\n" + text + "\n\nView all suggestions: " + sheetUrl,
+      });
+    } catch (err) {
+      console.log("[SheetsStore] Suggestion email notification failed: " + err.message);
+    }
+  }
+
   function addSuggestion(text, submittedBy) {
     if (!Config.authSheetId() && !Config.googleSheetId()) {
       var notConfigured = new Error("Suggestions storage is not configured (missing AUTH_SHEET_ID or GOOGLE_SHEET_ID)");
@@ -712,10 +729,11 @@ var SheetsStore = (function () {
     var now = new Date().toISOString();
     target.sheet.appendRow([now, submittedBy || "", trimmed]);
     SpreadsheetApp.flush(); // force the write to persist before we return
-    return {
-      submittedAt: now,
-      sheetUrl: "https://docs.google.com/spreadsheets/d/" + target.spreadsheetId + "/edit#gid=" + target.sheet.getSheetId(),
-    };
+
+    var sheetUrl = "https://docs.google.com/spreadsheets/d/" + target.spreadsheetId + "/edit#gid=" + target.sheet.getSheetId();
+    notifySuggestionByEmail_(trimmed, submittedBy, sheetUrl);
+
+    return { submittedAt: now, sheetUrl: sheetUrl };
   }
 
   return {

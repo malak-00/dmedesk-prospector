@@ -29,6 +29,11 @@
 //                                     each other's feedback -- only the owner
 //                                     can). Falls back to a tab in the main
 //                                     leads sheet only if AUTH_SHEET_ID is unset.
+//   SUGGESTIONS_NOTIFY_EMAIL        -- defaults to caroline.richards.wiz@gmail.com.
+//                                     Every submitted suggestion is emailed here
+//                                     (via MailApp, sent as whoever owns/runs the
+//                                     Apps Script deployment) in addition to
+//                                     being logged to the Suggestions tab above.
 
 var Config = (function () {
   function get(key, fallback) {
@@ -45,5 +50,6 @@ var Config = (function () {
     googleSheetTabName: function () { return get("GOOGLE_SHEET_TAB_NAME", "Leads"); },
     authSheetId: function () { return get("AUTH_SHEET_ID"); },
     suggestionsTabName: function () { return get("SUGGESTIONS_TAB_NAME", "Suggestions"); },
+    suggestionNotifyEmail: function () { return get("SUGGESTIONS_NOTIFY_EMAIL", "caroline.richards.wiz@gmail.com"); },
   };
 })();
