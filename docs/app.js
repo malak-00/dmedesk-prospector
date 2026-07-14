@@ -2163,7 +2163,12 @@ function renderTaxonomyOptions(taxonomies) {
     const label = document.createElement("label");
     label.className = "multiselect-option";
     label.dataset.dynamicTaxonomy = "true";
-    label.innerHTML = `<input type="checkbox" name="taxonomyDescriptions" value="${escapeHtml(t.facilityType)}"><span>${escapeHtml(t.facilityType)}</span>`;
+    // The checkbox's VALUE (what's actually submitted as taxonomyDescription
+    // -- NPPES's own search field) is the Description column, not the
+    // Facility Type label -- the server already falls back to Facility Type
+    // for the 5 legacy rows that predate Description. Facility Type is only
+    // ever the readable text shown next to the checkbox.
+    label.innerHTML = `<input type="checkbox" name="taxonomyDescriptions" value="${escapeHtml(t.description)}"><span>${escapeHtml(t.facilityType)}</span>`;
     taxonomyOptionsContainer.appendChild(label);
   });
 }
@@ -2254,11 +2259,18 @@ els.taxonomyAddResults.addEventListener("click", async (e) => {
   btn.disabled = true;
   try {
     const data = await apiPost("taxonomies/enable", { rowNumber });
-    renderTaxonomyOptions(data.taxonomies || []);
-    // Auto-checks the just-added one so it's immediately part of THIS search too.
-    taxonomyOptionsContainer.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => {
-      if (cb.value === facilityType) cb.checked = true;
-    });
+    const taxonomies = data.taxonomies || [];
+    renderTaxonomyOptions(taxonomies);
+    // Auto-checks the just-added one so it's immediately part of THIS search
+    // too -- matched by rowNumber (not facilityType/description text, which
+    // aren't guaranteed unique) to find its checkbox VALUE, which is the
+    // Description text, not the facilityType label used elsewhere here.
+    const justAdded = taxonomies.find((t) => String(t.rowNumber) === String(rowNumber));
+    if (justAdded) {
+      taxonomyOptionsContainer.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => {
+        if (cb.value === justAdded.description) cb.checked = true;
+      });
+    }
     taxonomyAllCheckbox.checked = false;
     updateTaxonomySummary();
     els.taxonomyAddInput.value = "";

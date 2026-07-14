@@ -24,16 +24,14 @@
 // different source standards. Rows are only ever identified by their
 // (1-based) ROW NUMBER, never by facilityType/code text.
 //
-// The enabled Facility Type text is used AS-IS as the taxonomyDescription
-// search term (same mechanism the 5 originally-hardcoded options already
-// used) -- NOT the Description column, which tends to be a broader
-// classification/grouping phrase (e.g. "Respiratory, Developmental,
-// Rehabilitative and Restorative Service Providers" covers several distinct
-// codes) rather than a specific enough phrase to safely filter on. Facility
-// Type names in this kind of reference table read much closer to NPPES's
-// own standard taxonomy naming ("Skilled Nursing Facility", "Urgent Care
-// Center"), which is what NppesService's existing taxonomy_description
-// safety-net filter substring-matches against.
+// The Description column -- not Facility Type -- is what actually gets
+// submitted as taxonomyDescription (NPPES's own search parameter, which
+// matches a provider's registered taxonomy DESCRIPTION text, not a payer's
+// friendly facility-type label). Facility Type is only ever the readable
+// checkbox label a rep sees. The one exception: the 5 originally-hardcoded
+// options predate this Description column and have none -- for those,
+// listEnabled() falls back to their Facility Type text, which is already
+// the exact string in production use for them.
 
 var TaxonomyService = (function () {
   var TAB_NAME = "Taxonomies";
@@ -187,11 +185,22 @@ var TaxonomyService = (function () {
   }
 
   // Public: what the Prospect search form's multiselect should show as
-  // checkbox options.
+  // checkbox options. `facilityType` is the readable label shown next to
+  // the checkbox; `description` is the actual value the frontend submits as
+  // taxonomyDescription -- NPPES's own search param, which matches against
+  // a provider's registered taxonomy DESCRIPTION text, not the friendly
+  // "Facility Type" name from a payer's crosswalk. Falls back to
+  // facilityType only when description is blank, which is only ever true
+  // for the 5 legacy rows seeded before this Description column existed --
+  // their Facility Type text IS the exact string already in production use
+  // for them, so that fallback preserves their existing, already-correct
+  // behavior unchanged.
   function listEnabled() {
     return getAllRows_()
       .filter(function (r) { return r.enabled; })
-      .map(function (r) { return { rowNumber: r.rowNumber, facilityType: r.facilityType, code: r.code }; });
+      .map(function (r) {
+        return { rowNumber: r.rowNumber, facilityType: r.facilityType, code: r.code, description: r.description || r.facilityType };
+      });
   }
 
   // Public: keyword search across Facility Type + Code + Description,
