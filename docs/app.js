@@ -777,8 +777,24 @@ function updateSearchMoreButton(exhausted) {
     : "Keeps the same filters and pages deeper into the registry, skipping every lead you've already seen for this search";
 }
 
+// Locks every filter/control in the search form (text inputs, all the
+// multiselects' checkboxes and their toggle/Select-all/Clear/+Add-taxonomy
+// buttons, the chip inputs' entry fields and remove buttons, Enrich/Scrape
+// checkboxes) while a search is in flight, so a change made mid-search can't
+// silently apply to results that were actually fetched under the OLD
+// filters. The "is-loading" class is belt-and-suspenders on top of the
+// native disabled attributes -- it dims the whole block and blocks pointer
+// events outright, since custom checkbox/button styling can make a merely
+// `disabled` control still look clickable.
+function setSearchFormDisabled(disabled) {
+  els.form.classList.toggle("is-loading", disabled);
+  els.form.querySelectorAll("input, button, select, textarea").forEach((el) => {
+    el.disabled = disabled;
+  });
+}
+
 async function executeSearch(params, { isMore = false } = {}) {
-  els.searchBtn.disabled = true;
+  setSearchFormDisabled(true);
   els.searchMoreBtn.disabled = true;
   setStatus("busy", isMore ? "Searching more…" : "Searching…");
   if (!isMore) {
@@ -852,8 +868,10 @@ async function executeSearch(params, { isMore = false } = {}) {
     // success path above already set its final disabled state based on
     // whether the registry is now exhausted, and unconditionally clearing
     // it here would silently re-enable an exhausted button on every search.
+    // It's not part of the search form anyway (it lives in the results
+    // toolbar), so setSearchFormDisabled(false) below never touches it.
     phaseTimers.forEach(clearTimeout);
-    els.searchBtn.disabled = false;
+    setSearchFormDisabled(false);
   }
 }
 
