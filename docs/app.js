@@ -201,6 +201,10 @@ const els = {
   pageInfo: document.getElementById("pageInfo"),
   pagePrevBtn: document.getElementById("pagePrevBtn"),
   pageNextBtn: document.getElementById("pageNextBtn"),
+  taxonomyAddBtn: document.getElementById("taxonomyAddBtn"),
+  taxonomyAddPanel: document.getElementById("taxonomyAddPanel"),
+  taxonomyAddInput: document.getElementById("taxonomyAddInput"),
+  taxonomyAddResults: document.getElementById("taxonomyAddResults"),
   exportCsvBtn: document.getElementById("exportCsvBtn"),
   exportSheetsBtn: document.getElementById("exportSheetsBtn"),
   exportCsvLabel: document.getElementById("exportCsvLabel"),
@@ -468,6 +472,7 @@ async function handleLogin(evt) {
     excludeKeywordsChipInput.setAll(data.excludeKeywords ? data.excludeKeywords.split(",") : []);
     els.loginForm.reset();
     hideLogin();
+    loadTaxonomyOptions();
     showToast(`Welcome, ${data.displayName}`);
   } catch (err) {
     els.loginError.textContent = err.message;
@@ -670,6 +675,27 @@ function saveSearchFormState() {
   sessionStorage.setItem(SEARCH_FILTERS_KEY, JSON.stringify(values));
 }
 
+// Split out from restoreSearchFormState() so loadTaxonomyOptions() (called
+// on every login, after the dynamic checkboxes are re-rendered from the
+// server) can re-apply JUST the taxonomy selection, not the whole form --
+// calling the full restoreSearchFormState() there would also reapply
+// values.excludeKeywords/nameContainsTerms from this tab's LAST SEARCH,
+// which can belong to a DIFFERENT teammate than the one who just signed in
+// (sessionStorage isn't cleared per-user), silently overwriting the
+// correct per-user exclude-keywords handleLogin just set moments earlier.
+function restoreTaxonomySelectionFromSession() {
+  const raw = sessionStorage.getItem(SEARCH_FILTERS_KEY);
+  if (!raw) return;
+  let values;
+  try { values = JSON.parse(raw); } catch { return; }
+  if (!Array.isArray(values.taxonomyDescriptions)) return;
+  taxonomyOptionsContainer.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => {
+    cb.checked = values.taxonomyDescriptions.includes(cb.value);
+  });
+  taxonomyAllCheckbox.checked = values.taxonomyDescriptions.length === 0;
+  updateTaxonomySummary();
+}
+
 function restoreSearchFormState() {
   const raw = sessionStorage.getItem(SEARCH_FILTERS_KEY);
   if (!raw) return;
@@ -686,13 +712,7 @@ function restoreSearchFormState() {
     });
     updateStateSummary();
   }
-  if (Array.isArray(values.taxonomyDescriptions)) {
-    taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => {
-      cb.checked = values.taxonomyDescriptions.includes(cb.value);
-    });
-    taxonomyAllCheckbox.checked = values.taxonomyDescriptions.length === 0;
-    updateTaxonomySummary();
-  }
+  restoreTaxonomySelectionFromSession();
   if (Array.isArray(values.lastUpdatedYears)) {
     yearOptionsContainer.querySelectorAll('input[name="lastUpdatedYears"]').forEach((cb) => {
       cb.checked = values.lastUpdatedYears.includes(cb.value);
@@ -2113,43 +2133,148 @@ updateYearSummary();
    with the specific checkboxes below it (picking one clears "All", and
    checking "All" clears every specific pick), since "no filter" and "OR of
    these specific filters" are two different underlying queries, not a
-   spectrum -- there's no meaningful "All + Prosthetic" combination. */
+   spectrum -- there's no meaningful "All + Prosthetic" combination.
+
+   Unlike State/Year, this list isn't fixed -- it's fetched from the shared
+   "Taxonomies" sheet tab (see loadTaxonomyOptions below) and can grow at
+   any time (any signed-in teammate can add a new one via the search panel
+   below), so the specific checkboxes are rendered dynamically rather than
+   written directly in the HTML. Their change handling is wired via event
+   delegation on taxonomyOptionsContainer (one listener, attached once)
+   instead of per-checkbox listeners, so newly-added checkboxes work
+   immediately without any re-wiring step. */
 
 const taxonomyMultiselect = document.getElementById("taxonomyMultiselect");
 const taxonomyAllCheckbox = document.getElementById("taxonomyAllCheckbox");
+const taxonomyOptionsContainer = document.getElementById("taxonomyOptionsContainer");
 setupMultiselectToggle(taxonomyMultiselect);
 
 function updateTaxonomySummary() {
-  const toggle = taxonomyMultiselect.querySelector(".multiselect-toggle");
-  const checked = [...taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]:checked')];
-  if (taxonomyAllCheckbox.checked || checked.length === 0) toggle.textContent = "All specialties";
-  else if (checked.length === 1) toggle.textContent = checked[0].nextElementSibling.textContent;
-  else toggle.textContent = `${checked.length} specialties selected`;
+  updateMultiselectSummary(taxonomyMultiselect, 'input[name="taxonomyDescriptions"]', "All specialties", "specialties");
+}
+
+// Rebuilds the dynamic (non-"All") checkboxes from the server's current
+// enabled list. Only the dynamically-added labels (marked with
+// data-dynamic-taxonomy) are removed/replaced -- the static "All
+// specialties" label at the top is never touched.
+function renderTaxonomyOptions(taxonomies) {
+  taxonomyOptionsContainer.querySelectorAll("[data-dynamic-taxonomy]").forEach((el) => el.remove());
+  taxonomies.forEach((t) => {
+    const label = document.createElement("label");
+    label.className = "multiselect-option";
+    label.dataset.dynamicTaxonomy = "true";
+    label.innerHTML = `<input type="checkbox" name="taxonomyDescriptions" value="${escapeHtml(t.facilityType)}"><span>${escapeHtml(t.facilityType)}</span>`;
+    taxonomyOptionsContainer.appendChild(label);
+  });
+}
+
+async function loadTaxonomyOptions() {
+  try {
+    const data = await apiGet("taxonomies/list");
+    renderTaxonomyOptions(data.taxonomies || []);
+    // Re-applies just the taxonomy selection from sessionStorage now that
+    // the checkboxes actually exist to check -- deliberately NOT the full
+    // restoreSearchFormState() (see its comment on
+    // restoreTaxonomySelectionFromSession for why that would be a bug here).
+    restoreTaxonomySelectionFromSession();
+  } catch (err) {
+    console.log("[Taxonomies] Failed to load options: " + err.message);
+  }
 }
 
 taxonomyAllCheckbox.addEventListener("change", () => {
   if (taxonomyAllCheckbox.checked) {
-    taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => { cb.checked = false; });
+    taxonomyOptionsContainer.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => { cb.checked = false; });
   }
   updateTaxonomySummary();
 });
-taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => {
-  cb.addEventListener("change", () => {
-    if (cb.checked) taxonomyAllCheckbox.checked = false; // picking a specific one cancels "All"
-    updateTaxonomySummary();
-  });
+taxonomyOptionsContainer.addEventListener("change", (e) => {
+  if (!e.target.matches('input[name="taxonomyDescriptions"]')) return;
+  if (e.target.checked) taxonomyAllCheckbox.checked = false; // picking a specific one cancels "All"
+  updateTaxonomySummary();
 });
 document.getElementById("taxonomySelectAllBtn").addEventListener("click", () => {
   taxonomyAllCheckbox.checked = false;
-  taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => { cb.checked = true; });
+  taxonomyOptionsContainer.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => { cb.checked = true; });
   updateTaxonomySummary();
 });
 document.getElementById("taxonomyClearBtn").addEventListener("click", () => {
   taxonomyAllCheckbox.checked = true;
-  taxonomyMultiselect.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => { cb.checked = false; });
+  taxonomyOptionsContainer.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => { cb.checked = false; });
   updateTaxonomySummary();
 });
 updateTaxonomySummary();
+
+/* ---------- Add taxonomy: search the shared reference sheet + enable one ---------- */
+
+let taxonomySearchToken = 0; // guards against a slow earlier search response overwriting a newer one's results
+
+function renderTaxonomyAddResults(results) {
+  if (results.length === 0) {
+    els.taxonomyAddResults.innerHTML = `<div class="taxonomy-add-empty">No matches</div>`;
+    return;
+  }
+  els.taxonomyAddResults.innerHTML = results
+    .map(
+      (r) => `<button type="button" class="taxonomy-add-result" data-row-number="${r.rowNumber}" title="${escapeHtml(r.description || "")}">
+        <span class="facility-type">${escapeHtml(r.facilityType)}</span><span class="taxonomy-code">${escapeHtml(r.code || "")}</span>
+      </button>`
+    )
+    .join("");
+}
+
+async function runTaxonomySearch(keyword) {
+  const thisSearch = ++taxonomySearchToken;
+  if (!keyword.trim()) {
+    els.taxonomyAddResults.innerHTML = "";
+    return;
+  }
+  try {
+    const data = await apiGet("taxonomies/search", { q: keyword });
+    if (thisSearch !== taxonomySearchToken) return; // a newer keystroke's search already superseded this one
+    renderTaxonomyAddResults(data.results || []);
+  } catch (err) {
+    if (thisSearch !== taxonomySearchToken) return;
+    els.taxonomyAddResults.innerHTML = `<div class="taxonomy-add-empty">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+let taxonomySearchDebounce = null;
+els.taxonomyAddInput.addEventListener("input", () => {
+  clearTimeout(taxonomySearchDebounce);
+  const keyword = els.taxonomyAddInput.value;
+  taxonomySearchDebounce = setTimeout(() => runTaxonomySearch(keyword), 300);
+});
+
+els.taxonomyAddResults.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".taxonomy-add-result");
+  if (!btn) return;
+  const rowNumber = btn.dataset.rowNumber;
+  const facilityType = btn.querySelector(".facility-type").textContent;
+  btn.disabled = true;
+  try {
+    const data = await apiPost("taxonomies/enable", { rowNumber });
+    renderTaxonomyOptions(data.taxonomies || []);
+    // Auto-checks the just-added one so it's immediately part of THIS search too.
+    taxonomyOptionsContainer.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => {
+      if (cb.value === facilityType) cb.checked = true;
+    });
+    taxonomyAllCheckbox.checked = false;
+    updateTaxonomySummary();
+    els.taxonomyAddInput.value = "";
+    els.taxonomyAddResults.innerHTML = "";
+    els.taxonomyAddPanel.hidden = true;
+    showToast(`"${facilityType}" added -- now available to everyone`);
+  } catch (err) {
+    showToast(err.message, true);
+    btn.disabled = false;
+  }
+});
+
+els.taxonomyAddBtn.addEventListener("click", () => {
+  els.taxonomyAddPanel.hidden = !els.taxonomyAddPanel.hidden;
+  if (!els.taxonomyAddPanel.hidden) els.taxonomyAddInput.focus();
+});
 
 restoreSearchFormState();
 
@@ -2260,4 +2385,9 @@ window.debugFoursquare = async function () {
   }
 };
 
-if (getSession()) hideLogin(); else showLogin();
+if (getSession()) {
+  hideLogin();
+  loadTaxonomyOptions(); // page was reloaded while already signed in -- this also re-applies restoreSearchFormState() once the taxonomy checkboxes exist
+} else {
+  showLogin();
+}

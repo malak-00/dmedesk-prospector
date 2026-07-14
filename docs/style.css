@@ -293,6 +293,42 @@ body {
 .multiselect-option input { accent-color: var(--accent); width: 14px; height: 14px; flex-shrink: 0; }
 .multiselect-option.is-divider { border-top: 1px solid var(--hairline); margin-top: 4px; padding-top: 7px; }
 
+.taxonomy-add-panel {
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 6px;
+  padding-bottom: 8px;
+}
+.taxonomy-add-panel[hidden] { display: none; }
+.taxonomy-add-panel input[type="text"] {
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+.taxonomy-add-panel input[type="text"]:focus { outline: none; border-color: var(--accent); }
+.taxonomy-add-results { max-height: 160px; overflow-y: auto; margin-top: 6px; }
+.taxonomy-add-result {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 6px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+.taxonomy-add-result:hover { background: var(--surface-2); }
+.taxonomy-add-result .facility-type { font-size: 13px; color: var(--ink); }
+.taxonomy-add-result .taxonomy-code { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-left: 6px; }
+.taxonomy-add-result:disabled { opacity: 0.5; cursor: default; }
+.taxonomy-add-empty { font-size: 12px; color: var(--muted); padding: 6px; }
+
 .field-row { display: flex; align-items: center; gap: 22px; margin-top: 18px; flex-wrap: wrap; }
 .checkbox { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); cursor: pointer; }
 .checkbox input { accent-color: var(--accent); width: 15px; height: 15px; }

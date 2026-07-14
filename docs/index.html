@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=25">
+<link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -118,31 +118,16 @@
                   <div class="multiselect-actions">
                     <button type="button" class="link-btn" id="taxonomySelectAllBtn">Select all</button>
                     <button type="button" class="link-btn" id="taxonomyClearBtn">Clear</button>
+                    <button type="button" class="link-btn" id="taxonomyAddBtn">+ Add taxonomy</button>
                   </div>
-                  <div class="multiselect-options">
+                  <div class="taxonomy-add-panel" id="taxonomyAddPanel" hidden title="Search the shared Taxonomies reference sheet by keyword, facility type, or NUCC code. Adding one makes it a permanent option here for every teammate, not just you.">
+                    <input type="text" id="taxonomyAddInput" placeholder="Search facility type or code, e.g. urgent care">
+                    <div class="taxonomy-add-results" id="taxonomyAddResults"></div>
+                  </div>
+                  <div class="multiselect-options" id="taxonomyOptionsContainer">
                     <label class="multiselect-option">
                       <input type="checkbox" id="taxonomyAllCheckbox" checked>
                       <span>All specialties</span>
-                    </label>
-                    <label class="multiselect-option is-divider">
-                      <input type="checkbox" name="taxonomyDescriptions" value="Durable Medical Equipment">
-                      <span>Durable Medical Equipment &amp; Medical Supplies</span>
-                    </label>
-                    <label class="multiselect-option">
-                      <input type="checkbox" name="taxonomyDescriptions" value="Oxygen Equipment">
-                      <span>DME — Oxygen Equipment &amp; Supplies</span>
-                    </label>
-                    <label class="multiselect-option">
-                      <input type="checkbox" name="taxonomyDescriptions" value="Prosthetic/Orthotic">
-                      <span>Prosthetic/Orthotic Supplier</span>
-                    </label>
-                    <label class="multiselect-option">
-                      <input type="checkbox" name="taxonomyDescriptions" value="Orthopedic">
-                      <span>Orthopedics (any orthopedic specialty)</span>
-                    </label>
-                    <label class="multiselect-option">
-                      <input type="checkbox" name="taxonomyDescriptions" value="Prosthetic">
-                      <span>Prosthetics (any prosthetic specialty)</span>
                     </label>
                   </div>
                 </div>
@@ -364,6 +349,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=28"></script>
+  <script src="app.js?v=29"></script>
 </body>
 </html>

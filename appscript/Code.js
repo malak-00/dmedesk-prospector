@@ -191,6 +191,17 @@ function handleRequest_(e) {
         });
       }
 
+      case "taxonomies/list":
+        return jsonResponse_({ success: true, data: { taxonomies: TaxonomyService.listEnabled() } });
+
+      case "taxonomies/search":
+        return jsonResponse_({ success: true, data: { results: TaxonomyService.search(params.q) } });
+
+      case "taxonomies/enable": {
+        var enableBody = readJsonBody_(e);
+        return jsonResponse_({ success: true, data: { taxonomies: TaxonomyService.enable(enableBody.rowNumber) } });
+      }
+
       case "debug/foursquare":
         return jsonResponse_({ success: true, data: FoursquareService.testConnection() });
 
