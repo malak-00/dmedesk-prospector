@@ -141,6 +141,16 @@ body {
 
 /* ---------- Search form ---------- */
 
+/* Locks the whole filter block while a search is in flight (see
+   setSearchFormDisabled in app.js) -- pointer-events:none is the real
+   blocker (native `disabled` on every control is belt-and-suspenders for
+   keyboard nav), the opacity is just the visual cue that it's locked. */
+#searchForm.is-loading .field-grid,
+#searchForm.is-loading .field-row {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .field-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 16px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 500; }
 .field-wide { grid-column: span 2; }
