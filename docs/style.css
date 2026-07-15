@@ -99,7 +99,7 @@ body {
    proportional size is what actually reads as "much bigger" horizontally
    in the header's wide-open space. */
 .app-header .brand-logo { height: 80px; width: 200px; }
-.login-brand .brand-logo { height: 80px; width: 180px }
+.login-brand .brand-logo { height: 100px; width: 200px }
 
 .status { display: flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--score-high); box-shadow: 0 0 0 3px var(--glow-high); }
@@ -384,7 +384,7 @@ body {
 .stale-nudge { color: var(--score-mid); margin-right: 4px; }
 .stale-nudge[hidden] { display: none; }
 
-.icon { width: 14px; height: 14px; flex-shrink: 0; }
+.icon { width: 20px; height: 20px; flex-shrink: 0; }
 
 /* ---------- Results toolbar ---------- */
 
