@@ -149,10 +149,10 @@ function handleRequest_(e) {
       }
 
       case "leads/list": {
-        var opts = {};
-        if (params.mine === "true") opts.claimedBy = session.displayName;
-        if (params.updatedWithinDays) opts.updatedWithinDays = Number(params.updatedWithinDays);
-        if (params.updatedYear) opts.updatedYear = params.updatedYear;
+        // Always scoped to the signed-in user's own claimed leads -- there's
+        // no team-wide view anymore, not even via a raw query param, so this
+        // is a real privacy boundary rather than just a UI default.
+        var opts = { claimedBy: session.displayName };
         return jsonResponse_({
           success: true,
           data: { leads: SheetsStore.listClaimedLeads(opts), statuses: SheetsStore.getKnownStatuses() },

@@ -4,7 +4,6 @@
 var ScoringService = (function () {
   var WEIGHTS = {
     hasPhone: 15,
-    hasFax: 5,
     hasWebsite: 20,
     activeStatus: 15,
     completeAddress: 10,
@@ -25,7 +24,6 @@ var ScoringService = (function () {
     var addr = company.address || {};
 
     breakdown.hasPhone = company.phone ? WEIGHTS.hasPhone : 0;
-    breakdown.hasFax = company.fax ? WEIGHTS.hasFax : 0;
     breakdown.hasWebsite = company.website ? WEIGHTS.hasWebsite : 0;
 
     // isClosed === false means confirmed open; null/undefined means unknown (no enrichment)
