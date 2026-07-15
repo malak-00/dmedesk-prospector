@@ -233,6 +233,7 @@ const els = {
   claimedSelectionChip: document.getElementById("claimedSelectionChip"),
   claimedSelectionCount: document.getElementById("claimedSelectionCount"),
   claimedClearSelectionBtn: document.getElementById("claimedClearSelectionBtn"),
+  claimedReturnToProspectBtn: document.getElementById("claimedReturnToProspectBtn"),
   claimedSendDisconnectedBtn: document.getElementById("claimedSendDisconnectedBtn"),
   onlyMine: document.getElementById("onlyMine"),
   enableNotifications: document.getElementById("enableNotifications"),
@@ -1497,15 +1498,17 @@ function updateClaimedSelectionUI() {
   els.claimedSelectionChip.hidden = count === 0;
   els.claimedSelectionCount.textContent = `${count} selected`;
   // No "nothing checked -> act on everything" fallback here -- moving a
-  // lead to Disconnected is a one-way move, so it stays disabled until at
-  // least one lead is actually checked.
+  // lead to Disconnected (or back to Prospect) is a one-way move, so both
+  // stay disabled until at least one lead is actually checked.
   els.claimedSendDisconnectedBtn.disabled = count === 0;
+  els.claimedReturnToProspectBtn.disabled = count === 0;
 }
 
-// Returns whichever leads a "Send to Disconnected" click should act on --
-// only the checked subset. Deliberately has no "nothing checked -> every
-// currently-shown lead" fallback, unlike the Prospect tab's export buttons.
-function getDisconnectClaimedLeads() {
+// Returns whichever leads a "Send to Disconnected" or "Return to Prospect"
+// click should act on -- only the checked subset. Deliberately has no
+// "nothing checked -> every currently-shown lead" fallback, unlike the
+// Prospect tab's export buttons.
+function getCheckedClaimedLeads() {
   return [...state.claimedSelected].map((i) => state.claimedLeads[i]);
 }
 
@@ -1516,7 +1519,7 @@ function getDisconnectClaimedLeads() {
 // Requires an explicit checked selection -- no "nothing checked -> move
 // everything shown" fallback, since this is a one-way move.
 async function sendClaimedToDisconnected() {
-  const leads = getDisconnectClaimedLeads();
+  const leads = getCheckedClaimedLeads();
   if (leads.length === 0) {
     showToast("Check at least one lead to send to Disconnected", true);
     return;
@@ -1537,6 +1540,36 @@ async function sendClaimedToDisconnected() {
     setStatus("error", "Error");
   } finally {
     els.claimedSendDisconnectedBtn.disabled = state.claimedSelected.size === 0;
+  }
+}
+
+// Moves already-claimed leads OUT of Claimed entirely -- unlike Disconnected,
+// there's no destination tab to move them into: "Prospect" isn't a stored
+// view, it's just live NPPES search results filtered against whatever's
+// currently claimed. Deleting the row here is the whole feature -- the lead
+// naturally resurfaces the next time anyone searches for it.
+async function returnClaimedToProspect() {
+  const leads = getCheckedClaimedLeads();
+  if (leads.length === 0) {
+    showToast("Check at least one lead to return to Prospect", true);
+    return;
+  }
+  const npis = leads.map((l) => l.npi).filter(Boolean);
+  if (!confirm(`Move ${leads.length} lead(s) out of Claimed and back into Prospect? They'll show up again the next time anyone searches for them.`)) return;
+
+  els.claimedReturnToProspectBtn.disabled = true; // prevents a double-click from double-returning
+  setStatus("busy", "Returning to Prospect…");
+  try {
+    const data = await apiPost("leads/return-to-prospect", { npis });
+    showToast(`Returned ${data.returnedCount} lead(s) to Prospect`);
+    clearClaimedSelection();
+    await loadClaimedLeads(); // returned rows should disappear from this view now
+    setStatus("ready", "Ready");
+  } catch (err) {
+    showToast(err.message, true);
+    setStatus("error", "Error");
+  } finally {
+    els.claimedReturnToProspectBtn.disabled = state.claimedSelected.size === 0;
   }
 }
 
@@ -2389,6 +2422,7 @@ els.claimedSelectAll.addEventListener("change", (e) => {
 });
 els.claimedClearSelectionBtn.addEventListener("click", clearClaimedSelection);
 els.claimedSendDisconnectedBtn.addEventListener("click", sendClaimedToDisconnected);
+els.claimedReturnToProspectBtn.addEventListener("click", returnClaimedToProspect);
 
 wireSortableHeaders(els.resultsTable, PROSPECT_DEFAULT_SORT_DIR, sortProspectResults);
 wireSortableHeaders(els.claimedTable, CLAIMED_DEFAULT_SORT_DIR, sortClaimedLeads);

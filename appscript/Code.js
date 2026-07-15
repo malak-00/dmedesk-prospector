@@ -140,6 +140,14 @@ function handleRequest_(e) {
         });
       }
 
+      case "leads/return-to-prospect": {
+        var returnBody = readJsonBody_(e);
+        return jsonResponse_({
+          success: true,
+          data: SheetsStore.returnClaimedLeadsToProspect(returnBody.npis),
+        });
+      }
+
       case "leads/list": {
         var opts = {};
         if (params.mine === "true") opts.claimedBy = session.displayName;

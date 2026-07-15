@@ -344,6 +344,46 @@ var SheetsStore = (function () {
     return { movedCount: movedCount, notFound: notFound };
   }
 
+  // Moves already-claimed leads OUT of wherever they currently live (a
+  // teammate's Claimed tab) and drops them entirely -- unlike
+  // moveClaimedLeadsToDisconnected above, there's no destination sheet:
+  // "Prospect" isn't a stored tab at all, it's just live NPPES search
+  // results filtered against getClaimedNpis(). Deleting the row here is the
+  // whole feature -- once it's gone, the NPI naturally stops showing up in
+  // getClaimedNpis() and the lead resurfaces the next time anyone searches
+  // for it, with no separate "un-claim" flag or destination to manage.
+  function returnClaimedLeadsToProspect(npis) {
+    assertConfigured();
+    npis = (npis || []).map(String).filter(Boolean);
+    if (npis.length === 0) {
+      var error = new Error("At least one NPI is required");
+      error.status = 400;
+      throw error;
+    }
+
+    var spreadsheet = openSpreadsheet_();
+    var returnedCount = 0;
+    var notFound = [];
+
+    npis.forEach(function (npi) {
+      // Re-looked-up fresh for EACH npi (not batched upfront) so a deletion
+      // from an earlier npi in this same loop can't leave a later npi's
+      // remembered row number pointing at the wrong row.
+      var matches = findLeadLocations_(spreadsheet, npi);
+      if (matches.length === 0) { notFound.push(npi); return; }
+
+      matches
+        .sort(function (a, b) { return b.rowNumber - a.rowNumber; }) // delete bottom-up within a sheet
+        .forEach(function (m) {
+          m.sheet.deleteRow(m.rowNumber);
+          returnedCount++;
+        });
+    });
+
+    SpreadsheetApp.flush();
+    return { returnedCount: returnedCount, notFound: notFound };
+  }
+
   // Reads the NPI column (by label) across every teammate's tab AND the
   // shared Disconnected tab, and returns the set of NPIs already handled by
   // anyone, so search results can filter them out.
@@ -766,6 +806,7 @@ var SheetsStore = (function () {
     exportCompaniesToSheet: exportCompaniesToSheet,
     exportCompaniesToDisconnected: exportCompaniesToDisconnected,
     moveClaimedLeadsToDisconnected: moveClaimedLeadsToDisconnected,
+    returnClaimedLeadsToProspect: returnClaimedLeadsToProspect,
     getClaimedNpis: getClaimedNpis,
     listClaimedLeads: listClaimedLeads,
     updateLeadStatus: updateLeadStatus,
