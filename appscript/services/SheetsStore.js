@@ -409,9 +409,7 @@ var SheetsStore = (function () {
 
   // Returns claimed leads (aggregated across every teammate's tab) sorted by
   // most recently updated (Status Updated At, falling back to Claimed At).
-  //   opts.claimedBy         -- filter to one person's leads
-  //   opts.updatedWithinDays -- only leads touched within the last N days
-  //   opts.updatedYear       -- only leads whose last update is in this year
+  //   opts.claimedBy -- filter to one person's leads
   function listClaimedLeads(opts) {
     assertConfigured();
     opts = opts || {};
@@ -427,7 +425,7 @@ var SheetsStore = (function () {
       var idx = {
         name: get("Company Name"), npi: get("NPI"),
         addressLine1: get("Address"), city: get("City"), state: get("State"), postalCode: get("Postal Code"),
-        taxonomy: get("Specialty"), website: get("Website"), email: get("Email"), fax: get("Fax"),
+        taxonomy: get("Specialty"), website: get("Website"), email: get("Email"),
         contactName: get("Contact Name"), contactTitle: get("Contact Title"),
         contactRole: get("Contact Role"), contactSource: get("Contact Source"),
         additionalContacts: get("Additional Contacts Found"),
@@ -457,7 +455,6 @@ var SheetsStore = (function () {
           taxonomy: pick(idx.taxonomy),
           website: pick(idx.website),
           email: pick(idx.email),
-          fax: pick(idx.fax),
           contactName: pick(idx.contactName),
           contactTitle: pick(idx.contactTitle),
           contactRole: pick(idx.contactRole),
@@ -488,25 +485,6 @@ var SheetsStore = (function () {
     if (opts.claimedBy) {
       var who = String(opts.claimedBy).toLowerCase();
       leads = leads.filter(function (lead) { return lead.claimedBy.toLowerCase() === who; });
-    }
-
-    if (opts.updatedWithinDays) {
-      var days = Number(opts.updatedWithinDays);
-      if (!isNaN(days) && days > 0) {
-        var cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-        leads = leads.filter(function (lead) {
-          var t = Date.parse(lead.lastUpdated);
-          return !isNaN(t) && t >= cutoff;
-        });
-      }
-    }
-
-    if (opts.updatedYear) {
-      var yr = String(opts.updatedYear);
-      leads = leads.filter(function (lead) {
-        var d = new Date(lead.lastUpdated);
-        return !isNaN(d.getTime()) && String(d.getFullYear()) === yr;
-      });
     }
 
     leads.sort(function (a, b) {

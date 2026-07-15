@@ -34,6 +34,14 @@
   --header-h: 76px;
   --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  /* Live-measured (via ResizeObserver in app.js) heights of the sticky
+     search-panel and results-toolbar, so the sticky thead below them can
+     stack correctly under BOTH without knowing their heights up front --
+     these genuinely vary (field-grid wraps at narrow widths, the toolbar
+     grows when a selection chip appears, the search panel doesn't exist at
+     all in the Claimed view). 0px default matches "not rendered yet". */
+  --search-panel-h: 0px;
+  --toolbar-h: 0px;
 }
 
 :root[data-theme="light"] {
@@ -110,6 +118,21 @@ body {
 /* ---------- Layout ---------- */
 
 .app-main { max-width: 1800px; margin: 0 auto; padding: 20px 24px 48px; display: flex; flex-direction: column; gap: 18px; }
+
+/* Frozen while scrolling a long lead list, so a rep never has to scroll
+   back to the top to change a filter or click an action button. Stacked in
+   scroll order: app header, then search-panel (Prospect view only --
+   --search-panel-h is 0 when it's not rendered, e.g. the Claimed view),
+   then the results-toolbar, then the table's own sticky thead (see
+   .results-table thead th below) -- each one's `top` accounts for
+   everything stacked above it. The actual heights are kept live via a
+   ResizeObserver in app.js, since they genuinely vary (field-grid wraps at
+   narrow widths, the toolbar grows when a selection chip appears). */
+.search-panel {
+  position: sticky;
+  top: var(--header-h);
+  z-index: 15;
+}
 
 .search-panel, .results-panel {
   background: var(--surface);
@@ -396,6 +419,12 @@ body {
   padding: 14px 20px;
   border-bottom: 1px solid var(--hairline);
   background: var(--surface);
+  position: sticky;
+  /* See the .search-panel comment above -- --search-panel-h is 0 in the
+     Claimed view (no search panel there), so this naturally sticks right
+     below the header there instead. */
+  top: calc(var(--header-h) + var(--search-panel-h));
+  z-index: 12;
 }
 .results-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .inline-field { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
@@ -405,6 +434,13 @@ body {
   border-radius: var(--radius-sm); padding: 5px 8px; cursor: pointer;
 }
 .inline-field select:focus { outline: none; border-color: var(--accent); }
+.inline-field input[type="text"] {
+  font-family: var(--font-ui); font-size: 12px; color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm); padding: 5px 8px; width: 180px;
+}
+.inline-field input[type="text"]:focus { outline: none; border-color: var(--accent); }
+.inline-field input[type="text"]::placeholder { color: var(--muted); }
 .results-count { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
 .selection-chip {
   display: flex; align-items: center; gap: 8px;
@@ -422,11 +458,12 @@ body {
    ever needed) instead of a nested scrollbar inside the table box. That
    makes the whole document -- not this box -- the sticky positioning context
    for the thead below, which is why its `top` offset accounts for the app
-   header's own height instead of being 0. */
+   header's own height (plus the search-panel and toolbar stacked above it,
+   see the .search-panel/.results-toolbar comment) instead of being 0. */
 .results-table { width: 100%; border-collapse: collapse; }
 .results-table thead th {
   position: sticky;
-  top: var(--header-h);
+  top: calc(var(--header-h) + var(--search-panel-h) + var(--toolbar-h));
   z-index: 5;
   text-align: left;
   font-size: 11px;

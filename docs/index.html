@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=30">
+<link rel="stylesheet" href="style.css?v=31">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -243,35 +243,19 @@
               <span id="claimedSelectionCount">0 selected</span>
               <button type="button" class="link-btn" id="claimedClearSelectionBtn">Clear</button>
             </div>
-            <label class="checkbox">
-              <input type="checkbox" id="onlyMine">
-              <span>Only mine</span>
-            </label>
-            <label class="checkbox" title="Shows a browser notification the moment a callback reminder comes due -- works as long as you have this app open in a tab, even a different one">
-              <input type="checkbox" id="enableNotifications">
-              <span>Notify me for due reminders</span>
-            </label>
-            <label class="inline-field">
-              <span>Updated</span>
-              <select id="updatedWithin">
-                <option value="">Any time</option>
-                <option value="1">Today</option>
-                <option value="7">Last 7 days</option>
-                <option value="30">Last 30 days</option>
-                <option value="90">Last 90 days</option>
-              </select>
-            </label>
-            <label class="inline-field">
-              <span>Year</span>
-              <select id="updatedYear">
-                <option value="">Any year</option>
-              </select>
+            <label class="inline-field" title="Filters the leads shown below by company name, NPI, or city">
+              <span>Search</span>
+              <input type="text" id="claimedSearchInput" placeholder="Company, NPI, city…">
             </label>
             <label class="inline-field">
               <span>Status</span>
               <select id="statusFilter">
                 <option value="">All statuses</option>
               </select>
+            </label>
+            <label class="checkbox" title="Shows a browser notification the moment a callback reminder comes due -- works as long as you have this app open in a tab, even a different one">
+              <input type="checkbox" id="enableNotifications">
+              <span>Notify me for due reminders</span>
             </label>
           </div>
           <div class="results-actions">
@@ -353,6 +337,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=31"></script>
+  <script src="app.js?v=32"></script>
 </body>
 </html>

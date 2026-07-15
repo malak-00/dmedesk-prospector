@@ -43,7 +43,6 @@ var CompanyService = (function () {
       name: provider.name,
       address: provider.address,
       phone: provider.phone,
-      fax: provider.fax,
       taxonomy: provider.taxonomy,
       decisionMakers: nppesDM ? [nppesDM] : [],
       lastUpdated: provider.lastUpdated,
@@ -80,7 +79,7 @@ var CompanyService = (function () {
   // Chains with a large employer can register a separate NPI per branch
   // location, which otherwise shows up as several near-identical rows for
   // what a rep considers one lead. Folds those into a single row carrying
-  // every branch's NPI/address/phone/fax, keeping the first-seen branch's
+  // every branch's NPI/address/phone, keeping the first-seen branch's
   // fields (name, taxonomy, etc.) as the row's primary display data. Two
   // rows merge if EITHER branchDedupKeys_() key matches -- this company's
   // own two keys are then both registered against whichever group it joined
@@ -101,7 +100,7 @@ var CompanyService = (function () {
 
     function add(company) {
       var keys = branchDedupKeys_(company);
-      var branch = { npi: company.npi, address: company.address, phone: company.phone, fax: company.fax };
+      var branch = { npi: company.npi, address: company.address, phone: company.phone };
 
       var namePhoneKey = keys.namePhone ? ("np:" + keys.namePhone) : null;
       var companyNameKey = keys.companyName ? ("cn:" + keys.companyName) : null;

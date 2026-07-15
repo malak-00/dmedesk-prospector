@@ -104,10 +104,11 @@ const state = {
   claimedLeads: [],
   // The full, unfiltered set fetched from the server -- state.claimedLeads
   // (what's actually rendered, indexed 1:1 with row DOM elements) is derived
-  // from this by applying the status filter, so changing the status filter
+  // from this by applying the status + search filters, so changing either
   // never needs a re-fetch, just a re-derive + re-render.
   claimedLeadsAll: [],
   statusFilter: "",
+  claimedSearchQuery: "",
   claimedSelected: new Set(),
   claimedExpandedIndex: null,
   claimedLoadedAt: null,
@@ -235,10 +236,8 @@ const els = {
   claimedClearSelectionBtn: document.getElementById("claimedClearSelectionBtn"),
   claimedReturnToProspectBtn: document.getElementById("claimedReturnToProspectBtn"),
   claimedSendDisconnectedBtn: document.getElementById("claimedSendDisconnectedBtn"),
-  onlyMine: document.getElementById("onlyMine"),
   enableNotifications: document.getElementById("enableNotifications"),
-  updatedWithin: document.getElementById("updatedWithin"),
-  updatedYear: document.getElementById("updatedYear"),
+  claimedSearchInput: document.getElementById("claimedSearchInput"),
   statusFilter: document.getElementById("statusFilter"),
   refreshClaimedBtn: document.getElementById("refreshClaimedBtn"),
   staleNudge: document.getElementById("staleNudge"),
@@ -265,20 +264,6 @@ const els = {
   reminderCancelBtn: document.getElementById("reminderCancelBtn"),
   reminderSaveBtn: document.getElementById("reminderSaveBtn"),
 };
-
-// Populate the Claimed Leads "Year" filter (by last STATUS UPDATE, so a
-// handful of recent years is plenty -- unlike the Prospect search's NPPES
-// "last updated" year multi-select below, which covers the registry's much
-// longer history).
-(function () {
-  const thisYear = new Date().getFullYear();
-  for (let y = thisYear; y >= thisYear - 5; y--) {
-    const opt = document.createElement("option");
-    opt.value = String(y);
-    opt.textContent = String(y);
-    els.updatedYear.appendChild(opt);
-  }
-})();
 
 /* ---------- Sign in ---------- */
 
@@ -580,7 +565,6 @@ function escapeHtml(str) {
 // company, just never rendered anywhere until now.
 const SCORE_FACTOR_LABELS = {
   hasPhone: "Has phone number",
-  hasFax: "Has fax number",
   hasWebsite: "Has a website",
   activeStatus: "Confirmed open (Places)",
   completeAddress: "Complete address on file",
@@ -1067,7 +1051,6 @@ function detailRowHtml(company, index) {
               ${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")} ${escapeHtml(company.address?.postalCode || "")}<br>
               Company phone: ${escapeHtml(company.phone || "—")}<br>
               Website: ${company.website ? `<a href="${escapeHtml(company.website)}" target="_blank">${escapeHtml(company.website)}</a>` : "—"}<br>
-              Fax: ${escapeHtml(company.fax || "—")}<br>
               NPPES last updated: ${escapeHtml(company.lastUpdated || "—")}<br>
               Medicare (CMS): ${escapeHtml(medicareSummary(company.medicare))}<br>
               Data sources: ${escapeHtml(sourcesList || "NPPES only")}
@@ -1485,6 +1468,26 @@ function applyStatusFilter(leads) {
   return state.statusFilter ? leads.filter((lead) => lead.status === state.statusFilter) : leads;
 }
 
+// Plain client-side substring match (no server round-trip) across the
+// fields a rep would actually recall a claimed lead by -- name, NPI, city,
+// state -- since the full set is already loaded in state.claimedLeadsAll.
+function applyClaimedSearchFilter(leads) {
+  const term = state.claimedSearchQuery.trim().toLowerCase();
+  if (!term) return leads;
+  return leads.filter((lead) => {
+    return (
+      (lead.name || "").toLowerCase().includes(term) ||
+      (lead.npi || "").toLowerCase().includes(term) ||
+      (lead.city || "").toLowerCase().includes(term) ||
+      (lead.state || "").toLowerCase().includes(term)
+    );
+  });
+}
+
+function applyClaimedFilters(leads) {
+  return applyClaimedSearchFilter(applyStatusFilter(leads));
+}
+
 function clearClaimedSelection() {
   state.claimedSelected.clear();
   els.claimedSelectAll.checked = false;
@@ -1577,11 +1580,9 @@ async function loadClaimedLeads() {
   els.claimedBody.innerHTML = skeletonRows(5, 10);
   els.staleNudge.hidden = true;
   try {
-    const params = {};
-    if (els.onlyMine.checked) params.mine = "true";
-    if (els.updatedWithin.value) params.updatedWithinDays = els.updatedWithin.value;
-    if (els.updatedYear.value) params.updatedYear = els.updatedYear.value;
-    const data = await apiGet("leads/list", params);
+    // Always scoped server-side to the signed-in user's own claimed leads --
+    // no params needed, there's no team-wide view to opt into anymore.
+    const data = await apiGet("leads/list");
     state.statuses = data.statuses || [];
     populateStatusFilterOptions();
     state.claimedLoaded = true;
@@ -1590,7 +1591,7 @@ async function loadClaimedLeads() {
     state.claimedSortDir = 1;
     updateSortIndicators(els.claimedTable, null, 1);
     state.claimedLeadsAll = data.leads || [];
-    renderClaimedLeads(applyStatusFilter(state.claimedLeadsAll));
+    renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
   } catch (err) {
     els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="10">${escapeHtml(err.message)}</td></tr>`;
     showToast(err.message, true);
@@ -1813,7 +1814,6 @@ function companyLikeFromClaimedLead(lead) {
     taxonomy: { description: lead.taxonomy },
     website: lead.website || null,
     phone: lead.companyPhone || null,
-    fax: lead.fax || null,
     decisionMakers: lead.contactName
       ? [{ name: lead.contactName, title: lead.contactTitle, roleCategory: lead.contactRole || "staff", phone: lead.contactPhone || null }]
       : [],
@@ -1862,7 +1862,6 @@ function claimedDetailRowHtml(lead, index) {
               ${escapeHtml(lead.city || "")}, ${escapeHtml(lead.state || "")} ${escapeHtml(lead.postalCode || "")}<br>
               Company phone: ${escapeHtml(lead.companyPhone || "—")}<br>
               Website: ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank">${escapeHtml(lead.website)}</a>` : "—"}<br>
-              Fax: ${escapeHtml(lead.fax || "—")}<br>
               Specialty: ${escapeHtml(lead.taxonomy || "—")}<br>
               Score: ${escapeHtml(scoreLine)}<br>
               Medicare (CMS): ${escapeHtml(medicareLine)}<br>
@@ -2395,18 +2394,22 @@ document.querySelectorAll(".theme-toggle").forEach((btn) => btn.addEventListener
 document.querySelectorAll(".view-tabs .tab").forEach((tab) => {
   tab.addEventListener("click", () => switchView(tab.dataset.view));
 });
-els.onlyMine.addEventListener("change", loadClaimedLeads);
-els.updatedWithin.addEventListener("change", loadClaimedLeads);
-els.updatedYear.addEventListener("change", loadClaimedLeads);
-// Status is filtered client-side over the already-fetched list (no new
-// server round-trip needed, unlike the other filters above which change
-// what the server itself returns).
+// Both the search box and the status dropdown filter client-side over the
+// already-fetched list -- no new server round-trip needed, since the whole
+// (already user-scoped) set is loaded once by loadClaimedLeads.
+els.claimedSearchInput.addEventListener("input", () => {
+  state.claimedSearchQuery = els.claimedSearchInput.value;
+  state.claimedSortKey = null; // matches the status filter's "fresh view resets sort" behavior
+  state.claimedSortDir = 1;
+  updateSortIndicators(els.claimedTable, null, 1);
+  renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
+});
 els.statusFilter.addEventListener("change", () => {
   state.statusFilter = els.statusFilter.value;
   state.claimedSortKey = null; // matches the other filters' "fresh view resets sort" behavior
   state.claimedSortDir = 1;
   updateSortIndicators(els.claimedTable, null, 1);
-  renderClaimedLeads(applyStatusFilter(state.claimedLeadsAll));
+  renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
 });
 els.refreshClaimedBtn.addEventListener("click", loadClaimedLeads);
 els.staleNudge.addEventListener("click", loadClaimedLeads);
@@ -2459,6 +2462,35 @@ window.debugFoursquare = async function () {
     return { error: err.message };
   }
 };
+
+// Keeps the sticky search-panel/toolbar/thead stack (see the CSS comments on
+// .search-panel/.results-toolbar/.results-table thead th) correctly offset
+// from each other. Their heights genuinely change -- field-grid wraps at
+// narrow widths, a selection chip appearing grows the toolbar, the search
+// panel doesn't exist at all in the Claimed view -- so a fixed CSS value
+// can't track them, but a live-measured custom property can.
+(function setUpStickyOffsets() {
+  const searchPanel = document.querySelector(".search-panel");
+  const toolbars = document.querySelectorAll(".results-toolbar");
+  if (!searchPanel && toolbars.length === 0) return;
+
+  const root = document.documentElement;
+  function refresh() {
+    // A hidden ancestor (display:none via the [hidden] attribute on
+    // whichever view isn't active) makes getBoundingClientRect() report 0
+    // height -- exactly the "not currently relevant" value this stack
+    // wants, so no per-view branching is needed here at all.
+    if (searchPanel) root.style.setProperty("--search-panel-h", `${searchPanel.getBoundingClientRect().height}px`);
+    let toolbarH = 0;
+    toolbars.forEach((el) => { toolbarH = Math.max(toolbarH, el.getBoundingClientRect().height); });
+    root.style.setProperty("--toolbar-h", `${toolbarH}px`);
+  }
+
+  const observer = new ResizeObserver(refresh);
+  if (searchPanel) observer.observe(searchPanel);
+  toolbars.forEach((el) => observer.observe(el));
+  refresh();
+})();
 
 if (getSession()) {
   hideLogin();
