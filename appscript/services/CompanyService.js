@@ -353,6 +353,18 @@ var CompanyService = (function () {
     var variantSkips = Object.assign({}, criteria.variantSkips || {});
     var fetchesUsed = 0;
     var hitScanBudget = false;
+    // NPPES rejects some taxonomy_description values outright -- a real
+    // "Errors" rejection (see NppesService's fetchFromNppes), not just zero
+    // matches -- when the text isn't one of its own exact registered
+    // taxonomy strings. That's a real risk for Description values pasted
+    // into the Taxonomies sheet from an outside crosswalk document, and
+    // multi-select runs one variant per selected taxonomy (see
+    // buildCriteriaVariants_ above), so a single bad one used to throw
+    // unhandled and abort the ENTIRE search -- even taxonomies selected
+    // alongside it that NPPES would have happily accepted. Collected here
+    // instead so the caller can report exactly which selection(s) failed
+    // while the rest of the search still runs.
+    var rejectedVariants = [];
 
     function acceptedCount() { return mergeBranches ? merger.length : fresh.length; }
 
@@ -402,9 +414,24 @@ var CompanyService = (function () {
         var skip = variantSkips[key] || 0;
         fetchesUsed++;
 
-        var result = NppesService.searchProviders(
-          Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip: skip })
-        );
+        var result;
+        try {
+          result = NppesService.searchProviders(
+            Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip: skip })
+          );
+        } catch (err) {
+          // Isolate the failure to just this one state/taxonomy combination
+          // -- mark it exhausted so the loop never retries it, record why,
+          // and keep going with whatever other variants are still in play.
+          console.log("[CompanyService] NPPES query variant failed, skipping it: " + key + " -- " + err.message);
+          rejectedVariants.push({
+            state: variant.state || null,
+            taxonomyDescription: variant.taxonomyDescription || null,
+            message: err.message,
+          });
+          variantExhausted[v] = true;
+          continue;
+        }
         var results = result.results;
 
         // Last-page checks must use rawCount (what NPPES actually returned),
@@ -458,6 +485,7 @@ var CompanyService = (function () {
       variantSkips: variantSkips,
       hitScanBudget: hitScanBudget,
       allSeenNpis: Object.keys(seenNpis),
+      rejectedVariants: rejectedVariants,
     };
   }
 
@@ -547,6 +575,12 @@ var CompanyService = (function () {
       // the next click picks up right where this one's variantSkips stopped).
       exhaustedRegistry: companies.length < desiredLimit && !fetchResult.hitScanBudget,
       variantSkips: fetchResult.variantSkips,
+      // Non-empty only when NPPES flat-out rejected one or more selected
+      // state/taxonomy combinations (see fetchFreshProviders above) -- the
+      // rest of the search still ran normally, this is just so the caller
+      // can tell the rep exactly which selection(s) to fix/remove instead of
+      // silently returning fewer leads than expected with no explanation.
+      rejectedVariants: fetchResult.rejectedVariants,
       companies: companies,
     };
   }

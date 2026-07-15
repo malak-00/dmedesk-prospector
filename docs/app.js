@@ -847,6 +847,17 @@ async function executeSearch(params, { isMore = false } = {}) {
 
     state.lastSearchParams = params;
     setStatus("ready", "Ready");
+
+    // NPPES flat-out rejects some taxonomy_description values (not just
+    // "zero matches") when the text isn't one of its own exact registered
+    // taxonomy strings -- a real risk for taxonomies added from the shared
+    // sheet. The backend now isolates that to just the offending
+    // selection(s) instead of losing the whole search, but the rep still
+    // needs to know a specialty they picked was silently skipped.
+    if (data.rejectedVariants && data.rejectedVariants.length) {
+      const names = [...new Set(data.rejectedVariants.map((v) => v.taxonomyDescription).filter(Boolean))];
+      showToast(`NPPES rejected ${names.length === 1 ? "this specialty" : "these specialties"}: ${names.join(", ")} — remove/edit it in Taxonomies, other results still loaded`, true);
+    }
   } catch (err) {
     // A raw fetch()-level failure (network drop, or the connection getting cut
     // mid-response on an especially slow search) surfaces as a TypeError with
