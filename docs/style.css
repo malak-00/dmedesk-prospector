@@ -98,7 +98,7 @@ body {
    only ever makes it modestly wider; a fixed width well past that
    proportional size is what actually reads as "much bigger" horizontally
    in the header's wide-open space. */
-.app-header .brand-logo { height: 60px; width: 240px; }
+.app-header .brand-logo { height: 65px; width: 230px; }
 .login-brand .brand-logo { height: 56px; }
 
 .status { display: flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
