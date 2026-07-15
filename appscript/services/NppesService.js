@@ -159,7 +159,7 @@ var NppesService = (function () {
     };
   }
 
-  // criteria: { npi, organizationName, city, state, postalCode, taxonomyDescription, limit=20, skip=0 }
+  // criteria: { npi, organizationName, city, state, taxonomyDescription, limit=20, skip=0 }
   function searchProviders(criteria) {
     criteria = criteria || {};
     var limit = criteria.limit || 20;
@@ -180,7 +180,6 @@ var NppesService = (function () {
       organization_name: isExactNpiLookup ? undefined : (criteria.organizationName || undefined),
       city: isExactNpiLookup ? undefined : (criteria.city || undefined),
       state: isExactNpiLookup ? undefined : (criteria.state || undefined),
-      postal_code: isExactNpiLookup ? undefined : (criteria.postalCode || undefined),
       taxonomy_description: isExactNpiLookup ? undefined : (criteria.taxonomyDescription || undefined),
       limit: limit,
       skip: skip,

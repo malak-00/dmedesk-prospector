@@ -74,7 +74,7 @@ function handleRequest_(e) {
       case "search/nppes": {
         var nppesCriteria = readSearchCriteria_(params);
         if (!hasAnySearchCriteria_(nppesCriteria)) {
-          return errorResponse_(400, "At least one of NPI, organization name, city, postal code, or specialty is required -- a state alone isn't specific enough for NPPES");
+          return errorResponse_(400, "At least one of NPI, organization name, city, or specialty is required -- a state alone isn't specific enough for NPPES");
         }
         return jsonResponse_({ success: true, data: NppesService.searchProviders(nppesCriteria) });
       }
@@ -82,7 +82,7 @@ function handleRequest_(e) {
       case "search/companies": {
         var companiesCriteria = readSearchCriteria_(params);
         if (!hasAnySearchCriteria_(companiesCriteria)) {
-          return errorResponse_(400, "At least one of NPI, company name, city, postal code, or specialty is required -- a state alone isn't specific enough for NPPES");
+          return errorResponse_(400, "At least one of NPI, company name, city, or specialty is required -- a state alone isn't specific enough for NPPES");
         }
         return jsonResponse_({
           success: true,
@@ -257,7 +257,7 @@ function hasAnySearchCriteria_(criteria) {
   return Boolean(
     criteria.npi || criteria.organizationName || criteria.nameContains ||
     (criteria.nameContainsTerms && criteria.nameContainsTerms.length) ||
-    criteria.city || criteria.postalCode ||
+    criteria.city ||
     criteria.taxonomyDescription || (criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length)
   );
 }
@@ -290,7 +290,6 @@ function readSearchCriteria_(params) {
     city: params.city || undefined,
     state: params.state || undefined,
     states: parseCommaList_(params.states),
-    postalCode: params.postalCode || undefined,
     taxonomyDescription: params.taxonomyDescription || undefined,
     taxonomyDescriptions: parseCommaList_(params.taxonomyDescriptions),
     lastUpdatedYear: params.lastUpdatedYear || undefined,

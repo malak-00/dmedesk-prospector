@@ -86,7 +86,6 @@ var SearchProgressService = (function () {
       ),
       city: norm(criteria.city),
       states: normalizeList_((criteria.states && criteria.states.length) ? criteria.states : [criteria.state]),
-      postalCode: norm(criteria.postalCode),
       taxonomies: normalizeList_(
         (criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length)
           ? criteria.taxonomyDescriptions
