@@ -55,7 +55,7 @@
   --accent-soft: rgba(14,124,140,0.10);
   --accent-ink: #0B6270;
   --on-accent: #FFFFFF;
-  --hairline: #E1E4E9;
+  --hairline: #A9B1BD;
   --score-high: #1F9D63;
   --score-mid: #B5790C;
   --score-low: #D1453D;
@@ -68,7 +68,7 @@
   --login-error-bg: rgba(209,69,61,0.08);
   --login-error-border: rgba(209,69,61,0.30);
   --row-stripe: rgba(15,23,35,0.025);
-  --hairline-hover: #C7CCD3;
+  --hairline-hover: #7E889B;
   --shadow-card: 0 1px 2px rgba(16,24,40,0.06), 0 10px 24px -14px rgba(16,24,40,0.18);
 }
 
