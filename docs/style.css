@@ -779,6 +779,32 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .toast a { color: var(--accent-ink); font-weight: 600; }
 .toast.error a { color: var(--on-score-low); text-decoration-color: currentColor; }
 
+/* ---------- Responsive: short viewports (typical laptop screen heights) ----------
+   The sticky stack (app header + search-panel + results-toolbar, all frozen
+   in place while scrolling -- see the .search-panel/.results-toolbar/thead
+   comments above) has a fixed height that was sized for a normal external
+   monitor. On a laptop's shorter display (a 13"/14" laptop is commonly
+   ~800-900px tall, well under a desktop monitor's 1080px+), that same stack
+   can eat so much of the viewport that the results table underneath barely
+   has room to show any rows -- it reads as "frozen"/stuck rather than
+   scrollable, even though the sticky positioning itself is working correctly.
+   Shrinking the header and tightening the search-panel/toolbar padding here
+   claws back real vertical space for the actual lead list. --header-h is a
+   real CSS var (not just a display value -- .app-header's own height uses
+   it too), so overriding it here automatically keeps every calc() offset
+   that stacks under it (search-panel's top, thead's top) correct with no
+   other changes needed; --search-panel-h/--toolbar-h stay accurate too,
+   since app.js measures them live via ResizeObserver rather than assuming
+   a fixed number. */
+@media (max-height: 820px) {
+  :root { --header-h: 60px; }
+  .app-header .brand-logo { height: 56px; width: 140px; }
+  .search-panel { padding: 12px 20px 14px; }
+  .field-grid { gap: 10px 14px; }
+  .results-toolbar { padding: 10px 20px; gap: 12px; }
+}
+
+/* ---------- Responsive: phones ---------- */
 @media (max-width: 720px) {
   .field-grid { grid-template-columns: 1fr 1fr; }
   .field-wide { grid-column: span 2; }
@@ -786,4 +812,25 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
   .results-toolbar { flex-direction: column; align-items: stretch; }
   .results-actions { justify-content: stretch; }
   .results-actions .btn { flex: 1; justify-content: center; }
+
+  /* .app-header is a non-wrapping flex row (brand on the left, then theme
+     toggle + Suggestions button + user chip + status all packed on the
+     right) sized for a desktop-width window -- on a phone the combined
+     width of all of those doesn't fit, and since nothing wraps it just
+     pushes the whole page into horizontal scroll, cutting off content on
+     every view (not just the search form). The status dot/"Ready" text is
+     the least essential piece here (a nice-to-have, not an action), so
+     it's dropped first; the Suggestions button's label follows the same
+     "icon survives, label goes" treatment as .results-actions .btn above. */
+  .app-header { padding: 0 14px; }
+  .header-right { gap: 8px; }
+  .status { display: none; }
+  #suggestBtn span { display: none; }
+}
+
+/* Narrow phones -- even 2 field columns get cramped below ~480px. */
+@media (max-width: 480px) {
+  .field-grid { grid-template-columns: 1fr; }
+  .field-wide { grid-column: span 1; }
+  .app-header .brand-logo { height: 44px; width: 110px; }
 }
