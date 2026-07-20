@@ -301,43 +301,37 @@ var SheetsStore = (function () {
     var now = new Date().toISOString();
     var defs = columnDefs_();
     var movedCount = 0;
-    var notFound = [];
 
-    npis.forEach(function (npi) {
-      // Re-looked-up fresh for EACH npi (not batched upfront) so a deletion
-      // from an earlier npi in this same loop can't leave a later npi's
-      // remembered row number pointing at the wrong row.
-      var matches = findLeadLocations_(spreadsheet, npi);
-      if (matches.length === 0) { notFound.push(npi); return; }
+    var matches = findLeadLocationsForNpis_(spreadsheet, npis);
+    var foundNpis = {};
+    matches.forEach(function (m) { foundNpis[m.npi] = true; });
+    var notFound = npis.filter(function (npi) { return !Object.prototype.hasOwnProperty.call(foundNpis, npi); });
 
-      matches
-        .sort(function (a, b) { return b.rowNumber - a.rowNumber; }) // delete bottom-up within a sheet
-        .forEach(function (m) {
-          var sourceColMap = buildColMap_(m.sheet);
-          var width = m.sheet.getLastColumn();
-          var rowValues = m.sheet.getRange(m.rowNumber, 1, 1, width).getValues()[0];
+    processMatchesBottomUp_(matches, function (m) {
+      var sourceColMap = buildColMap_(m.sheet);
+      var width = m.sheet.getLastColumn();
+      var rowValues = m.sheet.getRange(m.rowNumber, 1, 1, width).getValues()[0];
 
-          var destWidth = disconnectedSheet.getLastColumn();
-          var destRow = [];
-          for (var i = 0; i < destWidth; i++) destRow.push("");
-          defs.forEach(function (c) {
-            var srcIdx = colIndex_(sourceColMap, c.label);
-            var destIdx = colIndex_(disconnectedColMap, c.label);
-            if (srcIdx < 0 || destIdx < 0) return;
-            destRow[destIdx] = rowValues[srcIdx];
-          });
+      var destWidth = disconnectedSheet.getLastColumn();
+      var destRow = [];
+      for (var i = 0; i < destWidth; i++) destRow.push("");
+      defs.forEach(function (c) {
+        var srcIdx = colIndex_(sourceColMap, c.label);
+        var destIdx = colIndex_(disconnectedColMap, c.label);
+        if (srcIdx < 0 || destIdx < 0) return;
+        destRow[destIdx] = rowValues[srcIdx];
+      });
 
-          var statusIdx = colIndex_(disconnectedColMap, "Status");
-          var statusByIdx = colIndex_(disconnectedColMap, "Status Updated By");
-          var statusAtIdx = colIndex_(disconnectedColMap, "Status Updated At");
-          if (statusIdx >= 0) destRow[statusIdx] = "disconnected";
-          if (statusByIdx >= 0) destRow[statusByIdx] = movedBy || "";
-          if (statusAtIdx >= 0) destRow[statusAtIdx] = now;
+      var statusIdx = colIndex_(disconnectedColMap, "Status");
+      var statusByIdx = colIndex_(disconnectedColMap, "Status Updated By");
+      var statusAtIdx = colIndex_(disconnectedColMap, "Status Updated At");
+      if (statusIdx >= 0) destRow[statusIdx] = "disconnected";
+      if (statusByIdx >= 0) destRow[statusByIdx] = movedBy || "";
+      if (statusAtIdx >= 0) destRow[statusAtIdx] = now;
 
-          disconnectedSheet.getRange(disconnectedSheet.getLastRow() + 1, 1, 1, destWidth).setValues([destRow]);
-          m.sheet.deleteRow(m.rowNumber);
-          movedCount++;
-        });
+      disconnectedSheet.getRange(disconnectedSheet.getLastRow() + 1, 1, 1, destWidth).setValues([destRow]);
+      m.sheet.deleteRow(m.rowNumber);
+      movedCount++;
     });
 
     SpreadsheetApp.flush();
@@ -363,21 +357,15 @@ var SheetsStore = (function () {
 
     var spreadsheet = openSpreadsheet_();
     var returnedCount = 0;
-    var notFound = [];
 
-    npis.forEach(function (npi) {
-      // Re-looked-up fresh for EACH npi (not batched upfront) so a deletion
-      // from an earlier npi in this same loop can't leave a later npi's
-      // remembered row number pointing at the wrong row.
-      var matches = findLeadLocations_(spreadsheet, npi);
-      if (matches.length === 0) { notFound.push(npi); return; }
+    var matches = findLeadLocationsForNpis_(spreadsheet, npis);
+    var foundNpis = {};
+    matches.forEach(function (m) { foundNpis[m.npi] = true; });
+    var notFound = npis.filter(function (npi) { return !Object.prototype.hasOwnProperty.call(foundNpis, npi); });
 
-      matches
-        .sort(function (a, b) { return b.rowNumber - a.rowNumber; }) // delete bottom-up within a sheet
-        .forEach(function (m) {
-          m.sheet.deleteRow(m.rowNumber);
-          returnedCount++;
-        });
+    processMatchesBottomUp_(matches, function (m) {
+      m.sheet.deleteRow(m.rowNumber);
+      returnedCount++;
     });
 
     SpreadsheetApp.flush();
@@ -512,6 +500,72 @@ var SheetsStore = (function () {
       });
     });
     return matches;
+  }
+
+  // Batched form of findLeadLocations_ for callers that already have a whole
+  // LIST of NPIs to look up in one request (moveClaimedLeadsToDisconnected /
+  // returnClaimedLeadsToProspect below, both driven by a multi-select "Send
+  // to Disconnected" / "Return to Prospect" click) -- reads each sheet's NPI
+  // column exactly ONCE no matter how many NPIs are requested, instead of a
+  // fresh full-column read per NPI per sheet. That per-NPI re-read was easy
+  // to reason about for a single NPI (see findLeadLocations_ above, still
+  // used as-is by the single-NPI callers further down), but scales as
+  // npis.length * sheets.length real Sheets API calls for a batch -- fine
+  // for one NPI, but a teammate selecting dozens of claimed leads at once
+  // could rack up hundreds of calls and run long enough to hit Apps Script's
+  // own ~6-minute execution limit, which silently aborts the request before
+  // it ever sends a response back -- the browser just sees a fetch that
+  // hangs and eventually fails, easily mistaken for something like a CORS
+  // problem when the real cause is the timeout.
+  //
+  // Returns a flat list of every match across every requested NPI, each
+  // tagged with which NPI it belongs to; pair with processMatchesBottomUp_
+  // below to actually delete/move them in a safe order.
+  function findLeadLocationsForNpis_(spreadsheet, npis) {
+    var wanted = {};
+    npis.forEach(function (npi) { wanted[String(npi)] = true; });
+
+    var matches = [];
+    allClaimedSheets_(spreadsheet).forEach(function (sheet) {
+      var colMap = buildColMap_(sheet);
+      var npiCol = colIndex_(colMap, "NPI");
+      var lastRow = sheet.getLastRow();
+      if (npiCol < 0 || lastRow < 2) return;
+      var values = sheet.getRange(2, npiCol + 1, lastRow - 1, 1).getValues();
+      values.forEach(function (row, i) {
+        var npi = String(row[0]);
+        if (Object.prototype.hasOwnProperty.call(wanted, npi)) {
+          matches.push({ sheet: sheet, rowNumber: i + 2, npi: npi });
+        }
+      });
+    });
+    return matches;
+  }
+
+  // Runs `handleFn` over every match, sheet by sheet and bottom-up (highest
+  // rowNumber first) within each sheet -- the order that guarantees deleting
+  // one match's row never shifts the row number of another match still
+  // waiting to be handled (deleting a row only shifts rows BELOW it, i.e.
+  // ones with a still-higher row number, and those are always handled first
+  // in this order). This is what makes it safe to batch-delete matches from
+  // several different NPIs -- even ones that happen to land in the same
+  // sheet -- without needing findLeadLocations_'s fresh-read-per-NPI trick.
+  function processMatchesBottomUp_(matches, handleFn) {
+    var bySheetId = {};
+    var sheetIdOrder = [];
+    matches.forEach(function (m) {
+      var id = m.sheet.getSheetId();
+      if (!Object.prototype.hasOwnProperty.call(bySheetId, id)) {
+        bySheetId[id] = [];
+        sheetIdOrder.push(id);
+      }
+      bySheetId[id].push(m);
+    });
+    sheetIdOrder.forEach(function (id) {
+      bySheetId[id]
+        .sort(function (a, b) { return b.rowNumber - a.rowNumber; })
+        .forEach(handleFn);
+    });
   }
 
   // Sets the Status columns on every row (in whichever tab it lives in)
