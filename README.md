@@ -14,6 +14,21 @@ sheet. Leads are also enriched with Medicare DMEPOS claim volumes from
 CMS's free public data API. There's no database — everything is stateless
 per-request, and the Google Sheet is the only persistent store.
 
+## Project status
+
+**`appscript/` + `docs/` (Apps Script + GitHub Pages) is the actively
+developed, feature-complete version of this app.** `backend/` (Node/
+Express, described below) is an earlier implementation that was frozen
+once free Node hosts started requiring card verification — it does not
+have sign-in, claimed leads, taxonomies, or search-resume, and isn't being
+kept in sync. If you're picking this repo up, read
+**[`ARCHITECTURE.md`](./ARCHITECTURE.md)** for how the current system
+actually works end to end. If you're planning to move off Apps Script +
+Google Sheets onto real hosting, see
+**[`MIGRATION_TO_VERCEL_SUPABASE.md`](./MIGRATION_TO_VERCEL_SUPABASE.md)**
+for a concrete, step-by-step plan starting from exactly where this repo is
+today.
+
 ## Requirements
 
 - Node.js 18+
