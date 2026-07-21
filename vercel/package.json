@@ -1,0 +1,20 @@
+{
+  "name": "dmedesk-prospector-vercel",
+  "version": "1.0.0",
+  "description": "Vercel + Supabase deployment path for DME Desk Prospector (see /MIGRATION_TO_VERCEL_SUPABASE.md and /ARCHITECTURE.md at the repo root). Replaces appscript/ + Google Sheets; docs/ (or a future frontend) points at this API instead of an Apps Script /exec URL.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "cheerio": "^1.2.0"
+  },
+  "devDependencies": {
+    "vercel": "^37.0.0"
+  }
+}
