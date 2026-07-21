@@ -2,13 +2,13 @@
 //
 // - createServiceClient(): the service-role key, bypasses Row-Level
 //   Security entirely. Used ONLY where that's actually necessary (looking
-//   up/creating a `profiles` row during login, before we have a user
+//   up/creating an `app_users` row during login, before we have a user
 //   session to attach a token to). Never expose this client or its key to
 //   the browser.
 // - createUserClient(accessToken): the anon key + the signed-in user's own
 //   access token attached as the Authorization header. Every query made
 //   with this client runs "as" that user for RLS purposes -- auth.uid()
-//   inside a policy (see supabase/migrations/0001_init.sql) resolves to
+//   inside a policy (see the `enable_rls_and_google_oauth_bridge` migration) resolves to
 //   them, so "select own leads only" etc. is enforced by Postgres itself,
 //   not just by the application code remembering to add a WHERE clause.
 //   This is what every authenticated API route should use for actual data

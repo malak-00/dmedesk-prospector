@@ -13,11 +13,16 @@ A working vertical slice, ported from `appscript/services/` with the same
 behavior wherever the underlying platform allows it:
 
 - **Database**: `supabase/migrations/0001_init.sql` -- full schema
-  (`leads`, `taxonomies`, `search_progress`, `suggestions`,
-  `enrichment_cache`, `profiles`) with Row-Level Security replacing every
-  Google Sheets tab.
-- **Auth**: Supabase Auth (email + password) instead of a plaintext Users
-  tab + `CacheService` sessions. See `lib/auth.js`.
+  (`leads`, `lead_notes`, `taxonomies`, `search_progress`, `suggestions`,
+  `enrichment_cache`, `app_users`) with Row-Level Security (enabled in
+  `0002_enable_rls_and_google_oauth_bridge.sql`) replacing every Google
+  Sheets tab.
+- **Auth**: Google OAuth via Supabase Auth, bridged onto the `app_users`
+  table (`app_users.id` is a foreign key into `auth.users(id)`, created on
+  first Google sign-in) instead of a plaintext Users tab + `CacheService`
+  sessions. See `lib/auth.js`. The Google provider itself is configured in
+  the Supabase dashboard (Authentication -> Providers -> Google) -- not
+  something the Supabase MCP tooling can set.
 - **Search pipeline**: `lib/services/nppesService.js`,
   `foursquareService.js`, `osmService.js`, `cmsService.js`,
   `scraperService.js` (real `cheerio` again, not Apps Script's regex
@@ -68,14 +73,17 @@ cp .env.example .env.local   # fill in SUPABASE_URL / keys, etc.
 ```
 
 Apply the schema to a Supabase project (SQL editor, or `supabase db push`
-if using the Supabase CLI):
+if using the Supabase CLI), in order:
 
 ```
 supabase/migrations/0001_init.sql
+supabase/migrations/0002_enable_rls_and_google_oauth_bridge.sql
 ```
 
-Create at least one test user in Supabase Auth (dashboard -> Authentication
--> Add user), then run the API locally:
+Enable the Google provider (dashboard -> Authentication -> Providers ->
+Google -- needs a Google Cloud OAuth Client ID/Secret, redirect URI
+`https://<project-ref>.supabase.co/auth/v1/callback`), then run the API
+locally:
 
 ```bash
 npx vercel dev
@@ -87,12 +95,17 @@ Test the health check:
 curl http://localhost:3000/api/health
 ```
 
-Test login:
+Test the Google sign-in flow:
 
 ```bash
-curl -X POST http://localhost:3000/api/auth/login \
+# 1. Get the Google sign-in URL and open it in a browser
+curl "http://localhost:3000/api/auth/google?redirectTo=http://localhost:3000/callback"
+
+# 2. After completing Google sign-in, Supabase redirects to redirectTo with
+#    #access_token=... in the URL fragment -- copy that token and exchange it:
+curl -X POST http://localhost:3000/api/auth/session \
   -H "Content-Type: application/json" \
-  -d '{"email":"you@example.com","password":"..."}'
+  -d '{"access_token":"..."}'
 ```
 
 Use the returned `token` as `Authorization: Bearer <token>` on every other

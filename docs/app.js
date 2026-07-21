@@ -222,6 +222,7 @@ const els = {
   loginForm: document.getElementById("loginForm"),
   loginBtn: document.getElementById("loginBtn"),
   loginError: document.getElementById("loginError"),
+  googleSignInBtn: document.getElementById("googleSignInBtn"),
   userChip: document.getElementById("userChip"),
   userName: document.getElementById("userName"),
   signOutBtn: document.getElementById("signOutBtn"),
@@ -466,6 +467,49 @@ async function handleLogin(evt) {
   } finally {
     els.loginBtn.disabled = false;
   }
+}
+
+// Test-only path for the new Vercel + Supabase API's Google OAuth login
+// (see vercel/lib/auth.js) -- entirely separate from the Apps Script
+// session above; a click-through way to verify the new backend's auth
+// before the rest of the app is rewired onto it. Hidden unless
+// VERCEL_API_URL is set in config.js.
+async function handleGoogleSignIn() {
+  const redirectTo = window.location.origin + window.location.pathname;
+  try {
+    const res = await fetch(`${VERCEL_API_URL}/api/auth/google?redirectTo=${encodeURIComponent(redirectTo)}`);
+    const body = await res.json();
+    if (!body.success) throw new Error(body.error || "Could not start Google sign-in");
+    window.location.href = body.data.url;
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
+// Runs once on page load: if the URL fragment carries a Supabase access
+// token (i.e. we just landed back here after Google -> Supabase redirected
+// the browser), exchange it for the app_users profile via the new API and
+// clear the fragment so a refresh doesn't try to re-exchange a stale token.
+async function handleGoogleOAuthCallback() {
+  if (!VERCEL_API_URL) return false;
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const accessToken = params.get("access_token");
+  if (!accessToken) return false;
+
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+  try {
+    const res = await fetch(`${VERCEL_API_URL}/api/auth/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: accessToken }),
+    });
+    const body = await res.json();
+    if (!body.success) throw new Error(body.error || "Google sign-in failed");
+    showToast(`Signed in via Google as ${body.data.email} (new API test -- not wired to the app's data yet)`);
+  } catch (err) {
+    showToast(err.message, true);
+  }
+  return true;
 }
 
 async function handleSignOut() {
@@ -2378,6 +2422,8 @@ els.exportSheetsBtn.addEventListener("click", exportSheets);
 els.sendDisconnectedBtn.addEventListener("click", sendProspectToDisconnected);
 
 els.loginForm.addEventListener("submit", handleLogin);
+els.googleSignInBtn.hidden = !VERCEL_API_URL;
+els.googleSignInBtn.addEventListener("click", handleGoogleSignIn);
 els.signOutBtn.addEventListener("click", handleSignOut);
 els.suggestBtn.addEventListener("click", openSuggestionBox);
 els.suggestionForm.addEventListener("submit", handleSuggestionSubmit);
@@ -2491,6 +2537,8 @@ window.debugFoursquare = async function () {
   toolbars.forEach((el) => observer.observe(el));
   refresh();
 })();
+
+handleGoogleOAuthCallback();
 
 if (getSession()) {
   hideLogin();
