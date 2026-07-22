@@ -56,7 +56,51 @@ var SupabaseMirror = (function () {
     return val === null || val === undefined ? "" : val;
   }
 
-  function rowToLeadRecord_(row, colMap, isDisconnected, defaultClaimedBy, userMap) {
+  function getOrCreateUserId_(rawName, baseUrl, headers, userMap) {
+    if (!rawName) return null;
+    var trimmed = String(rawName).trim();
+    if (!trimmed) return null;
+    var lower = trimmed.toLowerCase();
+    if (userMap[lower]) return userMap[lower];
+
+    // If not found in app_users, auto-create a user row in public.app_users
+    var postUrl = baseUrl + "/rest/v1/app_users";
+    var reqHeaders = {};
+    for (var k in headers) { reqHeaders[k] = headers[k]; }
+    reqHeaders["Prefer"] = "return=representation";
+
+    var payload = [{
+      username: lower,
+      display_name: trimmed
+    }];
+
+    try {
+      var options = {
+        method: "post",
+        headers: reqHeaders,
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      };
+      var res = UrlFetchApp.fetch(postUrl, options);
+      if (res.getResponseCode() >= 200 && res.getResponseCode() < 300) {
+        var items = JSON.parse(res.getContentText());
+        if (Array.isArray(items) && items.length > 0 && items[0].id) {
+          var newId = items[0].id;
+          userMap[lower] = newId;
+          if (items[0].display_name) {
+            userMap[items[0].display_name.toLowerCase()] = newId;
+          }
+          Logger.log("[SupabaseMirror] Auto-created app_user for '" + trimmed + "' with UUID: " + newId);
+          return newId;
+        }
+      }
+    } catch (e) {
+      Logger.log("[SupabaseMirror] Error auto-creating app_user for '" + trimmed + "': " + e.message);
+    }
+    return null;
+  }
+
+  function rowToLeadRecord_(row, colMap, isDisconnected, defaultClaimedBy, baseUrl, headers, userMap) {
     var npi = String(getVal_(row, colMap, "NPI")).trim();
     if (!npi) return null;
 
@@ -78,25 +122,13 @@ var SupabaseMirror = (function () {
 
     var status = String(getVal_(row, colMap, "Status")).trim().toLowerCase() || "new";
 
-    // Resolve claimed_by text to app_users.id UUID if possible
+    // Resolve claimed_by text -> app_users.id UUID (auto-creates app_users row if missing)
     var claimedByText = String(getVal_(row, colMap, "Claimed By")).trim() || defaultClaimedBy || "";
-    var claimedByUuid = null;
-    if (claimedByText) {
-      var lowerClaimed = claimedByText.toLowerCase();
-      if (userMap[lowerClaimed]) {
-        claimedByUuid = userMap[lowerClaimed];
-      }
-    }
+    var claimedByUuid = getOrCreateUserId_(claimedByText, baseUrl, headers, userMap);
 
-    // Resolve status_updated_by text to app_users.id UUID if possible
+    // Resolve status_updated_by text -> app_users.id UUID if present
     var statusUpdatedByText = String(getVal_(row, colMap, "Status Updated By")).trim();
-    var statusUpdatedByUuid = null;
-    if (statusUpdatedByText) {
-      var lowerStatusBy = statusUpdatedByText.toLowerCase();
-      if (userMap[lowerStatusBy]) {
-        statusUpdatedByUuid = userMap[lowerStatusBy];
-      }
-    }
+    var statusUpdatedByUuid = getOrCreateUserId_(statusUpdatedByText, baseUrl, headers, userMap);
 
     return {
       npi: npi,
@@ -238,7 +270,7 @@ var SupabaseMirror = (function () {
 
       values.forEach(function (row) {
         totalProcessedRows++;
-        var leadRec = rowToLeadRecord_(row, colMap, isDisconnectedTab, defaultClaimedBy, userMap);
+        var leadRec = rowToLeadRecord_(row, colMap, isDisconnectedTab, defaultClaimedBy, baseUrl, headers, userMap);
         if (leadRec && leadRec.npi) {
           if (existingMap[leadRec.npi]) {
             leadRec.id = existingMap[leadRec.npi];
