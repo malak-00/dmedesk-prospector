@@ -5,7 +5,10 @@ var SupabaseMirror = (function () {
   function getHeaders_() {
     var key = Config.supabaseServiceRoleKey() || Config.supabaseAnonKey();
     if (!key) {
-      throw new Error("Supabase API Key is missing. Please set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON in Script Properties.");
+      throw new Error(
+        "Supabase Service Role Key is missing. Please set SUPABASE_SERVICE_ROLE_KEY in Script Properties " +
+        "(Project Settings > Script Properties in Apps Script editor)."
+      );
     }
     return {
       "apikey": key,
@@ -46,7 +49,7 @@ var SupabaseMirror = (function () {
     return val === null || val === undefined ? "" : val;
   }
 
-  function rowToLeadRecord_(row, colMap, isDisconnected) {
+  function rowToLeadRecord_(row, colMap, isDisconnected, defaultClaimedBy, userMap) {
     var npi = String(getVal_(row, colMap, "NPI")).trim();
     if (!npi) return null;
 
@@ -67,6 +70,26 @@ var SupabaseMirror = (function () {
     }
 
     var status = String(getVal_(row, colMap, "Status")).trim().toLowerCase() || "new";
+
+    // Resolve claimed_by text to app_users.id UUID if possible
+    var claimedByText = String(getVal_(row, colMap, "Claimed By")).trim() || defaultClaimedBy || "";
+    var claimedByUuid = null;
+    if (claimedByText) {
+      var lowerClaimed = claimedByText.toLowerCase();
+      if (userMap[lowerClaimed]) {
+        claimedByUuid = userMap[lowerClaimed];
+      }
+    }
+
+    // Resolve status_updated_by text to app_users.id UUID if possible
+    var statusUpdatedByText = String(getVal_(row, colMap, "Status Updated By")).trim();
+    var statusUpdatedByUuid = null;
+    if (statusUpdatedByText) {
+      var lowerStatusBy = statusUpdatedByText.toLowerCase();
+      if (userMap[lowerStatusBy]) {
+        statusUpdatedByUuid = userMap[lowerStatusBy];
+      }
+    }
 
     return {
       npi: npi,
@@ -95,6 +118,8 @@ var SupabaseMirror = (function () {
       nppes_last_updated: formattedNppesDate,
       status: status,
       notes: String(getVal_(row, colMap, "Notes")).trim() || null,
+      claimed_by: claimedByUuid,
+      status_updated_by: statusUpdatedByUuid,
       claimed_at: parseDate_(getVal_(row, colMap, "Claimed At")) || new Date().toISOString(),
       status_updated_at: parseDate_(getVal_(row, colMap, "Status Updated At")),
       reminder_at: parseDate_(getVal_(row, colMap, "Reminder At")),
@@ -134,6 +159,36 @@ var SupabaseMirror = (function () {
     return existingMap;
   }
 
+  function fetchUserMappings_(baseUrl, headers) {
+    var getUrl = baseUrl + "/rest/v1/app_users?select=id,username,display_name";
+    var options = {
+      method: "get",
+      headers: {
+        "apikey": headers.apikey,
+        "Authorization": headers.Authorization
+      },
+      muteHttpExceptions: true
+    };
+    var userMap = {};
+    try {
+      var res = UrlFetchApp.fetch(getUrl, options);
+      if (res.getResponseCode() >= 200 && res.getResponseCode() < 300) {
+        var items = JSON.parse(res.getContentText());
+        if (Array.isArray(items)) {
+          items.forEach(function (item) {
+            if (item.id) {
+              if (item.username) userMap[String(item.username).trim().toLowerCase()] = item.id;
+              if (item.display_name) userMap[String(item.display_name).trim().toLowerCase()] = item.id;
+            }
+          });
+        }
+      }
+    } catch (e) {
+      Logger.log("[SupabaseMirror] Could not pre-fetch app_users mapping: " + e.message);
+    }
+    return userMap;
+  }
+
   function mirrorLeadsToSupabase() {
     var sheetId = Config.googleSheetId();
     if (!sheetId) {
@@ -147,8 +202,9 @@ var SupabaseMirror = (function () {
     baseUrl = baseUrl.replace(/\/+$/, "");
     var headers = getHeaders_();
 
-    // Pre-fetch existing lead IDs so upsert matches primary key `id` without requiring a unique index on `npi`
+    // Pre-fetch existing lead IDs & user UUID mappings
     var existingMap = fetchExistingLeadIds_(baseUrl, headers);
+    var userMap = fetchUserMappings_(baseUrl, headers);
 
     var endpoint = baseUrl + "/rest/v1/leads?on_conflict=id";
 
@@ -165,6 +221,11 @@ var SupabaseMirror = (function () {
 
       if (!isClaimedTab && !isDisconnectedTab) return;
 
+      var defaultClaimedBy = "";
+      if (tabName.indexOf("Claimed - ") === 0) {
+        defaultClaimedBy = tabName.substring("Claimed - ".length).trim();
+      }
+
       var lastRow = sheet.getLastRow();
       if (lastRow < 2) return;
 
@@ -173,9 +234,8 @@ var SupabaseMirror = (function () {
 
       values.forEach(function (row) {
         totalProcessedRows++;
-        var leadRec = rowToLeadRecord_(row, colMap, isDisconnectedTab);
+        var leadRec = rowToLeadRecord_(row, colMap, isDisconnectedTab, defaultClaimedBy, userMap);
         if (leadRec && leadRec.npi) {
-          // If record already exists in Supabase, attach its UUID primary key
           if (existingMap[leadRec.npi]) {
             leadRec.id = existingMap[leadRec.npi];
           }
