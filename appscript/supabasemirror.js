@@ -99,7 +99,6 @@ var SupabaseMirror = (function () {
     if (userMap[trimmed]) return userMap[trimmed];
     if (KNOWN_TEAM_USERS[trimmed]) return KNOWN_TEAM_USERS[trimmed];
 
-    // Try matching first name alone (e.g. "caroline" from "caroline richards")
     var firstWord = trimmed.split(/\s+/)[0];
     if (firstWord) {
       if (userMap[firstWord]) return userMap[firstWord];
@@ -177,7 +176,7 @@ var SupabaseMirror = (function () {
   }
 
   function fetchExistingLeadIds_(baseUrl, headers) {
-    var getUrl = baseUrl + "/rest/v1/leads?select=id,npi";
+    var getUrl = baseUrl + "/rest/v1/leads?select=id,npi,claimed_by";
     var reqHeaders = {};
     for (var k in headers) { reqHeaders[k] = headers[k]; }
     reqHeaders["Range-Unit"] = "items";
@@ -196,7 +195,8 @@ var SupabaseMirror = (function () {
         if (Array.isArray(items)) {
           items.forEach(function (item) {
             if (item.npi && item.id) {
-              existingMap[String(item.npi)] = item.id;
+              var mapKey = item.npi + ":" + (item.claimed_by || "null");
+              existingMap[mapKey] = item.id;
             }
           });
         }
@@ -256,11 +256,12 @@ var SupabaseMirror = (function () {
     baseUrl = baseUrl.replace(/\/+$/, "");
     var headers = getHeaders_();
 
-    // Pre-fetch existing lead IDs & user UUID mappings
-    var existingMap = fetchExistingLeadIds_(baseUrl, headers);
+    // Pre-fetch user mappings and existing lead IDs by (npi + claimed_by)
     var userMap = fetchUserMappings_(baseUrl, headers);
+    var existingMap = fetchExistingLeadIds_(baseUrl, headers);
 
-    var endpoint = baseUrl + "/rest/v1/leads?on_conflict=id";
+    // Target index: idx_leads_npi_claimed_by on leads(npi, claimed_by)
+    var endpoint = baseUrl + "/rest/v1/leads?on_conflict=npi,claimed_by";
 
     var ss = SpreadsheetApp.openById(sheetId);
     var sheets = ss.getSheets();
@@ -290,15 +291,16 @@ var SupabaseMirror = (function () {
         totalProcessedRows++;
         var leadRec = rowToLeadRecord_(row, colMap, isDisconnectedTab, defaultClaimedBy, userMap);
         if (leadRec && leadRec.npi) {
-          if (existingMap[leadRec.npi]) {
-            leadRec.id = existingMap[leadRec.npi];
+          var compositeKey = leadRec.npi + ":" + (leadRec.claimed_by || "null");
+          if (existingMap[compositeKey]) {
+            leadRec.id = existingMap[compositeKey];
           }
-          leadsMap[leadRec.npi] = leadRec;
+          leadsMap[compositeKey] = leadRec;
         }
       });
     });
 
-    var records = Object.keys(leadsMap).map(function (npi) { return leadsMap[npi]; });
+    var records = Object.keys(leadsMap).map(function (k) { return leadsMap[k]; });
     if (records.length === 0) {
       Logger.log("[SupabaseMirror] No lead records found to mirror.");
       return { success: true, count: 0, message: "No valid lead rows found to mirror." };
