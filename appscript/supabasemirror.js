@@ -2,6 +2,41 @@
 // directly to Supabase via its REST API (PostgREST endpoint).
 
 var SupabaseMirror = (function () {
+  // Hardcoded map of known signed-in team members (auth.users / app_users UUIDs)
+  var KNOWN_TEAM_USERS = {
+    "selene myles": "1d94e105-c38c-4eb6-b268-d168fab3956b",
+    "selene": "1d94e105-c38c-4eb6-b268-d168fab3956b",
+    "selene.myles.wiz@gmail.com": "1d94e105-c38c-4eb6-b268-d168fab3956b",
+
+    "jimmy pearson": "1e4caf69-6980-4b87-afa2-fbf581d2ce0b",
+    "jimmy": "1e4caf69-6980-4b87-afa2-fbf581d2ce0b",
+    "jimmy.pearson.wiz@gmail.com": "1e4caf69-6980-4b87-afa2-fbf581d2ce0b",
+
+    "nora atkins": "31c72db1-258a-448e-9e54-f5857bbbe7fe",
+    "nora": "31c72db1-258a-448e-9e54-f5857bbbe7fe",
+    "nora.atkins.wiz@gmail.com": "31c72db1-258a-448e-9e54-f5857bbbe7fe",
+
+    "rick nelson": "5130545c-ce38-4599-a302-ebc617c14457",
+    "rick": "5130545c-ce38-4599-a302-ebc617c14457",
+    "rickk.nelson.wiz@gmail.com": "5130545c-ce38-4599-a302-ebc617c14457",
+
+    "kaity james": "7dbfbc63-1bfe-49f2-816f-5696d4a6e9b1",
+    "kaity": "7dbfbc63-1bfe-49f2-816f-5696d4a6e9b1",
+    "kaity.james.wiz@gmail.com": "7dbfbc63-1bfe-49f2-816f-5696d4a6e9b1",
+
+    "jasmine green": "8a961d7c-2fe4-443d-8566-b1bd12c0cc02",
+    "jasmine": "8a961d7c-2fe4-443d-8566-b1bd12c0cc02",
+    "jasmine.green.wiz@gmail.com": "8a961d7c-2fe4-443d-8566-b1bd12c0cc02",
+
+    "ben arthur": "acc67fc0-6963-4c3a-8a33-06722e0c6fe4",
+    "ben": "acc67fc0-6963-4c3a-8a33-06722e0c6fe4",
+    "ben.arthur.wiz@gmail.com": "acc67fc0-6963-4c3a-8a33-06722e0c6fe4",
+
+    "caroline richards": "c4e38805-970b-4cde-a03d-585cc0778872",
+    "caroline": "c4e38805-970b-4cde-a03d-585cc0778872",
+    "caroline.richards.wiz@gmail.com": "c4e38805-970b-4cde-a03d-585cc0778872"
+  };
+
   function getHeaders_() {
     var key = Config.supabaseServiceRoleKey() || Config.supabaseAnonKey();
     if (!key) {
@@ -56,51 +91,25 @@ var SupabaseMirror = (function () {
     return val === null || val === undefined ? "" : val;
   }
 
-  function getOrCreateUserId_(rawName, baseUrl, headers, userMap) {
+  function resolveUserId_(rawName, userMap) {
     if (!rawName) return null;
-    var trimmed = String(rawName).trim();
+    var trimmed = String(rawName).trim().toLowerCase();
     if (!trimmed) return null;
-    var lower = trimmed.toLowerCase();
-    if (userMap[lower]) return userMap[lower];
 
-    // If not found in app_users, auto-create a user row in public.app_users
-    var postUrl = baseUrl + "/rest/v1/app_users";
-    var reqHeaders = {};
-    for (var k in headers) { reqHeaders[k] = headers[k]; }
-    reqHeaders["Prefer"] = "return=representation";
+    if (userMap[trimmed]) return userMap[trimmed];
+    if (KNOWN_TEAM_USERS[trimmed]) return KNOWN_TEAM_USERS[trimmed];
 
-    var payload = [{
-      username: lower,
-      display_name: trimmed
-    }];
-
-    try {
-      var options = {
-        method: "post",
-        headers: reqHeaders,
-        payload: JSON.stringify(payload),
-        muteHttpExceptions: true
-      };
-      var res = UrlFetchApp.fetch(postUrl, options);
-      if (res.getResponseCode() >= 200 && res.getResponseCode() < 300) {
-        var items = JSON.parse(res.getContentText());
-        if (Array.isArray(items) && items.length > 0 && items[0].id) {
-          var newId = items[0].id;
-          userMap[lower] = newId;
-          if (items[0].display_name) {
-            userMap[items[0].display_name.toLowerCase()] = newId;
-          }
-          Logger.log("[SupabaseMirror] Auto-created app_user for '" + trimmed + "' with UUID: " + newId);
-          return newId;
-        }
-      }
-    } catch (e) {
-      Logger.log("[SupabaseMirror] Error auto-creating app_user for '" + trimmed + "': " + e.message);
+    // Try matching first name alone (e.g. "caroline" from "caroline richards")
+    var firstWord = trimmed.split(/\s+/)[0];
+    if (firstWord) {
+      if (userMap[firstWord]) return userMap[firstWord];
+      if (KNOWN_TEAM_USERS[firstWord]) return KNOWN_TEAM_USERS[firstWord];
     }
+
     return null;
   }
 
-  function rowToLeadRecord_(row, colMap, isDisconnected, defaultClaimedBy, baseUrl, headers, userMap) {
+  function rowToLeadRecord_(row, colMap, isDisconnected, defaultClaimedBy, userMap) {
     var npi = String(getVal_(row, colMap, "NPI")).trim();
     if (!npi) return null;
 
@@ -122,13 +131,13 @@ var SupabaseMirror = (function () {
 
     var status = String(getVal_(row, colMap, "Status")).trim().toLowerCase() || "new";
 
-    // Resolve claimed_by text -> app_users.id UUID (auto-creates app_users row if missing)
+    // Resolve claimed_by text -> app_users.id UUID
     var claimedByText = String(getVal_(row, colMap, "Claimed By")).trim() || defaultClaimedBy || "";
-    var claimedByUuid = getOrCreateUserId_(claimedByText, baseUrl, headers, userMap);
+    var claimedByUuid = resolveUserId_(claimedByText, userMap);
 
     // Resolve status_updated_by text -> app_users.id UUID if present
     var statusUpdatedByText = String(getVal_(row, colMap, "Status Updated By")).trim();
-    var statusUpdatedByUuid = getOrCreateUserId_(statusUpdatedByText, baseUrl, headers, userMap);
+    var statusUpdatedByUuid = resolveUserId_(statusUpdatedByText, userMap);
 
     return {
       npi: npi,
@@ -212,9 +221,18 @@ var SupabaseMirror = (function () {
         var items = JSON.parse(res.getContentText());
         if (Array.isArray(items)) {
           items.forEach(function (item) {
-            if (item.id) {
-              if (item.username) userMap[String(item.username).trim().toLowerCase()] = item.id;
-              if (item.display_name) userMap[String(item.display_name).trim().toLowerCase()] = item.id;
+            if (!item || !item.id) return;
+            var uid = item.id;
+            if (item.username) {
+              userMap[String(item.username).trim().toLowerCase()] = uid;
+            }
+            if (item.display_name) {
+              var dn = String(item.display_name).trim().toLowerCase();
+              userMap[dn] = uid;
+              var parts = dn.split(/\s+/);
+              if (parts.length > 0 && parts[0]) {
+                userMap[parts[0]] = uid;
+              }
             }
           });
         }
@@ -270,7 +288,7 @@ var SupabaseMirror = (function () {
 
       values.forEach(function (row) {
         totalProcessedRows++;
-        var leadRec = rowToLeadRecord_(row, colMap, isDisconnectedTab, defaultClaimedBy, baseUrl, headers, userMap);
+        var leadRec = rowToLeadRecord_(row, colMap, isDisconnectedTab, defaultClaimedBy, userMap);
         if (leadRec && leadRec.npi) {
           if (existingMap[leadRec.npi]) {
             leadRec.id = existingMap[leadRec.npi];
