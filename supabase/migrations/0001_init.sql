@@ -23,7 +23,7 @@ create table app_users (
   exclude_keywords text default '',
   created_at timestamptz not null default now()
 );
-s
+
 -- Replaces every "Claimed - <name>" tab AND the Disconnected tab AND the
 -- legacy Leads tab -- all one table now, since a real WHERE clause makes
 -- per-teammate tabs unnecessary. `status` distinguishes "claimed" (active

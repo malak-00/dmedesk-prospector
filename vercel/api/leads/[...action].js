@@ -1,26 +1,14 @@
-// Consolidated from 9 separate files (claim.js, disconnect-new.js,
-// disconnect.js, index.js, notes.js, notes/replace.js, reminder.js,
-// return-to-prospect.js, status.js) into one optional-catch-all route --
-// see api/auth/[...action].js's comment for why (Hobby plan's 12-function
-// deployment cap). `[[...action]]` (double brackets) so bare GET /api/leads
-// (the list route, zero extra path segments) still matches this file.
-import { withAuth, sendData, sendError } from "../../lib/http.js";
+// Everything under /api/leads/* except the bare list route (see index.js's
+// comment for why that's split out). Action is parsed from req.url (see
+// lib/http.js's getActionSegments), not Vercel's file-system `req.query`
+// population, which isn't reliably populated for plain Vercel Functions.
+import { withAuth, sendData, sendError, getActionSegments } from "../../lib/http.js";
 import * as leadsService from "../../lib/services/leadsService.js";
 import { flattenCompany } from "../../lib/services/csvExport.js";
-import { createServiceClient } from "../../lib/supabaseClient.js";
 
 export default withAuth(async (req, res) => {
-  const action = (req.query.action || []).join("/");
-
-  if (action === "" && req.method === "GET") {
-    const [leads, statuses] = await Promise.all([
-      leadsService.listClaimedLeads(req.supabase, req.user.id),
-      leadsService.getKnownStatuses(createServiceClient()),
-    ]);
-    return sendData(res, { leads, statuses });
-  }
-
   if (req.method !== "POST") return sendError(res, 405, "Method not allowed");
+  const action = getActionSegments(req, "/api/leads/").join("/");
 
   if (action === "claim") {
     return sendData(res, await leadsService.claimCompanies(req.supabase, req.user.id, req.body?.companies, flattenCompany));

@@ -27,6 +27,18 @@ export function sendError(res, status, message) {
   res.status(status).json({ success: false, error: message });
 }
 
+// Splits the path segments after `basePath` out of the raw request URL --
+// used by the catch-all routes (api/auth/[...action].js etc.) instead of
+// Vercel's file-system dynamic-segment `req.query` population, which isn't
+// reliably populated for plain (non-framework) Vercel Functions the way
+// Next.js API routes populate it. Parsing req.url directly works regardless.
+export function getActionSegments(req, basePath) {
+  const pathname = req.url.split("?")[0];
+  const idx = pathname.indexOf(basePath);
+  const rest = idx >= 0 ? pathname.slice(idx + basePath.length) : "";
+  return rest.split("/").filter(Boolean);
+}
+
 // Verifies the Authorization: Bearer <token> header against Supabase Auth
 // and loads that user's `app_users` row (display name / saved
 // exclude-keywords default). Returns { user, profile, supabase } or throws a

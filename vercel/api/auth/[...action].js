@@ -3,16 +3,22 @@
 // 12 serverless functions, and one file per endpoint (20 total across the
 // whole api/ tree) blew past that. A [...action].js file still handles
 // every /api/auth/* path, but counts as a single function.
-import { withPublic, sendData, sendError, authenticate } from "../../lib/http.js";
+//
+// Action is parsed from req.url (see lib/http.js's getActionSegments), not
+// Vercel's file-system `req.query` population -- that population isn't
+// reliable for plain Vercel Functions without a framework, which is why the
+// query-based version 404'd on every action in production.
+import { withPublic, sendData, sendError, authenticate, getActionSegments } from "../../lib/http.js";
 import { getGoogleSignInUrl, exchangeSession, logout } from "../../lib/auth.js";
 
 const MAX_EXCLUDE_KEYWORDS_LENGTH = 500;
 
 export default withPublic(async (req, res) => {
-  const action = (req.query.action || []).join("/");
+  const action = getActionSegments(req, "/api/auth/").join("/");
 
   if (action === "google" && req.method === "GET") {
-    return sendData(res, await getGoogleSignInUrl(req.query?.redirectTo));
+    const query = new URL(req.url, "http://x").searchParams;
+    return sendData(res, await getGoogleSignInUrl(query.get("redirectTo")));
   }
 
   if (action === "session" && req.method === "POST") {
