@@ -491,7 +491,7 @@ async function handleGoogleSignIn() {
 // the browser), exchange it for the app_users profile via the new API and
 // clear the fragment so a refresh doesn't try to re-exchange a stale token.
 async function handleGoogleOAuthCallback() {
-  if (!VERCEL_API_URL) return false;
+  if (!VERCEL_API_ENABLED) return false;
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
   const accessToken = params.get("access_token");
   if (!accessToken) return false;
@@ -2422,7 +2422,7 @@ els.exportSheetsBtn.addEventListener("click", exportSheets);
 els.sendDisconnectedBtn.addEventListener("click", sendProspectToDisconnected);
 
 els.loginForm.addEventListener("submit", handleLogin);
-els.googleSignInBtn.hidden = !VERCEL_API_URL;
+els.googleSignInBtn.hidden = !VERCEL_API_ENABLED;
 els.googleSignInBtn.addEventListener("click", handleGoogleSignIn);
 els.signOutBtn.addEventListener("click", handleSignOut);
 els.suggestBtn.addEventListener("click", openSuggestionBox);
