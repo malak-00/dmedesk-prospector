@@ -294,6 +294,8 @@ var SupabaseMirror = (function () {
           var compositeKey = leadRec.npi + ":" + (leadRec.claimed_by || "null");
           if (existingMap[compositeKey]) {
             leadRec.id = existingMap[compositeKey];
+          } else {
+            leadRec.id = Utilities.getUuid();
           }
           leadsMap[compositeKey] = leadRec;
         }

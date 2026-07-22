@@ -39,7 +39,7 @@ function grantMailAuthorization() {
   );
 }
 
-var PUBLIC_PATHS_ = ["health", "auth/login"];
+var PUBLIC_PATHS_ = ["health", "auth/login", "mirror/supabase"];
 
 function handleRequest_(e) {
   var params = (e && e.parameter) || {};
