@@ -103,6 +103,37 @@ var SupabaseMirror = (function () {
     };
   }
 
+  function fetchExistingLeadIds_(baseUrl, headers) {
+    var getUrl = baseUrl + "/rest/v1/leads?select=id,npi";
+    var options = {
+      method: "get",
+      headers: {
+        "apikey": headers.apikey,
+        "Authorization": headers.Authorization,
+        "Range-Unit": "items",
+        "Range": "0-9999"
+      },
+      muteHttpExceptions: true
+    };
+    var existingMap = {};
+    try {
+      var res = UrlFetchApp.fetch(getUrl, options);
+      if (res.getResponseCode() >= 200 && res.getResponseCode() < 300) {
+        var items = JSON.parse(res.getContentText());
+        if (Array.isArray(items)) {
+          items.forEach(function (item) {
+            if (item.npi && item.id) {
+              existingMap[String(item.npi)] = item.id;
+            }
+          });
+        }
+      }
+    } catch (e) {
+      Logger.log("[SupabaseMirror] Could not pre-fetch existing lead IDs: " + e.message);
+    }
+    return existingMap;
+  }
+
   function mirrorLeadsToSupabase() {
     var sheetId = Config.googleSheetId();
     if (!sheetId) {
@@ -114,8 +145,12 @@ var SupabaseMirror = (function () {
       throw new Error("SUPABASE_URL is not configured in Script Properties.");
     }
     baseUrl = baseUrl.replace(/\/+$/, "");
-    var endpoint = baseUrl + "/rest/v1/leads?on_conflict=npi";
     var headers = getHeaders_();
+
+    // Pre-fetch existing lead IDs so upsert matches primary key `id` without requiring a unique index on `npi`
+    var existingMap = fetchExistingLeadIds_(baseUrl, headers);
+
+    var endpoint = baseUrl + "/rest/v1/leads?on_conflict=id";
 
     var ss = SpreadsheetApp.openById(sheetId);
     var sheets = ss.getSheets();
@@ -140,6 +175,10 @@ var SupabaseMirror = (function () {
         totalProcessedRows++;
         var leadRec = rowToLeadRecord_(row, colMap, isDisconnectedTab);
         if (leadRec && leadRec.npi) {
+          // If record already exists in Supabase, attach its UUID primary key
+          if (existingMap[leadRec.npi]) {
+            leadRec.id = existingMap[leadRec.npi];
+          }
           leadsMap[leadRec.npi] = leadRec;
         }
       });
