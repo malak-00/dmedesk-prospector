@@ -6,6 +6,50 @@ from exactly where this repo is today. Read `ARCHITECTURE.md` first if you
 haven't — this doc assumes you know what `appscript/`, `docs/`, and
 `backend/` each currently are.
 
+## Current status (read this first)
+
+This is no longer a plan for the future — sections 1-3 below are **done**,
+on branch `claude/vercel-supabase-migration-l1fevn` ([PR #6](https://github.com/malak-00/dmedesk-prospector/pull/6),
+deliberately not merged into `main` yet):
+
+- **Supabase project**: `dmedesk-prospector` (ref `pcvyrkisvvtiteoiuplg`,
+  `https://pcvyrkisvvtiteoiuplg.supabase.co`). Schema applied (the
+  `app_users`-based version — see section 1's note), RLS enabled on every
+  table, taxonomies seeded.
+- **Auth**: Google OAuth via Supabase Auth, not the plaintext-password
+  `app_users` model section 2 describes as the alternative. `app_users.id`
+  is a foreign key into `auth.users(id)` — a Google login auto-creates its
+  `app_users` row on first sign-in (see `vercel/lib/auth.js`). Google OAuth
+  is configured in both Google Cloud Console and Supabase's dashboard
+  (Authentication → Providers → Google), redirect URI
+  `https://pcvyrkisvvtiteoiuplg.supabase.co/auth/v1/callback`.
+- **Vercel project**: `dmedesk-prospector` (`prj_hGV86e3Not6U8fjhR9hZMJa73mVv`,
+  team `malak`), Git-connected to this repo — **production branch must be
+  `claude/vercel-supabase-migration-l1fevn`, root directory `vercel`** (it
+  was briefly misconfigured to build from `main`, which has none of this
+  code — if a deploy ever looks like it's serving nothing, check this
+  first). Live at `https://dmedesk-prospector.vercel.app`. All env vars
+  from section 3's table are set.
+- **Verified working end-to-end**: `/api/health` (200), `/api/auth/google`
+  (200, returns a real Supabase Google-OAuth authorize URL),
+  `/api/leads` and `/api/taxonomies` (401 "Not signed in" when hit without
+  a token — i.e. they reach the real auth-gated handler, not a 404).
+- **Known gotcha already hit and fixed**: Vercel's plain (non-framework)
+  Functions do **not** support the optional-catch-all `[[...action]]`
+  filename syntax — that's Next.js-only. Routes needing a bare index (e.g.
+  `GET /api/leads`) need a separate `index.js` alongside a required
+  `[...action].js` for everything else. Also, `req.query`'s file-system
+  dynamic-segment population isn't reliable for plain Functions either —
+  `vercel/lib/http.js`'s `getActionSegments(req, basePath)` parses the
+  action straight out of `req.url` instead. See the route files under
+  `vercel/api/*` for the pattern.
+
+Still **not** done: section 6 (data migration — CSV import is the chosen
+approach, not an Apps Script mirror script, since this is meant to be a
+one-time cutover, not continuous sync) and section 5/7's frontend rewire
+(`docs/app.js` still targets Apps Script for everything except a gated
+"Sign in with Google" test button — see `docs/config.js`'s `VERCEL_API_URL`).
+
 **This is a real rewrite, not a config change.** Nothing here is a small
 "point it at a new URL" task — every stateful service
 (`SheetsStore`/`AuthService`/`TaxonomyService`/`SearchProgressService`)
@@ -62,11 +106,13 @@ run both:
   cross-origin requests at all. Recommended if you're doing this rewrite
   anyway.
 
-## 1. Create the Supabase project and schema
+## 1. Create the Supabase project and schema — DONE
 
-Create a project at supabase.com, then run this SQL (Supabase's SQL editor,
-or a migration file if you set up the Supabase CLI) to replace every
-Sheets tab:
+Applied to `pcvyrkisvvtiteoiuplg` as `supabase/migrations/0001_init.sql`
+(this schema) followed by `0002_enable_rls_and_google_oauth_bridge.sql`
+(RLS + the `auth.users` FK bridge described in the status section above).
+The section below is kept as-is for reference/reproducing on a fresh
+project — just note it now needs both migration files, not just this one.
 
 ```sql
 -- Replaces the Users tab. If you use Supabase Auth (recommended, see
@@ -203,7 +249,15 @@ Notes on the schema vs. the Sheets model:
   itself, not just application code (strictly stronger than what
   `Code.js`'s `leads/list` route does today).
 
-## 2. Decide on auth: Supabase Auth vs. keep it custom
+## 2. Decide on auth: Supabase Auth vs. keep it custom — DONE (Google OAuth)
+
+Went a third way not listed below: Supabase Auth, but with **Google OAuth**
+as the provider (not email+password), bridged onto the existing `app_users`
+table rather than a fresh `profiles` table — see the status section above
+and `vercel/lib/auth.js`. The tradeoffs from the "keep custom" option below
+mostly don't apply (RLS-via-`auth.uid()` still works, since `app_users.id`
+IS `auth.users.id`); the "recommended" email+password option below was not
+what got built.
 
 **Recommended: switch to Supabase Auth** (email + password, or magic link).
 It gives you real password hashing, session/JWT management, and RLS
@@ -225,7 +279,17 @@ experience. If you go this route:
   the "own leads only" rule in your query's `WHERE` clause instead (still
   fine, just not defense-in-depth at the database layer).
 
-## 3. Set up the Vercel project
+## 3. Set up the Vercel project — DONE
+
+Project `dmedesk-prospector`, Git-connected, production branch
+`claude/vercel-supabase-migration-l1fevn`, root directory `vercel`, all env
+vars from the table below set. One gotcha hit and fixed along the way: the
+Hobby plan caps a deployment at 12 serverless functions — one file per
+route (the "Serverless functions" option below, taken literally) used 20.
+Fixed by consolidating `api/auth`, `api/leads`, `api/taxonomies` into
+`index.js` + `[...action].js` pairs (9 functions total) — see the status
+section's note on why `[[...action]]` (optional catch-all) doesn't work
+outside Next.js.
 
 1. In the Vercel dashboard, **Import Project** from this GitHub repo.
 2. Vercel auto-detects a Node project. Two structural options:
@@ -314,7 +378,13 @@ Also update every route path used throughout `app.js` (`leads/list`,
 shape you choose on the new API (they can stay identical strings if you
 keep the same `path` segments as route names — least churn).
 
-## 6. Migrate existing data
+## 6. Migrate existing data — decided, not yet done
+
+**Decision: one-time CSV export/import, not a live Apps Script mirror
+script.** A mirror only earns its complexity if both stores need to stay
+live and in sync; this migration is a single cutover, so a mirror would add
+conflict-resolution and double-write risk for no real benefit — export
+once, right before cutover, per step 4 below.
 
 Before cutting over, get whatever's already in the production Google Sheet
 into Supabase:
@@ -325,10 +395,16 @@ into Supabase:
    one-off Node script using `@supabase/supabase-js` to read each CSV and
    insert rows — the latter is easier to get column mapping/type
    conversion (dates, numbers) right in one pass.
-3. For `Users` specifically: you cannot "import" plaintext passwords into
-   Supabase Auth — either have each teammate do a real password-reset
-   signup flow, or (if keeping custom auth) hash each plaintext password
-   with bcrypt during the import script before inserting into `app_users`.
+3. For `Users` specifically: since auth is Google OAuth (not
+   email+password — see section 2), there's no password to migrate at all.
+   Each teammate signs in with Google once, which auto-creates their
+   `app_users` row with a NEW id (`auth.users.id`, not whatever numeric/UUID
+   id the old Users tab had). The CSV import script needs a manual
+   `old username → new app_users.id` mapping (built by having everyone sign
+   in first, then reading their new ids back out of `app_users.username`,
+   which is seeded from their Google email) to set `claimed_by` /
+   `status_updated_by` / `created_by` / `submitted_by` correctly on import —
+   there's no way to automate that mapping without it.
 4. Spot-check row counts per teammate against the original tabs before
    decommissioning anything.
 
