@@ -8,6 +8,8 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbywy89pKrOYGDcN
 // The new Vercel + Supabase API's base URL (see /vercel), used ONLY by the
 // "Sign in with Google" test button below the password login form -- a way
 // to click through the real Google OAuth flow against the new backend
-// before the rest of the app is rewired onto it. Fill in after the Vercel
-// project is deployed; leave blank to hide the button.
-const VERCEL_API_URL = "";
+// before the rest of the app is rewired onto it. This copy of the frontend
+// (served from GitHub Pages) is cross-origin to that API, so this needs the
+// full URL, not a relative path -- see vercel/config.js's copy of this file
+// for the same-origin version served directly by the Vercel project itself.
+const VERCEL_API_URL = "https://dmedesk-prospector.vercel.app";

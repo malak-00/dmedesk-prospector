@@ -1,0 +1,836 @@
+/* Dark is the default theme (kept for existing users), lightened from the
+   original near-black so it reads as "dark slate" rather than "black".
+   Light theme overrides below; the toggle button in the header flips
+   data-theme on <html> and persists the choice (see app.js). */
+:root, :root[data-theme="dark"] {
+  --bg: #1B1F26;
+  --surface: #23272F;
+  --surface-2: #2B303A;
+  --ink: #EDEFF3;
+  --muted: #9AA2B1;
+  --muted-2: #6B7280;
+  --accent: #4CB8C4;
+  --accent-soft: rgba(76,184,196,0.16);
+  --accent-ink: #8FE3EC;
+  --on-accent: #08151A;
+  --hairline: #333A45;
+  --score-high: #4FC08A;
+  --score-mid: #E3AC4E;
+  --score-low: #E2695C;
+  --on-score-low: #1A0605;
+  --glow-high: rgba(79,192,138,0.18);
+  --glow-mid: rgba(227,172,78,0.18);
+  --glow-low: rgba(226,105,92,0.18);
+  --contact-role-bg: rgba(76,184,196,0.18);
+  --selection-chip-border: rgba(76,184,196,0.32);
+  --login-error-bg: rgba(226,105,92,0.14);
+  --login-error-border: rgba(226,105,92,0.38);
+  --row-stripe: rgba(255,255,255,0.014);
+  --hairline-hover: #3A4150;
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.24), 0 10px 28px -16px rgba(0,0,0,0.6);
+  --header-h: 76px;
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  /* Live-measured (via ResizeObserver in app.js) heights of the sticky
+     search-panel and results-toolbar, so the sticky thead below them can
+     stack correctly under BOTH without knowing their heights up front --
+     these genuinely vary (field-grid wraps at narrow widths, the toolbar
+     grows when a selection chip appears, the search panel doesn't exist at
+     all in the Claimed view). 0px default matches "not rendered yet". */
+  --search-panel-h: 0px;
+  --toolbar-h: 0px;
+}
+
+:root[data-theme="light"] {
+  --bg: #F6F7F9;
+  --surface: #FFFFFF;
+  --surface-2: #F0F2F5;
+  --ink: #171A1F;
+  --muted: #5B6472;
+  --muted-2: #88909C;
+  --accent: #0E7C8C;
+  --accent-soft: rgba(14,124,140,0.10);
+  --accent-ink: #0B6270;
+  --on-accent: #FFFFFF;
+  --hairline: #A9B1BD;
+  --score-high: #1F9D63;
+  --score-mid: #B5790C;
+  --score-low: #D1453D;
+  --on-score-low: #FFFFFF;
+  --glow-high: rgba(31,157,99,0.14);
+  --glow-mid: rgba(181,121,12,0.14);
+  --glow-low: rgba(209,69,61,0.14);
+  --contact-role-bg: rgba(14,124,140,0.10);
+  --selection-chip-border: rgba(14,124,140,0.28);
+  --login-error-bg: rgba(209,69,61,0.08);
+  --login-error-border: rgba(209,69,61,0.30);
+  --row-stripe: rgba(15,23,35,0.025);
+  --hairline-hover: #7E889B;
+  --shadow-card: 0 1px 2px rgba(16,24,40,0.06), 0 10px 24px -14px rgba(16,24,40,0.18);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Header ---------- */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--header-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.brand { display: flex; align-items: center; gap: 9px; }
+.brand-logo { height: 60px; width: auto; display: block; }
+/* Header logo gets an explicit width (not just a taller height) -- the
+   source image's native aspect ratio is ~1.5:1, so scaling height alone
+   only ever makes it modestly wider; a fixed width well past that
+   proportional size is what actually reads as "much bigger" horizontally
+   in the header's wide-open space. */
+.app-header .brand-logo { height: 80px; width: 200px; }
+.login-brand .brand-logo { height: 100px; width: 200px }
+
+.status { display: flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--score-high); box-shadow: 0 0 0 3px var(--glow-high); }
+.status-dot.busy { background: var(--score-mid); box-shadow: 0 0 0 3px var(--glow-mid); animation: pulse 1s infinite; }
+.status-dot.error { background: var(--score-low); box-shadow: 0 0 0 3px var(--glow-low); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+/* ---------- Layout ---------- */
+
+.app-main { max-width: 1800px; margin: 0 auto; padding: 20px 24px 48px; display: flex; flex-direction: column; gap: 18px; }
+
+/* Frozen while scrolling a long lead list, so a rep never has to scroll
+   back to the top to change a filter or click an action button. Stacked in
+   scroll order: app header, then search-panel (Prospect view only --
+   --search-panel-h is 0 when it's not rendered, e.g. the Claimed view),
+   then the results-toolbar, then the table's own sticky thead (see
+   .results-table thead th below) -- each one's `top` accounts for
+   everything stacked above it. The actual heights are kept live via a
+   ResizeObserver in app.js, since they genuinely vary (field-grid wraps at
+   narrow widths, the toolbar grows when a selection chip appears). */
+.search-panel {
+  position: sticky;
+  top: var(--header-h);
+  z-index: 15;
+}
+
+.search-panel, .results-panel {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+.search-panel { padding: 18px 20px 20px; }
+/* no overflow:hidden here -- it would clip position:sticky in the table header */
+.results-panel { padding: 0; }
+.results-toolbar { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+/* Deliberately still no overflow-x here either: ANY non-visible overflow
+   value on this element (even just on one axis) makes it the sticky
+   positioning ancestor for the thead th's below, instead of the page --
+   and thead's `top: var(--header-h)` offset is calibrated for the page
+   being that ancestor. Re-adding overflow here shoved the sticky header
+   57px down INTO the table body instead of clearing the fixed app header.
+   The real fix for a too-wide table is table-layout: fixed + real column
+   widths (see #claimedTable below) so it can't exceed 100% in the first
+   place. */
+.table-wrap { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+
+.page-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--hairline);
+  background: var(--surface);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.page-nav[hidden] { display: none; }
+#pageInfo { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+
+/* ---------- Search form ---------- */
+
+/* Locks the whole filter block while a search is in flight (see
+   setSearchFormDisabled in app.js) -- pointer-events:none is the real
+   blocker (native `disabled` on every control is belt-and-suspenders for
+   keyboard nav), the opacity is just the visual cue that it's locked. */
+#searchForm.is-loading .field-grid,
+#searchForm.is-loading .field-row {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.field-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 16px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 500; }
+.field-wide { grid-column: span 2; }
+.field-with-action { display: flex; align-items: center; gap: 10px; }
+.field-with-action input { flex: 1; min-width: 0; }
+.field-with-action .chip-input { flex: 1; min-width: 0; }
+.field-with-action .link-btn { flex-shrink: 0; white-space: nowrap; }
+
+/* ---------- Keyword chip input (Exclude keywords) ---------- */
+
+.chip-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 6px 8px;
+  cursor: text;
+  transition: border-color 0.12s ease;
+}
+.chip-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* display:contents so the chip <span>s inside participate directly in the
+   parent's flex/wrap layout, right alongside the entry input below --
+   without this, the chips would be stuck in their own single-line box. */
+.chip-input > span { display: contents; }
+.chip-input input {
+  flex: 1;
+  min-width: 100px;
+  border: none;
+  background: transparent;
+  padding: 3px 2px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+}
+.chip-input input::placeholder { color: var(--muted-2); }
+.keyword-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border-radius: 999px;
+  padding: 3px 6px 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.keyword-chip-remove {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px;
+  border-radius: 50%;
+  display: inline-flex;
+}
+.keyword-chip-remove:hover { background: rgba(0,0,0,0.15); }
+.field input, .field select, .field textarea {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  padding: 9px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.field textarea { resize: vertical; min-height: 90px; }
+.field select { appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239AA2B1' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; padding-right: 30px; cursor: pointer; }
+/* A CSS var can't be interpolated inside a quoted data-URI string, so the
+   dropdown arrow's stroke color needs its own literal override per theme. */
+[data-theme="light"] .field select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235B6472' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); }
+.field input::placeholder, .field textarea::placeholder { color: var(--muted-2); }
+.field input:hover, .field select:hover, .field textarea:hover { border-color: var(--hairline-hover); }
+.field input:focus, .field select:focus, .field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ---------- Multi-select dropdown (State / Specialty) ---------- */
+
+.multiselect { position: relative; }
+.multiselect-toggle {
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  padding: 9px 30px 9px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-2);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239AA2B1' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  color: var(--ink);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+[data-theme="light"] .multiselect-toggle { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235B6472' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); }
+.multiselect-toggle:hover { border-color: var(--hairline-hover); }
+.multiselect.open .multiselect-toggle, .multiselect-toggle:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.multiselect-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 100%;
+  width: max-content;
+  max-width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  padding: 8px;
+}
+.multiselect-actions {
+  display: flex;
+  gap: 14px;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 6px;
+}
+.multiselect-options { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.multiselect-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink);
+  padding: 5px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.multiselect-option:hover { background: var(--surface-2); }
+.multiselect-option input { accent-color: var(--accent); width: 14px; height: 14px; flex-shrink: 0; }
+.multiselect-option.is-divider { border-top: 1px solid var(--hairline); margin-top: 4px; padding-top: 7px; }
+
+.taxonomy-add-panel {
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 6px;
+  padding-bottom: 8px;
+}
+.taxonomy-add-panel[hidden] { display: none; }
+.taxonomy-add-panel input[type="text"] {
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+.taxonomy-add-panel input[type="text"]:focus { outline: none; border-color: var(--accent); }
+.taxonomy-add-results { max-height: 160px; overflow-y: auto; margin-top: 6px; }
+.taxonomy-add-result {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 6px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+.taxonomy-add-result:hover { background: var(--surface-2); }
+.taxonomy-add-result .facility-type { font-size: 13px; color: var(--ink); }
+.taxonomy-add-result .taxonomy-code { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-left: 6px; }
+.taxonomy-add-result:disabled { opacity: 0.5; cursor: default; }
+.taxonomy-add-empty { font-size: 12px; color: var(--muted); padding: 6px; }
+
+.field-row { display: flex; align-items: center; gap: 22px; margin-top: 18px; flex-wrap: wrap; }
+.checkbox { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.checkbox input { accent-color: var(--accent); width: 15px; height: 15px; }
+.checkbox em { color: var(--muted-2); font-style: normal; }
+
+/* ---------- Buttons ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 9px 15px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.38; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn-primary { background: var(--accent); color: var(--on-accent); margin-left: auto; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-ink); }
+.btn-ghost { background: transparent; border-color: var(--hairline); color: var(--ink); }
+.btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+.btn[hidden] { display: none; }
+.btn-small { padding: 6px 11px; font-size: 12px; }
+
+.link-btn {
+  background: none; border: none; padding: 0; margin: 0;
+  color: var(--accent-ink); font-size: 12px; font-weight: 600;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+}
+.link-btn:hover { color: var(--ink); }
+.stale-nudge { color: var(--score-mid); margin-right: 4px; }
+.stale-nudge[hidden] { display: none; }
+
+.icon { width: 20px; height: 20px; flex-shrink: 0; }
+
+/* ---------- Results toolbar ---------- */
+
+.results-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface);
+  position: sticky;
+  /* See the .search-panel comment above -- --search-panel-h is 0 in the
+     Claimed view (no search panel there), so this naturally sticks right
+     below the header there instead. */
+  top: calc(var(--header-h) + var(--search-panel-h));
+  z-index: 12;
+}
+.results-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.inline-field { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+.inline-field select {
+  font-family: var(--font-ui); font-size: 12px; color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm); padding: 5px 8px; cursor: pointer;
+}
+.inline-field select:focus { outline: none; border-color: var(--accent); }
+.inline-field input[type="text"] {
+  font-family: var(--font-ui); font-size: 12px; color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm); padding: 5px 8px; width: 180px;
+}
+.inline-field input[type="text"]:focus { outline: none; border-color: var(--accent); }
+.inline-field input[type="text"]::placeholder { color: var(--muted); }
+.results-count { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.selection-chip {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-family: var(--font-mono); color: var(--accent-ink);
+  background: var(--accent-soft); border: 1px solid var(--selection-chip-border);
+  padding: 3px 10px 3px 10px; border-radius: 999px;
+}
+.selection-chip[hidden] { display: none; } /* wins over .selection-chip's own display:flex */
+.results-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* ---------- Table ---------- */
+
+/* Deliberately no overflow/max-height here anymore -- the table grows to its
+   full natural height and width, and the PAGE scrolls (both directions, if
+   ever needed) instead of a nested scrollbar inside the table box. That
+   makes the whole document -- not this box -- the sticky positioning context
+   for the thead below, which is why its `top` offset accounts for the app
+   header's own height (plus the search-panel and toolbar stacked above it,
+   see the .search-panel/.results-toolbar comment) instead of being 0. */
+.results-table { width: 100%; border-collapse: collapse; }
+.results-table thead th {
+  position: sticky;
+  top: calc(var(--header-h) + var(--search-panel-h) + var(--toolbar-h));
+  z-index: 5;
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 14px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+.col-check { width: 42px; } .col-score { width: 80px; } .col-expand { width: 40px; }
+
+/* Fixed layout + real column widths (summing to 100%) instead of the
+   default auto-layout: with 9 columns including a free-text Notes input,
+   auto-layout let the table's natural width exceed the panel's, and since
+   .table-wrap can't safely clip/scroll that overflow (see the comment on
+   .table-wrap above), it just rendered outside the rounded card. Fixed
+   layout caps the table at 100% and wraps/truncates cell content instead. */
+.claimed-table { table-layout: fixed; }
+.claimed-table thead th { white-space: normal; } /* header labels wrap instead of truncating in a narrow fixed column */
+.col-claimed-check { width: 4%; }
+.col-claimed-company { width: 14%; }
+.col-claimed-location { width: 8%; }
+.col-claimed-phone { width: 11%; }
+.col-claimed-by { width: 7%; }
+.col-claimed-updated { width: 8%; }
+.col-claimed-status { width: 13%; }
+.col-claimed-reminder { width: 8%; }
+.col-claimed-notes { width: 24%; }
+.claimed-table .col-expand { width: 3%; }
+
+.results-table thead th.sortable { cursor: pointer; user-select: none; }
+.results-table thead th.sortable:hover { color: var(--ink); }
+.sort-arrow { display: inline-block; width: 9px; margin-left: 3px; opacity: 0.4; }
+.sort-arrow::after { content: "⇅"; }
+th.sort-asc .sort-arrow, th.sort-desc .sort-arrow { opacity: 1; color: var(--accent-ink); }
+th.sort-asc .sort-arrow::after { content: "↑"; }
+th.sort-desc .sort-arrow::after { content: "↓"; }
+
+.results-table tbody tr.lead-row { border-bottom: 1px solid var(--hairline); cursor: pointer; transition: background 0.1s ease; }
+.results-table tbody tr.lead-row:nth-child(4n+1) { background: var(--row-stripe); }
+.results-table tbody tr.lead-row:hover { background: var(--surface-2); }
+.results-table tbody tr.lead-row.is-selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.results-table tbody tr.lead-row.is-selected:hover { background: var(--accent-soft); }
+.results-table td { padding: 18px; vertical-align: middle; line-height: 1.5; font-size: 14px; }
+.results-table a, .detail-row a { color: var(--accent-ink); text-underline-offset: 2px; }
+.muted-tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-2); }
+.empty-row td { text-align: center; color: var(--muted); padding: 40px 10px; font-style: italic; }
+
+.loading-row { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 40px 10px; color: var(--muted); }
+.spinner {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid var(--hairline); border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.skeleton-row td { padding: 14px; border-bottom: 1px solid var(--hairline); }
+.skeleton-bar {
+  height: 12px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--hairline) 37%, var(--surface-2) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+.company-name { font-weight: 600; font-size: 15px; }
+.locations-badge {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.03em;
+  color: var(--on-accent); background: var(--accent);
+  padding: 2px 6px; border-radius: 4px; vertical-align: middle;
+}
+.company-taxonomy { font-size: 13px; color: var(--muted); margin-top: 3px; }
+.source-badges { display: flex; gap: 4px; margin-top: 4px; }
+.source-badge {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.03em;
+  color: var(--muted); background: var(--surface-2); border: 1px solid var(--hairline);
+  padding: 1px 5px; border-radius: 4px;
+}
+.mono { font-family: var(--font-mono); font-size: 14px; }
+.chevron { display: inline-block; transition: transform 0.15s ease; color: var(--muted); }
+.chevron.open { transform: rotate(90deg); color: var(--accent-ink); }
+
+.score-ring { display: inline-flex; align-items: center; justify-content: center; position: relative; width: 42px; height: 42px; }
+.score-ring svg { transform: rotate(-90deg); }
+.score-ring circle { fill: none; stroke-width: 4.5; }
+.score-ring .track { stroke: var(--hairline); }
+.score-ring .fill { stroke-linecap: round; transition: stroke-dashoffset 0.5s ease; }
+.score-ring .label { position: absolute; font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+
+.score-ring-wrap { position: relative; display: inline-flex; border-radius: 8px; }
+.score-ring-wrap:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.score-ring-wrap:focus:not(:focus-visible) { outline: none; }
+.score-tooltip {
+  display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 25;
+  background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card); padding: 10px 12px; width: 220px;
+}
+.score-ring-wrap:hover .score-tooltip, .score-ring-wrap:focus .score-tooltip, .score-ring-wrap:focus-within .score-tooltip { display: block; }
+.score-tooltip-title { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+.score-tooltip-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); padding: 2px 0; }
+.score-tooltip-row.earned { color: var(--ink); }
+.score-tooltip-mark { width: 12px; text-align: center; font-weight: 700; color: var(--muted-2); }
+.score-tooltip-row.earned .score-tooltip-mark { color: var(--score-high); }
+
+/* ---------- Expanded row ---------- */
+
+.detail-row td { background: var(--bg); padding: 18px 22px 22px; border-bottom: 1px solid var(--hairline); }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.detail-block h4 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+.contact-item { padding: 7px 0; border-bottom: 1px dashed var(--hairline); font-size: 13px; }
+.contact-item:last-child { border-bottom: none; }
+.contact-role { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: var(--accent-ink); background: var(--contact-role-bg); padding: 2px 7px; border-radius: 4px; margin-left: 7px; }
+.contact-phone { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+.brief-box { margin-top: 16px; }
+.brief-output {
+  white-space: pre-wrap; background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm); padding: 13px 14px; font-size: 13px;
+  line-height: 1.6; margin-top: 10px; display: none;
+}
+.brief-output.visible { display: block; }
+
+/* ---------- Login ---------- */
+
+.login-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+}
+.login-overlay[hidden] { display: none; }
+.login-card {
+  position: relative;
+  display: flex; flex-direction: column; gap: 14px;
+  width: min(360px, calc(100vw - 48px));
+  background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
+  padding: 28px 26px;
+}
+.login-theme-toggle { position: absolute; top: 12px; right: 12px; }
+.login-brand { justify-content: center; margin-bottom: 6px; }
+.login-btn { justify-content: center; margin-left: 0; }
+.login-error {
+  font-size: 13px; color: var(--score-low);
+  background: var(--login-error-bg); border: 1px solid var(--login-error-border);
+  border-radius: var(--radius-sm); padding: 8px 11px;
+}
+.login-error[hidden] { display: none; }
+
+/* ---------- Dev notice banner ---------- */
+
+.dev-notice {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-size: 13px; color: var(--ink);
+  background: var(--accent-soft); border: 1px solid var(--accent);
+  border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 16px;
+}
+.dev-notice[hidden] { display: none; }
+.dev-notice strong { color: var(--accent-ink); }
+.dev-notice-close {
+  flex-shrink: 0; background: none; border: none; cursor: pointer;
+  font-size: 18px; line-height: 1; color: var(--muted); padding: 0 2px;
+}
+.dev-notice-close:hover { color: var(--ink); }
+
+/* ---------- Suggestion box ---------- */
+
+.suggestion-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.45); padding: 24px;
+}
+.suggestion-overlay[hidden] { display: none; }
+.suggestion-card {
+  display: flex; flex-direction: column; gap: 14px;
+  width: min(440px, 100%);
+  background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
+  padding: 24px 26px;
+}
+.suggestion-card h3 { font-size: 16px; margin: 0; }
+.suggestion-hint { font-size: 13px; color: var(--muted); margin: 0; }
+.suggestion-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.reminder-actions.suggestion-actions { justify-content: space-between; }
+.reminder-actions-right { display: flex; gap: 10px; }
+
+/* ---------- Callback reminders ---------- */
+
+.reminder-badge, .reminder-current {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+  padding: 3px 8px; border-radius: 999px;
+}
+.reminder-badge.reminder-overdue, .reminder-current.reminder-overdue { background: var(--login-error-bg); color: var(--score-low); }
+.reminder-badge.reminder-today, .reminder-current.reminder-today { background: var(--accent-soft); color: var(--score-mid); }
+.reminder-badge.reminder-upcoming, .reminder-current.reminder-upcoming { background: var(--surface-2); color: var(--muted); }
+.reminder-block button { margin-top: 8px; }
+
+/* ---------- Theme toggle ---------- */
+
+.theme-toggle {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0;
+  background: none; border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+  color: var(--muted); cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+.theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Show the icon for the mode a click will switch TO. */
+.theme-toggle .theme-icon-dark { display: none; }
+[data-theme="light"] .theme-toggle .theme-icon-light { display: none; }
+[data-theme="light"] .theme-toggle .theme-icon-dark { display: block; }
+
+/* ---------- Header user chip ---------- */
+
+.header-right { display: flex; align-items: center; gap: 16px; }
+.user-chip {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--muted);
+  padding: 4px 12px; border: 1px solid var(--hairline); border-radius: 999px;
+}
+.user-chip[hidden] { display: none; }
+.user-chip #userName { color: var(--ink); font-weight: 600; }
+
+/* ---------- View tabs ---------- */
+
+.view-tabs { display: flex; gap: 4px; }
+.view-tabs .tab {
+  font-family: var(--font-ui); font-weight: 600; font-size: 13px;
+  color: var(--muted); background: none; border: 1px solid transparent;
+  border-radius: var(--radius-sm); padding: 8px 14px; cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.view-tabs .tab:hover { color: var(--ink); background: var(--surface-2); }
+.view-tabs .tab.active { color: var(--accent-ink); background: var(--accent-soft); }
+#viewSearch, #viewClaimed { display: flex; flex-direction: column; gap: 18px; }
+#viewSearch[hidden], #viewClaimed[hidden] { display: none; }
+
+/* ---------- Status select (claimed leads) ---------- */
+
+.status-select {
+  font-family: var(--font-mono); font-size: 13px;
+  background: var(--surface-2); color: var(--ink);
+  border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+  padding: 8px 10px; cursor: pointer; width: 100%; box-sizing: border-box;
+}
+.status-select:focus { outline: none; border-color: var(--accent); }
+.status-select.status-interested { border-color: var(--score-high); color: var(--score-high); }
+.status-select.status-not-interested, .status-select.status-do-not-call { border-color: var(--score-low); color: var(--score-low); }
+.status-select.status-called, .status-select.status-voicemail { border-color: var(--score-mid); color: var(--score-mid); }
+
+/* ---------- Notes input (claimed leads) ---------- */
+
+.notes-input {
+  font-family: var(--font-ui); font-size: 13px;
+  background: var(--surface-2); color: var(--ink);
+  border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+  padding: 8px 10px; width: 100%; box-sizing: border-box;
+  transition: border-color 0.12s ease;
+}
+.notes-input::placeholder { color: var(--muted-2); }
+.notes-input:hover { border-color: var(--hairline-hover); }
+.notes-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.notes-input:disabled { opacity: 0.6; }
+.notes-preview {
+  font-size: 12px; color: var(--muted); margin-top: 5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.notes-history-block { margin-top: 16px; }
+.notes-history { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.notes-entry {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--ink);
+  background: var(--surface-2); border-radius: var(--radius-sm);
+  padding: 6px 9px;
+}
+.notes-entry:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+.notes-entry-text { flex: 1; min-width: 0; overflow-wrap: break-word; }
+.notes-entry-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.notes-entry-btn {
+  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+  background: none; border: 1px solid var(--hairline); border-radius: 4px;
+  color: var(--muted); padding: 2px 7px; cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.notes-entry-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+.notes-entry-editing { align-items: center; }
+.notes-entry-edit-input {
+  flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 12px;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--accent); border-radius: 4px; padding: 4px 7px;
+}
+.notes-entry-edit-input:focus { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* ---------- Toast ---------- */
+
+.toast {
+  position: fixed; bottom: 22px; right: 22px;
+  background: var(--surface-2); color: var(--ink);
+  border: 1px solid var(--hairline);
+  padding: 12px 16px; border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  font-size: 13px; opacity: 0; transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none; max-width: 340px; z-index: 30;
+}
+.toast.visible { opacity: 1; transform: translateY(0); }
+.toast.error { background: var(--score-low); color: var(--on-score-low); border-color: var(--score-low); }
+.toast a { color: var(--accent-ink); font-weight: 600; }
+.toast.error a { color: var(--on-score-low); text-decoration-color: currentColor; }
+
+/* ---------- Responsive: short viewports (typical laptop screen heights) ----------
+   The sticky stack (app header + search-panel + results-toolbar, all frozen
+   in place while scrolling -- see the .search-panel/.results-toolbar/thead
+   comments above) has a fixed height that was sized for a normal external
+   monitor. On a laptop's shorter display (a 13"/14" laptop is commonly
+   ~800-900px tall, well under a desktop monitor's 1080px+), that same stack
+   can eat so much of the viewport that the results table underneath barely
+   has room to show any rows -- it reads as "frozen"/stuck rather than
+   scrollable, even though the sticky positioning itself is working correctly.
+   Shrinking the header and tightening the search-panel/toolbar padding here
+   claws back real vertical space for the actual lead list. --header-h is a
+   real CSS var (not just a display value -- .app-header's own height uses
+   it too), so overriding it here automatically keeps every calc() offset
+   that stacks under it (search-panel's top, thead's top) correct with no
+   other changes needed; --search-panel-h/--toolbar-h stay accurate too,
+   since app.js measures them live via ResizeObserver rather than assuming
+   a fixed number. */
+@media (max-height: 820px) {
+  :root { --header-h: 60px; }
+  .app-header .brand-logo { height: 56px; width: 140px; }
+  .search-panel { padding: 12px 20px 14px; }
+  .field-grid { gap: 10px 14px; }
+  .results-toolbar { padding: 10px 20px; gap: 12px; }
+}
+
+/* ---------- Responsive: phones ---------- */
+@media (max-width: 720px) {
+  .field-grid { grid-template-columns: 1fr 1fr; }
+  .field-wide { grid-column: span 2; }
+  .detail-grid { grid-template-columns: 1fr; }
+  .results-toolbar { flex-direction: column; align-items: stretch; }
+  .results-actions { justify-content: stretch; }
+  .results-actions .btn { flex: 1; justify-content: center; }
+
+  /* .app-header is a non-wrapping flex row (brand on the left, then theme
+     toggle + Suggestions button + user chip + status all packed on the
+     right) sized for a desktop-width window -- on a phone the combined
+     width of all of those doesn't fit, and since nothing wraps it just
+     pushes the whole page into horizontal scroll, cutting off content on
+     every view (not just the search form). The status dot/"Ready" text is
+     the least essential piece here (a nice-to-have, not an action), so
+     it's dropped first; the Suggestions button's label follows the same
+     "icon survives, label goes" treatment as .results-actions .btn above. */
+  .app-header { padding: 0 14px; }
+  .header-right { gap: 8px; }
+  .status { display: none; }
+  #suggestBtn span { display: none; }
+}
+
+/* Narrow phones -- even 2 field columns get cramped below ~480px. */
+@media (max-width: 480px) {
+  .field-grid { grid-template-columns: 1fr; }
+  .field-wide { grid-column: span 1; }
+  .app-header .brand-logo { height: 44px; width: 110px; }
+}
