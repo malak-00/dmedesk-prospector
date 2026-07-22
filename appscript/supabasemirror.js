@@ -51,8 +51,6 @@ var SupabaseMirror = (function () {
       "Prefer": "resolution=merge-duplicates"
     };
 
-    // Include Authorization header for legacy JWT keys (starting with 'eyJ').
-    // New secret keys ('sb_secret_...') must NOT include the Authorization header per Supabase spec.
     if (key.indexOf("eyJ") === 0) {
       headers["Authorization"] = "Bearer " + key;
     }
@@ -130,11 +128,9 @@ var SupabaseMirror = (function () {
 
     var status = String(getVal_(row, colMap, "Status")).trim().toLowerCase() || "new";
 
-    // Resolve claimed_by text -> app_users.id UUID
     var claimedByText = String(getVal_(row, colMap, "Claimed By")).trim() || defaultClaimedBy || "";
     var claimedByUuid = resolveUserId_(claimedByText, userMap);
 
-    // Resolve status_updated_by text -> app_users.id UUID if present
     var statusUpdatedByText = String(getVal_(row, colMap, "Status Updated By")).trim();
     var statusUpdatedByUuid = resolveUserId_(statusUpdatedByText, userMap);
 
@@ -187,7 +183,8 @@ var SupabaseMirror = (function () {
       headers: reqHeaders,
       muteHttpExceptions: true
     };
-    var existingMap = {};
+    var npiMap = {};
+    var compositeMap = {};
     try {
       var res = UrlFetchApp.fetch(getUrl, options);
       if (res.getResponseCode() >= 200 && res.getResponseCode() < 300) {
@@ -195,8 +192,9 @@ var SupabaseMirror = (function () {
         if (Array.isArray(items)) {
           items.forEach(function (item) {
             if (item.npi && item.id) {
-              var mapKey = item.npi + ":" + (item.claimed_by || "null");
-              existingMap[mapKey] = item.id;
+              npiMap[String(item.npi)] = item.id;
+              var compKey = item.npi + ":" + (item.claimed_by || "null");
+              compositeMap[compKey] = item.id;
             }
           });
         }
@@ -204,7 +202,7 @@ var SupabaseMirror = (function () {
     } catch (e) {
       Logger.log("[SupabaseMirror] Could not pre-fetch existing lead IDs: " + e.message);
     }
-    return existingMap;
+    return { npiMap: npiMap, compositeMap: compositeMap };
   }
 
   function fetchUserMappings_(baseUrl, headers) {
@@ -243,6 +241,30 @@ var SupabaseMirror = (function () {
     return userMap;
   }
 
+  function sendBatchInPayloads_(url, headers, records) {
+    if (!records || records.length === 0) return 0;
+    var batchSize = 100;
+    var synced = 0;
+
+    for (var i = 0; i < records.length; i += batchSize) {
+      var batch = records.slice(i, i + batchSize);
+      var options = {
+        method: "post",
+        headers: headers,
+        payload: JSON.stringify(batch),
+        muteHttpExceptions: true
+      };
+
+      var res = UrlFetchApp.fetch(url, options);
+      var code = res.getResponseCode();
+      if (code < 200 || code >= 300) {
+        throw new Error("Supabase API error (" + code + "): " + res.getContentText());
+      }
+      synced += batch.length;
+    }
+    return synced;
+  }
+
   function mirrorLeadsToSupabase() {
     var sheetId = Config.googleSheetId();
     if (!sheetId) {
@@ -256,17 +278,15 @@ var SupabaseMirror = (function () {
     baseUrl = baseUrl.replace(/\/+$/, "");
     var headers = getHeaders_();
 
-    // Pre-fetch user mappings and existing lead IDs by (npi + claimed_by)
+    // Pre-fetch user mappings and existing lead IDs
     var userMap = fetchUserMappings_(baseUrl, headers);
-    var existingMap = fetchExistingLeadIds_(baseUrl, headers);
-
-    // Target index: idx_leads_npi_claimed_by on leads(npi, claimed_by)
-    var endpoint = baseUrl + "/rest/v1/leads?on_conflict=npi,claimed_by";
+    var existingLookups = fetchExistingLeadIds_(baseUrl, headers);
 
     var ss = SpreadsheetApp.openById(sheetId);
     var sheets = ss.getSheets();
 
-    var leadsMap = {};
+    var existingRecordsMap = {};
+    var newRecordsMap = {};
     var totalProcessedRows = 0;
 
     sheets.forEach(function (sheet) {
@@ -292,48 +312,52 @@ var SupabaseMirror = (function () {
         var leadRec = rowToLeadRecord_(row, colMap, isDisconnectedTab, defaultClaimedBy, userMap);
         if (leadRec && leadRec.npi) {
           var compositeKey = leadRec.npi + ":" + (leadRec.claimed_by || "null");
-          if (existingMap[compositeKey]) {
-            leadRec.id = existingMap[compositeKey];
+          var existingId = existingLookups.compositeMap[compositeKey] || existingLookups.npiMap[leadRec.npi];
+
+          if (existingId) {
+            leadRec.id = existingId;
+            existingRecordsMap[compositeKey] = leadRec;
           } else {
-            leadRec.id = Utilities.getUuid();
+            newRecordsMap[compositeKey] = leadRec;
           }
-          leadsMap[compositeKey] = leadRec;
         }
       });
     });
 
-    var records = Object.keys(leadsMap).map(function (k) { return leadsMap[k]; });
-    if (records.length === 0) {
+    var existingRecords = Object.keys(existingRecordsMap).map(function (k) { return existingRecordsMap[k]; });
+    var newRecords = Object.keys(newRecordsMap).map(function (k) { return newRecordsMap[k]; });
+
+    if (existingRecords.length === 0 && newRecords.length === 0) {
       Logger.log("[SupabaseMirror] No lead records found to mirror.");
       return { success: true, count: 0, message: "No valid lead rows found to mirror." };
     }
 
-    var batchSize = 100;
-    var syncedCount = 0;
+    var totalSynced = 0;
 
-    for (var i = 0; i < records.length; i += batchSize) {
-      var batch = records.slice(i, i + batchSize);
-      var options = {
-        method: "post",
-        headers: headers,
-        payload: JSON.stringify(batch),
-        muteHttpExceptions: true
-      };
-
-      var res = UrlFetchApp.fetch(endpoint, options);
-      var code = res.getResponseCode();
-      if (code < 200 || code >= 300) {
-        throw new Error("Supabase API error (" + code + "): " + res.getContentText());
-      }
-      syncedCount += batch.length;
+    // 1. Update existing leads (all objects contain `id`)
+    if (existingRecords.length > 0) {
+      var updateEndpoint = baseUrl + "/rest/v1/leads?on_conflict=id";
+      totalSynced += sendBatchInPayloads_(updateEndpoint, headers, existingRecords);
     }
 
-    Logger.log("[SupabaseMirror] Synced " + syncedCount + " leads to Supabase out of " + totalProcessedRows + " rows scanned.");
+    // 2. Insert new leads (no `id` property, so PostgreSQL generates DEFAULT gen_random_uuid())
+    if (newRecords.length > 0) {
+      var insertHeaders = {};
+      for (var h in headers) { insertHeaders[h] = headers[h]; }
+      delete insertHeaders["Prefer"]; // Standard POST insert
+
+      var insertEndpoint = baseUrl + "/rest/v1/leads";
+      totalSynced += sendBatchInPayloads_(insertEndpoint, insertHeaders, newRecords);
+    }
+
+    Logger.log("[SupabaseMirror] Synced " + totalSynced + " leads to Supabase out of " + totalProcessedRows + " rows scanned.");
 
     return {
       success: true,
       totalRowsScanned: totalProcessedRows,
-      leadsSynced: syncedCount
+      leadsSynced: totalSynced,
+      updatedCount: existingRecords.length,
+      insertedCount: newRecords.length
     };
   }
 
