@@ -6,16 +6,23 @@ var SupabaseMirror = (function () {
     var key = Config.supabaseServiceRoleKey() || Config.supabaseAnonKey();
     if (!key) {
       throw new Error(
-        "Supabase Service Role Key is missing. Please set SUPABASE_SERVICE_ROLE_KEY in Script Properties " +
+        "Supabase Key is missing. Please set SUPABASE_SERVICE_ROLE_KEY in Script Properties " +
         "(Project Settings > Script Properties in Apps Script editor)."
       );
     }
-    return {
+    var headers = {
       "apikey": key,
-      "Authorization": "Bearer " + key,
       "Content-Type": "application/json",
       "Prefer": "resolution=merge-duplicates"
     };
+
+    // Include Authorization header for legacy JWT keys (starting with 'eyJ').
+    // New secret keys ('sb_secret_...') must NOT include the Authorization header per Supabase spec.
+    if (key.indexOf("eyJ") === 0) {
+      headers["Authorization"] = "Bearer " + key;
+    }
+
+    return headers;
   }
 
   function parseNumeric_(val) {
@@ -130,14 +137,14 @@ var SupabaseMirror = (function () {
 
   function fetchExistingLeadIds_(baseUrl, headers) {
     var getUrl = baseUrl + "/rest/v1/leads?select=id,npi";
+    var reqHeaders = {};
+    for (var k in headers) { reqHeaders[k] = headers[k]; }
+    reqHeaders["Range-Unit"] = "items";
+    reqHeaders["Range"] = "0-9999";
+
     var options = {
       method: "get",
-      headers: {
-        "apikey": headers.apikey,
-        "Authorization": headers.Authorization,
-        "Range-Unit": "items",
-        "Range": "0-9999"
-      },
+      headers: reqHeaders,
       muteHttpExceptions: true
     };
     var existingMap = {};
@@ -163,10 +170,7 @@ var SupabaseMirror = (function () {
     var getUrl = baseUrl + "/rest/v1/app_users?select=id,username,display_name";
     var options = {
       method: "get",
-      headers: {
-        "apikey": headers.apikey,
-        "Authorization": headers.Authorization
-      },
+      headers: headers,
       muteHttpExceptions: true
     };
     var userMap = {};
