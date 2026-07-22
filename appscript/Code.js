@@ -55,6 +55,9 @@ function handleRequest_(e) {
       case "health":
         return jsonResponse_({ success: true, data: { name: "DME Desk Prospector", status: "running" } });
 
+      case "mirror/supabase":
+        return jsonResponse_({ success: true, data: SupabaseMirror.mirrorLeadsToSupabase() });
+
       case "auth/login": {
         var creds = readJsonBody_(e);
         return jsonResponse_({ success: true, data: AuthService.login(creds.username, creds.password) });

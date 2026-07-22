@@ -51,5 +51,8 @@ var Config = (function () {
     authSheetId: function () { return get("AUTH_SHEET_ID"); },
     suggestionsTabName: function () { return get("SUGGESTIONS_TAB_NAME", "Suggestions"); },
     suggestionNotifyEmail: function () { return get("SUGGESTIONS_NOTIFY_EMAIL", "caroline.richards.wiz@gmail.com"); },
+    supabaseUrl: function () { return get("SUPABASE_URL", "https://pcvyrkisvvtiteoiuplg.supabase.co"); },
+    supabaseServiceRoleKey: function () { return get("SUPABASE_SERVICE_ROLE_KEY"); },
+    supabaseAnonKey: function () { return get("SUPABASE_ANON") || get("SUPABASE_ANON_KEY"); },
   };
 })();
