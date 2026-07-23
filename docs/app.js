@@ -49,12 +49,21 @@ function clearSession() {
   sessionStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
+async function parseJsonResponse(res) {
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    const text = await res.text();
+    throw new Error(`Server returned non-JSON response (${res.status}): ${text.slice(0, 100)}`);
+  }
+  return await res.json();
+}
+
 async function apiGet(path, params = {}) {
   const query = new URLSearchParams(params);
   query.set("path", path);
   query.set("token", getSession()?.token || "");
   const res = await fetch(`${APPS_SCRIPT_URL}?${query.toString()}`);
-  return unwrap(await res.json());
+  return unwrap(await parseJsonResponse(res));
 }
 
 async function apiPost(path, body) {
@@ -64,7 +73,7 @@ async function apiPost(path, body) {
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(body),
   });
-  return unwrap(await res.json());
+  return unwrap(await parseJsonResponse(res));
 }
 
 function unwrap(payload) {
@@ -441,7 +450,7 @@ async function handleGoogleSignIn() {
   try {
     const baseUrl = (typeof VERCEL_API_URL !== "undefined" ? VERCEL_API_URL : "") || "";
     const res = await fetch(`${baseUrl}/api/auth/google?redirectTo=${encodeURIComponent(redirectTo)}`);
-    const body = await res.json();
+    const body = await parseJsonResponse(res);
     if (!body.success) throw new Error(body.error || "Could not start Google sign-in");
     window.location.href = body.data.url;
   } catch (err) {
@@ -470,7 +479,7 @@ async function handleGoogleOAuthCallback() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ access_token: accessToken }),
     });
-    const body = await res.json();
+    const body = await parseJsonResponse(res);
     if (!body.success) throw new Error(body.error || "Google sign-in failed");
     const data = body.data;
     saveSession({ token: data.token, email: data.email, displayName: data.displayName, excludeKeywords: data.excludeKeywords });
