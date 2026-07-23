@@ -11,11 +11,18 @@ import { createUserClient, createServiceClient } from "./supabaseClient.js";
 
 function applyCors(req, res) {
   const origin = req.headers.origin;
-  if (origin && config.allowedOrigins.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
+  const allowed = config.allowedOrigins || [];
+  if (origin) {
+    if (allowed.includes(origin) || allowed.includes("*") || origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+    } else if (allowed.length > 0) {
+      res.setHeader("Access-Control-Allow-Origin", allowed[0]);
+    }
     res.setHeader("Vary", "Origin");
+  } else if (allowed.length > 0) {
+    res.setHeader("Access-Control-Allow-Origin", allowed[0]);
   }
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
@@ -104,6 +111,7 @@ export function withAuth(handler) {
       await handler(req, res);
     } catch (err) {
       console.error(`[api] ${req.url}:`, err);
+      applyCors(req, res);
       sendError(res, err.status || 500, err.message || "Internal Server Error");
     }
   };
@@ -122,6 +130,7 @@ export function withPublic(handler) {
       await handler(req, res);
     } catch (err) {
       console.error(`[api] ${req.url}:`, err);
+      applyCors(req, res);
       sendError(res, err.status || 500, err.message || "Internal Server Error");
     }
   };
