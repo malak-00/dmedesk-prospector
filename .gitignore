@@ -143,3 +143,6 @@ vite.config.ts.timestamp-*
 .vite/
 .vercel
 .env*
+
+# Cloudflare Pages build output
+cloudflare/dist/
