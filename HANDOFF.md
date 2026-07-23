@@ -87,3 +87,12 @@ version of the same thing plus session-specific gotchas).
 - Full prior session history/reasoning lives in this branch's git log if
   more detail is ever needed -- commit messages are written to be
   self-explanatory.
+
+## CORS deployment note
+
+The Vercel API normalizes ALLOWED_ORIGINS, emits CORS headers only for accepted request origins, and allows Cloudflare Pages preview hosts matching https://<preview-id>.dmedesk-prospector.pages.dev.
+
+Production ALLOWED_ORIGINS: https://dmedesk-prospector.vercel.app,https://dmedesk-prospector.pages.dev
+
+Redeploy from the repository root with npx vercel --prod --yes; the Vercel project uses vercel/ as its root directory.
+

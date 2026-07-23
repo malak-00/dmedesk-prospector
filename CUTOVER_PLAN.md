@@ -212,3 +212,8 @@ until this step passes):
   don't trust the table above blindly, verify it.
 - Whether to merge to `main` as part of cutover or keep this a long-lived
   branch — affects how the team's git workflow looks afterward.
+
+### CORS configuration update (2026-07-23)
+
+Set ALLOWED_ORIGINS to the canonical production origins. Cloudflare Pages preview subdomains are accepted by the API CORS matcher. Do not use a leading //, trailing slash, or a fallback origin in the response header.
+
