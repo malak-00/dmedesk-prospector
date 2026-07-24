@@ -38,7 +38,16 @@ const MAX_NPPES_FETCHES_PER_REQUEST = 30;
 // needs ~55s just for enrichment -- comfortably over budget on its own
 // before NPPES pagination is even counted. Stopping early and returning
 // what's already gathered beats a dead invocation and no data at all.
-const SEARCH_TIME_BUDGET_MS = 45000;
+//
+// 45s left too little margin in practice: NPPES calls are now capped to
+// the remaining budget exactly, but Foursquare (up to ~6s) and OSM (up to
+// ~7s) can each still have one request in flight right as the deadline
+// hits, since their own per-call timeouts aren't shrunk the same way.
+// Stacked worst-case (45 + 6 + 7) landed within a couple seconds of the
+// 60s hard cap -- not enough room for the CMS lookup, scoring, and
+// response serialization that still happen afterward. 35s leaves a much
+// safer margin.
+const SEARCH_TIME_BUDGET_MS = 35000;
 
 function buildNppesDecisionMaker(provider) {
   const off = provider.authorizedOfficial;
