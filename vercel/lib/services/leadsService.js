@@ -143,6 +143,14 @@ export async function moveClaimedLeadsToDisconnected(userSupabase, userId, npis)
     .in("npi", npis)
     .select("npi");
   if (error) throw error;
+  // A missing RLS policy filters the target rows to nothing rather than
+  // erroring -- surface that as a real error instead of a silent no-op
+  // (see the 0003 migration's comment for exactly this happening once).
+  if (data.length === 0) {
+    const err = new Error(`No matching claimed lead(s) found for: ${npis.join(", ")}`);
+    err.status = 404;
+    throw err;
+  }
 
   const foundNpis = new Set(data.map((r) => r.npi));
   const notFound = npis.filter((npi) => !foundNpis.has(npi));
@@ -164,6 +172,14 @@ export async function returnClaimedLeadsToProspect(userSupabase, userId, npis) {
     .in("npi", npis)
     .select("npi");
   if (error) throw error;
+  // Same defensive check as moveClaimedLeadsToDisconnected above -- a
+  // missing RLS policy filters the target rows to nothing rather than
+  // erroring.
+  if (data.length === 0) {
+    const err = new Error(`No matching claimed lead(s) found for: ${npis.join(", ")}`);
+    err.status = 404;
+    throw err;
+  }
 
   const foundNpis = new Set(data.map((r) => r.npi));
   const notFound = npis.filter((npi) => !foundNpis.has(npi));
