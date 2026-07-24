@@ -273,16 +273,17 @@ async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, clai
         for (const provider of results) {
           if (acceptedCount() >= desiredLimit) break;
           if (acceptedCount() - acceptedBeforeThisTurn >= roundQuota) break;
-          if (provider.npi && seenNpis.has(String(provider.npi))) continue;
+          const normalizedNpi = provider.npi ? leadsService.normalizeNpi(provider.npi) : "";
+          if (normalizedNpi && seenNpis.has(normalizedNpi)) continue;
 
-          const isClaimed = provider.npi && claimedNpis.has(String(provider.npi));
+          const isClaimed = normalizedNpi && claimedNpis.has(normalizedNpi);
           if (isClaimed) {
             excludedAsClaimed++;
           } else {
             fresh.push(provider);
             if (mergeBranches) merger.add(fromNppesProvider(provider));
           }
-          if (provider.npi) seenNpis.add(String(provider.npi));
+          if (normalizedNpi) seenNpis.add(normalizedNpi);
         }
 
         if (fetched < NPPES_PAGE_SIZE) variantExhausted[v] = true;

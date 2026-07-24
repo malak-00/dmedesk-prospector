@@ -50,6 +50,20 @@ const KEY_TO_COLUMN = {
   nppesLastUpdated: "nppes_last_updated",
 };
 
+// NPIs flow in from several places -- live search results, the migrated
+// legacy Sheets data, and manual entry -- and anything that passed through
+// a spreadsheet at some point (the Sheets->Supabase migration) can pick up
+// formatting drift Postgres text comparison won't see past: a trailing
+// ".0" from Excel/Sheets auto-numbering a 10-digit ID, stray whitespace,
+// etc. Every place NPIs are stored or compared for dedup goes through this
+// so a migrated "1234567890.0" still matches a freshly-searched
+// "1234567890" instead of silently failing to dedup.
+export function normalizeNpi(value) {
+  if (value === null || value === undefined) return "";
+  const digitsOnly = String(value).trim().replace(/\.0+$/, "").replace(/\D/g, "");
+  return digitsOnly;
+}
+
 function flatToRow(flat) {
   const row = {};
   for (const [key, column] of Object.entries(KEY_TO_COLUMN)) {
@@ -59,6 +73,8 @@ function flatToRow(flat) {
     } else if (NUMERIC_KEYS.has(key)) {
       const n = Number(value);
       row[column] = Number.isFinite(n) ? n : null;
+    } else if (key === "npi") {
+      row[column] = normalizeNpi(value) || String(value);
     } else {
       row[column] = String(value);
     }
@@ -207,7 +223,7 @@ export async function returnClaimedLeadsToProspect(userSupabase, userId, npis) {
 export async function getClaimedNpis(serviceSupabase) {
   const { data, error } = await serviceSupabase.from("leads").select("npi");
   if (error) throw error;
-  return new Set(data.map((r) => r.npi));
+  return new Set(data.map((r) => normalizeNpi(r.npi)).filter(Boolean));
 }
 
 // Converts a raw `leads` row (Postgres snake_case columns) into the flat
@@ -434,6 +450,7 @@ export default {
   moveClaimedLeadsToDisconnected,
   returnClaimedLeadsToProspect,
   getClaimedNpis,
+  normalizeNpi,
   listClaimedLeads,
   getKnownStatuses,
   updateLeadStatus,
