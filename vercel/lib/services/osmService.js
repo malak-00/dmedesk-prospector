@@ -9,7 +9,20 @@ import { get as cacheGet, put as cachePut } from "./enrichmentCache.js";
 const BASE_URL = "https://nominatim.openstreetmap.org/search";
 const USER_AGENT = "DME-Desk-Prospector/1.0 (free lead-gen tool for DMEPOS suppliers)";
 const MIN_INTERVAL_MS = 1100; // stay comfortably under Nominatim's 1 req/sec limit
+const FETCH_TIMEOUT_MS = 6000; // a single hung request shouldn't be able to eat the whole function's time budget
 const CACHE_NAMESPACE = "osm";
+
+// A 429 means Nominatim is rate-limiting this whole burst of calls, not
+// just one query -- once seen, every subsequent call in the same batch
+// will fail the same way, so the caller should stop spending the 1.1s
+// throttle on calls that are guaranteed to fail rather than keep retrying
+// per company.
+export class OsmRateLimitedError extends Error {
+  constructor() {
+    super("Nominatim rate-limited this request (429)");
+    this.name = "OsmRateLimitedError";
+  }
+}
 
 // Module-level throttle state -- fine within one function invocation
 // (sequential lookups in one request), which is the only place this
@@ -37,10 +50,15 @@ async function fetchWebsite(company, near) {
 
   let response;
   try {
-    response = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+    response = await fetch(url, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   } catch (err) {
     console.error(`[osmService] Failed to reach Nominatim: ${err.message}`);
     return { ok: false, website: null };
+  }
+
+  if (response.status === 429) {
+    console.error("[osmService] Nominatim rate-limited this request (429) -- stopping further OSM lookups for this search");
+    throw new OsmRateLimitedError();
   }
 
   if (response.status >= 400) {

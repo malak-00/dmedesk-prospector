@@ -146,6 +146,7 @@ async function tryEnrichWithOsm(serviceSupabase, company) {
     if (!website) return company;
     return { ...company, website, sources: { ...company.sources, osm: true } };
   } catch (err) {
+    if (err instanceof osmService.OsmRateLimitedError) throw err;
     console.log(`[companyService] OSM enrichment failed for "${company.name}": ${err.message}`);
     return company;
   }
@@ -362,12 +363,22 @@ export async function searchCompanies(criteria = {}, options = {}) {
     // rest with whatever website they already have rather than let the
     // whole invocation get killed with no response.
     const withOsm = [];
+    let osmRateLimited = false;
     for (const company of companies) {
-      if (Date.now() >= deadline) {
+      if (osmRateLimited || Date.now() >= deadline) {
         withOsm.push(company);
         continue;
       }
-      withOsm.push(await tryEnrichWithOsm(serviceSupabase, company));
+      try {
+        withOsm.push(await tryEnrichWithOsm(serviceSupabase, company));
+      } catch (err) {
+        // Nominatim is rate-limiting this whole batch -- every remaining
+        // call would fail the same way, so stop paying the 1.1s throttle
+        // per company for guaranteed failures and just pass the rest
+        // through unenriched.
+        osmRateLimited = true;
+        withOsm.push(company);
+      }
     }
     companies = withOsm;
   }
