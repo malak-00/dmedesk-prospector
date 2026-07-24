@@ -27,6 +27,19 @@ const NPPES_PAGE_SIZE = 200; // NPPES hard cap per request
 const NPPES_MAX_SKIP = 1000; // NPPES hard cap on pagination depth
 const MAX_NPPES_FETCHES_PER_REQUEST = 30;
 
+// vercel.json gives this function a 60s maxDuration; a hard timeout kills
+// the invocation with no response body at all (the client sees an opaque
+// FUNCTION_INVOCATION_TIMEOUT, not JSON). Everything below budgets its own
+// work against a deadline well inside that cap -- most importantly OSM
+// enrichment, which is deliberately throttled to ~1 req/sec (see
+// osmService.js) and runs once per company with no website. Without
+// Foursquare configured (FOURSQUARE_SERVICE_API_KEY unset), every company
+// falls through to that throttled OSM lookup, so a limit=50 search alone
+// needs ~55s just for enrichment -- comfortably over budget on its own
+// before NPPES pagination is even counted. Stopping early and returning
+// what's already gathered beats a dead invocation and no data at all.
+const SEARCH_TIME_BUDGET_MS = 45000;
+
 function buildNppesDecisionMaker(provider) {
   const off = provider.authorizedOfficial;
   if (!off || !off.lastName) return null;
@@ -212,7 +225,7 @@ function variantKey(variant) {
 // COMPANIES (after branch-merging) or every variant runs out / hits its
 // skip cap. See CompanyService.js's extensive comments for the full
 // reasoning behind round-robin + fair-share quota + incremental merging.
-async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, claimedNpis) {
+async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, claimedNpis, deadline) {
   const variants = criteria.npi ? [criteria] : buildCriteriaVariants(criteria);
   const mergeBranches = !criteria.npi;
   const merger = createBranchMerger();
@@ -225,6 +238,7 @@ async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, clai
   const variantSkips = { ...(criteria.variantSkips || {}) };
   let fetchesUsed = 0;
   let hitScanBudget = false;
+  let hitTimeBudget = false;
   const rejectedVariants = [];
 
   function acceptedCount() {
@@ -236,7 +250,7 @@ async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, clai
     return variantExhausted.some((done) => !done);
   }
 
-  while (acceptedCount() < desiredLimit && !hitScanBudget && anyVariantLeft()) {
+  while (acceptedCount() < desiredLimit && !hitScanBudget && !hitTimeBudget && anyVariantLeft()) {
     const remainingVariants = variantExhausted.filter((done) => !done).length;
     const roundQuota = Math.max(1, Math.ceil((desiredLimit - acceptedCount()) / remainingVariants));
 
@@ -245,6 +259,10 @@ async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, clai
       if (acceptedCount() >= desiredLimit) break;
       if (fetchesUsed >= MAX_NPPES_FETCHES_PER_REQUEST) {
         hitScanBudget = true;
+        break;
+      }
+      if (Date.now() >= deadline) {
+        hitTimeBudget = true;
         break;
       }
 
@@ -301,6 +319,7 @@ async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, clai
     excludedAsClaimed,
     variantSkips,
     hitScanBudget,
+    hitTimeBudget,
     allSeenNpis: [...seenNpis],
     rejectedVariants,
   };
@@ -313,6 +332,7 @@ export async function searchCompanies(criteria = {}, options = {}) {
   const scrapeWebsites = Boolean(options.scrapeWebsites);
   const enrichCms = options.enrichCms !== false;
   const serviceSupabase = createServiceClient();
+  const deadline = Date.now() + SEARCH_TIME_BUDGET_MS;
 
   const desiredLimit = criteria.limit || 20;
   const claimedNpis = await getClaimedNpisSafe(serviceSupabase);
@@ -326,7 +346,7 @@ export async function searchCompanies(criteria = {}, options = {}) {
     }
   }
 
-  const fetchResult = await fetchFreshProviders(serviceSupabase, effectiveCriteria, desiredLimit, claimedNpis);
+  const fetchResult = await fetchFreshProviders(serviceSupabase, effectiveCriteria, desiredLimit, claimedNpis, deadline);
   let companies = fetchResult.companies;
 
   if (trackProgress) {
@@ -335,9 +355,20 @@ export async function searchCompanies(criteria = {}, options = {}) {
 
   if (enrichPlaces) {
     companies = await applyPlacesEnrichment(serviceSupabase, companies);
-    // Sequential, not Promise.all -- OSM/Nominatim enforces its own rate limit.
+    // Sequential, not Promise.all -- OSM/Nominatim enforces its own rate
+    // limit (~1 req/sec). With Foursquare unconfigured, every company still
+    // needs this lookup, so a large result set can outrun the function's
+    // time budget on its own -- stop once the deadline's hit and leave the
+    // rest with whatever website they already have rather than let the
+    // whole invocation get killed with no response.
     const withOsm = [];
-    for (const company of companies) withOsm.push(await tryEnrichWithOsm(serviceSupabase, company));
+    for (const company of companies) {
+      if (Date.now() >= deadline) {
+        withOsm.push(company);
+        continue;
+      }
+      withOsm.push(await tryEnrichWithOsm(serviceSupabase, company));
+    }
     companies = withOsm;
   }
   if (scrapeWebsites) {
@@ -359,7 +390,8 @@ export async function searchCompanies(criteria = {}, options = {}) {
     count: companies.length,
     scannedFromRegistry: fetchResult.totalScanned,
     excludedAsClaimed: fetchResult.excludedAsClaimed,
-    exhaustedRegistry: companies.length < desiredLimit && !fetchResult.hitScanBudget,
+    exhaustedRegistry: companies.length < desiredLimit && !fetchResult.hitScanBudget && !fetchResult.hitTimeBudget,
+    timeBudgetExceeded: fetchResult.hitTimeBudget || Date.now() >= deadline,
     variantSkips: fetchResult.variantSkips,
     rejectedVariants: fetchResult.rejectedVariants,
     companies,
