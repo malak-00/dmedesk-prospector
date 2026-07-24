@@ -7,9 +7,8 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbywy89pKrOYGDcN
 
 // This copy of the frontend is served BY the Vercel project itself (see
 // /vercel/README.md), so the new API is same-origin -- "" means relative
-// paths (fetch("/api/..."), no CORS needed at all). The docs/ copy of this
-// same file (served separately from GitHub Pages) sets this to the full
-// https://dmedesk-prospector.vercel.app URL instead, since that copy is
+// paths (fetch("/api/..."), no CORS needed at all). The docs/ and
+// cloudflare/ copies of this same file set this to the full
+// https://dmedesk-prospector.vercel.app URL instead, since those are
 // cross-origin to the API.
 const VERCEL_API_URL = "";
-const VERCEL_API_ENABLED = true; // this copy always has the Google sign-in test button visible

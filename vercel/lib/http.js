@@ -9,9 +9,24 @@
 import config from "./config.js";
 import { createUserClient, createServiceClient } from "./supabaseClient.js";
 
+// Cloudflare Pages preview deployments get a random subdomain per build
+// (<hash>.dmedesk-prospector.pages.dev) -- allow-listing the exact URL in
+// ALLOWED_ORIGINS isn't possible, so match the pattern instead. Localhost is
+// always allowed too, for local dev against the deployed API.
+function isAllowedOrigin(origin) {
+  if (config.allowedOrigins.includes(origin)) return true;
+  if (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) return true;
+  try {
+    const url = new URL(origin);
+    return url.protocol === "https:" && /^[a-z0-9-]+\.dmedesk-prospector\.pages\.dev$/i.test(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function applyCors(req, res) {
   const origin = req.headers.origin;
-  if (origin && config.allowedOrigins.includes(origin)) {
+  if (origin && isAllowedOrigin(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
   }

@@ -49,12 +49,24 @@ function clearSession() {
   sessionStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
+// Apps Script occasionally returns an HTML error page (e.g. a quota error)
+// instead of JSON -- res.json() on that throws an opaque SyntaxError. This
+// gives a readable error instead, surfacing the actual status/body.
+async function parseJsonResponse(res) {
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    const text = await res.text();
+    throw new Error(`Server returned non-JSON response (${res.status}): ${text.slice(0, 100)}`);
+  }
+  return await res.json();
+}
+
 async function apiGet(path, params = {}) {
   const query = new URLSearchParams(params);
   query.set("path", path);
   query.set("token", getSession()?.token || "");
   const res = await fetch(`${APPS_SCRIPT_URL}?${query.toString()}`);
-  return unwrap(await res.json());
+  return unwrap(await parseJsonResponse(res));
 }
 
 async function apiPost(path, body) {
@@ -64,7 +76,7 @@ async function apiPost(path, body) {
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(body),
   });
-  return unwrap(await res.json());
+  return unwrap(await parseJsonResponse(res));
 }
 
 function unwrap(payload) {
@@ -219,8 +231,7 @@ const els = {
   statusText: document.getElementById("statusText"),
   toast: document.getElementById("toast"),
   loginOverlay: document.getElementById("loginOverlay"),
-  loginForm: document.getElementById("loginForm"),
-  loginBtn: document.getElementById("loginBtn"),
+  loginCard: document.getElementById("loginCard"),
   loginError: document.getElementById("loginError"),
   googleSignInBtn: document.getElementById("googleSignInBtn"),
   userChip: document.getElementById("userChip"),
@@ -273,7 +284,6 @@ function showLogin() {
   els.userChip.hidden = true;
   els.suggestBtn.hidden = true;
   els.devNotice.hidden = true;
-  els.loginForm.querySelector("input[name=username]")?.focus();
 }
 
 function hideLogin() {
@@ -438,50 +448,24 @@ async function persistExcludeKeywords({ silent = true } = {}) {
   }
 }
 
-async function handleLogin(evt) {
-  evt.preventDefault();
-  const formData = new FormData(els.loginForm);
-  els.loginBtn.disabled = true;
-  els.loginError.hidden = true;
-
-  try {
-    const data = await apiPost("auth/login", {
-      username: formData.get("username"),
-      password: formData.get("password"),
-    });
-    saveSession({ token: data.token, username: data.username, displayName: data.displayName, excludeKeywords: data.excludeKeywords });
-    // Unconditionally resets to THIS user's own saved value (never "only if
-    // blank" -- a fresh login is a hard boundary) -- otherwise, signing out
-    // and signing back in as someone else in the same tab would leave the
-    // previous person's chips sitting in memory and wrongly carry over,
-    // since applyExcludeKeywordsDefaultIfBlank() below only fills in a
-    // default when there are no chips yet.
-    excludeKeywordsChipInput.setAll(data.excludeKeywords ? data.excludeKeywords.split(",") : []);
-    els.loginForm.reset();
-    hideLogin();
-    loadTaxonomyOptions();
-    showToast(`Welcome, ${data.displayName}`);
-  } catch (err) {
-    els.loginError.textContent = err.message;
-    els.loginError.hidden = false;
-  } finally {
-    els.loginBtn.disabled = false;
-  }
-}
-
-// Test-only path for the new Vercel + Supabase API's Google OAuth login
-// (see vercel/lib/auth.js) -- entirely separate from the Apps Script
-// session above; a click-through way to verify the new backend's auth
-// before the rest of the app is rewired onto it. Hidden unless
-// VERCEL_API_URL is set in frontend-config.js.
+// Google OAuth via the Vercel + Supabase API (see vercel/lib/auth.js) is the
+// ONLY sign-in path now -- the old username/password form against Apps
+// Script's Users tab is gone. Everything else in this file (search, claimed
+// leads, taxonomies) still talks to Apps Script via APPS_SCRIPT_URL; only
+// auth has moved.
 async function handleGoogleSignIn() {
   const redirectTo = window.location.origin + window.location.pathname;
   try {
-    const res = await fetch(`${VERCEL_API_URL}/api/auth/google?redirectTo=${encodeURIComponent(redirectTo)}`);
-    const body = await res.json();
+    const baseUrl = (typeof VERCEL_API_URL !== "undefined" ? VERCEL_API_URL : "") || "";
+    const res = await fetch(`${baseUrl}/api/auth/google?redirectTo=${encodeURIComponent(redirectTo)}`);
+    const body = await parseJsonResponse(res);
     if (!body.success) throw new Error(body.error || "Could not start Google sign-in");
     window.location.href = body.data.url;
   } catch (err) {
+    if (els.loginError) {
+      els.loginError.textContent = err.message;
+      els.loginError.hidden = false;
+    }
     showToast(err.message, true);
   }
 }
@@ -491,22 +475,37 @@ async function handleGoogleSignIn() {
 // the browser), exchange it for the app_users profile via the new API and
 // clear the fragment so a refresh doesn't try to re-exchange a stale token.
 async function handleGoogleOAuthCallback() {
-  if (!VERCEL_API_ENABLED) return false;
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
   const accessToken = params.get("access_token");
   if (!accessToken) return false;
 
   history.replaceState(null, "", window.location.pathname + window.location.search);
   try {
-    const res = await fetch(`${VERCEL_API_URL}/api/auth/session`, {
+    const baseUrl = (typeof VERCEL_API_URL !== "undefined" ? VERCEL_API_URL : "") || "";
+    const res = await fetch(`${baseUrl}/api/auth/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ access_token: accessToken }),
     });
-    const body = await res.json();
+    const body = await parseJsonResponse(res);
     if (!body.success) throw new Error(body.error || "Google sign-in failed");
-    showToast(`Signed in via Google as ${body.data.email} (new API test -- not wired to the app's data yet)`);
+    const data = body.data;
+    saveSession({ token: data.token, email: data.email, displayName: data.displayName, excludeKeywords: data.excludeKeywords });
+    // Unconditionally resets to THIS user's own saved value (never "only if
+    // blank" -- a fresh login is a hard boundary) -- otherwise, signing out
+    // and signing back in as someone else in the same tab would leave the
+    // previous person's chips sitting in memory and wrongly carry over,
+    // since applyExcludeKeywordsDefaultIfBlank() below only fills in a
+    // default when there are no chips yet.
+    excludeKeywordsChipInput.setAll(data.excludeKeywords ? data.excludeKeywords.split(",") : []);
+    hideLogin();
+    loadTaxonomyOptions();
+    showToast(`Welcome, ${data.displayName}`);
   } catch (err) {
+    if (els.loginError) {
+      els.loginError.textContent = err.message;
+      els.loginError.hidden = false;
+    }
     showToast(err.message, true);
   }
   return true;
@@ -711,7 +710,7 @@ function saveSearchFormState() {
 // values.excludeKeywords/nameContainsTerms from this tab's LAST SEARCH,
 // which can belong to a DIFFERENT teammate than the one who just signed in
 // (sessionStorage isn't cleared per-user), silently overwriting the
-// correct per-user exclude-keywords handleLogin just set moments earlier.
+// correct per-user exclude-keywords handleGoogleOAuthCallback just set moments earlier.
 function restoreTaxonomySelectionFromSession() {
   const raw = sessionStorage.getItem(SEARCH_FILTERS_KEY);
   if (!raw) return;
@@ -2421,8 +2420,6 @@ els.exportCsvBtn.addEventListener("click", exportCsv);
 els.exportSheetsBtn.addEventListener("click", exportSheets);
 els.sendDisconnectedBtn.addEventListener("click", sendProspectToDisconnected);
 
-els.loginForm.addEventListener("submit", handleLogin);
-els.googleSignInBtn.hidden = !VERCEL_API_ENABLED;
 els.googleSignInBtn.addEventListener("click", handleGoogleSignIn);
 els.signOutBtn.addEventListener("click", handleSignOut);
 els.suggestBtn.addEventListener("click", openSuggestionBox);

@@ -75,6 +75,60 @@ version of the same thing plus session-specific gotchas).
 3. **Cutover itself** (`MIGRATION_TO_VERCEL_SUPABASE.md` section 7) --
    blocked on both of the above.
 
+## Login is Google-only now, and there's a third frontend deployment option
+
+The password login form is gone entirely from `docs/index.html` and
+`vercel/index.html` -- "Sign in with Google" is the only way in, for both
+copies. `handleGoogleOAuthCallback` now actually saves the session and
+loads the app (it used to just show a toast and stop, back when it was a
+"test the new backend" button rather than the real login).
+
+A third frontend option now exists alongside `docs/` (GitHub Pages) and
+`vercel/`'s own copy: **Cloudflare Pages**, built from `cloudflare/`.
+`cloudflare/build.js` assembles `cloudflare/dist/` from `vercel/`'s shared
+source files, swapping in `cloudflare/config.js` (which needs the full
+`https://dmedesk-prospector.vercel.app` URL, since Pages is cross-origin to
+the API, unlike `vercel/`'s own same-origin copy). Deploy with
+`cd cloudflare && npm run deploy` (needs `wrangler` configured separately).
+This makes THREE places running frontend code that all need to stay in
+sync by hand until the full rewire (`CUTOVER_PLAN.md`) picks one and drops
+the rest -- see that plan's step 1.
+
+## CORS
+
+`vercel/lib/http.js`'s `isAllowedOrigin` accepts: exact matches from the
+`ALLOWED_ORIGINS` env var, `localhost`/`127.0.0.1` (any port, for local
+dev), and any `https://<anything>.dmedesk-prospector.pages.dev` (Cloudflare
+Pages preview deployments get a random subdomain per build, so an exact
+allow-list entry isn't possible for those). Set `ALLOWED_ORIGINS` on Vercel
+to include every production origin that's actually live, e.g.
+`https://dmedesk-prospector.vercel.app,https://dmedesk-prospector.pages.dev`
+if the Cloudflare Pages option is deployed too -- there's no tooling to
+read/set this from a session, so check it directly in the Vercel dashboard
+if a frontend copy is getting CORS errors calling the API.
+
+## A note on the SUPABASE_ANON_KEY env var
+
+A collaborator's branch had a hardcoded patch in `lib/config.js` that
+silently rewrote `SUPABASE_ANON_KEY` if the configured value contained a
+substring matching a DIFFERENT Supabase project ref than
+`pcvyrkisvvtiteoiuplg`. That patch was deliberately NOT merged (patching
+around a bad env var in source code hides the real problem instead of
+fixing it) -- if API calls ever fail with an auth/project-mismatch-shaped
+error, check the actual `SUPABASE_ANON_KEY` value in the Vercel dashboard
+directly rather than assuming the code is wrong.
+
+## Multiple people pushing directly to this Vercel project
+
+At least two other collaborators (branches `newlogin`, `bensss`) have been
+pushing straight to this repo and, at times, to this same Vercel project's
+production target -- production flipped between branches more than once.
+`newlogin`'s real improvements (the Google-only login rewrite, the CORS
+fix, the Cloudflare Pages option) have been merged into this branch as of
+this note. If you're a fresh session picking this up: check `git log
+--all --oneline` for anything that's landed on other branches since, before
+assuming this branch is the only place work is happening.
+
 ## Everything else you need is already in the repo
 
 - `ARCHITECTURE.md` -- how the current (Apps Script) production system works.
