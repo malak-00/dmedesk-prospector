@@ -108,7 +108,7 @@ var SupabaseMirror = (function () {
     return null;
   }
 
-  function rowToLeadRecord_(row, colMap, isDisconnected, defaultClaimedBy, userMap) {
+  function rowToLeadRecord_(row, colMap, isDisconnected, defaultClaimedBy, userMap, unresolvedNames) {
     var npi = String(getVal_(row, colMap, "NPI")).trim();
     if (!npi) return null;
 
@@ -130,9 +130,19 @@ var SupabaseMirror = (function () {
 
     var status = String(getVal_(row, colMap, "Status")).trim().toLowerCase() || "new";
 
-    // Resolve claimed_by text -> app_users.id UUID
+    // Resolve claimed_by text -> app_users.id UUID. A row whose "Claimed By"
+    // doesn't resolve to a known user is skipped entirely rather than
+    // mirrored with claimed_by = null: Postgres unique constraints never
+    // treat two NULLs as conflicting, so a null-claimed_by row would never
+    // dedup against itself and would re-insert as a brand new row on every
+    // run of this time-driven trigger (this is exactly how one bad "Claimed
+    // By" cell produced 188 duplicate rows of the same lead over two days).
     var claimedByText = String(getVal_(row, colMap, "Claimed By")).trim() || defaultClaimedBy || "";
     var claimedByUuid = resolveUserId_(claimedByText, userMap);
+    if (!claimedByUuid) {
+      if (unresolvedNames && claimedByText) unresolvedNames[claimedByText] = true;
+      return null;
+    }
 
     // Resolve status_updated_by text -> app_users.id UUID if present
     var statusUpdatedByText = String(getVal_(row, colMap, "Status Updated By")).trim();
@@ -211,6 +221,32 @@ var SupabaseMirror = (function () {
     return userMap;
   }
 
+  // Reads every existing (npi, claimed_by, is_disconnected) triple so the
+  // mirror can decide insert-vs-update itself instead of relying on
+  // PostgREST's on_conflict= upsert. on_conflict only works against a plain
+  // (unpartitioned) unique index on exactly those columns; leads now has
+  // idx_leads_npi_claimed_by_active, a *partial* unique index (WHERE NOT
+  // is_disconnected), which PostgREST/Postgres can't target via on_conflict
+  // at all -- every upsert through that endpoint now fails outright with
+  // "no unique or exclusion constraint matching the ON CONFLICT
+  // specification". The partial index intentionally allows the same
+  // (npi, claimed_by) pair to exist twice -- once disconnected, once active
+  // -- which a single on_conflict target can't express anyway.
+  function fetchExistingLeadKeys_(baseUrl, headers) {
+    var getUrl = baseUrl + "/rest/v1/leads?select=id,npi,claimed_by,is_disconnected";
+    var options = { method: "get", headers: headers, muteHttpExceptions: true };
+    var res = UrlFetchApp.fetch(getUrl, options);
+    if (res.getResponseCode() < 200 || res.getResponseCode() >= 300) {
+      throw new Error("Failed to fetch existing leads (" + res.getResponseCode() + "): " + res.getContentText());
+    }
+    var rows = JSON.parse(res.getContentText());
+    var keyMap = {};
+    rows.forEach(function (r) {
+      keyMap[r.npi + ":" + (r.claimed_by || "null") + ":" + r.is_disconnected] = r.id;
+    });
+    return keyMap;
+  }
+
   function mirrorLeadsToSupabase() {
     var sheetId = Config.googleSheetId();
     if (!sheetId) {
@@ -226,15 +262,16 @@ var SupabaseMirror = (function () {
 
     // Fetch user mappings for claimed_by / status_updated_by UUID resolution
     var userMap = fetchUserMappings_(baseUrl, headers);
+    var existingKeys = fetchExistingLeadKeys_(baseUrl, headers);
 
-    // Target unique index: idx_leads_npi_claimed_by on leads(npi, claimed_by)
-    var endpoint = baseUrl + "/rest/v1/leads?on_conflict=npi,claimed_by";
+    var insertEndpoint = baseUrl + "/rest/v1/leads";
 
     var ss = SpreadsheetApp.openById(sheetId);
     var sheets = ss.getSheets();
 
     var leadsMap = {};
     var totalProcessedRows = 0;
+    var unresolvedNames = {};
 
     sheets.forEach(function (sheet) {
       var tabName = sheet.getName();
@@ -256,46 +293,93 @@ var SupabaseMirror = (function () {
 
       values.forEach(function (row) {
         totalProcessedRows++;
-        var leadRec = rowToLeadRecord_(row, colMap, isDisconnectedTab, defaultClaimedBy, userMap);
+        var leadRec = rowToLeadRecord_(row, colMap, isDisconnectedTab, defaultClaimedBy, userMap, unresolvedNames);
         if (leadRec && leadRec.npi) {
-          var compositeKey = leadRec.npi + ":" + (leadRec.claimed_by || "null");
+          var compositeKey = leadRec.npi + ":" + leadRec.claimed_by + ":" + leadRec.is_disconnected;
           leadsMap[compositeKey] = leadRec;
         }
       });
     });
 
-    var records = Object.keys(leadsMap).map(function (k) { return leadsMap[k]; });
-    if (records.length === 0) {
-      Logger.log("[SupabaseMirror] No lead records found to mirror.");
-      return { success: true, count: 0, message: "No valid lead rows found to mirror." };
+    var unresolvedList = Object.keys(unresolvedNames);
+    if (unresolvedList.length > 0) {
+      Logger.log("[SupabaseMirror] Skipped rows for unresolvable \"Claimed By\" names: " + unresolvedList.join(", "));
     }
 
-    var batchSize = 100;
-    var syncedCount = 0;
+    var entries = Object.keys(leadsMap).map(function (k) { return { key: k, record: leadsMap[k] }; });
+    if (entries.length === 0) {
+      Logger.log("[SupabaseMirror] No lead records found to mirror.");
+      return { success: true, count: 0, message: "No valid lead rows found to mirror.", skippedUnresolvedNames: unresolvedList };
+    }
 
-    for (var i = 0; i < records.length; i += batchSize) {
-      var batch = records.slice(i, i + batchSize);
+    var toInsert = [];
+    var toUpdate = [];
+    entries.forEach(function (entry) {
+      var existingId = existingKeys[entry.key];
+      if (existingId) {
+        toUpdate.push({ id: existingId, record: entry.record });
+      } else {
+        toInsert.push(entry.record);
+      }
+    });
+
+    var batchSize = 100;
+    var insertedCount = 0;
+    var insertHeaders = {};
+    for (var h in headers) insertHeaders[h] = headers[h];
+    insertHeaders["Prefer"] = "return=minimal";
+
+    for (var i = 0; i < toInsert.length; i += batchSize) {
+      var batch = toInsert.slice(i, i + batchSize);
       var options = {
         method: "post",
-        headers: headers,
+        headers: insertHeaders,
         payload: JSON.stringify(batch),
         muteHttpExceptions: true
       };
 
-      var res = UrlFetchApp.fetch(endpoint, options);
+      var res = UrlFetchApp.fetch(insertEndpoint, options);
       var code = res.getResponseCode();
       if (code < 200 || code >= 300) {
-        throw new Error("Supabase API error (" + code + "): " + res.getContentText());
+        throw new Error("Supabase API error inserting leads (" + code + "): " + res.getContentText());
       }
-      syncedCount += batch.length;
+      insertedCount += batch.length;
     }
 
-    Logger.log("[SupabaseMirror] Synced " + syncedCount + " leads to Supabase out of " + totalProcessedRows + " rows scanned.");
+    // Existing rows are matched by id and PATCHed individually -- there's no
+    // single conflict target that covers both the active-claim case (unique
+    // per npi+claimed_by) and the disconnected case (intentionally
+    // non-unique, so a fresh disconnect should update the same tracked row
+    // rather than pile up a new one every 15-minute run).
+    var updatedCount = 0;
+    toUpdate.forEach(function (entry) {
+      var patchUrl = baseUrl + "/rest/v1/leads?id=eq." + encodeURIComponent(entry.id);
+      var options = {
+        method: "patch",
+        headers: insertHeaders,
+        payload: JSON.stringify(entry.record),
+        muteHttpExceptions: true
+      };
+      var res = UrlFetchApp.fetch(patchUrl, options);
+      var code = res.getResponseCode();
+      if (code < 200 || code >= 300) {
+        throw new Error("Supabase API error updating lead " + entry.id + " (" + code + "): " + res.getContentText());
+      }
+      updatedCount++;
+    });
+
+    Logger.log(
+      "[SupabaseMirror] Synced " + (insertedCount + updatedCount) + " leads (" + insertedCount + " inserted, " +
+      updatedCount + " updated) out of " + totalProcessedRows + " rows scanned. Skipped " +
+      unresolvedList.length + " unresolvable name(s)."
+    );
 
     return {
       success: true,
       totalRowsScanned: totalProcessedRows,
-      leadsSynced: syncedCount
+      leadsInserted: insertedCount,
+      leadsUpdated: updatedCount,
+      skippedUnresolvedNames: unresolvedList
     };
   }
 
