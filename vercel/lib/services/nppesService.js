@@ -29,11 +29,16 @@ function sleep(ms) {
 }
 
 // One attempt at the request. Never throws for a bad HTTP status -- callers
-// decide whether that's retryable based on `retryable`.
-async function attemptFetch(url) {
+// decide whether that's retryable based on `retryable`. `timeoutMs` is
+// capped to whatever's actually left of the search's overall time budget
+// (see fetchFromNppes) -- a fixed 10s timeout can still let one slow call
+// plus its retry (up to ~20s total) blow well past the deadline if it
+// starts right as the budget runs out, since the caller's own deadline
+// check only runs BETWEEN calls, not during one.
+async function attemptFetch(url, timeoutMs) {
   let response;
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   } catch (err) {
     const unreachable = new Error("Failed to reach NPPES API");
     unreachable.status = 504;
@@ -66,13 +71,25 @@ async function attemptFetch(url) {
   return { ok: true, data };
 }
 
-async function fetchFromNppes(params) {
+// `deadline` (a Date.now()-scale timestamp, optional) bounds the TOTAL time
+// this call -- including its one retry -- is allowed to take, so it can
+// never single-handedly blow past the search's overall time budget.
+async function fetchFromNppes(params, deadline) {
   const url = `${BASE_URL}?${buildQueryString({ version: config.nppesVersion, ...params })}`;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const result = await attemptFetch(url);
+    const remaining = deadline ? deadline - Date.now() : FETCH_TIMEOUT_MS;
+    if (remaining <= 0) {
+      const expired = new Error("Search time budget exhausted before NPPES could respond");
+      expired.status = 504;
+      throw expired;
+    }
+    const result = await attemptFetch(url, Math.min(FETCH_TIMEOUT_MS, remaining));
     if (result.ok) return result.data;
-    if (!result.retryable || attempt === MAX_ATTEMPTS) throw result.error;
+    // Not worth retrying if there's barely any budget left -- surface the
+    // failure now instead of sleeping RETRY_DELAY_MS just to immediately
+    // hit the expired-deadline check above on the next loop iteration.
+    if (!result.retryable || attempt === MAX_ATTEMPTS || deadline - Date.now() <= RETRY_DELAY_MS) throw result.error;
     await sleep(RETRY_DELAY_MS);
   }
 }
@@ -154,7 +171,9 @@ function normalizeProvider(raw) {
 }
 
 // criteria: { npi, organizationName, city, state, taxonomyDescription, limit=20, skip=0 }
-export async function searchProviders(criteria = {}) {
+// `deadline` (optional) bounds this whole call (including its retry) to
+// whatever's left of the caller's overall time budget -- see fetchFromNppes.
+export async function searchProviders(criteria = {}, deadline) {
   const limit = criteria.limit || 20;
   const skip = criteria.skip || 0;
 
@@ -173,7 +192,7 @@ export async function searchProviders(criteria = {}) {
     taxonomy_description: isExactNpiLookup ? undefined : criteria.taxonomyDescription || undefined,
     limit,
     skip,
-  });
+  }, deadline);
 
   let results = Array.isArray(data.results) ? data.results.map(normalizeProvider) : [];
 

@@ -274,7 +274,7 @@ async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, clai
 
       let result;
       try {
-        result = await searchProviders({ ...variant, limit: NPPES_PAGE_SIZE, skip });
+        result = await searchProviders({ ...variant, limit: NPPES_PAGE_SIZE, skip }, deadline);
       } catch (err) {
         console.log(`[companyService] NPPES query variant failed, skipping it: ${key} -- ${err.message}`);
         rejectedVariants.push({ state: variant.state || null, taxonomyDescription: variant.taxonomyDescription || null, message: err.message });
