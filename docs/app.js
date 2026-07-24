@@ -117,6 +117,7 @@ const state = {
   lastSearchParams: null,
   searchMoreVariantSkips: {},
   searchMoreSeenNpis: [],
+  searchMoreExhausted: false,
   view: "search",
   claimedLoaded: false,
   claimedLeads: [],
@@ -803,12 +804,58 @@ function collectNpisFromCompanies(companies) {
 }
 
 function updateSearchMoreButton(exhausted) {
+  state.searchMoreExhausted = exhausted;
   els.searchMoreBtn.hidden = false;
   els.searchMoreBtn.disabled = exhausted;
   els.searchMoreLabel.textContent = exhausted ? "No more leads found" : "Search more";
   els.searchMoreBtn.title = exhausted
     ? "This search has no more unclaimed leads left in the registry"
     : "Keeps the same filters and pages deeper into the registry, skipping every lead you've already seen for this search";
+}
+
+// Prospect results (and "Search more" bookkeeping) only ever lived in memory,
+// so a browser-initiated reload -- switching tabs long enough for the
+// browser to discard/reclaim this one, or any other unintended refresh --
+// silently wiped a search a rep might have been reviewing for a while.
+// sessionStorage-scoped (same tradeoff as SEARCH_FILTERS_KEY above): survives
+// a reload within this tab session, cleared when the tab actually closes.
+const SEARCH_RESULTS_KEY = "dmeProspectorLastResults";
+
+function saveSearchResultsState() {
+  if (state.resultPages.length === 0) {
+    sessionStorage.removeItem(SEARCH_RESULTS_KEY);
+    return;
+  }
+  sessionStorage.setItem(SEARCH_RESULTS_KEY, JSON.stringify({
+    resultPages: state.resultPages,
+    currentPage: state.currentPage,
+    lastSearchParams: state.lastSearchParams,
+    searchMoreVariantSkips: state.searchMoreVariantSkips,
+    searchMoreSeenNpis: state.searchMoreSeenNpis,
+    searchMoreExhausted: state.searchMoreExhausted,
+  }));
+}
+
+// Restores a previous search's results without re-hitting the network --
+// same page-nav/"Search more" state as before the reload, not a fresh fetch
+// (which would also silently consume more of the server-side dedup
+// bookmark). Only restores INTO an empty results table, so it never clobbers
+// results from a search that already ran again in this same page load.
+function restoreSearchResultsState() {
+  if (state.resultPages.length > 0) return;
+  const raw = sessionStorage.getItem(SEARCH_RESULTS_KEY);
+  if (!raw) return;
+  let saved;
+  try { saved = JSON.parse(raw); } catch { return; }
+  if (!Array.isArray(saved.resultPages) || saved.resultPages.length === 0) return;
+
+  state.resultPages = saved.resultPages;
+  state.currentPage = Math.min(saved.currentPage || 0, saved.resultPages.length - 1);
+  state.lastSearchParams = saved.lastSearchParams || null;
+  state.searchMoreVariantSkips = saved.searchMoreVariantSkips || {};
+  state.searchMoreSeenNpis = saved.searchMoreSeenNpis || [];
+  applyCurrentPage();
+  if (state.lastSearchParams) updateSearchMoreButton(Boolean(saved.searchMoreExhausted));
 }
 
 // Locks every filter/control in the search form (text inputs, all the
@@ -962,6 +1009,7 @@ function applyCurrentPage() {
   state.companies = page ? page.companies : [];
   renderResults(page ? page.excludedAsClaimed : 0);
   updatePageNav();
+  saveSearchResultsState();
 }
 
 function updatePageNav() {
@@ -1236,6 +1284,7 @@ function removeCompaniesFromProspect(companies) {
   state.selected.clear();
   state.expandedIndex = null;
   renderResults();
+  saveSearchResultsState();
 }
 
 async function exportCsv() {
@@ -2546,6 +2595,7 @@ handleGoogleOAuthCallback();
 if (getSession()) {
   hideLogin();
   loadTaxonomyOptions(); // page was reloaded while already signed in -- this also re-applies restoreSearchFormState() once the taxonomy checkboxes exist
+  restoreSearchResultsState(); // page was reloaded (tab switch/refresh) -- put back whatever Prospect results were on screen instead of showing an empty table
 } else {
   showLogin();
 }
