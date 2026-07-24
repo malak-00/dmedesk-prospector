@@ -473,7 +473,7 @@ async function handleLogin(evt) {
 // (see vercel/lib/auth.js) -- entirely separate from the Apps Script
 // session above; a click-through way to verify the new backend's auth
 // before the rest of the app is rewired onto it. Hidden unless
-// VERCEL_API_URL is set in config.js.
+// VERCEL_API_URL is set in frontend-config.js.
 async function handleGoogleSignIn() {
   const redirectTo = window.location.origin + window.location.pathname;
   try {
