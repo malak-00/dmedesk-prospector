@@ -9,10 +9,32 @@ import { get as cacheGet, put as cachePut } from "./enrichmentCache.js";
 
 const BASE_URL = "https://places-api.foursquare.com/places/search";
 const API_VERSION = "2025-06-17";
+const FETCH_TIMEOUT_MS = 6000; // a single hung request shouldn't be able to stall the whole Promise.all batch
 // If rating/stats fields ever get billed as Premium on your account, remove
 // "rating" and "stats" from this list -- everything else stays free-tier Pro.
 const FIELDS = "fsq_place_id,name,tel,website,rating,stats,location,date_closed";
 const CACHE_NAMESPACE = "fsq";
+const MAX_CONCURRENT_REQUESTS = 8; // firing all ~50 at once was tripping Foursquare's own rate limiting (429s on nearly every request)
+
+// Runs `worker` over `items` with at most MAX_CONCURRENT_REQUESTS in flight
+// at a time, preserving input order in the returned array.
+async function mapWithConcurrencyLimit(items, worker, deadline) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function runNext() {
+    const i = nextIndex++;
+    if (i >= items.length) return;
+    // Once the search's overall time budget is spent, stop dispatching new
+    // requests -- whatever's already in flight still finishes (each one is
+    // itself bounded by FETCH_TIMEOUT_MS), but no new ones start.
+    if (deadline && Date.now() >= deadline) return;
+    results[i] = await worker(items[i], i);
+    await runNext();
+  }
+  const runners = Array.from({ length: Math.min(MAX_CONCURRENT_REQUESTS, items.length) }, runNext);
+  await Promise.all(runners);
+  return results;
+}
 
 export class FoursquareNotConfiguredError extends Error {
   constructor() {
@@ -54,7 +76,7 @@ function authHeaders() {
 async function fetchOne(url, companyName) {
   let response;
   try {
-    response = await fetch(url, { headers: authHeaders() });
+    response = await fetch(url, { headers: authHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   } catch (err) {
     console.error(`[foursquareService] Network error for "${companyName}": ${err.message}`);
     return { ok: false, data: null };
@@ -92,7 +114,7 @@ async function fetchOne(url, companyName) {
 // Returns a plain object mapping NPI -> enrichment data (or null when no
 // match was found / the company had no usable name+location). `supabase`
 // is a service-role client (see enrichmentCache.js).
-export async function enrichCompanies(supabase, companies) {
+export async function enrichCompanies(supabase, companies, deadline) {
   assertConfigured();
 
   const results = {};
@@ -119,11 +141,15 @@ export async function enrichCompanies(supabase, companies) {
 
   if (toFetch.length === 0) return results;
 
-  const responses = await Promise.all(toFetch.map((c) => fetchOne(c.url, c.name)));
+  const responses = await mapWithConcurrencyLimit(toFetch, (c) => fetchOne(c.url, c.name), deadline);
 
   await Promise.all(
     toFetch.map(async (c, i) => {
+      // undefined means the deadline hit before this one was ever dispatched
+      // -- leave it out of `results` entirely so the caller falls back to
+      // OSM/no-data for it, same as any other not-yet-checked company.
       const parsed = responses[i];
+      if (!parsed) return;
       if (c.npi) {
         results[c.npi] = parsed.data;
         // Only cache a genuine result (match or confirmed no-match) -- not a

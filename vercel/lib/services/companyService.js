@@ -113,10 +113,10 @@ function createBranchMerger() {
   return { add, list: () => merged, get length() { return merged.length; } };
 }
 
-async function applyPlacesEnrichment(serviceSupabase, companies) {
+async function applyPlacesEnrichment(serviceSupabase, companies, deadline) {
   let dataByNpi;
   try {
-    dataByNpi = await foursquareService.enrichCompanies(serviceSupabase, companies);
+    dataByNpi = await foursquareService.enrichCompanies(serviceSupabase, companies, deadline);
   } catch (err) {
     if (err.name === "FoursquareNotConfiguredError") {
       console.log("[companyService] Places enrichment skipped: FOURSQUARE_SERVICE_API_KEY not set");
@@ -355,7 +355,7 @@ export async function searchCompanies(criteria = {}, options = {}) {
   }
 
   if (enrichPlaces) {
-    companies = await applyPlacesEnrichment(serviceSupabase, companies);
+    companies = await applyPlacesEnrichment(serviceSupabase, companies, deadline);
     // Sequential, not Promise.all -- OSM/Nominatim enforces its own rate
     // limit (~1 req/sec). With Foursquare unconfigured, every company still
     // needs this lookup, so a large result set can outrun the function's
