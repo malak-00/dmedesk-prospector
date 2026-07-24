@@ -11,7 +11,7 @@ export default withAuth(async (req, res) => {
   if (req.method !== "GET") return sendError(res, 405, "Method not allowed");
 
   const [leads, statuses] = await Promise.all([
-    leadsService.listClaimedLeads(req.supabase, req.user.id),
+    leadsService.listClaimedLeads(req.supabase, req.user.id, req.profile.display_name),
     leadsService.getKnownStatuses(createServiceClient()),
   ]);
   sendData(res, { leads, statuses });

@@ -1,11 +1,10 @@
-// Frontend for the Apps Script backend. Request layer notes:
-// - every request carries ?path= (Apps Script has no real router) and
-//   ?token= (session token from sign-in; query param rather than a header
-//   keeps requests CORS-simple so no preflight is ever sent)
-// - POST bodies go as text/plain for the same reason; the backend parses
-//   them as JSON regardless of content type
-// - every response is HTTP 200; success/failure is the `success` field in
-//   the JSON body, and body.status 401 means the session expired
+// Frontend for the real Vercel + Supabase API (see /vercel/api). Request
+// layer notes:
+// - real REST paths + methods, a real Authorization: Bearer header (the
+//   Supabase access token from Google sign-in) instead of Apps Script's
+//   ?path=&token= query-string workaround
+// - real HTTP status codes -- 401 means the session expired/is invalid,
+//   not a `status` field inside an always-200 body
 
 const THEME_STORAGE_KEY = "dmeProspectorTheme";
 
@@ -49,9 +48,10 @@ function clearSession() {
   sessionStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
-// Apps Script occasionally returns an HTML error page (e.g. a quota error)
-// instead of JSON -- res.json() on that throws an opaque SyntaxError. This
-// gives a readable error instead, surfacing the actual status/body.
+// A platform-level error (e.g. Vercel's own error page, a CORS rejection)
+// can return HTML/plain-text instead of JSON -- res.json() on that throws an
+// opaque SyntaxError. This gives a readable error instead, surfacing the
+// actual status/body.
 async function parseJsonResponse(res) {
   const contentType = res.headers.get("content-type") || "";
   if (!contentType.includes("application/json")) {
@@ -61,27 +61,33 @@ async function parseJsonResponse(res) {
   return await res.json();
 }
 
+function apiBase() {
+  return (typeof VERCEL_API_URL !== "undefined" ? VERCEL_API_URL : "") || "";
+}
+
 async function apiGet(path, params = {}) {
-  const query = new URLSearchParams(params);
-  query.set("path", path);
-  query.set("token", getSession()?.token || "");
-  const res = await fetch(`${APPS_SCRIPT_URL}?${query.toString()}`);
-  return unwrap(await parseJsonResponse(res));
+  const query = new URLSearchParams(params).toString();
+  const res = await fetch(`${apiBase()}/api/${path}${query ? `?${query}` : ""}`, {
+    headers: { Authorization: `Bearer ${getSession()?.token || ""}` },
+  });
+  return unwrap(await parseJsonResponse(res), res.status);
 }
 
 async function apiPost(path, body) {
-  const query = new URLSearchParams({ path, token: getSession()?.token || "" });
-  const res = await fetch(`${APPS_SCRIPT_URL}?${query.toString()}`, {
+  const res = await fetch(`${apiBase()}/api/${path}`, {
     method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getSession()?.token || ""}`,
+    },
     body: JSON.stringify(body),
   });
-  return unwrap(await parseJsonResponse(res));
+  return unwrap(await parseJsonResponse(res), res.status);
 }
 
-function unwrap(payload) {
+function unwrap(payload, status) {
   if (!payload.success) {
-    if (payload.status === 401) {
+    if (status === 401) {
       clearSession();
       showLogin();
     }
@@ -450,9 +456,9 @@ async function persistExcludeKeywords({ silent = true } = {}) {
 
 // Google OAuth via the Vercel + Supabase API (see vercel/lib/auth.js) is the
 // ONLY sign-in path now -- the old username/password form against Apps
-// Script's Users tab is gone. Everything else in this file (search, claimed
-// leads, taxonomies) still talks to Apps Script via APPS_SCRIPT_URL; only
-// auth has moved.
+// Script's Users tab is gone, and every other route (search, claimed
+// leads, taxonomies) has been rewired onto the real REST API too -- see
+// apiGet/apiPost above. APPS_SCRIPT_URL is no longer used anywhere.
 async function handleGoogleSignIn() {
   const redirectTo = window.location.origin + window.location.pathname;
   try {
@@ -537,9 +543,9 @@ async function handleSuggestionSubmit(evt) {
 
   els.suggestionSubmitBtn.disabled = true;
   try {
-    const data = await apiPost("suggestions/submit", { text });
+    await apiPost("suggestions/submit", { text });
     closeSuggestionBox();
-    showToast("Thanks! Your suggestion was sent to Caroline.", false, data.sheetUrl);
+    showToast("Thanks! Your suggestion was submitted.");
   } catch (err) {
     showToast(err.message, true);
   } finally {
@@ -1269,8 +1275,8 @@ async function exportSheets() {
   els.exportSheetsBtn.disabled = true; // prevents a double-click from double-claiming
   setStatus("busy", "Sending to Sheets…");
   try {
-    const data = await apiPost("export/sheets", { companies });
-    showToast(`Added ${data.rowsAdded} row(s) claimed by ${data.claimedBy || "you"}`, false, data.sheetUrl);
+    const data = await apiPost("leads/claim", { companies });
+    showToast(`Added ${data.rowsAdded} row(s) claimed by ${who}`);
     state.claimedLoaded = false; // claimed view is now stale
     removeCompaniesFromProspect(companies); // claimed leads shouldn't linger in the Prospect view
     setStatus("ready", "Ready");
@@ -1298,8 +1304,8 @@ async function sendProspectToDisconnected() {
   els.sendDisconnectedBtn.disabled = true; // prevents a double-click from double-sending
   setStatus("busy", "Sending to Disconnected…");
   try {
-    const data = await apiPost("export/disconnected", { companies });
-    showToast(`Sent ${data.rowsAdded} lead(s) to Disconnected`, false, data.sheetUrl);
+    const data = await apiPost("leads/disconnect-new", { companies });
+    showToast(`Sent ${data.rowsAdded} lead(s) to Disconnected`);
     removeCompaniesFromProspect(companies);
     setStatus("ready", "Ready");
   } catch (err) {
@@ -1625,7 +1631,7 @@ async function loadClaimedLeads() {
   try {
     // Always scoped server-side to the signed-in user's own claimed leads --
     // no params needed, there's no team-wide view to opt into anymore.
-    const data = await apiGet("leads/list");
+    const data = await apiGet("leads");
     state.statuses = data.statuses || [];
     populateStatusFilterOptions();
     state.claimedLoaded = true;
@@ -2279,7 +2285,7 @@ function renderTaxonomyOptions(taxonomies) {
 
 async function loadTaxonomyOptions() {
   try {
-    const data = await apiGet("taxonomies/list");
+    const data = await apiGet("taxonomies");
     renderTaxonomyOptions(data.taxonomies || []);
     // Re-applies just the taxonomy selection from sessionStorage now that
     // the checkboxes actually exist to check -- deliberately NOT the full
@@ -2325,7 +2331,7 @@ function renderTaxonomyAddResults(results) {
   }
   els.taxonomyAddResults.innerHTML = results
     .map(
-      (r) => `<button type="button" class="taxonomy-add-result" data-row-number="${r.rowNumber}" title="${escapeHtml(r.description || "")}">
+      (r) => `<button type="button" class="taxonomy-add-result" data-id="${r.id}" title="${escapeHtml(r.description || "")}">
         <span class="facility-type">${escapeHtml(r.facilityType)}</span><span class="taxonomy-code">${escapeHtml(r.code || "")}</span>
       </button>`
     )
@@ -2358,18 +2364,18 @@ els.taxonomyAddInput.addEventListener("input", () => {
 els.taxonomyAddResults.addEventListener("click", async (e) => {
   const btn = e.target.closest(".taxonomy-add-result");
   if (!btn) return;
-  const rowNumber = btn.dataset.rowNumber;
+  const id = btn.dataset.id;
   const facilityType = btn.querySelector(".facility-type").textContent;
   btn.disabled = true;
   try {
-    const data = await apiPost("taxonomies/enable", { rowNumber });
+    const data = await apiPost("taxonomies/enable", { id });
     const taxonomies = data.taxonomies || [];
     renderTaxonomyOptions(taxonomies);
     // Auto-checks the just-added one so it's immediately part of THIS search
-    // too -- matched by rowNumber (not facilityType/description text, which
-    // aren't guaranteed unique) to find its checkbox VALUE, which is the
+    // too -- matched by id (not facilityType/description text, which aren't
+    // guaranteed unique) to find its checkbox VALUE, which is the
     // Description text, not the facilityType label used elsewhere here.
-    const justAdded = taxonomies.find((t) => String(t.rowNumber) === String(rowNumber));
+    const justAdded = taxonomies.find((t) => String(t.id) === String(id));
     if (justAdded) {
       taxonomyOptionsContainer.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((cb) => {
         if (cb.value === justAdded.description) cb.checked = true;

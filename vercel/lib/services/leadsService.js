@@ -180,11 +180,51 @@ export async function getClaimedNpis(serviceSupabase) {
   return new Set(data.map((r) => r.npi));
 }
 
+// Converts a raw `leads` row (Postgres snake_case columns) into the flat
+// camelCase shape the claimed-leads UI expects -- the same naming
+// convention flattenCompany() uses for Prospect search results, since the
+// frontend's claimed-leads rendering code was written against that shape
+// originally. `claimedBy` is always the CURRENT user's own display name --
+// this route is always scoped to one user's own leads (see
+// listClaimedLeads below), so there's never a need to look up anyone else's.
+function rowToClaimedLead(row, displayName) {
+  return {
+    npi: row.npi,
+    name: row.company_name,
+    companyPhone: row.phone,
+    website: row.website,
+    email: row.email,
+    addressLine1: row.address_line1,
+    city: row.city,
+    state: row.state,
+    postalCode: row.postal_code,
+    taxonomy: row.specialty,
+    contactName: row.contact_name,
+    contactTitle: row.contact_title,
+    contactRole: row.contact_role,
+    contactPhone: row.contact_phone,
+    additionalContacts: row.additional_contacts_found,
+    rating: row.rating,
+    scoreValue: row.score_value,
+    scorePercentage: row.score_percentage,
+    sources: row.data_sources,
+    medicareClaims: row.medicare_claims,
+    medicareBeneficiaries: row.medicare_beneficiaries,
+    medicarePayment: row.medicare_payment,
+    nppesLastUpdated: row.nppes_last_updated,
+    status: row.status,
+    claimedBy: displayName,
+    lastUpdated: row.status_updated_at || row.claimed_at,
+    notes: row.notes,
+    reminderAt: row.reminder_at,
+  };
+}
+
 // Replaces SheetsStore.listClaimedLeads -- always scoped to one user's own
 // leads (the Claimed Leads view has no team-wide mode -- see
 // ARCHITECTURE.md's Auth section on why that's an intentional privacy
 // boundary, not just a UI default).
-export async function listClaimedLeads(userSupabase, userId) {
+export async function listClaimedLeads(userSupabase, userId, displayName) {
   const { data, error } = await userSupabase
     .from("leads")
     .select("*")
@@ -193,7 +233,7 @@ export async function listClaimedLeads(userSupabase, userId) {
     .order("status_updated_at", { ascending: false, nullsFirst: false })
     .order("claimed_at", { ascending: false });
   if (error) throw error;
-  return data;
+  return data.map((row) => rowToClaimedLead(row, displayName));
 }
 
 // Cross-user by design (a custom status one teammate introduces should
