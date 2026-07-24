@@ -76,6 +76,20 @@ function requireArray(value, message) {
   return arr;
 }
 
+// idx_leads_npi_claimed_by_active (see the 0004 migration) only allows one
+// ACTIVE claim per (npi, claimed_by) -- a genuine attempt to claim/disconnect
+// an NPI that's already actively claimed by this same user hits it. Surface
+// that as a real 409, not Postgres's raw "duplicate key value violates
+// unique constraint ..." text.
+function throwFriendlyInsertError(error) {
+  if (error.code === "23505") {
+    const err = new Error("One or more of these leads is already actively claimed by you");
+    err.status = 409;
+    throw err;
+  }
+  throw error;
+}
+
 // Appends fresh rows for companies a user is claiming from Prospect --
 // replaces SheetsStore.exportCompaniesToSheet.
 export async function claimCompanies(userSupabase, userId, companies, flattenCompany) {
@@ -94,7 +108,7 @@ export async function claimCompanies(userSupabase, userId, companies, flattenCom
   }));
 
   const { data, error } = await userSupabase.from("leads").insert(rows).select("id");
-  if (error) throw error;
+  if (error) throwFriendlyInsertError(error);
   return { rowsAdded: data.length, claimedBy: userId };
 }
 
@@ -121,7 +135,7 @@ export async function disconnectNewCompanies(userSupabase, userId, companies, fl
   }));
 
   const { data, error } = await userSupabase.from("leads").insert(rows).select("id");
-  if (error) throw error;
+  if (error) throwFriendlyInsertError(error);
   return { rowsAdded: data.length };
 }
 
