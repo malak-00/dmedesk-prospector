@@ -8,6 +8,12 @@ import config from "../config.js";
 const BASE_URL = "https://npiregistry.cms.hhs.gov/api/";
 const MAX_ATTEMPTS = 2; // one retry, for transient failures only
 const RETRY_DELAY_MS = 400;
+// A hung request (no timeout existed before this) can block up to
+// MAX_NPPES_FETCHES_PER_REQUEST sequential calls in companyService's
+// pagination loop -- its own deadline check only runs BETWEEN fetches, so
+// one stuck call here defeats it entirely. The government registry is
+// legitimately slower than Foursquare/Nominatim, hence the longer timeout.
+const FETCH_TIMEOUT_MS = 10000;
 
 function buildQueryString(params) {
   const parts = [];
@@ -27,7 +33,7 @@ function sleep(ms) {
 async function attemptFetch(url) {
   let response;
   try {
-    response = await fetch(url);
+    response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   } catch (err) {
     const unreachable = new Error("Failed to reach NPPES API");
     unreachable.status = 504;
