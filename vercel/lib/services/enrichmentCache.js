@@ -40,4 +40,26 @@ export async function put(supabase, namespace, npi, value) {
     .upsert({ cache_key: cacheKey(namespace, npi), payload: value === undefined ? null : value, created_at: new Date().toISOString() });
 }
 
-export default { get, put };
+// Batch version of get() -- one Supabase round-trip for N keys instead of N
+// sequential round-trips. Returns a plain object where a key being present
+// (even with a null value) means cache hit; a key absent means cache miss.
+export async function getMany(supabase, namespace, npis) {
+  const valid = (npis || []).filter(Boolean).map(String);
+  if (valid.length === 0) return {};
+  const keys = valid.map((npi) => cacheKey(namespace, npi));
+  const { data, error } = await supabase
+    .from("enrichment_cache")
+    .select("cache_key, payload, created_at")
+    .in("cache_key", keys);
+  if (error || !data) return {};
+  const now = Date.now();
+  const result = {};
+  for (const row of data) {
+    if (now - new Date(row.created_at).getTime() > TTL_MS) continue; // stale -- treat as miss
+    const npi = row.cache_key.slice(namespace.length + 1);
+    result[npi] = row.payload; // null is a valid cached value ("confirmed empty")
+  }
+  return result;
+}
+
+export default { get, put, getMany };

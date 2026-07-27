@@ -3,10 +3,29 @@
 // keyless, like NPPES. Any failure -- network, missing NPI, schema drift --
 // degrades to "no Medicare data" for that company, never an error.
 
-import { get as cacheGet, put as cachePut } from "./enrichmentCache.js";
+import { getMany as cacheGetMany, put as cachePut } from "./enrichmentCache.js";
 
 const DATASET_URL = "https://data.cms.gov/data-api/v1/dataset/a2d56d3f-3531-4315-9d87-e29986516b41/data";
 const CACHE_NAMESPACE = "cms";
+// Firing all uncached NPIs at data.cms.gov simultaneously stacks too many
+// connections against a slow government API. 6 in-flight at a time mirrors
+// the pattern used in foursquareService -- enough to keep throughput up
+// without overwhelming the server.
+const MAX_CONCURRENT_CMS = 6;
+
+async function mapWithConcurrencyLimit(items, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function runNext() {
+    const i = nextIndex++;
+    if (i >= items.length) return;
+    results[i] = await worker(items[i]);
+    await runNext();
+  }
+  const runners = Array.from({ length: Math.min(MAX_CONCURRENT_CMS, items.length) }, runNext);
+  await Promise.all(runners);
+  return results;
+}
 
 // CMS occasionally shifts field casing between data years, so match keys
 // case-insensitively instead of hardcoding exact strings.
@@ -53,15 +72,18 @@ export async function lookupByNpis(supabase, npis) {
   const valid = (npis || []).filter(Boolean).map(String);
   if (valid.length === 0) return result;
 
+  // One batch read instead of N sequential cacheGet calls.
+  const batchCached = await cacheGetMany(supabase, CACHE_NAMESPACE, valid);
   const toFetch = [];
   for (const npi of valid) {
-    const cached = await cacheGet(supabase, CACHE_NAMESPACE, npi);
-    if (cached !== undefined) result[npi] = cached;
+    if (npi in batchCached) result[npi] = batchCached[npi];
     else toFetch.push(npi);
   }
   if (toFetch.length === 0) return result;
 
-  const data = await Promise.all(toFetch.map(fetchOne));
+  // Concurrency-limited instead of Promise.all -- avoids stacking N requests
+  // against a slow government API simultaneously.
+  const data = await mapWithConcurrencyLimit(toFetch, fetchOne);
   await Promise.all(
     toFetch.map(async (npi, i) => {
       result[npi] = data[i];

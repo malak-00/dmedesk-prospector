@@ -5,7 +5,7 @@
 // in-memory Map -- see enrichmentCache.js for why.
 
 import config from "../config.js";
-import { get as cacheGet, put as cachePut } from "./enrichmentCache.js";
+import { getMany as cacheGetMany, put as cachePut } from "./enrichmentCache.js";
 
 const BASE_URL = "https://places-api.foursquare.com/places/search";
 const API_VERSION = "2025-06-17";
@@ -120,15 +120,17 @@ export async function enrichCompanies(supabase, companies, deadline) {
   const results = {};
   const toFetch = [];
 
+  // One batch Supabase read for all NPIs instead of N sequential cacheGet
+  // calls -- avoids N round-trips before a single Foursquare request fires.
+  const allNpis = (companies || []).map((c) => (c.npi != null ? String(c.npi) : null)).filter(Boolean);
+  const batchCached = await cacheGetMany(supabase, CACHE_NAMESPACE, allNpis);
+
   for (const company of companies || []) {
     const npi = company.npi != null ? String(company.npi) : null;
 
-    if (npi) {
-      const cached = await cacheGet(supabase, CACHE_NAMESPACE, npi);
-      if (cached !== undefined) {
-        results[npi] = cached;
-        continue;
-      }
+    if (npi && npi in batchCached) {
+      results[npi] = batchCached[npi];
+      continue;
     }
 
     const url = buildUrl(company);
