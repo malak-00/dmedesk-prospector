@@ -896,6 +896,14 @@ async function executeSearch(params, { isMore = false } = {}) {
 
     const data = await apiGet("search/companies", requestParams);
 
+    // Server-side timing, returned in the response body so it's visible in
+    // the browser DevTools console (Vercel free plan has no log viewer).
+    if (data._timing?.length) {
+      console.group("[search timing]");
+      data._timing.forEach((entry) => console.log(entry));
+      console.groupEnd();
+    }
+
     state.searchMoreVariantSkips = data.variantSkips || {};
     state.searchMoreSeenNpis = state.searchMoreSeenNpis.concat(collectNpisFromCompanies(data.companies));
 

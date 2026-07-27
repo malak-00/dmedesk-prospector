@@ -235,7 +235,7 @@ function variantKey(variant) {
 // COMPANIES (after branch-merging) or every variant runs out / hits its
 // skip cap. See CompanyService.js's extensive comments for the full
 // reasoning behind round-robin + fair-share quota + incremental merging.
-async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, claimedNpis, deadline) {
+async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, claimedNpis, deadline, timing) {
   const variants = criteria.npi ? [criteria] : buildCriteriaVariants(criteria);
   const mergeBranches = !criteria.npi;
   const merger = createBranchMerger();
@@ -260,6 +260,9 @@ async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, clai
     return variantExhausted.some((done) => !done);
   }
 
+  const nppesStart = Date.now();
+  timing.push(`NPPES pagination start — ${variants.length} variant(s), desiredLimit=${desiredLimit}, budgetLeft=${Math.round(deadline - Date.now())}ms`);
+
   while (acceptedCount() < desiredLimit && !hitScanBudget && !hitTimeBudget && anyVariantLeft()) {
     const remainingVariants = variantExhausted.filter((done) => !done).length;
     const roundQuota = Math.max(1, Math.ceil((desiredLimit - acceptedCount()) / remainingVariants));
@@ -280,16 +283,20 @@ async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, clai
       const key = variantKey(variant);
       let skip = variantSkips[key] || 0;
       fetchesUsed++;
+      const nppesFetchStart = Date.now();
 
       let result;
       try {
         result = await searchProviders({ ...variant, limit: NPPES_PAGE_SIZE, skip }, deadline);
       } catch (err) {
+        timing.push(`NPPES fetch #${fetchesUsed} FAILED in ${Date.now() - nppesFetchStart}ms — variant=${key}: ${err.message}`);
         console.log(`[companyService] NPPES query variant failed, skipping it: ${key} -- ${err.message}`);
         rejectedVariants.push({ state: variant.state || null, taxonomyDescription: variant.taxonomyDescription || null, message: err.message });
         variantExhausted[v] = true;
         continue;
       }
+      timing.push(`NPPES fetch #${fetchesUsed} done in ${Date.now() - nppesFetchStart}ms — rawCount=${result.rawCount}, filtered=${result.results.length}, accepted=${acceptedCount()}/${desiredLimit}`);
+
       const results = result.results;
       const fetched = result.rawCount != null ? result.rawCount : results.length;
 
@@ -323,6 +330,8 @@ async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, clai
     }
   }
 
+  timing.push(`NPPES pagination done in ${Date.now() - nppesStart}ms — fetches=${fetchesUsed}, accepted=${acceptedCount()}, hitTimeBudget=${hitTimeBudget}, hitScanBudget=${hitScanBudget}`);
+
   return {
     companies: mergeBranches ? merger.list() : fresh.map(fromNppesProvider),
     totalScanned,
@@ -343,43 +352,66 @@ export async function searchCompanies(criteria = {}, options = {}) {
   const enrichCms = options.enrichCms !== false;
   const serviceSupabase = createServiceClient();
   const deadline = Date.now() + SEARCH_TIME_BUDGET_MS;
+  const t0 = Date.now();
+  // Timing events collected here and returned in the JSON response so the
+  // browser can log them to DevTools console (Vercel free plan has no log UI).
+  const timing = [];
+  timing.push(`searchCompanies start — limit=${criteria.limit ?? 20}, enrichPlaces=${enrichPlaces}, scrapeWebsites=${scrapeWebsites}, enrichCms=${enrichCms}, budget=${SEARCH_TIME_BUDGET_MS}ms`);
 
   const desiredLimit = criteria.limit || 20;
+
+  let t = Date.now();
   const claimedNpis = await getClaimedNpisSafe(serviceSupabase);
+  timing.push(`getClaimedNpis: ${Date.now() - t}ms — ${claimedNpis.size} claimed`);
 
   const trackProgress = Boolean(options.userId) && !criteria.npi;
   let effectiveCriteria = criteria;
   if (trackProgress && !options.clientProvidedVariantSkips) {
+    t = Date.now();
     const progress = await getSearchProgressSafe(options.userSupabase, options.userId, criteria);
+    timing.push(`getSearchProgress: ${Date.now() - t}ms — resumed=${Boolean(progress)}`);
     if (progress) {
       effectiveCriteria = { ...criteria, variantSkips: progress.variantSkips, excludeNpis: [...(criteria.excludeNpis || []), ...progress.seenNpis] };
     }
   }
 
-  const fetchResult = await fetchFreshProviders(serviceSupabase, effectiveCriteria, desiredLimit, claimedNpis, deadline);
+  t = Date.now();
+  const fetchResult = await fetchFreshProviders(serviceSupabase, effectiveCriteria, desiredLimit, claimedNpis, deadline, timing);
   let companies = fetchResult.companies;
+  timing.push(`fetchFreshProviders total: ${Date.now() - t}ms — ${companies.length} companies, elapsed=${Date.now() - t0}ms`);
 
   if (trackProgress) {
+    t = Date.now();
     await saveSearchProgressSafe(options.userSupabase, options.userId, criteria, fetchResult.variantSkips, fetchResult.allSeenNpis);
+    timing.push(`saveSearchProgress: ${Date.now() - t}ms`);
   }
 
   if (enrichPlaces) {
+    t = Date.now();
     companies = await applyPlacesEnrichment(serviceSupabase, companies, deadline);
+    timing.push(`Foursquare enrichment: ${Date.now() - t}ms — elapsed=${Date.now() - t0}ms`);
+
     // Sequential, not Promise.all -- OSM/Nominatim enforces its own rate
     // limit (~1 req/sec). With Foursquare unconfigured, every company still
     // needs this lookup, so a large result set can outrun the function's
     // time budget on its own -- stop once the deadline's hit and leave the
     // rest with whatever website they already have rather than let the
     // whole invocation get killed with no response.
+    const osmStart = Date.now();
     const withOsm = [];
     let osmRateLimited = false;
+    let osmCount = 0;
     for (const company of companies) {
       if (osmRateLimited || Date.now() >= deadline) {
         withOsm.push(company);
         continue;
       }
       try {
-        withOsm.push(await tryEnrichWithOsm(serviceSupabase, company));
+        const osmT = Date.now();
+        const enriched = await tryEnrichWithOsm(serviceSupabase, company);
+        osmCount++;
+        timing.push(`OSM #${osmCount} "${company.name}": ${Date.now() - osmT}ms, hasWebsite=${Boolean(enriched.website)}, elapsed=${Date.now() - t0}ms`);
+        withOsm.push(enriched);
       } catch (err) {
         // Nominatim is rate-limiting this whole batch -- every remaining
         // call would fail the same way, so stop paying the 1.1s throttle
@@ -390,12 +422,17 @@ export async function searchCompanies(criteria = {}, options = {}) {
       }
     }
     companies = withOsm;
+    timing.push(`OSM enrichment total: ${Date.now() - osmStart}ms — ${osmCount} fetches, rateLimited=${osmRateLimited}, elapsed=${Date.now() - t0}ms`);
   }
   if (scrapeWebsites) {
+    t = Date.now();
     companies = await Promise.all(companies.map(tryEnrichWithScrape));
+    timing.push(`scrapeWebsites: ${Date.now() - t}ms — elapsed=${Date.now() - t0}ms`);
   }
   if (enrichCms) {
+    t = Date.now();
     const medicareByNpi = await cmsService.lookupByNpis(serviceSupabase, companies.map((c) => c.npi));
+    timing.push(`CMS lookup: ${Date.now() - t}ms — elapsed=${Date.now() - t0}ms`);
     companies = companies.map((company) => {
       const medicare = company.npi != null ? medicareByNpi[String(company.npi)] : null;
       if (!medicare) return company;
@@ -406,6 +443,8 @@ export async function searchCompanies(criteria = {}, options = {}) {
   companies = companies.map((company) => ({ ...company, score: scoreCompany(company) }));
   companies.sort((a, b) => b.score.value - a.score.value);
 
+  timing.push(`searchCompanies complete — total=${Date.now() - t0}ms, returned=${companies.length}`);
+
   return {
     count: companies.length,
     scannedFromRegistry: fetchResult.totalScanned,
@@ -415,6 +454,7 @@ export async function searchCompanies(criteria = {}, options = {}) {
     variantSkips: fetchResult.variantSkips,
     rejectedVariants: fetchResult.rejectedVariants,
     companies,
+    _timing: timing,
   };
 }
 
