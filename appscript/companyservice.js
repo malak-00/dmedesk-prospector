@@ -508,10 +508,9 @@ var CompanyService = (function () {
   function searchCompanies(criteria, options) {
     criteria = criteria || {};
     options = options || {};
-    var requireCmsClaims = Boolean(options.requireCmsClaims || criteria.requireCmsClaims);
     var enrichPlaces = options.enrichPlaces !== false;
     var scrapeWebsites = Boolean(options.scrapeWebsites);
-    var enrichCms = requireCmsClaims || options.enrichCms !== false;
+    var enrichCms = options.enrichCms !== false;
 
     var desiredLimit = criteria.limit || 20;
     var claimedNpis = getClaimedNpisSafe();
@@ -557,12 +556,6 @@ var CompanyService = (function () {
           medicare: medicare,
           sources: Object.assign({}, company.sources, { cms: true }),
         });
-      });
-    }
-
-    if (requireCmsClaims) {
-      companies = companies.filter(function (company) {
-        return company.medicare && typeof company.medicare.totalClaims === "number" && company.medicare.totalClaims > 0;
       });
     }
 
