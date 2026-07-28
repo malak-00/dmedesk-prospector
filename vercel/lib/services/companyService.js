@@ -344,19 +344,20 @@ async function fetchFreshProviders(serviceSupabase, criteria, desiredLimit, clai
   };
 }
 
-// options: { enrichPlaces = true, scrapeWebsites = false, enrichCms = true,
+// options: { enrichPlaces = true, scrapeWebsites = false, enrichCms = true, requireCmsClaims = false,
 //            userId, userSupabase, clientProvidedVariantSkips }
 export async function searchCompanies(criteria = {}, options = {}) {
+  const requireCmsClaims = Boolean(options.requireCmsClaims || criteria.requireCmsClaims);
   const enrichPlaces = options.enrichPlaces !== false;
   const scrapeWebsites = Boolean(options.scrapeWebsites);
-  const enrichCms = options.enrichCms !== false;
+  const enrichCms = requireCmsClaims || options.enrichCms !== false;
   const serviceSupabase = createServiceClient();
   const deadline = Date.now() + SEARCH_TIME_BUDGET_MS;
   const t0 = Date.now();
   // Timing events collected here and returned in the JSON response so the
   // browser can log them to DevTools console (Vercel free plan has no log UI).
   const timing = [];
-  timing.push(`searchCompanies start — limit=${criteria.limit ?? 20}, enrichPlaces=${enrichPlaces}, scrapeWebsites=${scrapeWebsites}, enrichCms=${enrichCms}, budget=${SEARCH_TIME_BUDGET_MS}ms`);
+  timing.push(`searchCompanies start — limit=${criteria.limit ?? 20}, enrichPlaces=${enrichPlaces}, scrapeWebsites=${scrapeWebsites}, enrichCms=${enrichCms}, requireCmsClaims=${requireCmsClaims}, budget=${SEARCH_TIME_BUDGET_MS}ms`);
 
   const desiredLimit = criteria.limit || 20;
 
@@ -438,6 +439,13 @@ export async function searchCompanies(criteria = {}, options = {}) {
       if (!medicare) return company;
       return { ...company, medicare, sources: { ...company.sources, cms: true } };
     });
+  }
+
+  if (requireCmsClaims) {
+    companies = companies.filter((company) => {
+      return company.medicare && typeof company.medicare.totalClaims === "number" && company.medicare.totalClaims > 0;
+    });
+    timing.push(`Filtered by CMS claims: remaining=${companies.length}`);
   }
 
   companies = companies.map((company) => ({ ...company, score: scoreCompany(company) }));

@@ -682,6 +682,7 @@ function buildSearchParams(formData) {
   }
   if (!formData.get("enrich")) params.enrich = "false";
   if (formData.get("scrape")) params.scrape = "true";
+  if (formData.get("requireCmsClaims")) params.requireCmsClaims = "true";
   return params;
 }
 

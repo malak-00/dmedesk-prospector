@@ -38,6 +38,7 @@ function readSearchCriteria(query) {
     skip: query.skip ? Number(query.skip) : undefined,
     variantSkips: parseVariantSkips(query.variantSkips),
     excludeNpis: parseCommaList(query.excludeNpis),
+    requireCmsClaims: query.requireCmsClaims === "true" || query.requireCmsClaims === "on",
   };
 }
 
@@ -68,7 +69,8 @@ export default withAuth(async (req, res) => {
   const data = await searchCompanies(criteria, {
     enrichPlaces: req.query.enrich !== "false",
     scrapeWebsites: req.query.scrape === "true",
-    enrichCms: req.query.cms !== "false",
+    enrichCms: req.query.cms !== "false" || criteria.requireCmsClaims,
+    requireCmsClaims: criteria.requireCmsClaims,
     userId: req.user.id,
     userSupabase: req.supabase,
     // True only for an explicit "Search more" continuation (the frontend
