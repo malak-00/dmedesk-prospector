@@ -89,7 +89,8 @@ function handleRequest_(e) {
           data: CompanyService.searchCompanies(companiesCriteria, {
             enrichPlaces: params.enrich !== "false",
             scrapeWebsites: params.scrape === "true",
-            enrichCms: params.cms !== "false",
+            enrichCms: params.cms !== "false" || params.requireCmsClaims === "true" || params.requireCmsClaims === "on",
+            requireCmsClaims: params.requireCmsClaims === "true" || params.requireCmsClaims === "on",
             username: session.username,
             // True only for an explicit "Search more" continuation (the
             // frontend already sent its own remembered variantSkips) -- a
@@ -299,6 +300,7 @@ function readSearchCriteria_(params) {
     skip: params.skip ? Number(params.skip) : undefined,
     variantSkips: parseVariantSkips_(params.variantSkips),
     excludeNpis: parseCommaList_(params.excludeNpis),
+    requireCmsClaims: params.requireCmsClaims === "true" || params.requireCmsClaims === "on",
   };
 }
 
