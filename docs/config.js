@@ -2,4 +2,4 @@
 // Nothing sensitive goes here -- the real API keys/secrets live in the
 // Worker's `wrangler secret` store, never in this repo.
 
-const API_BASE_URL = "https://dmedesk-prospector-api.YOUR-SUBDOMAIN.workers.dev";
+const API_BASE_URL = "https://dmedesk-prospector-api.malakadam246.workers.dev";
