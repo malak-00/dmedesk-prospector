@@ -141,3 +141,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Cloudflare Worker local dev secrets (see .dev.vars.example)
+worker/.dev.vars

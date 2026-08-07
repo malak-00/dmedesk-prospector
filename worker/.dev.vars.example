@@ -1,0 +1,9 @@
+# Copy to .dev.vars (gitignored) for `npm run dev` -- wrangler loads this
+# automatically for local development. Never commit the real file.
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+JWT_SECRET=
+FOURSQUARE_SERVICE_API_KEY=
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+NPPES_VERSION=2.1
