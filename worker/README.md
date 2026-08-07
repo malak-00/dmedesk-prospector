@@ -53,7 +53,28 @@ scripts/
    npx wrangler secret put GEMINI_API_KEY
    npx wrangler secret put GEMINI_MODEL                # defaults to gemini-2.5-flash
    npx wrangler secret put NPPES_VERSION                # defaults to 2.1
+
+   # optional -- only needed for the "Export to Sheet" button (see below):
+   npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_EMAIL
+   npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+   npx wrangler secret put GOOGLE_SHEET_ID
    ```
+
+   **Setting up "Export to Sheet"** (writes claimed leads into a real,
+   shared Google Sheet -- separate from claiming, which writes to
+   Supabase): in the [Google Cloud Console](https://console.cloud.google.com/),
+   create a service account, generate a JSON key for it, then:
+   - `GOOGLE_SERVICE_ACCOUNT_EMAIL` -- the `client_email` field from that JSON key
+   - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` -- the `private_key` field (paste it
+     as-is, including the `-----BEGIN PRIVATE KEY-----`/`-----END...-----`
+     lines -- the Worker handles either real newlines or literal `\n`)
+   - `GOOGLE_SHEET_ID` -- the ID from the target spreadsheet's URL
+     (`https://docs.google.com/spreadsheets/d/<THIS PART>/edit`)
+   - Share that spreadsheet with the service account's email (Editor access)
+     -- it can't write to a sheet it hasn't been granted access to.
+
+   Leave all three unset and the button will show a clear "not configured"
+   error instead of failing silently.
 
 4. **Create teammate accounts** -- there's no sign-up flow; run this once per
    person (locally, with the same Supabase env vars as above in your shell):
