@@ -16,18 +16,20 @@ per-request, and the Google Sheet is the only persistent store.
 
 ## Project status
 
-**`appscript/` + `docs/` (Apps Script + GitHub Pages) is the actively
-developed, feature-complete version of this app.** `backend/` (Node/
-Express, described below) is an earlier implementation that was frozen
-once free Node hosts started requiring card verification — it does not
-have sign-in, claimed leads, taxonomies, or search-resume, and isn't being
-kept in sync. If you're picking this repo up, read
-**[`ARCHITECTURE.md`](./ARCHITECTURE.md)** for how the current system
-actually works end to end. If you're planning to move off Apps Script +
-Google Sheets onto real hosting, see
+**The app is migrating off Apps Script + Google Sheets onto [`worker/`](./worker)
+(a Cloudflare Worker) + Supabase (Postgres).** `docs/` (the GitHub Pages
+frontend) now talks to `worker/`'s API instead of the old Apps Script Web
+App -- see [`worker/README.md`](./worker/README.md) for deployment.
+`appscript/` is kept around as reference for anyone still running the old
+deployment, and `backend/` (Node/Express, described below) is an earlier,
+frozen implementation that predates sign-in/claimed-leads/taxonomies/
+search-resume entirely -- neither is being kept in sync going forward. If
+you're picking this repo up, read **[`ARCHITECTURE.md`](./ARCHITECTURE.md)**
+for how the app used to work end to end on Apps Script, and
 **[`MIGRATION_TO_VERCEL_SUPABASE.md`](./MIGRATION_TO_VERCEL_SUPABASE.md)**
-for a concrete, step-by-step plan starting from exactly where this repo is
-today.
+for the original migration plan this Worker implements (written against
+Vercel; the actual implementation moved to Cloudflare instead, same
+Supabase schema).
 
 ## Requirements
 
