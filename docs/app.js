@@ -212,9 +212,7 @@ const els = {
   taxonomyAddPanel: document.getElementById("taxonomyAddPanel"),
   taxonomyAddInput: document.getElementById("taxonomyAddInput"),
   taxonomyAddResults: document.getElementById("taxonomyAddResults"),
-  exportCsvBtn: document.getElementById("exportCsvBtn"),
   exportSheetsBtn: document.getElementById("exportSheetsBtn"),
-  exportCsvLabel: document.getElementById("exportCsvLabel"),
   exportSheetsLabel: document.getElementById("exportSheetsLabel"),
   exportGoogleSheetBtn: document.getElementById("exportGoogleSheetBtn"),
   exportGoogleSheetLabel: document.getElementById("exportGoogleSheetLabel"),
@@ -936,7 +934,6 @@ function renderResults(excludedAsClaimed) {
   const { companies } = state;
   const excludedNote = state.excludedAsClaimed > 0 ? ` (${state.excludedAsClaimed} already claimed, filtered out)` : "";
   els.resultsCount.textContent = `${companies.length} lead${companies.length === 1 ? "" : "s"} found${excludedNote}`;
-  els.exportCsvBtn.disabled = companies.length === 0;
   els.selectAll.checked = companies.length > 0 && state.selected.size === companies.length;
 
   if (companies.length === 0) {
@@ -962,10 +959,9 @@ function updateSelectionUI() {
   const count = state.selected.size;
   els.selectionChip.hidden = count === 0;
   els.selectionCount.textContent = `${count} selected`;
-  els.exportCsvLabel.textContent = count > 0 ? `Export ${count} selected` : "Export CSV";
-  // Unlike Export CSV above, Claim Lead, Export to Sheet, and Send to
-  // Disconnected have no "nothing checked -> act on everything" fallback --
-  // all three stay disabled until at least one lead is actually checked.
+  // Claim Lead, Export to Sheet, and Send to Disconnected have no "nothing
+  // checked -> act on everything" fallback -- all three stay disabled until
+  // at least one lead is actually checked.
   els.exportSheetsBtn.disabled = count === 0;
   els.exportSheetsLabel.textContent = count > 0 ? `Claim ${count} selected` : "Claim Lead";
   els.exportGoogleSheetBtn.disabled = count === 0;
@@ -1166,16 +1162,9 @@ async function generateBrief(index) {
 
 /* ---------- Export ---------- */
 
-function getExportCompanies() {
-  if (state.selected.size > 0) {
-    return [...state.selected].map((i) => state.companies[i]);
-  }
-  return state.companies;
-}
-
-// Unlike getExportCompanies() above, this has no "nothing checked -> use
-// everything" fallback -- sending leads to Disconnected is a one-way move,
-// so it always requires an explicit, deliberate selection.
+// Has no "nothing checked -> use everything" fallback -- sending leads to
+// Disconnected/Claim/Sheet is a one-way or team-visible action, so it
+// always requires an explicit, deliberate selection.
 function getSelectedProspectCompanies() {
   return [...state.selected].map((i) => state.companies[i]);
 }
@@ -1197,29 +1186,6 @@ function removeCompaniesFromProspect(companies) {
   state.selected.clear();
   state.expandedIndex = null;
   renderResults();
-}
-
-async function exportCsv() {
-  const companies = getExportCompanies();
-  els.exportCsvBtn.disabled = true; // prevents a double-click from double-exporting
-  setStatus("busy", "Exporting…");
-  try {
-    const data = await apiPost("export/csv", { companies });
-    const blob = new Blob([data.csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = data.filename || `dme-leads-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast(`Exported ${companies.length} lead(s) to CSV`);
-    setStatus("ready", "Ready");
-  } catch (err) {
-    showToast(err.message, true);
-    setStatus("error", "Error");
-  } finally {
-    els.exportCsvBtn.disabled = state.companies.length === 0;
-  }
 }
 
 async function exportSheets() {
@@ -2409,7 +2375,6 @@ els.clearSelectionBtn.addEventListener("click", clearSelection);
 els.searchMoreBtn.addEventListener("click", searchMore);
 els.pagePrevBtn.addEventListener("click", () => goToPage(state.currentPage - 1));
 els.pageNextBtn.addEventListener("click", () => goToPage(state.currentPage + 1));
-els.exportCsvBtn.addEventListener("click", exportCsv);
 els.exportSheetsBtn.addEventListener("click", exportSheets);
 els.exportGoogleSheetBtn.addEventListener("click", exportToGoogleSheet);
 els.sendDisconnectedBtn.addEventListener("click", sendProspectToDisconnected);
