@@ -216,6 +216,8 @@ const els = {
   exportSheetsBtn: document.getElementById("exportSheetsBtn"),
   exportCsvLabel: document.getElementById("exportCsvLabel"),
   exportSheetsLabel: document.getElementById("exportSheetsLabel"),
+  exportGoogleSheetBtn: document.getElementById("exportGoogleSheetBtn"),
+  exportGoogleSheetLabel: document.getElementById("exportGoogleSheetLabel"),
   sendDisconnectedBtn: document.getElementById("sendDisconnectedBtn"),
   sendDisconnectedLabel: document.getElementById("sendDisconnectedLabel"),
   selectionChip: document.getElementById("selectionChip"),
@@ -961,11 +963,13 @@ function updateSelectionUI() {
   els.selectionChip.hidden = count === 0;
   els.selectionCount.textContent = `${count} selected`;
   els.exportCsvLabel.textContent = count > 0 ? `Export ${count} selected` : "Export CSV";
-  // Unlike Export CSV above, Export to Sheets (claiming) and Send to
+  // Unlike Export CSV above, Claim Lead, Export to Sheet, and Send to
   // Disconnected have no "nothing checked -> act on everything" fallback --
-  // both stay disabled until at least one lead is actually checked.
+  // all three stay disabled until at least one lead is actually checked.
   els.exportSheetsBtn.disabled = count === 0;
-  els.exportSheetsLabel.textContent = count > 0 ? `Send ${count} selected` : "Export to Sheets";
+  els.exportSheetsLabel.textContent = count > 0 ? `Claim ${count} selected` : "Claim Lead";
+  els.exportGoogleSheetBtn.disabled = count === 0;
+  els.exportGoogleSheetLabel.textContent = count > 0 ? `Send ${count} to Sheet` : "Export to Sheet";
   els.sendDisconnectedBtn.disabled = count === 0;
   els.sendDisconnectedLabel.textContent = count > 0 ? `Send ${count} to Disconnected` : "Send to Disconnected";
 }
@@ -1221,19 +1225,19 @@ async function exportCsv() {
 async function exportSheets() {
   const companies = getSelectedProspectCompanies();
   if (companies.length === 0) {
-    showToast("Check at least one lead to send to Sheets", true);
+    showToast("Check at least one lead to claim", true);
     return;
   }
   const who = getSession()?.displayName || "you";
   // Claiming leads is a shared, team-visible action with no undo -- confirm
   // before writing.
-  if (!confirm(`Export ${companies.length} lead(s) to the shared Sheet, claimed by ${who}?`)) return;
+  if (!confirm(`Claim ${companies.length} lead(s) under ${who}?`)) return;
 
   els.exportSheetsBtn.disabled = true; // prevents a double-click from double-claiming
-  setStatus("busy", "Sending to Sheets…");
+  setStatus("busy", "Claiming…");
   try {
     const data = await apiPost("export/sheets", { companies });
-    showToast(`Added ${data.rowsAdded} row(s) claimed by ${data.claimedBy || "you"}`, false, data.sheetUrl);
+    showToast(`Claimed ${data.rowsAdded} lead(s) as ${data.claimedBy || "you"}`);
     state.claimedLoaded = false; // claimed view is now stale
     removeCompaniesFromProspect(companies); // claimed leads shouldn't linger in the Prospect view
     setStatus("ready", "Ready");
@@ -1242,6 +1246,32 @@ async function exportSheets() {
     setStatus("error", "Error");
   } finally {
     els.exportSheetsBtn.disabled = state.selected.size === 0;
+  }
+}
+
+// Separate from claiming above -- this doesn't touch the app's own Claimed
+// Leads view (backed by Supabase) at all, it just pastes a copy of the
+// checked leads into the caller's tab in the actual shared Google Sheet, so
+// leads stay selected/visible in Prospect afterward (unlike claiming, which
+// removes them).
+async function exportToGoogleSheet() {
+  const companies = getSelectedProspectCompanies();
+  if (companies.length === 0) {
+    showToast("Check at least one lead to export to Sheet", true);
+    return;
+  }
+
+  els.exportGoogleSheetBtn.disabled = true; // prevents a double-click from double-sending
+  setStatus("busy", "Exporting to Sheet…");
+  try {
+    const data = await apiPost("export/google-sheet", { companies });
+    showToast(`Added ${data.rowsAdded} row(s) to "${data.tab}"`, false, data.sheetUrl);
+    setStatus("ready", "Ready");
+  } catch (err) {
+    showToast(err.message, true);
+    setStatus("error", "Error");
+  } finally {
+    els.exportGoogleSheetBtn.disabled = state.selected.size === 0;
   }
 }
 
@@ -2381,6 +2411,7 @@ els.pagePrevBtn.addEventListener("click", () => goToPage(state.currentPage - 1))
 els.pageNextBtn.addEventListener("click", () => goToPage(state.currentPage + 1));
 els.exportCsvBtn.addEventListener("click", exportCsv);
 els.exportSheetsBtn.addEventListener("click", exportSheets);
+els.exportGoogleSheetBtn.addEventListener("click", exportToGoogleSheet);
 els.sendDisconnectedBtn.addEventListener("click", sendProspectToDisconnected);
 
 els.loginForm.addEventListener("submit", handleLogin);

@@ -13,5 +13,13 @@ export function makeConfig(env) {
     jwtSecret: () => get("JWT_SECRET"),
     supabaseUrl: () => get("SUPABASE_URL"),
     supabaseServiceRoleKey: () => get("SUPABASE_SERVICE_ROLE_KEY"),
+    // For the optional "Export to Sheet" button (googleSheets.js) -- an
+    // OAuth client + refresh token authorized as a real Google account with
+    // edit access to googleSheetId(), NOT the same thing as claiming a lead
+    // (which writes to Supabase, see leadsRepo.js).
+    googleOauthClientId: () => get("GOOGLE_OAUTH_CLIENT_ID"),
+    googleOauthClientSecret: () => get("GOOGLE_OAUTH_CLIENT_SECRET"),
+    googleOauthRefreshToken: () => get("GOOGLE_OAUTH_REFRESH_TOKEN"),
+    googleSheetId: () => get("GOOGLE_SHEET_ID"),
   };
 }

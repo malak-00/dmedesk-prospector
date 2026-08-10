@@ -22,6 +22,7 @@ import * as Scraper from "./services/scraper.js";
 import * as AiBrief from "./services/aiBrief.js";
 import * as CompanyService from "./services/companyService.js";
 import * as CsvExport from "./lib/csvExport.js";
+import * as GoogleSheets from "./services/googleSheets.js";
 
 const app = new Hono();
 
@@ -53,7 +54,7 @@ app.use("*", async (c, next) => {
 // Central error handler -- mirrors Code.js's catch block, including the
 // "*NotConfiguredError" -> 503 special case.
 app.onError((err, c) => {
-  if (["FoursquareNotConfiguredError", "GeminiNotConfiguredError", "SheetsNotConfiguredError", "AuthNotConfiguredError"].includes(err.name)) {
+  if (["FoursquareNotConfiguredError", "GeminiNotConfiguredError", "SheetsNotConfiguredError", "AuthNotConfiguredError", "GoogleSheetsNotConfiguredError"].includes(err.name)) {
     return c.json({ success: false, status: 503, error: err.message }, 503);
   }
   console.log(`[worker] Error on ${c.req.method} ${c.req.path}: ${err.message}`);
@@ -190,6 +191,16 @@ app.post("/export/sheets", async (c) => {
 app.post("/export/disconnected", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const data = await leadsRepo.exportCompaniesToDisconnected(supabaseFor(c), body.companies, c.get("session"), CsvExport.flattenCompany);
+  return c.json(ok(data));
+});
+
+// Separate from claiming (POST /export/sheets, which writes to Supabase and
+// is what powers the app's own Claimed Leads view) -- this purely pastes a
+// copy of the selected leads into the caller's "Claimed - <Name>" tab in
+// the actual shared Google Sheet, for anyone who wants a spreadsheet view.
+app.post("/export/google-sheet", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const data = await GoogleSheets.exportCompaniesToSheet(c.get("config"), body.companies, c.get("session"));
   return c.json(ok(data));
 });
 
