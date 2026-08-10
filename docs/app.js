@@ -1,11 +1,11 @@
-// Frontend for the Apps Script backend. Request layer notes:
-// - every request carries ?path= (Apps Script has no real router) and
-//   ?token= (session token from sign-in; query param rather than a header
-//   keeps requests CORS-simple so no preflight is ever sent)
-// - POST bodies go as text/plain for the same reason; the backend parses
-//   them as JSON regardless of content type
-// - every response is HTTP 200; success/failure is the `success` field in
-//   the JSON body, and body.status 401 means the session expired
+// Frontend for the Cloudflare Worker backend (see worker/). Request layer notes:
+// - every request is a real path (e.g. POST /leads/status) against
+//   API_BASE_URL, with the session token sent as a real `Authorization:
+//   Bearer` header -- no more Apps Script's ?path=/?token= query-param
+//   workaround, since a real host handles CORS preflight properly
+// - the response body shape is unchanged from the Apps Script version
+//   ({success, data} / {success, status, error}) on purpose, so unwrap()
+//   below needed no changes; body.status 401 still means the session expired
 
 const THEME_STORAGE_KEY = "dmeProspectorTheme";
 
@@ -49,19 +49,25 @@ function clearSession() {
   sessionStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
+function authHeaders() {
+  const token = getSession()?.token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function apiGet(path, params = {}) {
-  const query = new URLSearchParams(params);
-  query.set("path", path);
-  query.set("token", getSession()?.token || "");
-  const res = await fetch(`${APPS_SCRIPT_URL}?${query.toString()}`);
+  // Drop undefined/null/empty entries so e.g. `state: undefined` doesn't
+  // end up as the literal query string "state=undefined".
+  const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""));
+  const query = new URLSearchParams(clean);
+  const qs = query.toString();
+  const res = await fetch(`${API_BASE_URL}/${path}${qs ? `?${qs}` : ""}`, { headers: authHeaders() });
   return unwrap(await res.json());
 }
 
 async function apiPost(path, body) {
-  const query = new URLSearchParams({ path, token: getSession()?.token || "" });
-  const res = await fetch(`${APPS_SCRIPT_URL}?${query.toString()}`, {
+  const res = await fetch(`${API_BASE_URL}/${path}`, {
     method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
   return unwrap(await res.json());
