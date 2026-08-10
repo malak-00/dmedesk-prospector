@@ -53,7 +53,50 @@ scripts/
    npx wrangler secret put GEMINI_API_KEY
    npx wrangler secret put GEMINI_MODEL                # defaults to gemini-2.5-flash
    npx wrangler secret put NPPES_VERSION                # defaults to 2.1
+
+   # optional -- only needed for the "Export to Sheet" button (see below):
+   npx wrangler secret put GOOGLE_OAUTH_CLIENT_ID
+   npx wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET
+   npx wrangler secret put GOOGLE_OAUTH_REFRESH_TOKEN
+   npx wrangler secret put GOOGLE_SHEET_ID
    ```
+
+   **Setting up "Export to Sheet"** (writes claimed leads into a real,
+   shared Google Sheet -- separate from claiming, which writes to
+   Supabase). This uses an OAuth client authorized as a real Google account,
+   **not** a service account key -- some Google Workspace orgs block
+   service-account key creation entirely (`iam.disableServiceAccountKeyCreation`),
+   and this setup works even under that policy since it isn't a
+   service-account key.
+
+   1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials),
+      make sure the **Google Sheets API** is enabled for your project
+      (APIs & Services -> Library -> search "Google Sheets API" -> Enable).
+   2. Still in Credentials, click **Create Credentials -> OAuth client ID**.
+      - If prompted, configure the OAuth consent screen first (External or
+        Internal, doesn't matter for this -- User Type "Internal" is simplest
+        if your Google account is on a Workspace org; add the
+        `.../auth/spreadsheets` scope if asked).
+      - Application type: **Desktop app**. Give it any name.
+      - This gives you a **Client ID** and **Client Secret** -- save both.
+   3. Get a refresh token via [Google's OAuth 2.0 Playground](https://developers.google.com/oauthplayground):
+      - Click the gear icon (top right) -> check **"Use your own OAuth
+        credentials"** -> paste in the Client ID and Client Secret from
+        step 2.
+      - In the left panel (Step 1), find **Google Sheets API v4**, expand
+        it, check `https://www.googleapis.com/auth/spreadsheets`, click
+        **Authorize APIs**, and sign in with the Google account that owns
+        (or has edit access to) the target spreadsheet.
+      - Click **Exchange authorization code for tokens** (Step 2) -- copy
+        the **Refresh token** shown. That's `GOOGLE_OAUTH_REFRESH_TOKEN`.
+        It doesn't expire on its own (only if revoked), so this is a
+        one-time step.
+   4. `GOOGLE_SHEET_ID` -- the ID from the target spreadsheet's URL
+      (`https://docs.google.com/spreadsheets/d/<THIS PART>/edit`). The
+      account you authorized as in step 3 needs edit access to it.
+
+   Leave all four unset and the button will show a clear "not configured"
+   error instead of failing silently.
 
 4. **Create teammate accounts** -- there's no sign-up flow; run this once per
    person (locally, with the same Supabase env vars as above in your shell):
