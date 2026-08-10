@@ -11,16 +11,30 @@ const CACHE_NAMESPACE = "osm";
 // requests handled by the same warm isolate, same intent as the Apps
 // Script version's single-execution module state, just less strict since a
 // Worker can run several isolates concurrently under load).
+//
+// This is a promise chain, not a bare "check timestamp, maybe wait"
+// compare-then-set -- the latter is racy when multiple lookups start
+// concurrently (e.g. via Promise.all): each one reads the same stale
+// `lastRequestAt` before any of them updates it, so they'd all sleep the
+// same short wait and then fire in a burst, blowing straight through
+// Nominatim's 1 req/sec limit. Chaining onto `throttleChain` forces every
+// caller to actually wait its turn, one at a time.
+let throttleChain = Promise.resolve();
 let lastRequestAt = 0;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function throttle() {
-  const wait = MIN_INTERVAL_MS - (Date.now() - lastRequestAt);
-  if (wait > 0) await sleep(wait);
-  lastRequestAt = Date.now();
+function throttle() {
+  const turn = throttleChain.then(async () => {
+    const wait = MIN_INTERVAL_MS - (Date.now() - lastRequestAt);
+    if (wait > 0) await sleep(wait);
+    lastRequestAt = Date.now();
+  });
+  // Don't let one failed turn wedge the queue for everyone behind it.
+  throttleChain = turn.catch(() => {});
+  return turn;
 }
 
 async function fetchWebsite(company, near) {
@@ -51,19 +65,40 @@ async function fetchWebsite(company, near) {
   return { ok: true, website: (tags && (tags.website || tags["contact:website"])) || null };
 }
 
-export async function lookupWebsite(supabase, company) {
-  const npi = company.npi != null ? String(company.npi) : null;
-  if (npi) {
-    const cached = await EnrichmentCache.get(supabase, CACHE_NAMESPACE, npi);
-    if (cached !== undefined) return cached;
+// One cache round trip covering every candidate company, then Nominatim
+// lookups only for the cache misses (still throttled to 1/sec via
+// `throttle`, which is Nominatim's real limit and the one part of this
+// that can't be sped up). Returns a Map of npi -> website (string or null).
+export async function lookupWebsites(supabase, companies) {
+  const results = new Map();
+  const candidates = (companies || []).filter((c) => c.npi != null);
+  if (candidates.length === 0) return results;
+
+  const cached = await EnrichmentCache.getMany(supabase, CACHE_NAMESPACE, candidates.map((c) => c.npi));
+
+  const toFetch = [];
+  for (const company of candidates) {
+    const npi = String(company.npi);
+    if (cached.has(npi)) {
+      results.set(npi, cached.get(npi));
+      continue;
+    }
+    const address = company.address || {};
+    const near = [address.city, address.state].filter(Boolean).join(", ");
+    if (!company.name || !near) continue;
+    toFetch.push({ npi, company, near });
   }
 
-  const address = company.address || {};
-  const near = [address.city, address.state].filter(Boolean).join(", ");
-  if (!company.name || !near) return null;
+  const toCache = [];
+  for (const { npi, company, near } of toFetch) {
+    await throttle();
+    const result = await fetchWebsite(company, near);
+    if (result.ok) {
+      results.set(npi, result.website);
+      toCache.push({ npi, value: result.website });
+    }
+  }
+  await EnrichmentCache.putMany(supabase, CACHE_NAMESPACE, toCache);
 
-  await throttle();
-  const result = await fetchWebsite(company, near);
-  if (npi && result.ok) await EnrichmentCache.put(supabase, CACHE_NAMESPACE, npi, result.website);
-  return result.website;
+  return results;
 }

@@ -119,16 +119,23 @@ async function applyPlacesEnrichment(config, supabase, companies) {
   });
 }
 
-async function tryEnrichWithOsm(supabase, company) {
-  if (company.website) return company;
+async function applyOsmEnrichment(supabase, companies) {
+  const candidates = companies.filter((c) => !c.website);
+  if (candidates.length === 0) return companies;
+
+  let websiteByNpi;
   try {
-    const website = await Osm.lookupWebsite(supabase, company);
+    websiteByNpi = await Osm.lookupWebsites(supabase, candidates);
+  } catch (err) {
+    console.log("[companyService] OSM enrichment failed: " + err.message);
+    return companies;
+  }
+
+  return companies.map((company) => {
+    const website = company.npi != null ? websiteByNpi.get(String(company.npi)) : null;
     if (!website) return company;
     return Object.assign({}, company, { website, sources: Object.assign({}, company.sources, { osm: true }) });
-  } catch (err) {
-    console.log(`[companyService] OSM enrichment failed for "${company.name}": ${err.message}`);
-    return company;
-  }
+  });
 }
 
 async function tryEnrichWithScrape(company) {
@@ -154,9 +161,12 @@ async function tryEnrichWithScrape(company) {
   }
 }
 
-async function getClaimedNpisSafe(supabase) {
+// Batched per NPPES page (<=200 NPIs) instead of the old whole-table
+// preload -- falls back to "assume none claimed" on failure, same as the
+// preload version did.
+async function getClaimedNpisAmongSafe(supabase, npis) {
   try {
-    return await leadsRepo.getClaimedNpis(supabase);
+    return await leadsRepo.getClaimedNpisAmong(supabase, npis);
   } catch (err) {
     console.log("[companyService] Dedup check failed: " + err.message);
     return new Set();
@@ -197,7 +207,7 @@ function variantKey(variant) {
   return (variant.state || "") + "|" + (variant.taxonomyDescription || "");
 }
 
-async function fetchFreshProviders(config, criteria, desiredLimit, claimedNpis) {
+async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
   const variants = criteria.npi ? [criteria] : buildCriteriaVariants(criteria);
   const mergeBranches = !criteria.npi;
   const merger = createBranchMerger();
@@ -222,33 +232,71 @@ async function fetchFreshProviders(config, criteria, desiredLimit, claimedNpis) 
     const remainingVariants = variantExhausted.filter((done) => !done).length;
     const roundQuota = Math.max(1, Math.ceil((desiredLimit - acceptedCount()) / remainingVariants));
 
+    // Every not-yet-exhausted variant this round is an independent NPPES
+    // query -- fetch them all concurrently instead of one at a time. This
+    // can fetch a page or two more than strictly needed once desiredLimit
+    // is reached mid-round (each variant's page is already in flight by
+    // the time earlier ones satisfy the quota), which is a fine trade for
+    // turning several sequential round trips into one.
+    const roundVariantIndices = [];
     for (let v = 0; v < variants.length; v++) {
       if (variantExhausted[v]) continue;
-      if (acceptedCount() >= desiredLimit) break;
-      if (fetchesUsed >= MAX_NPPES_FETCHES_PER_REQUEST) {
-        hitScanBudget = true;
-        break;
+      if (fetchesUsed + roundVariantIndices.length >= MAX_NPPES_FETCHES_PER_REQUEST) break;
+      roundVariantIndices.push(v);
+    }
+    if (roundVariantIndices.length === 0) {
+      hitScanBudget = true;
+      break;
+    }
+    fetchesUsed += roundVariantIndices.length;
+
+    const pageResults = await Promise.all(
+      roundVariantIndices.map(async (v) => {
+        const variant = variants[v];
+        const key = variantKey(variant);
+        const skip = variantSkips[key] || 0;
+        try {
+          const result = await Nppes.searchProviders(config, Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip }));
+          return { v, key, skip, ok: true, result };
+        } catch (err) {
+          return { v, key, skip, ok: false, err };
+        }
+      })
+    );
+
+    // One batched claimed-NPI check covering every provider fetched this
+    // round (across all variants), instead of relying on a whole-table
+    // preload from before the search started.
+    const candidateNpis = [];
+    for (const pr of pageResults) {
+      if (!pr.ok) continue;
+      for (const provider of pr.result.results) {
+        if (provider.npi && !Object.prototype.hasOwnProperty.call(seenNpis, String(provider.npi))) {
+          candidateNpis.push(provider.npi);
+        }
       }
+    }
+    const claimedThisRound = await getClaimedNpisAmongSafe(supabase, candidateNpis);
 
-      const variant = variants[v];
-      const key = variantKey(variant);
-      let skip = variantSkips[key] || 0;
-      fetchesUsed++;
+    for (const pr of pageResults) {
+      if (acceptedCount() >= desiredLimit) break;
 
-      let result;
-      try {
-        result = await Nppes.searchProviders(config, Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip }));
-      } catch (err) {
-        console.log("[companyService] NPPES query variant failed, skipping it: " + key + " -- " + err.message);
-        rejectedVariants.push({ state: variant.state || null, taxonomyDescription: variant.taxonomyDescription || null, message: err.message });
-        variantExhausted[v] = true;
+      const variant = variants[pr.v];
+      const key = pr.key;
+
+      if (!pr.ok) {
+        console.log("[companyService] NPPES query variant failed, skipping it: " + key + " -- " + pr.err.message);
+        rejectedVariants.push({ state: variant.state || null, taxonomyDescription: variant.taxonomyDescription || null, message: pr.err.message });
+        variantExhausted[pr.v] = true;
         continue;
       }
-      const results = result.results;
-      const fetched = result.rawCount != null ? result.rawCount : results.length;
+
+      const results = pr.result.results;
+      const fetched = pr.result.rawCount != null ? pr.result.rawCount : results.length;
+      let skip = pr.skip;
 
       if (fetched === 0) {
-        variantExhausted[v] = true;
+        variantExhausted[pr.v] = true;
       } else {
         totalScanned += fetched;
         const acceptedBeforeThisTurn = acceptedCount();
@@ -258,7 +306,7 @@ async function fetchFreshProviders(config, criteria, desiredLimit, claimedNpis) 
           const provider = results[i];
           if (provider.npi && Object.prototype.hasOwnProperty.call(seenNpis, String(provider.npi))) continue;
 
-          const isClaimed = provider.npi && claimedNpis.has(String(provider.npi));
+          const isClaimed = provider.npi && claimedThisRound.has(String(provider.npi));
           if (isClaimed) {
             excludedAsClaimed++;
           } else {
@@ -268,12 +316,12 @@ async function fetchFreshProviders(config, criteria, desiredLimit, claimedNpis) 
           if (provider.npi) seenNpis[String(provider.npi)] = true;
         }
 
-        if (fetched < NPPES_PAGE_SIZE) variantExhausted[v] = true;
+        if (fetched < NPPES_PAGE_SIZE) variantExhausted[pr.v] = true;
         skip += NPPES_PAGE_SIZE;
       }
 
       variantSkips[key] = skip;
-      if (skip > NPPES_MAX_SKIP) variantExhausted[v] = true;
+      if (skip > NPPES_MAX_SKIP) variantExhausted[pr.v] = true;
     }
   }
 
@@ -295,7 +343,6 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   const enrichCms = requireCmsClaims || options.enrichCms !== false;
 
   const desiredLimit = criteria.limit || 20;
-  const claimedNpis = await getClaimedNpisSafe(supabase);
 
   const trackProgress = Boolean(options.userId) && !criteria.npi;
   let effectiveCriteria = criteria;
@@ -309,7 +356,7 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
     }
   }
 
-  const fetchResult = await fetchFreshProviders(config, effectiveCriteria, desiredLimit, claimedNpis);
+  const fetchResult = await fetchFreshProviders(config, supabase, effectiveCriteria, desiredLimit);
   const totalScanned = fetchResult.totalScanned;
   const excludedAsClaimed = fetchResult.excludedAsClaimed;
   let companies = fetchResult.companies;
@@ -320,7 +367,7 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
 
   if (enrichPlaces) {
     companies = await applyPlacesEnrichment(config, supabase, companies);
-    companies = await Promise.all(companies.map((c) => tryEnrichWithOsm(supabase, c)));
+    companies = await applyOsmEnrichment(supabase, companies);
   }
   if (scrapeWebsites) {
     companies = await Promise.all(companies.map(tryEnrichWithScrape));
