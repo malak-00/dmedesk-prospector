@@ -12,9 +12,10 @@ compatibility_flags = ["nodejs_compat"]
 #   FOURSQUARE_SERVICE_API_KEY   (optional)
 #   GEMINI_API_KEY               (optional)
 #   GEMINI_MODEL                 (optional, defaults to gemini-2.5-flash)
-#   GOOGLE_SERVICE_ACCOUNT_EMAIL       (optional -- enables the "Export to Sheet" button)
-#   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY (optional -- same, the service account's PEM private key)
-#   GOOGLE_SHEET_ID                    (optional -- same, the target spreadsheet's ID)
+#   GOOGLE_OAUTH_CLIENT_ID       (optional -- enables the "Export to Sheet" button)
+#   GOOGLE_OAUTH_CLIENT_SECRET   (optional -- same)
+#   GOOGLE_OAUTH_REFRESH_TOKEN   (optional -- same)
+#   GOOGLE_SHEET_ID              (optional -- same, the target spreadsheet's ID)
 
 [observability]
 enabled = true

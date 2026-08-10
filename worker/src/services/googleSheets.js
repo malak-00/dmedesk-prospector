@@ -9,17 +9,22 @@
 // who wants to look at it in Sheets," same as the old app did automatically
 // as part of claiming, just decoupled now that Supabase is the real store.
 //
-// Auth: a Google Cloud service account (not a user OAuth flow) -- share the
-// target spreadsheet with the service account's email (Editor access) and
-// set GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY /
-// GOOGLE_SHEET_ID as Worker secrets. Uses the JWT bearer flow (RS256,
-// signed with `jose`, which the Worker already depends on) to mint a
-// short-lived access token -- no separate googleapis SDK needed.
-import { importPKCS8, SignJWT } from "jose";
+// Auth: an OAuth client + a long-lived refresh token, authorized once as a
+// real Google account (whoever owns/edits the target spreadsheet) -- NOT a
+// service account. Some Google Workspace orgs block service-account key
+// creation entirely (org policy iam.disableServiceAccountKeyCreation), which
+// this sidesteps: creating an OAuth client and authorizing it as yourself
+// isn't a service-account key, so it isn't covered by that policy. Set
+// GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET /
+// GOOGLE_OAUTH_REFRESH_TOKEN / GOOGLE_SHEET_ID as Worker secrets -- see
+// worker/README.md for how to obtain the refresh token (a one-time consent
+// flow, e.g. via Google's OAuth 2.0 Playground). The refresh token itself
+// never expires (until revoked), so this is a one-time setup step, not
+// something that needs re-doing periodically.
 import { CSV_COLUMNS, flattenCompany } from "../lib/csvExport.js";
 
 export function GoogleSheetsNotConfiguredError() {
-  const err = new Error("Google Sheets export is not configured (missing GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, or GOOGLE_SHEET_ID)");
+  const err = new Error("Google Sheets export is not configured (missing GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN, or GOOGLE_SHEET_ID)");
   err.name = "GoogleSheetsNotConfiguredError";
   return err;
 }
@@ -37,17 +42,9 @@ const HEADER = CSV_COLUMNS.map((c) => c.label).concat(TRACKING_COLUMNS.map((c) =
 const CLAIMED_TAB_PREFIX = "Claimed - ";
 
 function assertConfigured(config) {
-  if (!config.googleServiceAccountEmail() || !config.googleServiceAccountPrivateKey() || !config.googleSheetId()) {
+  if (!config.googleOauthClientId() || !config.googleOauthClientSecret() || !config.googleOauthRefreshToken() || !config.googleSheetId()) {
     throw GoogleSheetsNotConfiguredError();
   }
-}
-
-// A service account key pasted into `wrangler secret put` commonly arrives
-// either as a real multi-line PEM or as a single line with literal "\n"
-// escape sequences (e.g. copied out of a downloaded JSON key file) --
-// handle both.
-function normalizePem(pem) {
-  return pem.includes("\\n") ? pem.replace(/\\n/g, "\n") : pem;
 }
 
 // Sheet tab names can't contain [ ] * ? : / \ and are capped at 100 chars --
@@ -70,20 +67,15 @@ let cachedToken = null; // { token, expiresAt } -- best-effort, per-isolate reus
 async function getAccessToken(config) {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 30_000) return cachedToken.token;
 
-  const key = await importPKCS8(normalizePem(config.googleServiceAccountPrivateKey()), "RS256");
-  const now = Math.floor(Date.now() / 1000);
-  const assertion = await new SignJWT({ scope: "https://www.googleapis.com/auth/spreadsheets" })
-    .setProtectedHeader({ alg: "RS256" })
-    .setIssuer(config.googleServiceAccountEmail())
-    .setAudience("https://oauth2.googleapis.com/token")
-    .setIssuedAt(now)
-    .setExpirationTime(now + 3600)
-    .sign(key);
-
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion }),
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: config.googleOauthClientId(),
+      client_secret: config.googleOauthClientSecret(),
+      refresh_token: config.googleOauthRefreshToken(),
+    }),
   });
   if (!res.ok) {
     const err = new Error("Failed to authenticate with Google Sheets: " + (await res.text().catch(() => res.statusText)));
