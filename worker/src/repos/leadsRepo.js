@@ -141,8 +141,32 @@ export async function exportCompaniesToLeads(supabase, companies, session, flatt
   companies = companies || [];
   if (!Array.isArray(companies) || companies.length === 0) throw httpError(400, "At least one company is required to export");
 
-  const rows = companies.map((c) => companyToLeadRow(flattenCompany(c), session, { status: "new", isDisconnected: false }));
-  const { error } = await supabase.from("leads").upsert(rows, { onConflict: "npi,claimed_by", ignoreDuplicates: true });
+  // Plain insert with a pre-check, not .upsert({onConflict}) -- the active-
+  // lead uniqueness rule (idx_leads_npi_claimed_by_active) is a PARTIAL
+  // index (only enforced where NOT is_disconnected), and Postgres can only
+  // use a partial index as an ON CONFLICT arbiter when the same WHERE
+  // predicate is repeated in the ON CONFLICT clause itself -- something
+  // PostgREST's on_conflict query param has no way to express. Without it,
+  // Postgres can't find a matching constraint and errors out, which is
+  // exactly what broke Claim Lead in production (fine in the earlier bulk
+  // CSV import, which used plain INSERTs with no ON CONFLICT at all).
+  const npis = companies.map((c) => String(c.npi)).filter(Boolean);
+  const { data: existing, error: findErr } = await supabase
+    .from("leads")
+    .select("npi")
+    .eq("claimed_by", session.id)
+    .eq("is_disconnected", false)
+    .in("npi", npis);
+  if (findErr) throw httpError(500, "Failed to check existing claims: " + findErr.message);
+  const alreadyClaimed = new Set((existing || []).map((r) => String(r.npi)));
+
+  const rows = companies
+    .filter((c) => !alreadyClaimed.has(String(c.npi)))
+    .map((c) => companyToLeadRow(flattenCompany(c), session, { status: "new", isDisconnected: false }));
+
+  if (rows.length === 0) return { rowsAdded: 0, claimedBy: session.displayName };
+
+  const { error } = await supabase.from("leads").insert(rows);
   if (error) throw httpError(500, "Failed to save claimed leads: " + error.message);
 
   return { rowsAdded: rows.length, claimedBy: session.displayName };
