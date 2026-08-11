@@ -1,12 +1,16 @@
 // Port of appscript/services/CompanyService.js -- orchestrates
-// NPPES -> dedup -> enrich (Foursquare/OSM) -> optionally scrape -> CMS ->
+// NPPES -> dedup -> enrich (OSM) -> optionally scrape -> CMS ->
 // score -> sort. Logic is unchanged from the Apps Script version; only the
 // I/O calls (Sheets -> Supabase, UrlFetchApp -> fetch) and the
 // warn-once-per-execution comments (meaningless on a stateless Worker
 // request) were dropped.
+//
+// Foursquare (places) enrichment was removed from this pipeline --
+// FOURSQUARE_SERVICE_API_KEY is over its rate limit and no longer usable.
+// foursquare.js itself is untouched (still backs the /debug/foursquare
+// route) in case it's revived with a working key later.
 import * as Nppes from "./nppes.js";
 import * as Cms from "./cms.js";
-import * as Foursquare from "./foursquare.js";
 import * as Osm from "./osm.js";
 import * as Scraper from "./scraper.js";
 import { classifyRole } from "../lib/roleClassifier.js";
@@ -91,32 +95,6 @@ function createBranchMerger() {
   }
 
   return { add, list: () => merged, get length() { return merged.length; } };
-}
-
-async function applyPlacesEnrichment(config, supabase, companies) {
-  let dataByNpi;
-  try {
-    dataByNpi = await Foursquare.enrichCompanies(config, supabase, companies);
-  } catch (err) {
-    if (err.name === "FoursquareNotConfiguredError") {
-      console.log("[companyService] Places enrichment skipped: FOURSQUARE_SERVICE_API_KEY not set");
-    } else {
-      console.log("[companyService] Places enrichment failed: " + err.message);
-    }
-    return companies;
-  }
-
-  return companies.map((company) => {
-    const data = company.npi != null ? dataByNpi[String(company.npi)] : null;
-    if (!data) return company;
-
-    return Object.assign({}, company, {
-      website: data.website != null ? data.website : company.website,
-      phone: company.phone || data.phone || null,
-      places: { placeId: data.placeId, rating: data.rating, ratingCount: data.ratingCount, isClosed: data.isClosed },
-      sources: Object.assign({}, company.sources, { places: true }),
-    });
-  });
 }
 
 async function applyOsmEnrichment(supabase, companies) {
@@ -368,7 +346,6 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   }
 
   if (enrichPlaces) {
-    companies = await applyPlacesEnrichment(config, supabase, companies);
     companies = await applyOsmEnrichment(supabase, companies);
   }
   if (scrapeWebsites) {
