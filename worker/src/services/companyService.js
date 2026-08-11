@@ -22,7 +22,15 @@ import * as leadsRepo from "../repos/leadsRepo.js";
 import * as searchProgressRepo from "../repos/searchProgressRepo.js";
 
 const NPPES_PAGE_SIZE = 200;
-const NPPES_MAX_SKIP = 1000;
+// A variant is exhausted once its page comes back short of
+// NPPES_PAGE_SIZE (or empty) -- there's no separate skip ceiling
+// (unlike the real NPPES API, which caps skip at ~1000; fakeNPI
+// explicitly has none). Exhausted variants store this sentinel as
+// their skip so resuming (whether from search_progress or the
+// frontend echoing back the variantSkips this response returned)
+// reads back as "done" instead of querying past the variant's real
+// total, which fakeNPI 500s on rather than returning an empty page.
+const EXHAUSTED_SKIP = -1;
 const MAX_NPPES_FETCHES_PER_REQUEST = 30;
 // fakeNPI runs on a Nano-tier Supabase project -- firing every variant's
 // fetch at once (unbounded Promise.all) reliably 500s several of them at
@@ -208,7 +216,7 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
 
   const acceptedCount = () => (mergeBranches ? merger.length : fresh.length);
 
-  const variantExhausted = variants.map((variant) => (variantSkips[variantKey(variant)] || 0) > NPPES_MAX_SKIP);
+  const variantExhausted = variants.map((variant) => variantSkips[variantKey(variant)] === EXHAUSTED_SKIP);
   const anyVariantLeft = () => variantExhausted.some((done) => !done);
 
   while (acceptedCount() < desiredLimit && !hitScanBudget && anyVariantLeft()) {
@@ -279,16 +287,8 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
       let skip = pr.skip;
 
       if (fetched === 0) {
-        // A short-of-page-size (or empty) page means this variant is truly
-        // out of data -- persist a skip past NPPES_MAX_SKIP so it reads
-        // back as exhausted next time, whether "next time" resumes from
-        // search_progress or (as the frontend actually does on "Search
-        // more") the client just echoes back the variantSkips this
-        // response returns. Advancing skip by NPPES_PAGE_SIZE here instead
-        // would silently persist a skip beyond this variant's real total,
-        // which fakeNPI 500s on instead of returning an empty page.
         variantExhausted[pr.v] = true;
-        skip = NPPES_MAX_SKIP + 1;
+        skip = EXHAUSTED_SKIP;
       } else {
         totalScanned += fetched;
         const acceptedBeforeThisTurn = acceptedCount();
@@ -310,14 +310,13 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
 
         if (fetched < NPPES_PAGE_SIZE) {
           variantExhausted[pr.v] = true;
-          skip = NPPES_MAX_SKIP + 1;
+          skip = EXHAUSTED_SKIP;
         } else {
           skip += NPPES_PAGE_SIZE;
         }
       }
 
       variantSkips[key] = skip;
-      if (skip > NPPES_MAX_SKIP) variantExhausted[pr.v] = true;
     }
   }
 
