@@ -24,6 +24,26 @@ import * as searchProgressRepo from "../repos/searchProgressRepo.js";
 const NPPES_PAGE_SIZE = 200;
 const NPPES_MAX_SKIP = 1000;
 const MAX_NPPES_FETCHES_PER_REQUEST = 30;
+// fakeNPI runs on a Nano-tier Supabase project -- firing every variant's
+// fetch at once (unbounded Promise.all) reliably 500s several of them at
+// a time under that little compute. Capping how many are in flight
+// together keeps searches working at the cost of a bit of round latency.
+const NPPES_FETCH_CONCURRENCY = 2;
+
+// Like Promise.all(items.map(fn)), but never runs more than `limit` calls
+// to `fn` at once. Order of `results` matches `items`, same as Promise.all.
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 function buildNppesDecisionMaker(provider) {
   const off = provider.authorizedOfficial;
@@ -196,11 +216,13 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
     const roundQuota = Math.max(1, Math.ceil((desiredLimit - acceptedCount()) / remainingVariants));
 
     // Every not-yet-exhausted variant this round is an independent NPPES
-    // query -- fetch them all concurrently instead of one at a time. This
-    // can fetch a page or two more than strictly needed once desiredLimit
-    // is reached mid-round (each variant's page is already in flight by
-    // the time earlier ones satisfy the quota), which is a fine trade for
-    // turning several sequential round trips into one.
+    // query -- fetched at up to NPPES_FETCH_CONCURRENCY at a time instead
+    // of one at a time (turning several sequential round trips into a
+    // couple) or all at once (which overloads fakeNPI's Nano-tier
+    // compute, see NPPES_FETCH_CONCURRENCY above). This can fetch a page
+    // or two more than strictly needed once desiredLimit is reached
+    // mid-round (each variant's page is already in flight by the time
+    // earlier ones satisfy the quota), which is a fine trade.
     const roundVariantIndices = [];
     for (let v = 0; v < variants.length; v++) {
       if (variantExhausted[v]) continue;
@@ -213,19 +235,17 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
     }
     fetchesUsed += roundVariantIndices.length;
 
-    const pageResults = await Promise.all(
-      roundVariantIndices.map(async (v) => {
-        const variant = variants[v];
-        const key = variantKey(variant);
-        const skip = variantSkips[key] || 0;
-        try {
-          const result = await Nppes.searchProviders(config, Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip }));
-          return { v, key, skip, ok: true, result };
-        } catch (err) {
-          return { v, key, skip, ok: false, err };
-        }
-      })
-    );
+    const pageResults = await mapWithConcurrency(roundVariantIndices, NPPES_FETCH_CONCURRENCY, async (v) => {
+      const variant = variants[v];
+      const key = variantKey(variant);
+      const skip = variantSkips[key] || 0;
+      try {
+        const result = await Nppes.searchProviders(config, Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip }));
+        return { v, key, skip, ok: true, result };
+      } catch (err) {
+        return { v, key, skip, ok: false, err };
+      }
+    });
 
     // One batched claimed-NPI check covering every provider fetched this
     // round (across all variants), instead of relying on a whole-table
