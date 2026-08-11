@@ -275,36 +275,6 @@ app.post("/taxonomies/enable", async (c) => {
 
 app.get("/debug/foursquare", async (c) => c.json(ok(await Foursquare.testConnection(c.get("config")))));
 
-// Temporary: proves out the fakeNPI replica (github.com/prodbyabdo/fakeNPI)
-// from inside the Worker's own network, since the sandbox this was written
-// in can't reach *.supabase.co directly. Forwards every query param
-// through untouched, so it can be pointed at any of fakeNPI's documented
-// params (number, enumeration_type, organization_name, city, state,
-// taxonomy_description, limit, skip). Remove once fakeNPI is either wired
-// into nppes.js for real or ruled out.
-app.get("/debug/fakenpi", async (c) => {
-  const params = new URL(c.req.url).searchParams;
-  const base = params.get("base") || c.get("config").fakeNpiBaseUrl();
-  params.delete("base");
-  const url = base + (params.toString() ? "?" + params.toString() : "");
-  const startedAt = Date.now();
-  let response;
-  try {
-    response = await fetch(url);
-  } catch (err) {
-    return c.json(ok({ url, reachable: false, error: String(err) }));
-  }
-  const elapsedMs = Date.now() - startedAt;
-  const text = await response.text();
-  let body;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    body = text.length > 2000 ? text.slice(0, 2000) + "…" : text;
-  }
-  return c.json(ok({ url, reachable: true, status: response.status, elapsedMs, body }));
-});
-
 app.get("/debug/suggestion-email", (c) =>
   c.json(ok({ configured: false, note: "Suggestion email notifications aren't wired up in the Worker port -- suggestions are still stored in the `suggestions` table." }))
 );

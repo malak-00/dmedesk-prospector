@@ -2,7 +2,10 @@
 // the retry loop uses a real async sleep instead of Utilities.sleep.
 // Everything else (normalization, pagination contract, local filters) is
 // unchanged since NPPES is a plain public JSON API.
-const BASE_URL = "https://npiregistry.cms.hhs.gov/api/";
+//
+// Points at fakeNPI (github.com/prodbyabdo/fakeNPI), our self-hosted NPPES
+// replica, via config.fakeNpiBaseUrl() -- same request/response shape as
+// the real NPPES API, confirmed working, but with no cap on `skip`.
 const MAX_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 400;
 
@@ -52,7 +55,7 @@ async function attemptFetch(url) {
 }
 
 async function fetchFromNppes(config, params) {
-  const url = BASE_URL + "?" + buildQueryString(Object.assign({ version: config.nppesVersion() }, params));
+  const url = config.fakeNpiBaseUrl() + "?" + buildQueryString(Object.assign({ version: config.nppesVersion() }, params));
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const result = await attemptFetch(url);
