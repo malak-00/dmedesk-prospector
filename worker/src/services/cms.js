@@ -42,12 +42,9 @@ export async function lookupByNpis(supabase, npis) {
   const valid = (npis || []).filter(Boolean).map(String);
   if (valid.length === 0) return result;
 
-  const toFetch = [];
-  for (const npi of valid) {
-    const cached = await EnrichmentCache.get(supabase, CACHE_NAMESPACE, npi);
-    if (cached !== undefined) result[npi] = cached;
-    else toFetch.push(npi);
-  }
+  const cached = await EnrichmentCache.getMany(supabase, CACHE_NAMESPACE, valid);
+  const toFetch = valid.filter((npi) => !cached.has(npi));
+  cached.forEach((value, npi) => (result[npi] = value));
   if (toFetch.length === 0) return result;
 
   let responses;
@@ -61,10 +58,12 @@ export async function lookupByNpis(supabase, npis) {
     return result;
   }
 
+  const toCache = [];
   for (let i = 0; i < toFetch.length; i++) {
     const data = await parseResponse(responses[i]);
     result[toFetch[i]] = data;
-    await EnrichmentCache.put(supabase, CACHE_NAMESPACE, toFetch[i], data);
+    toCache.push({ npi: toFetch[i], value: data });
   }
+  await EnrichmentCache.putMany(supabase, CACHE_NAMESPACE, toCache);
   return result;
 }

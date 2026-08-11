@@ -70,18 +70,21 @@ export async function enrichCompanies(config, supabase, companies) {
   assertConfigured(config);
 
   const results = {};
+  const cached = await EnrichmentCache.getMany(
+    supabase,
+    CACHE_NAMESPACE,
+    (companies || []).map((c) => c.npi).filter((npi) => npi != null)
+  );
+
   const toFetchRequests = [];
   const toFetchCompanies = [];
 
   for (const company of companies || []) {
     const npi = company.npi != null ? String(company.npi) : null;
 
-    if (npi) {
-      const cached = await EnrichmentCache.get(supabase, CACHE_NAMESPACE, npi);
-      if (cached !== undefined) {
-        results[npi] = cached;
-        continue;
-      }
+    if (npi && cached.has(npi)) {
+      results[npi] = cached.get(npi);
+      continue;
     }
 
     const request = buildRequest(config, company);
@@ -106,15 +109,17 @@ export async function enrichCompanies(config, supabase, companies) {
     throw unreachable;
   }
 
+  const toCache = [];
   for (let i = 0; i < toFetchCompanies.length; i++) {
     const company = toFetchCompanies[i];
     const npi = company.npi != null ? String(company.npi) : null;
     const parsed = await parseResponse(responses[i], company.name);
     if (npi) {
       results[npi] = parsed.data;
-      if (parsed.ok) await EnrichmentCache.put(supabase, CACHE_NAMESPACE, npi, parsed.data);
+      if (parsed.ok) toCache.push({ npi, value: parsed.data });
     }
   }
+  await EnrichmentCache.putMany(supabase, CACHE_NAMESPACE, toCache);
 
   return results;
 }

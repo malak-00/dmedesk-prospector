@@ -92,20 +92,17 @@ function companyToLeadRow(company, session, { status, isDisconnected }) {
   };
 }
 
-// Every NPI already handled by ANYONE (claimed or disconnected) -- used to
-// filter fresh NPPES search results, same as SheetsStore.getClaimedNpis.
-export async function getClaimedNpis(supabase) {
-  const claimed = new Set();
-  let from = 0;
-  const pageSize = 1000;
-  for (;;) {
-    const { data, error } = await supabase.from("leads").select("npi").range(from, from + pageSize - 1);
-    if (error) throw httpError(500, "Failed to load claimed NPIs: " + error.message);
-    (data || []).forEach((row) => claimed.add(String(row.npi)));
-    if (!data || data.length < pageSize) break;
-    from += pageSize;
-  }
-  return claimed;
+// Which of these specific NPIs are already handled by ANYONE (claimed or
+// disconnected) -- used to filter fresh NPPES search results, same as
+// SheetsStore.getClaimedNpis. Targeted at a candidate list (one NPPES page
+// at a time, <=200 NPIs) instead of scanning the whole `leads` table, which
+// used to be reloaded in full on every single search request.
+export async function getClaimedNpisAmong(supabase, npis) {
+  const candidates = [...new Set((npis || []).map(String).filter(Boolean))];
+  if (candidates.length === 0) return new Set();
+  const { data, error } = await supabase.from("leads").select("npi").in("npi", candidates);
+  if (error) throw httpError(500, "Failed to load claimed NPIs: " + error.message);
+  return new Set((data || []).map((row) => String(row.npi)));
 }
 
 export async function getKnownStatuses(supabase) {
