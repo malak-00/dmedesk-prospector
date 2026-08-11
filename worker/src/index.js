@@ -283,8 +283,10 @@ app.get("/debug/foursquare", async (c) => c.json(ok(await Foursquare.testConnect
 // taxonomy_description, limit, skip). Remove once fakeNPI is either wired
 // into nppes.js for real or ruled out.
 app.get("/debug/fakenpi", async (c) => {
-  const base = c.get("config").fakeNpiBaseUrl();
-  const url = base + (c.req.query() && Object.keys(c.req.query()).length ? "?" + new URL(c.req.url).searchParams.toString() : "");
+  const params = new URL(c.req.url).searchParams;
+  const base = params.get("base") || c.get("config").fakeNpiBaseUrl();
+  params.delete("base");
+  const url = base + (params.toString() ? "?" + params.toString() : "");
   const startedAt = Date.now();
   let response;
   try {
