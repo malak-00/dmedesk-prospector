@@ -130,6 +130,63 @@ async function appendRows(token, spreadsheetId, tabName, rows) {
   );
 }
 
+// leadsRepo's toLeadDTO shape (see leadsRepo.js) is already flat -- unlike
+// exportCompaniesToSheet's `companies` (the nested search-result shape from
+// companyModel.js), so this reads columns straight off the lead instead of
+// going through flattenCompany. Only real mismatch is the phone column:
+// CSV_COLUMNS calls it "phone", the lead DTO calls it "companyPhone" (to
+// stay distinct from the claimed contact's own phone).
+function flatLeadRow(lead) {
+  return CSV_COLUMNS.map((c) => {
+    const value = lead[c.key === "phone" ? "companyPhone" : c.key];
+    return value != null ? value : "";
+  });
+}
+
+// Claimed leads view's own "Export to Sheet" -- same shared spreadsheet/tab
+// as exportCompaniesToSheet, but the tracking columns come from the lead's
+// own real claim/status history instead of fresh "new"/blank placeholders,
+// since these leads are already claimed and tracked.
+export async function exportLeadsToSheet(config, leads, session) {
+  assertConfigured(config);
+  leads = leads || [];
+  if (!Array.isArray(leads) || leads.length === 0) {
+    const err = new Error("At least one lead is required to export");
+    err.status = 400;
+    throw err;
+  }
+
+  const token = await getAccessToken(config);
+  const spreadsheetId = config.googleSheetId();
+  const tabName = claimedTabName(session.displayName);
+
+  const { sheetId, created } = await ensureUserTab(token, spreadsheetId, tabName);
+  if (created) await writeHeaderRow(token, spreadsheetId, tabName);
+
+  const rows = leads.map((lead) => {
+    const csvValues = flatLeadRow(lead);
+    const trackingValues = [
+      lead.claimedBy || session.displayName || "",
+      lead.claimedAt || "",
+      lead.status || "new",
+      session.displayName || "",
+      lead.statusUpdatedAt || "",
+      lead.notes || "",
+      lead.reminderAt || "",
+    ];
+    return csvValues.concat(trackingValues);
+  });
+
+  await appendRows(token, spreadsheetId, tabName, rows);
+
+  return {
+    tab: tabName,
+    rowsAdded: rows.length,
+    claimedBy: session.displayName,
+    sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheetId}`,
+  };
+}
+
 export async function exportCompaniesToSheet(config, companies, session) {
   assertConfigured(config);
   companies = companies || [];

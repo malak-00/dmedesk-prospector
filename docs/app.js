@@ -242,6 +242,7 @@ const els = {
   claimedClearSelectionBtn: document.getElementById("claimedClearSelectionBtn"),
   claimedReturnToProspectBtn: document.getElementById("claimedReturnToProspectBtn"),
   claimedSendDisconnectedBtn: document.getElementById("claimedSendDisconnectedBtn"),
+  claimedExportGoogleSheetBtn: document.getElementById("claimedExportGoogleSheetBtn"),
   enableNotifications: document.getElementById("enableNotifications"),
   claimedSearchInput: document.getElementById("claimedSearchInput"),
   statusFilter: document.getElementById("statusFilter"),
@@ -1502,6 +1503,7 @@ function updateClaimedSelectionUI() {
   // stay disabled until at least one lead is actually checked.
   els.claimedSendDisconnectedBtn.disabled = count === 0;
   els.claimedReturnToProspectBtn.disabled = count === 0;
+  els.claimedExportGoogleSheetBtn.disabled = count === 0;
 }
 
 // Returns whichever leads a "Send to Disconnected" or "Return to Prospect"
@@ -1570,6 +1572,32 @@ async function returnClaimedToProspect() {
     setStatus("error", "Error");
   } finally {
     els.claimedReturnToProspectBtn.disabled = state.claimedSelected.size === 0;
+  }
+}
+
+// Claimed leads view's own version of exportToGoogleSheet -- pastes a copy
+// of the checked leads into the caller's tab in the shared Google Sheet
+// without touching their status in the app (unlike Send to Disconnected /
+// Return to Prospect above, this doesn't move or remove them from here).
+async function exportClaimedToGoogleSheet() {
+  const leads = getCheckedClaimedLeads();
+  if (leads.length === 0) {
+    showToast("Check at least one lead to export to Sheet", true);
+    return;
+  }
+  const npis = leads.map((l) => l.npi).filter(Boolean);
+
+  els.claimedExportGoogleSheetBtn.disabled = true; // prevents a double-click from double-sending
+  setStatus("busy", "Exporting to Sheet…");
+  try {
+    const data = await apiPost("export/google-sheet/claimed", { npis });
+    showToast(`Added ${data.rowsAdded} row(s) to "${data.tab}"`, false, data.sheetUrl);
+    setStatus("ready", "Ready");
+  } catch (err) {
+    showToast(err.message, true);
+    setStatus("error", "Error");
+  } finally {
+    els.claimedExportGoogleSheetBtn.disabled = state.claimedSelected.size === 0;
   }
 }
 
@@ -2423,6 +2451,7 @@ els.claimedSelectAll.addEventListener("change", (e) => {
 els.claimedClearSelectionBtn.addEventListener("click", clearClaimedSelection);
 els.claimedSendDisconnectedBtn.addEventListener("click", sendClaimedToDisconnected);
 els.claimedReturnToProspectBtn.addEventListener("click", returnClaimedToProspect);
+els.claimedExportGoogleSheetBtn.addEventListener("click", exportClaimedToGoogleSheet);
 
 wireSortableHeaders(els.resultsTable, PROSPECT_DEFAULT_SORT_DIR, sortProspectResults);
 wireSortableHeaders(els.claimedTable, CLAIMED_DEFAULT_SORT_DIR, sortClaimedLeads);
