@@ -571,12 +571,7 @@ function escapeHtml(str) {
 // company, just never rendered anywhere until now.
 const SCORE_FACTOR_LABELS = {
   hasPhone: "Has phone number",
-  hasWebsite: "Has a website",
-  activeStatus: "Confirmed open (Places)",
   completeAddress: "Complete address on file",
-  placesVerified: "Verified on Foursquare",
-  goodRating: "Good rating (8+/10)",
-  establishedPresence: "Established (10+ reviews)",
   hasDecisionMaker: "Contact identified",
   medicareActive: "Active Medicare biller",
 };

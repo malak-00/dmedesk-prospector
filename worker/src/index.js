@@ -175,7 +175,6 @@ app.get("/search/companies", async (c) => {
   criteria = await attachTaxonomyCodes(supabaseFor(c), criteria);
   const session = c.get("session");
   const data = await CompanyService.searchCompanies(c.get("config"), supabaseFor(c), criteria, {
-    enrichPlaces: c.req.query("enrich") !== "false",
     scrapeWebsites: c.req.query("scrape") === "true",
     enrichCms: c.req.query("cms") !== "false" || c.req.query("requireCmsClaims") === "true" || c.req.query("requireCmsClaims") === "on",
     requireCmsClaims: c.req.query("requireCmsClaims") === "true" || c.req.query("requireCmsClaims") === "on",
