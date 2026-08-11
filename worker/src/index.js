@@ -136,20 +136,43 @@ function hasAnySearchCriteria(criteria) {
   );
 }
 
+// fakeNPI's npi_records has taxonomy_code populated but not
+// taxonomy_description (see worker/src/services/nppes.js), so specialty
+// filtering has to go through the code. Our own `taxonomies` table has
+// both, so resolve description(s) -> code(s) here before querying.
+async function attachTaxonomyCodes(supabase, criteria) {
+  if (!criteria.taxonomyDescription && !(criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length)) {
+    return criteria;
+  }
+  const descriptions = criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length
+    ? criteria.taxonomyDescriptions
+    : [criteria.taxonomyDescription];
+  const codeByDescription = await taxonomiesRepo.getCodesByDescriptions(supabase, descriptions);
+
+  return Object.assign({}, criteria, {
+    taxonomyCode: criteria.taxonomyDescription ? codeByDescription.get(criteria.taxonomyDescription) : undefined,
+    taxonomyCodes: criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length
+      ? criteria.taxonomyDescriptions.map((d) => codeByDescription.get(d))
+      : undefined,
+  });
+}
+
 app.get("/search/nppes", async (c) => {
-  const criteria = readSearchCriteria(c);
+  let criteria = readSearchCriteria(c);
   if (!hasAnySearchCriteria(criteria)) {
     return c.json({ success: false, status: 400, error: "At least one of NPI, organization name, city, or specialty is required -- a state alone isn't specific enough for NPPES" }, 400);
   }
+  criteria = await attachTaxonomyCodes(supabaseFor(c), criteria);
   const data = await Nppes.searchProviders(c.get("config"), criteria);
   return c.json(ok(data));
 });
 
 app.get("/search/companies", async (c) => {
-  const criteria = readSearchCriteria(c);
+  let criteria = readSearchCriteria(c);
   if (!hasAnySearchCriteria(criteria)) {
     return c.json({ success: false, status: 400, error: "At least one of NPI, company name, city, or specialty is required -- a state alone isn't specific enough for NPPES" }, 400);
   }
+  criteria = await attachTaxonomyCodes(supabaseFor(c), criteria);
   const session = c.get("session");
   const data = await CompanyService.searchCompanies(c.get("config"), supabaseFor(c), criteria, {
     enrichPlaces: c.req.query("enrich") !== "false",

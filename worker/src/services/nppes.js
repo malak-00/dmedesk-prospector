@@ -2,7 +2,10 @@
 // the retry loop uses a real async sleep instead of Utilities.sleep.
 // Everything else (normalization, pagination contract, local filters) is
 // unchanged since NPPES is a plain public JSON API.
-const BASE_URL = "https://npiregistry.cms.hhs.gov/api/";
+//
+// Points at fakeNPI (github.com/prodbyabdo/fakeNPI), our self-hosted NPPES
+// replica, via config.fakeNpiBaseUrl() -- same request/response shape as
+// the real NPPES API, confirmed working, but with no cap on `skip`.
 const MAX_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 400;
 
@@ -52,7 +55,7 @@ async function attemptFetch(url) {
 }
 
 async function fetchFromNppes(config, params) {
-  const url = BASE_URL + "?" + buildQueryString(Object.assign({ version: config.nppesVersion() }, params));
+  const url = config.fakeNpiBaseUrl() + "?" + buildQueryString(Object.assign({ version: config.nppesVersion() }, params));
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const result = await attemptFetch(url);
@@ -144,7 +147,12 @@ export async function searchProviders(config, criteria = {}) {
     organization_name: isExactNpiLookup ? undefined : criteria.organizationName || undefined,
     city: isExactNpiLookup ? undefined : criteria.city || undefined,
     state: isExactNpiLookup ? undefined : criteria.state || undefined,
-    taxonomy_description: isExactNpiLookup ? undefined : criteria.taxonomyDescription || undefined,
+    // fakeNPI's npi_records has taxonomy_code populated but not
+    // taxonomy_description (see header comment) -- prefer the exact-match
+    // code, and only fall back to the (currently unpopulated) description
+    // filter when the caller couldn't resolve a code for it.
+    taxonomy_code: isExactNpiLookup ? undefined : criteria.taxonomyCode || undefined,
+    taxonomy_description: isExactNpiLookup || criteria.taxonomyCode ? undefined : criteria.taxonomyDescription || undefined,
     limit,
     skip,
   });
@@ -158,7 +166,9 @@ export async function searchProviders(config, criteria = {}) {
       results = results.filter((r) => r.address && r.address.state && String(r.address.state).toUpperCase() === stateUpper);
     }
 
-    if (criteria.taxonomyDescription) {
+    if (criteria.taxonomyCode) {
+      results = results.filter((r) => r.taxonomy && r.taxonomy.code === criteria.taxonomyCode);
+    } else if (criteria.taxonomyDescription) {
       const term = criteria.taxonomyDescription.toLowerCase();
       results = results.filter(
         (r) => r.taxonomy && r.taxonomy.description && r.taxonomy.description.toLowerCase().indexOf(term) !== -1

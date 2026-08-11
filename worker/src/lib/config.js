@@ -7,6 +7,12 @@ export function makeConfig(env) {
 
   return {
     nppesVersion: () => get("NPPES_VERSION", "2.1"),
+    // Self-hosted NPPES replica (fakeNPI, github.com/prodbyabdo/fakeNPI) --
+    // same request/response shape as the real NPPES API but with no cap on
+    // `skip`, backed by our own npi_records table. This is the live source
+    // for nppes.js's provider search; FAKENPI_BASE_URL lets it be pointed
+    // elsewhere (e.g. back at the real NPPES API) without a code change.
+    fakeNpiBaseUrl: () => get("FAKENPI_BASE_URL", "https://zvthhjediuelpvzkkzvy.supabase.co/functions/v1/nppes-search/api/"),
     foursquareApiKey: () => get("FOURSQUARE_SERVICE_API_KEY"),
     geminiApiKey: () => get("GEMINI_API_KEY"),
     geminiModel: () => get("GEMINI_MODEL", "gemini-2.5-flash"),
