@@ -279,7 +279,16 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
       let skip = pr.skip;
 
       if (fetched === 0) {
+        // A short-of-page-size (or empty) page means this variant is truly
+        // out of data -- persist a skip past NPPES_MAX_SKIP so it reads
+        // back as exhausted next time, whether "next time" resumes from
+        // search_progress or (as the frontend actually does on "Search
+        // more") the client just echoes back the variantSkips this
+        // response returns. Advancing skip by NPPES_PAGE_SIZE here instead
+        // would silently persist a skip beyond this variant's real total,
+        // which fakeNPI 500s on instead of returning an empty page.
         variantExhausted[pr.v] = true;
+        skip = NPPES_MAX_SKIP + 1;
       } else {
         totalScanned += fetched;
         const acceptedBeforeThisTurn = acceptedCount();
@@ -299,8 +308,12 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
           if (provider.npi) seenNpis[String(provider.npi)] = true;
         }
 
-        if (fetched < NPPES_PAGE_SIZE) variantExhausted[pr.v] = true;
-        skip += NPPES_PAGE_SIZE;
+        if (fetched < NPPES_PAGE_SIZE) {
+          variantExhausted[pr.v] = true;
+          skip = NPPES_MAX_SKIP + 1;
+        } else {
+          skip += NPPES_PAGE_SIZE;
+        }
       }
 
       variantSkips[key] = skip;
