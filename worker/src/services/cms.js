@@ -47,20 +47,22 @@ export async function lookupByNpis(supabase, npis) {
   cached.forEach((value, npi) => (result[npi] = value));
   if (toFetch.length === 0) return result;
 
-  let responses;
-  try {
-    responses = await Promise.all(
-      toFetch.map((npi) => fetch(DATASET_URL + "?filter[Suplr_NPI]=" + encodeURIComponent(npi) + "&size=1"))
-    );
-  } catch (err) {
-    console.log("[cms] Medicare lookup failed entirely: " + err.message);
-    toFetch.forEach((npi) => (result[npi] = null));
-    return result;
-  }
+  // Promise.allSettled, not Promise.all -- one NPI hitting Cloudflare's
+  // per-invocation subrequest cap (or any other transient fetch failure)
+  // shouldn't null out every other NPI's already-successful lookup.
+  const settled = await Promise.allSettled(
+    toFetch.map((npi) => fetch(DATASET_URL + "?filter[Suplr_NPI]=" + encodeURIComponent(npi) + "&size=1"))
+  );
 
   const toCache = [];
   for (let i = 0; i < toFetch.length; i++) {
-    const data = await parseResponse(responses[i]);
+    const outcome = settled[i];
+    if (outcome.status === "rejected") {
+      console.log("[cms] Medicare lookup failed for NPI " + toFetch[i] + ": " + outcome.reason.message);
+      result[toFetch[i]] = null;
+      continue; // not cached -- transient failure, worth retrying on the next search
+    }
+    const data = await parseResponse(outcome.value);
     result[toFetch[i]] = data;
     toCache.push({ npi: toFetch[i], value: data });
   }

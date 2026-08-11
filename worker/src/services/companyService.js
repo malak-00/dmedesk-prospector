@@ -1,13 +1,19 @@
 // Port of appscript/services/CompanyService.js -- orchestrates
-// NPPES -> dedup -> enrich (Foursquare/OSM) -> optionally scrape -> CMS ->
-// score -> sort. Logic is unchanged from the Apps Script version; only the
-// I/O calls (Sheets -> Supabase, UrlFetchApp -> fetch) and the
-// warn-once-per-execution comments (meaningless on a stateless Worker
-// request) were dropped.
+// NPPES -> dedup -> optionally scrape -> CMS -> score -> sort. Logic is
+// unchanged from the Apps Script version; only the I/O calls (Sheets ->
+// Supabase, UrlFetchApp -> fetch) and the warn-once-per-execution comments
+// (meaningless on a stateless Worker request) were dropped.
+//
+// Foursquare (places) and OSM (website-fallback) enrichment were both
+// removed from this pipeline -- FOURSQUARE_SERVICE_API_KEY is over its
+// rate limit and no longer usable, and OSM's 1 req/sec throttle made
+// every website-less company (all of them, without Foursquare) add ~1s
+// to the request while also eating into Cloudflare's per-invocation
+// subrequest cap that CMS enrichment needs. foursquare.js/osm.js
+// themselves are untouched (foursquare.js still backs /debug/foursquare)
+// in case either is revived later.
 import * as Nppes from "./nppes.js";
 import * as Cms from "./cms.js";
-import * as Foursquare from "./foursquare.js";
-import * as Osm from "./osm.js";
 import * as Scraper from "./scraper.js";
 import { classifyRole } from "../lib/roleClassifier.js";
 import { createCompany } from "../lib/companyModel.js";
@@ -91,51 +97,6 @@ function createBranchMerger() {
   }
 
   return { add, list: () => merged, get length() { return merged.length; } };
-}
-
-async function applyPlacesEnrichment(config, supabase, companies) {
-  let dataByNpi;
-  try {
-    dataByNpi = await Foursquare.enrichCompanies(config, supabase, companies);
-  } catch (err) {
-    if (err.name === "FoursquareNotConfiguredError") {
-      console.log("[companyService] Places enrichment skipped: FOURSQUARE_SERVICE_API_KEY not set");
-    } else {
-      console.log("[companyService] Places enrichment failed: " + err.message);
-    }
-    return companies;
-  }
-
-  return companies.map((company) => {
-    const data = company.npi != null ? dataByNpi[String(company.npi)] : null;
-    if (!data) return company;
-
-    return Object.assign({}, company, {
-      website: data.website != null ? data.website : company.website,
-      phone: company.phone || data.phone || null,
-      places: { placeId: data.placeId, rating: data.rating, ratingCount: data.ratingCount, isClosed: data.isClosed },
-      sources: Object.assign({}, company.sources, { places: true }),
-    });
-  });
-}
-
-async function applyOsmEnrichment(supabase, companies) {
-  const candidates = companies.filter((c) => !c.website);
-  if (candidates.length === 0) return companies;
-
-  let websiteByNpi;
-  try {
-    websiteByNpi = await Osm.lookupWebsites(supabase, candidates);
-  } catch (err) {
-    console.log("[companyService] OSM enrichment failed: " + err.message);
-    return companies;
-  }
-
-  return companies.map((company) => {
-    const website = company.npi != null ? websiteByNpi.get(String(company.npi)) : null;
-    if (!website) return company;
-    return Object.assign({}, company, { website, sources: Object.assign({}, company.sources, { osm: true }) });
-  });
 }
 
 async function tryEnrichWithScrape(company) {
@@ -340,7 +301,6 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
 
 export async function searchCompanies(config, supabase, criteria = {}, options = {}) {
   const requireCmsClaims = Boolean(options.requireCmsClaims || criteria.requireCmsClaims);
-  const enrichPlaces = options.enrichPlaces !== false;
   const scrapeWebsites = Boolean(options.scrapeWebsites);
   const enrichCms = requireCmsClaims || options.enrichCms !== false;
 
@@ -367,10 +327,6 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
     await saveSearchProgressSafe(supabase, options.userId, criteria, fetchResult.variantSkips, fetchResult.allSeenNpis);
   }
 
-  if (enrichPlaces) {
-    companies = await applyPlacesEnrichment(config, supabase, companies);
-    companies = await applyOsmEnrichment(supabase, companies);
-  }
   if (scrapeWebsites) {
     companies = await Promise.all(companies.map(tryEnrichWithScrape));
   }
