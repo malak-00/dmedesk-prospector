@@ -725,6 +725,54 @@ function restoreSearchFormState() {
   if (values.city) cityInput.value = values.city;
 }
 
+const SEARCH_RESULTS_KEY = "dmeProspectorLastResults";
+
+function saveSearchResultsState() {
+  try {
+    const cached = {
+      resultPages: state.resultPages,
+      currentPage: state.currentPage,
+      searchMoreVariantSkips: state.searchMoreVariantSkips,
+      searchMoreSeenNpis: state.searchMoreSeenNpis,
+      lastSearchParams: state.lastSearchParams,
+      exhausted: els.searchMoreBtn ? els.searchMoreBtn.disabled : false,
+      excludedAsClaimed: state.excludedAsClaimed,
+    };
+    sessionStorage.setItem(SEARCH_RESULTS_KEY, JSON.stringify(cached));
+  } catch (e) {
+    console.warn("[app] Failed to save search results to sessionStorage", e);
+  }
+}
+
+function restoreSearchResultsFromSession() {
+  const raw = sessionStorage.getItem(SEARCH_RESULTS_KEY);
+  if (!raw) return false;
+  try {
+    const cached = JSON.parse(raw);
+    if (!cached || !Array.isArray(cached.resultPages) || cached.resultPages.length === 0) return false;
+    state.resultPages = cached.resultPages;
+    state.currentPage = cached.currentPage || 0;
+    state.searchMoreVariantSkips = cached.searchMoreVariantSkips || {};
+    state.searchMoreSeenNpis = cached.searchMoreSeenNpis || [];
+    state.lastSearchParams = cached.lastSearchParams || null;
+    state.excludedAsClaimed = cached.excludedAsClaimed || 0;
+
+    if (els.searchMoreBtn) updateSearchMoreButton(Boolean(cached.exhausted));
+    goToPage(state.currentPage);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function updateUrlQueryParams(params) {
+  try {
+    const url = new URL(window.location.href);
+    const urlParams = new URLSearchParams(params || {});
+    window.history.replaceState({}, "", `${url.pathname}?${urlParams.toString()}`);
+  } catch (e) { /* ignore */ }
+}
+
 // Every add/remove already auto-persists (see persistExcludeKeywords) -- this
 // button is now just an explicit "confirm it saved" affordance, plus a way
 // to commit whatever's still sitting in the entry field (typed but not yet
@@ -839,6 +887,8 @@ async function executeSearch(params, { isMore = false } = {}) {
     }
 
     state.lastSearchParams = params;
+    saveSearchResultsState();
+    updateUrlQueryParams(params);
     setStatus("ready", "Ready");
 
     // NPPES flat-out rejects some taxonomy_description values (not just
@@ -996,9 +1046,10 @@ function sourceBadges(sources) {
 function leadRowHtml(company, index) {
   const primaryContact = company.decisionMakers?.[0];
   const isSelected = state.selected.has(index);
+  const companyName = escapeHtml(company.name || "company");
   return `
-    <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}" tabindex="0" aria-expanded="false">
-      <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
+    <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}" tabindex="0" aria-expanded="false" aria-controls="detail-row-${index}">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}" aria-label="Select ${companyName}" ${isSelected ? "checked" : ""}></td>
       <td>
         <div class="score-ring-wrap" tabindex="0">
           ${scoreRing(company.score)}
@@ -1006,7 +1057,7 @@ function leadRowHtml(company, index) {
         </div>
       </td>
       <td>
-        <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}</div>
+        <div class="company-name">${companyName}${locationsBadge(company.locations)}</div>
         <div class="company-taxonomy">${escapeHtml(company.taxonomy?.description || "")}</div>
         ${sourceBadges(company.sources)}
       </td>
@@ -1197,6 +1248,7 @@ function removeCompaniesFromProspect(companies) {
   state.selected.clear();
   state.expandedIndex = null;
   renderResults();
+  saveSearchResultsState();
 }
 
 async function exportCsv() {
@@ -2279,6 +2331,8 @@ async function loadTaxonomyOptions() {
     // restoreSearchFormState() (see its comment on
     // restoreTaxonomySelectionFromSession for why that would be a bug here).
     restoreTaxonomySelectionFromSession();
+    restoreSearchFormState();
+    restoreSearchResultsFromSession();
   } catch (err) {
     console.log("[Taxonomies] Failed to load options: " + err.message);
   }

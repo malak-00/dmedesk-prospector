@@ -154,12 +154,23 @@ async function tryEnrichWithScrape(company) {
   }
 }
 
+let claimedNpisCache = null;
+let claimedNpisCacheTime = 0;
+const CLAIMED_NPIS_TTL_MS = 60000;
+
 async function getClaimedNpisSafe(supabase) {
+  const now = Date.now();
+  if (claimedNpisCache && (now - claimedNpisCacheTime < CLAIMED_NPIS_TTL_MS)) {
+    return claimedNpisCache;
+  }
   try {
-    return await leadsRepo.getClaimedNpis(supabase);
+    const res = await leadsRepo.getClaimedNpis(supabase);
+    claimedNpisCache = res;
+    claimedNpisCacheTime = now;
+    return res;
   } catch (err) {
     console.log("[companyService] Dedup check failed: " + err.message);
-    return new Set();
+    return claimedNpisCache || new Set();
   }
 }
 
@@ -222,30 +233,43 @@ async function fetchFreshProviders(config, criteria, desiredLimit, claimedNpis) 
     const remainingVariants = variantExhausted.filter((done) => !done).length;
     const roundQuota = Math.max(1, Math.ceil((desiredLimit - acceptedCount()) / remainingVariants));
 
+    const activeIndices = [];
     for (let v = 0; v < variants.length; v++) {
-      if (variantExhausted[v]) continue;
-      if (acceptedCount() >= desiredLimit) break;
-      if (fetchesUsed >= MAX_NPPES_FETCHES_PER_REQUEST) {
-        hitScanBudget = true;
-        break;
+      if (!variantExhausted[v] && fetchesUsed + activeIndices.length < MAX_NPPES_FETCHES_PER_REQUEST) {
+        activeIndices.push(v);
+        if (activeIndices.length >= 5) break;
       }
+    }
+    if (activeIndices.length === 0) {
+      if (fetchesUsed >= MAX_NPPES_FETCHES_PER_REQUEST) hitScanBudget = true;
+      break;
+    }
+    fetchesUsed += activeIndices.length;
 
-      const variant = variants[v];
-      const key = variantKey(variant);
-      let skip = variantSkips[key] || 0;
-      fetchesUsed++;
+    const batchResults = await Promise.all(
+      activeIndices.map(async (v) => {
+        const variant = variants[v];
+        const key = variantKey(variant);
+        const skip = variantSkips[key] || 0;
+        try {
+          const res = await Nppes.searchProviders(config, Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip }));
+          return { v, key, skip, res, err: null };
+        } catch (err) {
+          return { v, key, skip, res: null, err };
+        }
+      })
+    );
 
-      let result;
-      try {
-        result = await Nppes.searchProviders(config, Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip }));
-      } catch (err) {
+    for (const item of batchResults) {
+      const { v, key, skip: currentSkip, res, err } = item;
+      if (err) {
         console.log("[companyService] NPPES query variant failed, skipping it: " + key + " -- " + err.message);
-        rejectedVariants.push({ state: variant.state || null, taxonomyDescription: variant.taxonomyDescription || null, message: err.message });
+        rejectedVariants.push({ state: variants[v].state || null, taxonomyDescription: variants[v].taxonomyDescription || null, message: err.message });
         variantExhausted[v] = true;
         continue;
       }
-      const results = result.results;
-      const fetched = result.rawCount != null ? result.rawCount : results.length;
+      const results = res.results;
+      const fetched = res.rawCount != null ? res.rawCount : results.length;
 
       if (fetched === 0) {
         variantExhausted[v] = true;
@@ -268,12 +292,12 @@ async function fetchFreshProviders(config, criteria, desiredLimit, claimedNpis) 
           if (provider.npi) seenNpis[String(provider.npi)] = true;
         }
 
-        if (fetched < NPPES_PAGE_SIZE) variantExhausted[v] = true;
-        skip += NPPES_PAGE_SIZE;
+        const nextSkip = currentSkip + NPPES_PAGE_SIZE;
+        variantSkips[key] = nextSkip;
+        if (fetched < NPPES_PAGE_SIZE || nextSkip > NPPES_MAX_SKIP) {
+          variantExhausted[v] = true;
+        }
       }
-
-      variantSkips[key] = skip;
-      if (skip > NPPES_MAX_SKIP) variantExhausted[v] = true;
     }
   }
 
