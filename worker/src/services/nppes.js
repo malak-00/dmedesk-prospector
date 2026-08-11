@@ -147,7 +147,12 @@ export async function searchProviders(config, criteria = {}) {
     organization_name: isExactNpiLookup ? undefined : criteria.organizationName || undefined,
     city: isExactNpiLookup ? undefined : criteria.city || undefined,
     state: isExactNpiLookup ? undefined : criteria.state || undefined,
-    taxonomy_description: isExactNpiLookup ? undefined : criteria.taxonomyDescription || undefined,
+    // fakeNPI's npi_records has taxonomy_code populated but not
+    // taxonomy_description (see header comment) -- prefer the exact-match
+    // code, and only fall back to the (currently unpopulated) description
+    // filter when the caller couldn't resolve a code for it.
+    taxonomy_code: isExactNpiLookup ? undefined : criteria.taxonomyCode || undefined,
+    taxonomy_description: isExactNpiLookup || criteria.taxonomyCode ? undefined : criteria.taxonomyDescription || undefined,
     limit,
     skip,
   });
@@ -161,7 +166,9 @@ export async function searchProviders(config, criteria = {}) {
       results = results.filter((r) => r.address && r.address.state && String(r.address.state).toUpperCase() === stateUpper);
     }
 
-    if (criteria.taxonomyDescription) {
+    if (criteria.taxonomyCode) {
+      results = results.filter((r) => r.taxonomy && r.taxonomy.code === criteria.taxonomyCode);
+    } else if (criteria.taxonomyDescription) {
       const term = criteria.taxonomyDescription.toLowerCase();
       results = results.filter(
         (r) => r.taxonomy && r.taxonomy.description && r.taxonomy.description.toLowerCase().indexOf(term) !== -1

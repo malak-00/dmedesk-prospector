@@ -192,12 +192,14 @@ async function saveSearchProgressSafe(supabase, userId, criteria, variantSkips, 
 
 function buildCriteriaVariants(criteria) {
   const states = criteria.states && criteria.states.length ? criteria.states : [criteria.state || undefined];
-  const taxonomies = criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length ? criteria.taxonomyDescriptions : [criteria.taxonomyDescription || undefined];
+  const taxonomies = criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length
+    ? criteria.taxonomyDescriptions.map((taxonomyDescription, i) => ({ taxonomyDescription, taxonomyCode: criteria.taxonomyCodes ? criteria.taxonomyCodes[i] : undefined }))
+    : [{ taxonomyDescription: criteria.taxonomyDescription || undefined, taxonomyCode: criteria.taxonomyCode }];
 
   const variants = [];
   states.forEach((state) => {
-    taxonomies.forEach((taxonomyDescription) => {
-      variants.push(Object.assign({}, criteria, { state, taxonomyDescription }));
+    taxonomies.forEach(({ taxonomyDescription, taxonomyCode }) => {
+      variants.push(Object.assign({}, criteria, { state, taxonomyDescription, taxonomyCode }));
     });
   });
   return variants;

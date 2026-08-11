@@ -39,6 +39,25 @@ export async function search(supabase, keyword) {
   return (data || []).map(toDTO);
 }
 
+// Resolves each of `descriptions` to its taxonomy code (falls back to
+// skipping the description if it's unknown or has no code on file).
+// Used to send fakeNPI's exact-match taxonomy_code filter instead of
+// taxonomy_description, since fakeNPI's npi_records don't have
+// taxonomy_description populated.
+export async function getCodesByDescriptions(supabase, descriptions) {
+  const codeByDescription = new Map();
+  const wanted = [...new Set((descriptions || []).filter(Boolean))];
+  if (wanted.length === 0) return codeByDescription;
+
+  const { data, error } = await supabase.from("taxonomies").select("description, code").in("description", wanted);
+  if (error) throw httpError(500, "Failed to resolve taxonomy codes: " + error.message);
+
+  (data || []).forEach((row) => {
+    if (row.description && row.code) codeByDescription.set(row.description, row.code);
+  });
+  return codeByDescription;
+}
+
 export async function enable(supabase, rowNumber) {
   if (!rowNumber) throw httpError(400, "A valid rowNumber is required");
 
