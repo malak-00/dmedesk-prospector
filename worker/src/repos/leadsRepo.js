@@ -134,6 +134,21 @@ export async function listClaimedLeads(supabase, session) {
   return (data || []).map((row) => toLeadDTO(row, session.displayName));
 }
 
+// Same shape/scoping as listClaimedLeads, just narrowed to a checked
+// subset -- used by the Claimed leads view's own "Export to Sheet" button.
+export async function getClaimedLeadsByNpis(supabase, npis, session) {
+  const wanted = [...new Set((npis || []).map(String).filter(Boolean))];
+  if (wanted.length === 0) return [];
+  const { data, error } = await supabase
+    .from("leads")
+    .select("*")
+    .eq("claimed_by", session.id)
+    .eq("is_disconnected", false)
+    .in("npi", wanted);
+  if (error) throw httpError(500, "Failed to load claimed leads: " + error.message);
+  return (data || []).map((row) => toLeadDTO(row, session.displayName));
+}
+
 export async function exportCompaniesToLeads(supabase, companies, session, flattenCompany) {
   companies = companies || [];
   if (!Array.isArray(companies) || companies.length === 0) throw httpError(400, "At least one company is required to export");

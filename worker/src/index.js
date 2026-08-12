@@ -226,6 +226,19 @@ app.post("/export/google-sheet", async (c) => {
   return c.json(ok(data));
 });
 
+// Claimed leads view's own "Export to Sheet" -- takes NPIs (not a raw
+// companies payload) and re-fetches them server-side, scoped to the
+// caller's own claimed leads, same trust boundary as /leads/disconnect and
+// /leads/return-to-prospect below.
+app.post("/export/google-sheet/claimed", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const supabase = supabaseFor(c);
+  const session = c.get("session");
+  const leads = await leadsRepo.getClaimedLeadsByNpis(supabase, body.npis, session);
+  const data = await GoogleSheets.exportLeadsToSheet(c.get("config"), leads, session);
+  return c.json(ok(data));
+});
+
 app.post("/leads/disconnect", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const data = await leadsRepo.moveClaimedLeadsToDisconnected(supabaseFor(c), body.npis, c.get("session"));
