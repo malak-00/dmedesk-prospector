@@ -176,7 +176,6 @@ app.get("/search/companies", async (c) => {
   const session = c.get("session");
   const data = await CompanyService.searchCompanies(c.get("config"), supabaseFor(c), criteria, {
     scrapeWebsites: c.req.query("scrape") === "true",
-    enrichCms: c.req.query("cms") !== "false" || c.req.query("requireCmsClaims") === "true" || c.req.query("requireCmsClaims") === "on",
     requireCmsClaims: c.req.query("requireCmsClaims") === "true" || c.req.query("requireCmsClaims") === "on",
     userId: session.id,
     clientProvidedVariantSkips: Boolean(c.req.query("variantSkips")),
