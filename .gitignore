@@ -145,3 +145,6 @@ vite.config.ts.timestamp-*
 
 # Cloudflare Worker local dev secrets (see .dev.vars.example)
 worker/.dev.vars
+
+# agents
+.agents/
