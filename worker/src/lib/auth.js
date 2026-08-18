@@ -27,7 +27,7 @@ function secretKey(config) {
 async function findUserByUsername(supabase, username) {
   const { data, error } = await supabase
     .from("app_users")
-    .select("id, username, password_hash, display_name, exclude_keywords")
+    .select("id, username, password_hash, display_name, exclude_keywords, is_admin")
     .ilike("username", String(username).trim())
     .maybeSingle();
   if (error) throw httpError(500, "Failed to look up user: " + error.message);
@@ -49,6 +49,7 @@ export async function login(config, username, password) {
     username: user.username,
     displayName: user.display_name,
     excludeKeywords: user.exclude_keywords || "",
+    isAdmin: Boolean(user.is_admin),
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(user.id)
@@ -61,6 +62,7 @@ export async function login(config, username, password) {
     username: user.username,
     displayName: user.display_name,
     excludeKeywords: user.exclude_keywords || "",
+    isAdmin: Boolean(user.is_admin),
   };
 }
 
@@ -76,6 +78,7 @@ export async function getSession(config, token) {
       username: payload.username,
       displayName: payload.displayName,
       excludeKeywords: payload.excludeKeywords || "",
+      isAdmin: Boolean(payload.isAdmin),
     };
   } catch {
     return null;
@@ -110,6 +113,7 @@ export async function setExcludeKeywords(config, session, text) {
     username: session.username,
     displayName: session.displayName,
     excludeKeywords: trimmed,
+    isAdmin: Boolean(session.isAdmin),
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(session.id)

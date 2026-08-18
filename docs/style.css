@@ -652,6 +652,25 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .reminder-actions.suggestion-actions { justify-content: space-between; }
 .reminder-actions-right { display: flex; gap: 10px; }
 
+/* ---------- Admin dashboard ---------- */
+
+.admin-panel { padding: 20px; display: flex; flex-direction: column; gap: 4px; }
+.admin-panel .results-toolbar { border-radius: 0; padding-left: 0; padding-right: 0; }
+.admin-panel .table-wrap { border-radius: var(--radius-lg); border: 1px solid var(--hairline); margin-bottom: 20px; }
+
+.admin-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+.stat-card {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 140px; padding: 14px 18px;
+  background: var(--surface-2); border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+}
+.stat-value { font-family: var(--font-mono); font-size: 24px; font-weight: 600; }
+.stat-label { font-size: 12px; color: var(--muted); }
+
+.admin-leads-card { width: min(720px, 100%); }
+.admin-leads-table-wrap { max-height: 60vh; overflow-y: auto; border: 1px solid var(--hairline); border-radius: var(--radius-lg); }
+
 /* ---------- Callback reminders ---------- */
 
 .reminder-badge, .reminder-current {

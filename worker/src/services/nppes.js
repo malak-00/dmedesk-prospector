@@ -89,6 +89,22 @@ function extractLastUpdated(raw, basic) {
   return parseNppesDate(basic.last_updated) || parseNppesDate(raw.last_updated_epoch);
 }
 
+// fakeNPI-only extension (not part of the real NPPES API): every result
+// carries a `medicare` field joined in from npi_cms_enrichment, so we get
+// CMS data in the same call instead of a separate lookup per NPI (see
+// cms.js -- no longer called from companyService.js because of this).
+function normalizeMedicare(raw) {
+  const m = raw.medicare;
+  if (!m) return null;
+  return {
+    totalClaims: m.total_claims ?? null,
+    totalServices: m.total_services ?? null,
+    totalBeneficiaries: m.total_beneficiaries ?? null,
+    medicarePayment: m.medicare_payment ?? null,
+    medicareAllowed: m.medicare_allowed ?? null,
+  };
+}
+
 function normalizeProvider(raw) {
   const basic = raw.basic || {};
   const addresses = raw.addresses || [];
@@ -133,6 +149,7 @@ function normalizeProvider(raw) {
     },
     authorizedOfficial,
     lastUpdated: extractLastUpdated(raw, basic),
+    medicare: normalizeMedicare(raw),
   };
 }
 

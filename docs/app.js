@@ -106,6 +106,7 @@ const state = {
   searchMoreVariantSkips: {},
   searchMoreSeenNpis: [],
   view: "search",
+  adminLoaded: false,
   claimedLoaded: false,
   claimedLeads: [],
   // The full, unfiltered set fetched from the server -- state.claimedLeads
@@ -233,6 +234,19 @@ const els = {
   signOutBtn: document.getElementById("signOutBtn"),
   viewSearch: document.getElementById("viewSearch"),
   viewClaimed: document.getElementById("viewClaimed"),
+  viewAdmin: document.getElementById("viewAdmin"),
+  adminTab: document.getElementById("adminTab"),
+  statTotalUsers: document.getElementById("statTotalUsers"),
+  statClaimedLeads: document.getElementById("statClaimedLeads"),
+  statDisconnectedLeads: document.getElementById("statDisconnectedLeads"),
+  statSuggestions: document.getElementById("statSuggestions"),
+  adminUsersBody: document.getElementById("adminUsersBody"),
+  adminSuggestionsBody: document.getElementById("adminSuggestionsBody"),
+  refreshAdminBtn: document.getElementById("refreshAdminBtn"),
+  adminUserLeadsOverlay: document.getElementById("adminUserLeadsOverlay"),
+  adminUserLeadsTitle: document.getElementById("adminUserLeadsTitle"),
+  adminUserLeadsBody: document.getElementById("adminUserLeadsBody"),
+  adminUserLeadsCloseBtn: document.getElementById("adminUserLeadsCloseBtn"),
   claimedTable: document.getElementById("claimedTable"),
   claimedBody: document.getElementById("claimedBody"),
   claimedCount: document.getElementById("claimedCount"),
@@ -278,6 +292,7 @@ function showLogin() {
   els.loginOverlay.hidden = false;
   els.userChip.hidden = true;
   els.suggestBtn.hidden = true;
+  els.adminTab.hidden = true;
   els.devNotice.hidden = true;
   els.loginForm.querySelector("input[name=username]")?.focus();
 }
@@ -289,6 +304,7 @@ function hideLogin() {
     els.userName.textContent = session.displayName;
     els.userChip.hidden = false;
     els.suggestBtn.hidden = false;
+    els.adminTab.hidden = !session.isAdmin;
     els.devNotice.hidden = false; // shown fresh on every sign-in/page open, not persisted
     applyExcludeKeywordsDefaultIfBlank();
   }
@@ -455,7 +471,7 @@ async function handleLogin(evt) {
       username: formData.get("username"),
       password: formData.get("password"),
     });
-    saveSession({ token: data.token, username: data.username, displayName: data.displayName, excludeKeywords: data.excludeKeywords });
+    saveSession({ token: data.token, username: data.username, displayName: data.displayName, excludeKeywords: data.excludeKeywords, isAdmin: data.isAdmin });
     // Unconditionally resets to THIS user's own saved value (never "only if
     // blank" -- a fresh login is a hard boundary) -- otherwise, signing out
     // and signing back in as someone else in the same tab would leave the
@@ -511,6 +527,104 @@ async function handleSuggestionSubmit(evt) {
   }
 }
 
+/* ---------- Admin dashboard ---------- */
+// Only reachable via the Admin tab, which stays hidden (see hideLogin())
+// unless the signed-in session's isAdmin flag is set -- the actual
+// enforcement is server-side (index.js's requireAdmin), this is just UI.
+
+function renderAdminStats(stats) {
+  els.statTotalUsers.textContent = stats.totalUsers;
+  els.statClaimedLeads.textContent = stats.totalClaimedLeads;
+  els.statDisconnectedLeads.textContent = stats.totalDisconnectedLeads;
+  els.statSuggestions.textContent = stats.totalSuggestions;
+}
+
+function renderAdminUsers(users) {
+  if (users.length === 0) {
+    els.adminUsersBody.innerHTML = `<tr class="empty-row"><td colspan="7">No users found.</td></tr>`;
+    return;
+  }
+  els.adminUsersBody.innerHTML = users
+    .map(
+      (u) => `
+    <tr>
+      <td>${escapeHtml(u.displayName || "")}${u.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}</td>
+      <td>${escapeHtml(u.username || "")}</td>
+      <td class="mono">${u.claimedCount}</td>
+      <td class="mono">${u.disconnectedCount}</td>
+      <td class="mono">${u.suggestionsCount}</td>
+      <td class="mono">${u.distinctSearches}</td>
+      <td><button type="button" class="link-btn" data-admin-view-leads data-user-id="${escapeHtml(u.id)}" data-display-name="${escapeHtml(u.displayName || "")}">View leads</button></td>
+    </tr>`
+    )
+    .join("");
+}
+
+function renderAdminSuggestions(suggestions) {
+  if (suggestions.length === 0) {
+    els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">No suggestions yet.</td></tr>`;
+    return;
+  }
+  els.adminSuggestionsBody.innerHTML = suggestions
+    .map(
+      (s) => `
+    <tr>
+      <td>${escapeHtml(s.submittedBy || "")}</td>
+      <td>${escapeHtml(s.text || "")}</td>
+      <td class="mono">${escapeHtml((s.submittedAt || "").slice(0, 10))}</td>
+    </tr>`
+    )
+    .join("");
+}
+
+async function loadAdminOverview() {
+  els.adminUsersBody.innerHTML = skeletonRows(4, 7);
+  els.adminSuggestionsBody.innerHTML = skeletonRows(3, 3);
+  try {
+    const data = await apiGet("admin/overview");
+    renderAdminStats(data.stats);
+    renderAdminUsers(data.users);
+    renderAdminSuggestions(data.suggestions);
+    state.adminLoaded = true;
+  } catch (err) {
+    showToast(err.message, true);
+    els.adminUsersBody.innerHTML = `<tr class="empty-row"><td colspan="7">Failed to load.</td></tr>`;
+    els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">Failed to load.</td></tr>`;
+  }
+}
+
+async function openAdminUserLeads(userId, displayName) {
+  els.adminUserLeadsTitle.textContent = `${displayName || "User"}'s claimed leads`;
+  els.adminUserLeadsBody.innerHTML = skeletonRows(4, 4);
+  els.adminUserLeadsOverlay.hidden = false;
+  try {
+    const data = await apiGet("admin/leads", { userId, displayName });
+    if (data.leads.length === 0) {
+      els.adminUserLeadsBody.innerHTML = `<tr class="empty-row"><td colspan="4">Nothing claimed.</td></tr>`;
+      return;
+    }
+    els.adminUserLeadsBody.innerHTML = data.leads
+      .map((lead) => {
+        const location = [lead.city, lead.state].filter(Boolean).join(", ");
+        return `
+      <tr>
+        <td>${escapeHtml(lead.name || "")}${lead.contactName ? `<div class="company-taxonomy">${escapeHtml(lead.contactName)}</div>` : ""}</td>
+        <td>${escapeHtml(location)}</td>
+        <td>${escapeHtml(lead.status || "")}</td>
+        <td class="mono">${escapeHtml((lead.claimedAt || "").slice(0, 10))}</td>
+      </tr>`;
+      })
+      .join("");
+  } catch (err) {
+    els.adminUserLeadsBody.innerHTML = `<tr class="empty-row"><td colspan="4">Failed to load.</td></tr>`;
+    showToast(err.message, true);
+  }
+}
+
+function closeAdminUserLeads() {
+  els.adminUserLeadsOverlay.hidden = true;
+}
+
 /* ---------- View tabs ---------- */
 
 function switchView(view) {
@@ -520,7 +634,9 @@ function switchView(view) {
   });
   els.viewSearch.hidden = view !== "search";
   els.viewClaimed.hidden = view !== "claimed";
+  els.viewAdmin.hidden = view !== "admin";
   if (view === "claimed" && !state.claimedLoaded) loadClaimedLeads();
+  if (view === "admin" && !state.adminLoaded) loadAdminOverview();
 }
 
 /* ---------- UI helpers ---------- */
@@ -2408,6 +2524,17 @@ els.suggestBtn.addEventListener("click", openSuggestionBox);
 els.suggestionForm.addEventListener("submit", handleSuggestionSubmit);
 els.suggestionCancelBtn.addEventListener("click", closeSuggestionBox);
 els.suggestionOverlay.addEventListener("click", (e) => { if (e.target === els.suggestionOverlay) closeSuggestionBox(); });
+els.refreshAdminBtn.addEventListener("click", loadAdminOverview);
+els.adminUserLeadsCloseBtn.addEventListener("click", closeAdminUserLeads);
+els.adminUserLeadsOverlay.addEventListener("click", (e) => { if (e.target === els.adminUserLeadsOverlay) closeAdminUserLeads(); });
+// Event delegation, not a per-row listener -- adminUsersBody is fully
+// re-rendered on every load, same reasoning as the taxonomy checkboxes
+// (see renderTaxonomyOptions' comment).
+els.adminUsersBody.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-admin-view-leads]");
+  if (!btn) return;
+  openAdminUserLeads(btn.dataset.userId, btn.dataset.displayName);
+});
 els.reminderForm.addEventListener("submit", handleReminderSubmit);
 els.reminderCancelBtn.addEventListener("click", closeReminderModal);
 els.reminderClearBtn.addEventListener("click", handleReminderClear);

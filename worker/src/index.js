@@ -15,6 +15,7 @@ import * as Auth from "./lib/auth.js";
 import * as leadsRepo from "./repos/leadsRepo.js";
 import * as taxonomiesRepo from "./repos/taxonomiesRepo.js";
 import * as suggestionsRepo from "./repos/suggestionsRepo.js";
+import * as adminRepo from "./repos/adminRepo.js";
 import * as Nppes from "./services/nppes.js";
 import * as Cms from "./services/cms.js";
 import * as Foursquare from "./services/foursquare.js";
@@ -176,7 +177,6 @@ app.get("/search/companies", async (c) => {
   const session = c.get("session");
   const data = await CompanyService.searchCompanies(c.get("config"), supabaseFor(c), criteria, {
     scrapeWebsites: c.req.query("scrape") === "true",
-    enrichCms: c.req.query("cms") !== "false" || c.req.query("requireCmsClaims") === "true" || c.req.query("requireCmsClaims") === "on",
     requireCmsClaims: c.req.query("requireCmsClaims") === "true" || c.req.query("requireCmsClaims") === "on",
     userId: session.id,
     clientProvidedVariantSkips: Boolean(c.req.query("variantSkips")),
@@ -304,6 +304,38 @@ app.post("/taxonomies/enable", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const taxonomies = await taxonomiesRepo.enable(supabaseFor(c), body.rowNumber);
   return c.json(ok({ taxonomies }));
+});
+
+// ---- admin ------------------------------------------------------------
+
+function requireAdmin(session) {
+  if (!session.isAdmin) {
+    const err = new Error("Admins only");
+    err.status = 403;
+    throw err;
+  }
+}
+
+app.get("/admin/overview", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const supabase = supabaseFor(c);
+  const [users, suggestions, stats] = await Promise.all([
+    adminRepo.getUserActivitySummary(supabase),
+    suggestionsRepo.listAllSuggestions(supabase),
+    adminRepo.getAggregateStats(supabase),
+  ]);
+  return c.json(ok({ users, suggestions, stats }));
+});
+
+app.get("/admin/leads", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const userId = c.req.query("userId");
+  const displayName = c.req.query("displayName") || "";
+  if (!userId) return c.json({ success: false, status: 400, error: "userId is required" }, 400);
+  const leads = await leadsRepo.listClaimedLeadsForUser(supabaseFor(c), userId, displayName);
+  return c.json(ok({ leads }));
 });
 
 // ---- debug ----------------------------------------------------------------

@@ -71,6 +71,7 @@
     <nav class="view-tabs">
       <button type="button" class="tab active" data-view="search">Prospect</button>
       <button type="button" class="tab" data-view="claimed">Claimed leads</button>
+      <button type="button" class="tab" data-view="admin" id="adminTab" hidden>Admin</button>
     </nav>
 
     <div id="viewSearch">
@@ -298,7 +299,92 @@
         </div>
       </section>
     </div>
+
+    <div id="viewAdmin" hidden>
+      <section class="results-panel admin-panel">
+        <div class="admin-stats" id="adminStats">
+          <div class="stat-card"><span class="stat-value" id="statTotalUsers">—</span><span class="stat-label">Users</span></div>
+          <div class="stat-card"><span class="stat-value" id="statClaimedLeads">—</span><span class="stat-label">Claimed leads</span></div>
+          <div class="stat-card"><span class="stat-value" id="statDisconnectedLeads">—</span><span class="stat-label">Disconnected</span></div>
+          <div class="stat-card"><span class="stat-value" id="statSuggestions">—</span><span class="stat-label">Suggestions</span></div>
+        </div>
+
+        <div class="results-toolbar">
+          <div class="results-meta">
+            <div class="results-count">User activity</div>
+          </div>
+          <div class="results-actions">
+            <button class="btn btn-ghost" id="refreshAdminBtn">
+              <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="results-table" id="adminUsersTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Claimed</th>
+                <th>Disconnected</th>
+                <th>Suggestions</th>
+                <th>Distinct searches</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="adminUsersBody">
+              <tr class="empty-row"><td colspan="7">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="results-toolbar">
+          <div class="results-meta">
+            <div class="results-count">Suggestions</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="results-table" id="adminSuggestionsTable">
+            <thead>
+              <tr>
+                <th>Submitted by</th>
+                <th>Suggestion</th>
+                <th>Submitted at</th>
+              </tr>
+            </thead>
+            <tbody id="adminSuggestionsBody">
+              <tr class="empty-row"><td colspan="3">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </main>
+
+  <div id="adminUserLeadsOverlay" class="suggestion-overlay" hidden>
+    <div class="suggestion-card admin-leads-card">
+      <h3 id="adminUserLeadsTitle">Claimed leads</h3>
+      <div class="table-wrap admin-leads-table-wrap">
+        <table class="results-table" id="adminUserLeadsTable">
+          <thead>
+            <tr>
+              <th>Company / contact</th>
+              <th>Location</th>
+              <th>Status</th>
+              <th>Claimed at</th>
+            </tr>
+          </thead>
+          <tbody id="adminUserLeadsBody">
+            <tr class="empty-row"><td colspan="4">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="suggestion-actions">
+        <button type="button" class="btn btn-primary" id="adminUserLeadsCloseBtn">Close</button>
+      </div>
+    </div>
+  </div>
 
   <div id="suggestionOverlay" class="suggestion-overlay" hidden>
     <form id="suggestionForm" class="suggestion-card">

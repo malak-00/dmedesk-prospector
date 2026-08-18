@@ -1,5 +1,5 @@
 // Port of appscript/services/CompanyService.js -- orchestrates
-// NPPES -> dedup -> optionally scrape -> CMS -> score -> sort. Logic is
+// NPPES -> dedup -> optionally scrape -> score -> sort. Logic is
 // unchanged from the Apps Script version; only the I/O calls (Sheets ->
 // Supabase, UrlFetchApp -> fetch) and the warn-once-per-execution comments
 // (meaningless on a stateless Worker request) were dropped.
@@ -9,11 +9,18 @@
 // rate limit and no longer usable, and OSM's 1 req/sec throttle made
 // every website-less company (all of them, without Foursquare) add ~1s
 // to the request while also eating into Cloudflare's per-invocation
-// subrequest cap that CMS enrichment needs. foursquare.js/osm.js
-// themselves are untouched (foursquare.js still backs /debug/foursquare)
-// in case either is revived later.
+// subrequest budget. foursquare.js/osm.js themselves are untouched
+// (foursquare.js still backs /debug/foursquare) in case either is
+// revived later.
+//
+// CMS enrichment is no longer a separate live lookup either -- fakeNPI's
+// Edge Function now joins npi_cms_enrichment into every NPPES result
+// directly (see nppes.js's normalizeMedicare), so `provider.medicare` is
+// already populated by the time fromNppesProvider runs below. cms.js
+// itself is untouched/unused, same as foursquare.js/osm.js, in case the
+// live CMS lookup is ever needed again (e.g. for NPIs fakeNPI doesn't
+// have enrichment for yet).
 import * as Nppes from "./nppes.js";
-import * as Cms from "./cms.js";
 import * as Scraper from "./scraper.js";
 import { classifyRole } from "../lib/roleClassifier.js";
 import { createCompany } from "../lib/companyModel.js";
@@ -78,7 +85,8 @@ function fromNppesProvider(provider) {
     taxonomy: provider.taxonomy,
     decisionMakers: nppesDM ? [nppesDM] : [],
     lastUpdated: provider.lastUpdated,
-    sources: { nppes: true },
+    medicare: provider.medicare,
+    sources: { nppes: true, cms: Boolean(provider.medicare) },
   });
 }
 
@@ -334,7 +342,6 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
 export async function searchCompanies(config, supabase, criteria = {}, options = {}) {
   const requireCmsClaims = Boolean(options.requireCmsClaims || criteria.requireCmsClaims);
   const scrapeWebsites = Boolean(options.scrapeWebsites);
-  const enrichCms = requireCmsClaims || options.enrichCms !== false;
 
   const desiredLimit = criteria.limit || 20;
 
@@ -361,14 +368,6 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
 
   if (scrapeWebsites) {
     companies = await Promise.all(companies.map(tryEnrichWithScrape));
-  }
-  if (enrichCms) {
-    const medicareByNpi = await Cms.lookupByNpis(supabase, companies.map((c) => c.npi));
-    companies = companies.map((company) => {
-      const medicare = company.npi != null ? medicareByNpi[String(company.npi)] : null;
-      if (!medicare) return company;
-      return Object.assign({}, company, { medicare, sources: Object.assign({}, company.sources, { cms: true }) });
-    });
   }
 
   if (requireCmsClaims) {
