@@ -134,6 +134,22 @@ export async function listClaimedLeads(supabase, session) {
   return (data || []).map((row) => toLeadDTO(row, session.displayName));
 }
 
+// Admin-only escape hatch from listClaimedLeads' own-session scoping --
+// callers MUST check session.isAdmin themselves before calling this (see
+// index.js's /admin routes). displayName is passed in separately since,
+// unlike listClaimedLeads, there's no session to pull it from.
+export async function listClaimedLeadsForUser(supabase, userId, displayName) {
+  const { data, error } = await supabase
+    .from("leads")
+    .select("*")
+    .eq("claimed_by", userId)
+    .eq("is_disconnected", false)
+    .order("status_updated_at", { ascending: false, nullsFirst: false })
+    .order("claimed_at", { ascending: false });
+  if (error) throw httpError(500, "Failed to load claimed leads: " + error.message);
+  return (data || []).map((row) => toLeadDTO(row, displayName));
+}
+
 // Same shape/scoping as listClaimedLeads, just narrowed to a checked
 // subset -- used by the Claimed leads view's own "Export to Sheet" button.
 export async function getClaimedLeadsByNpis(supabase, npis, session) {
