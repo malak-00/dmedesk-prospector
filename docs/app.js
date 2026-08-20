@@ -750,6 +750,7 @@ function buildSearchParams(formData) {
   }
   if (!formData.get("enrich")) params.enrich = "false";
   if (formData.get("scrape")) params.scrape = "true";
+  if (formData.get("resetProgress")) params.resetProgress = "true";
   return params;
 }
 
