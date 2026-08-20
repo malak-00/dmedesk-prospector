@@ -346,8 +346,14 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   const desiredLimit = criteria.limit || 20;
 
   const trackProgress = Boolean(options.userId) && !criteria.npi;
+  // resetProgress skips loading this user's saved bookmark for this exact
+  // filter combo, so the scan starts from skip 0 / no excluded NPIs again
+  // -- same effect as if they'd never searched this combo before. Progress
+  // still gets saved normally afterward (below), so it becomes the new
+  // bookmark for any "Search more" that follows.
+  const resetProgress = Boolean(options.resetProgress);
   let effectiveCriteria = criteria;
-  if (trackProgress && !options.clientProvidedVariantSkips) {
+  if (trackProgress && !options.clientProvidedVariantSkips && !resetProgress) {
     const progress = await getSearchProgressSafe(supabase, options.userId, criteria);
     if (progress) {
       effectiveCriteria = Object.assign({}, criteria, {
@@ -372,6 +378,13 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
 
   if (requireCmsClaims) {
     companies = companies.filter((company) => company.medicare && typeof company.medicare.totalClaims === "number" && company.medicare.totalClaims > 0);
+  }
+
+  const minMedicareClaims = Number(criteria.minMedicareClaims);
+  if (criteria.minMedicareClaims != null && !Number.isNaN(minMedicareClaims)) {
+    companies = companies.filter(
+      (company) => company.medicare && typeof company.medicare.totalClaims === "number" && company.medicare.totalClaims >= minMedicareClaims
+    );
   }
 
   companies = companies.map((company) => Object.assign({}, company, { score: scoreCompany(company) }));

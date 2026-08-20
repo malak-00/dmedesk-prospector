@@ -122,6 +122,7 @@ function readSearchCriteria(c) {
     variantSkips: parseVariantSkips(q("variantSkips")),
     excludeNpis: parseCommaList(q("excludeNpis")),
     requireCmsClaims: q("requireCmsClaims") === "true" || q("requireCmsClaims") === "on",
+    minMedicareClaims: q("minMedicareClaims") ? Number(q("minMedicareClaims")) : undefined,
   };
 }
 
@@ -180,6 +181,7 @@ app.get("/search/companies", async (c) => {
     requireCmsClaims: c.req.query("requireCmsClaims") === "true" || c.req.query("requireCmsClaims") === "on",
     userId: session.id,
     clientProvidedVariantSkips: Boolean(c.req.query("variantSkips")),
+    resetProgress: c.req.query("resetProgress") === "true",
   });
   return c.json(ok(data));
 });

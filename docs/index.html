@@ -146,6 +146,10 @@
               <span>Limit (&lt;50)</span>
               <input type="number" name="limit" value="20" min="1" max="50">
             </label>
+            <label class="field" title="Only include leads whose Medicare DMEPOS claims total is at least this many. Leave blank for no minimum.">
+              <span>Min Medicare claims</span>
+              <input type="number" name="minMedicareClaims" min="0" placeholder="Any">
+            </label>
             <div class="field field-wide" title="Excludes any company whose name contains one of these (case-insensitive). Press Enter after each one. Saved as your personal default across sessions/devices once you click Save.">
               <label for="excludeKeywordsEntry">Exclude keywords</label>
               <div class="field-with-action">
@@ -166,6 +170,10 @@
             <label class="checkbox">
               <input type="checkbox" name="scrape">
               <span>Scrape websites for contacts <em>(slower)</em></span>
+            </label>
+            <label class="checkbox" title="Ignores your saved progress for these exact filters and starts back at the top of the registry, so you'll see leads again even if a previous search already paged past them. Search more still pages forward normally from there.">
+              <input type="checkbox" name="resetProgress">
+              <span>Start over from the beginning</span>
             </label>
             <button type="submit" class="btn btn-primary" id="searchBtn">
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
