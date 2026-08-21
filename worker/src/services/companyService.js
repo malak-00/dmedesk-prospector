@@ -346,14 +346,22 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   const desiredLimit = criteria.limit || 20;
 
   const trackProgress = Boolean(options.userId) && !criteria.npi;
-  // resetProgress skips loading this user's saved bookmark for this exact
-  // filter combo, so the scan starts from skip 0 / no excluded NPIs again
-  // -- same effect as if they'd never searched this combo before. Progress
-  // still gets saved normally afterward (below), so it becomes the new
-  // bookmark for any "Search more" that follows.
+  // resetProgress means "start this exact filter combo over from skip 0,
+  // no excluded NPIs" -- regardless of where a stale variantSkips/
+  // excludeNpis might otherwise come from: this user's saved
+  // search_progress bookmark (the DB lookup below), OR the caller/client
+  // having already sent its own variantSkips/excludeNpis on this very
+  // request (e.g. the frontend echoing back a previous response's
+  // now-stale variantSkips). Both are wiped, not just the DB lookup --
+  // otherwise a resetProgress request that still carries an old
+  // "-1 = exhausted" skip for this combo would immediately no-op.
+  // Progress still gets saved normally afterward (below), so it becomes
+  // the new bookmark for any "Search more" that follows.
   const resetProgress = Boolean(options.resetProgress);
   let effectiveCriteria = criteria;
-  if (trackProgress && !options.clientProvidedVariantSkips && !resetProgress) {
+  if (resetProgress) {
+    effectiveCriteria = Object.assign({}, criteria, { variantSkips: {}, excludeNpis: [] });
+  } else if (trackProgress && !options.clientProvidedVariantSkips) {
     const progress = await getSearchProgressSafe(supabase, options.userId, criteria);
     if (progress) {
       effectiveCriteria = Object.assign({}, criteria, {
