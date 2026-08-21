@@ -8,6 +8,41 @@ folder for this project.
 
 ---
 
+## 2026-08-21 — Fix `resetProgress` not actually resetting
+
+**Scope note:** Worker code only (`worker/src/services/companyService.js`),
+no schema change. Follow-up to the 2026-08-20 entry below.
+
+**Why:** the "Start over from the beginning" switch only skipped loading
+this user's saved `search_progress` bookmark from the DB — it did
+nothing about a `variantSkips`/`excludeNpis` already present on the
+request itself (e.g. the frontend echoing back a prior response's
+now-stale `variantSkips`, which can already carry an
+`EXHAUSTED_SKIP = -1` for that combo from before the reset was
+requested). That let a reset request immediately no-op: the response
+came back `scannedFromRegistry: 0`, `companies: []` — the variant
+treated as already exhausted without ever actually re-fetching from
+skip 0.
+
+**Change:** `resetProgress` now unconditionally resets
+`effectiveCriteria`'s `variantSkips`/`excludeNpis` to empty, regardless
+of what was already on the request, before the DB-lookup branch even
+runs.
+
+**Follow-up (same day):** that first fix was still wrong in two ways,
+caught immediately after: it saved the reset run's results back to
+`search_progress` afterward, silently overwriting the user's real
+resume point with the reset run's; and it re-wiped to skip 0 on every
+subsequent "Search more" click too (the switch's state persists across
+follow-up requests), making "Search more" unusable after a reset.
+Fixed both: `resetProgress` now never reads OR writes
+`search_progress` at all (fully self-contained detour, real bookmark
+untouched), and client-provided `variantSkips` (what "Search more"
+actually sends) always takes priority over `resetProgress`, so paging
+forward after a reset works correctly.
+
+---
+
 ## 2026-08-20 — Add a Medicare claims minimum filter and a search-reset switch
 
 **Scope note:** Worker/frontend code only (`worker/src/`, `docs/`), no schema change.
@@ -97,6 +132,7 @@ per search.
    addition.
 3. **Worker:** `nppes.js` normalizes the embedded `medicare` field the
    same shape `cms.js` used to produce; `companyService.js`'s separate
+   `Cms.lookupByNpis()` round trip is gone entirely.  `cms.js` itself is
    `Cms.lookupByNpis()` round trip is gone entirely. `cms.js` itself is
    left in place unused (same as `foursquare.js`/`osm.js`), in case a
    live fallback is needed later for NPIs fakeNPI doesn't have
