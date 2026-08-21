@@ -133,6 +133,7 @@ per search.
 3. **Worker:** `nppes.js` normalizes the embedded `medicare` field the
    same shape `cms.js` used to produce; `companyService.js`'s separate
    `Cms.lookupByNpis()` round trip is gone entirely.  `cms.js` itself is
+   `Cms.lookupByNpis()` round trip is gone entirely. `cms.js` itself is
    left in place unused (same as `foursquare.js`/`osm.js`), in case a
    live fallback is needed later for NPIs fakeNPI doesn't have
    enrichment for.
@@ -226,7 +227,7 @@ and sequencing external calls.
 **Changes:**
 
 1. **Stopped reloading the whole `leads` table on every search.**
-   `leadsRepo.getClaimedNpis()` used to page through *every* row of
+   `leadsRepo.getClaimedNpis()` used to page through _every_ row of
    `leads` (1000 at a time) on every single search request just to know
    which NPIs were already claimed — pure overhead that grows with the
    table. Replaced with `getClaimedNpisAmong(supabase, npis)`, a targeted
