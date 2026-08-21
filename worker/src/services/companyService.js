@@ -346,22 +346,25 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   const desiredLimit = criteria.limit || 20;
 
   const trackProgress = Boolean(options.userId) && !criteria.npi;
-  // resetProgress means "start this exact filter combo over from skip 0,
-  // no excluded NPIs" -- regardless of where a stale variantSkips/
-  // excludeNpis might otherwise come from: this user's saved
-  // search_progress bookmark (the DB lookup below), OR the caller/client
-  // having already sent its own variantSkips/excludeNpis on this very
-  // request (e.g. the frontend echoing back a previous response's
-  // now-stale variantSkips). Both are wiped, not just the DB lookup --
-  // otherwise a resetProgress request that still carries an old
-  // "-1 = exhausted" skip for this combo would immediately no-op.
-  // Progress still gets saved normally afterward (below), so it becomes
-  // the new bookmark for any "Search more" that follows.
+  // resetProgress is a self-contained detour, not a mutation of the saved
+  // bookmark: it starts this filter combo over from skip 0 / no excluded
+  // NPIs for THIS search session, but never reads OR writes
+  // search_progress -- the real bookmark is left exactly as it was, so a
+  // later search without the switch resumes from wherever it actually
+  // left off, unaffected by this detour.
+  //
+  // "This search session" spans "Search more" clicks too: those arrive
+  // with their own client-provided variantSkips (this response's, echoed
+  // back), which always wins over resetProgress -- otherwise every
+  // "Search more" click after a reset would re-wipe back to skip 0
+  // instead of paging forward from the reset run's own results.
   const resetProgress = Boolean(options.resetProgress);
   let effectiveCriteria = criteria;
-  if (resetProgress) {
+  if (options.clientProvidedVariantSkips) {
+    effectiveCriteria = criteria;
+  } else if (resetProgress) {
     effectiveCriteria = Object.assign({}, criteria, { variantSkips: {}, excludeNpis: [] });
-  } else if (trackProgress && !options.clientProvidedVariantSkips) {
+  } else if (trackProgress) {
     const progress = await getSearchProgressSafe(supabase, options.userId, criteria);
     if (progress) {
       effectiveCriteria = Object.assign({}, criteria, {
@@ -376,7 +379,7 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   const excludedAsClaimed = fetchResult.excludedAsClaimed;
   let companies = fetchResult.companies;
 
-  if (trackProgress) {
+  if (trackProgress && !resetProgress) {
     await saveSearchProgressSafe(supabase, options.userId, criteria, fetchResult.variantSkips, fetchResult.allSeenNpis);
   }
 
