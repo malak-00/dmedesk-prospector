@@ -45,3 +45,53 @@ These are the remaining exact-company matches that do not share the full phone +
 ## Limitation and next input
 
 The audit cannot validate State-based matches because State is not present in the six selected tabs, and it cannot run a meaningful NPI comparison because almost every NPI cell is blank. To make future audits definitive, populate `NPI` and add a `State` column (or provide the external reference sheet containing those values).
+
+## Supabase audit (dmedesk-prospector)
+
+The Supabase `leads` table is now the reference database: 3,930 leads are claimed, and all have NPI, State, phone, and contact-name values.
+
+### Database cleanup candidates
+
+- 102 duplicate-NPI groups (206 rows total); one group is claimed by more than one person.
+- 133 duplicate State + phone + contact groups (271 rows total); eight groups are claimed by more than one person.
+- These are review candidates, not automatic deletions: a shared contact and phone can legitimately occur on separate NPIs or companies.
+
+| Match basis | Leads / claimants | Review outcome |
+| --- | --- | --- |
+| Same NPI, State, phone, contact: ADMIRAL MEDICAL SUPPLY | Rick Nelson / Nora Atkins | Confirmed duplicate claim. Rick claimed first (2026-07-21); Nora claimed later (2026-07-27). |
+| State + phone + contact: ADVANCED HOME MEDICAL SUPPLIES INC. | Nora Atkins / Rick Nelson | Potential duplicate; different NPIs. |
+| State + phone + contact: AMERICAN LABS LLC / BEACH ROAD LABS LLC | Kaity James / Jasmine Green | Potential shared contact; different companies and NPIs. |
+| State + phone + contact: ABC HOME CARE AGENCY INC. / ABC HOME CARE SUPPLIES | Nora Atkins / Rick Nelson | Potential duplicate; different NPIs. |
+| State + phone + contact: AMAZING GRACE HOME CARE SERVICES / AG SCREENING LAB, LLC | Rick Nelson / Jasmine Green | Potential shared contact; different companies and NPIs. |
+| State + phone + contact: AAA MEDICAL EQUIPMENT SERVICES LLC | Kaity James / Nora Atkins | Potential duplicate; same company/contact, different NPIs. |
+| State + phone + contact: ACCESS MEDICAL SUPPLIES, INC | Rick Nelson / Nora Atkins | Potential duplicate; same company/contact, different NPIs. |
+| State + phone + contact: 1FOOT 2FOOT CENTRE FOR FOOT AND ANKLE CARE, PC | Rick Nelson / Kaity James | Potential duplicate; same company/contact, different NPIs. |
+
+### Workbook leads already claimed in Supabase
+
+The workbook has no usable State and only one NPI, so this check uses the strongest available key: normalized company + phone + authorized person.
+
+| Workbook location | Workbook opener | Existing Supabase claimant | Company | Result |
+| --- | --- | --- | --- | --- |
+| Follow Ups row 36 | Jimmy | Nora Atkins | RUSH LAB LLC | Claim conflict — decide whether Jimmy or Nora keeps it. |
+| New Meetings row 10 | Selene | Selene myles | GUARDIAN ANGEL DME | Already claimed by the same person; do not upload again. |
+| New Meetings row 13 | Nora | Nora Atkins | DIAGNOSTIC TESTING SOLUTIONS INC | Already claimed by the same person; do not upload again. |
+| New Meetings row 17 | Nora | Nora Atkins | NUA AESTHETICS LLC | Already claimed by the same person; do not upload again. |
+| New Meetings row 19 | Nora | Nora Atkins | BENDA HEALTH EDUCATION AND TESTING SERVICES LLC | Already claimed by the same person; do not upload again. |
+| New Meetings row 20 | Nora | Nora Atkins | WELCARE DIAGNOSTICS LLC | Already claimed by the same person; do not upload again. |
+
+The remaining 313 workbook rows do not match a claimed Supabase lead on the fields available in the workbook. They still need NPI and State before a fully safe, de-duplicated import.
+
+### Assignment readiness
+
+Supabase users available for assignment are Ben Arthur, Caroline Richards, Jasmine Green, Jimmy Pearson, Kaity James, Nora Atkins, Rick Nelson, and Selene Myles. Workbook openers `Jane`, `George`, and `Russ` do not have corresponding Supabase users, so their rows cannot be assigned without an explicit user mapping.
+
+No database rows have been deleted, reassigned, or inserted by this audit.
+
+## Import split (pending NPI enrichment)
+
+- **Hold/review:** 18 records — six already claimed in Supabase and 12 records belonging to six confirmed duplicate pairs inside the workbook. These stay untouched for now.
+- **Clean candidates:** 301 records — they do not match the hold criteria.
+- **Importable now:** 1 clean candidate has an NPI. The Supabase schema requires `npi`, so the other 300 cannot be inserted safely until their NPIs are supplied or enriched.
+
+Clean candidates by workbook opener: Jasmine 9, Selene 103, Jane 79, Jimmy 56, Nora 5, Ben 45, George 3, Russ 1.
