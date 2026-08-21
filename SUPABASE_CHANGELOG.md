@@ -29,6 +29,18 @@ skip 0.
 of what was already on the request, before the DB-lookup branch even
 runs.
 
+**Follow-up (same day):** that first fix was still wrong in two ways,
+caught immediately after: it saved the reset run's results back to
+`search_progress` afterward, silently overwriting the user's real
+resume point with the reset run's; and it re-wiped to skip 0 on every
+subsequent "Search more" click too (the switch's state persists across
+follow-up requests), making "Search more" unusable after a reset.
+Fixed both: `resetProgress` now never reads OR writes
+`search_progress` at all (fully self-contained detour, real bookmark
+untouched), and client-provided `variantSkips` (what "Search more"
+actually sends) always takes priority over `resetProgress`, so paging
+forward after a reset works correctly.
+
 ---
 
 ## 2026-08-20 — Add a Medicare claims minimum filter and a search-reset switch
