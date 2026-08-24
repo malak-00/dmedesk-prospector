@@ -147,3 +147,6 @@ worker/.dev.vars
 
 # agents
 .agents/
+.codex
+
+test_output/
