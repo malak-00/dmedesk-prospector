@@ -107,6 +107,10 @@ const state = {
   searchMoreSeenNpis: [],
   view: "search",
   adminLoaded: false,
+  adminLeadsAll: [],
+  adminLeadsSearchQuery: "",
+  adminLeadsSortKey: null,
+  adminLeadsSortDir: 1,
   claimedLoaded: false,
   claimedLeads: [],
   // The full, unfiltered set fetched from the server -- state.claimedLeads
@@ -245,8 +249,12 @@ const els = {
   refreshAdminBtn: document.getElementById("refreshAdminBtn"),
   adminUserLeadsOverlay: document.getElementById("adminUserLeadsOverlay"),
   adminUserLeadsTitle: document.getElementById("adminUserLeadsTitle"),
+  adminUserLeadsSubtitle: document.getElementById("adminUserLeadsSubtitle"),
+  adminUserLeadsTable: document.getElementById("adminUserLeadsTable"),
   adminUserLeadsBody: document.getElementById("adminUserLeadsBody"),
   adminUserLeadsCloseBtn: document.getElementById("adminUserLeadsCloseBtn"),
+  adminUserLeadsCloseX: document.getElementById("adminUserLeadsCloseX"),
+  adminUserLeadsSearchInput: document.getElementById("adminUserLeadsSearchInput"),
   claimedTable: document.getElementById("claimedTable"),
   claimedBody: document.getElementById("claimedBody"),
   claimedCount: document.getElementById("claimedCount"),
@@ -593,32 +601,82 @@ async function loadAdminOverview() {
   }
 }
 
+const ADMIN_LEADS_SORT_COMPARATORS = {
+  company: (a, b) => (a.name || "").localeCompare(b.name || ""),
+  contact: (a, b) => (a.contactName || "").localeCompare(b.contactName || ""),
+  location: (a, b) => `${a.state || ""}|${a.city || ""}`.localeCompare(`${b.state || ""}|${b.city || ""}`),
+  specialty: (a, b) => (a.taxonomy || "").localeCompare(b.taxonomy || ""),
+  status: (a, b) => (a.status || "").localeCompare(b.status || ""),
+  claimedAt: (a, b) => (Date.parse(a.claimedAt) || 0) - (Date.parse(b.claimedAt) || 0),
+};
+const ADMIN_LEADS_DEFAULT_SORT_DIR = { company: 1, contact: 1, location: 1, specialty: 1, status: 1, claimedAt: -1 };
+
+function applyAdminLeadsFilter(leads) {
+  const q = state.adminLeadsSearchQuery.trim().toLowerCase();
+  if (!q) return leads;
+  return leads.filter((lead) =>
+    [lead.name, lead.npi, lead.city, lead.state, lead.contactName, lead.taxonomy]
+      .some((v) => (v || "").toLowerCase().includes(q))
+  );
+}
+
+function renderAdminUserLeadsRows() {
+  const leads = applyAdminLeadsFilter(state.adminLeadsAll);
+  els.adminUserLeadsSubtitle.textContent = `${leads.length} of ${state.adminLeadsAll.length} claimed lead${state.adminLeadsAll.length === 1 ? "" : "s"} shown`;
+  if (leads.length === 0) {
+    els.adminUserLeadsBody.innerHTML = `<tr class="empty-row"><td colspan="6">${state.adminLeadsAll.length === 0 ? "Nothing claimed." : "No leads match that search."}</td></tr>`;
+    return;
+  }
+  els.adminUserLeadsBody.innerHTML = leads
+    .map((lead) => {
+      const location = [lead.city, lead.state].filter(Boolean).join(", ");
+      const statusSlug = escapeHtml((lead.status || "").replace(/\s+/g, "-"));
+      return `
+      <tr>
+        <td>
+          <div class="company-name">${escapeHtml(lead.name || "")}</div>
+          <div class="company-taxonomy mono">${escapeHtml(lead.npi || "")}</div>
+        </td>
+        <td>
+          ${escapeHtml(lead.contactName || "—")}
+          ${lead.contactPhone || lead.companyPhone ? `<div class="company-taxonomy mono">${escapeHtml(lead.contactPhone || lead.companyPhone)}</div>` : ""}
+        </td>
+        <td>${escapeHtml(location || "—")}</td>
+        <td>${escapeHtml(lead.taxonomy || "—")}</td>
+        <td>${lead.status ? `<span class="status-badge status-${statusSlug}">${escapeHtml(lead.status)}</span>` : "—"}</td>
+        <td class="mono">${escapeHtml((lead.claimedAt || "").slice(0, 10))}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
 async function openAdminUserLeads(userId, displayName) {
   els.adminUserLeadsTitle.textContent = `${displayName || "User"}'s claimed leads`;
-  els.adminUserLeadsBody.innerHTML = skeletonRows(4, 4);
+  els.adminUserLeadsSubtitle.textContent = "";
+  els.adminUserLeadsSearchInput.value = "";
+  state.adminLeadsSearchQuery = "";
+  state.adminLeadsAll = [];
+  state.adminLeadsSortKey = null;
+  state.adminLeadsSortDir = 1;
+  updateSortIndicators(els.adminUserLeadsTable, null, 1);
+  els.adminUserLeadsBody.innerHTML = skeletonRows(6, 6);
   els.adminUserLeadsOverlay.hidden = false;
   try {
     const data = await apiGet("admin/leads", { userId, displayName });
-    if (data.leads.length === 0) {
-      els.adminUserLeadsBody.innerHTML = `<tr class="empty-row"><td colspan="4">Nothing claimed.</td></tr>`;
-      return;
-    }
-    els.adminUserLeadsBody.innerHTML = data.leads
-      .map((lead) => {
-        const location = [lead.city, lead.state].filter(Boolean).join(", ");
-        return `
-      <tr>
-        <td>${escapeHtml(lead.name || "")}${lead.contactName ? `<div class="company-taxonomy">${escapeHtml(lead.contactName)}</div>` : ""}</td>
-        <td>${escapeHtml(location)}</td>
-        <td>${escapeHtml(lead.status || "")}</td>
-        <td class="mono">${escapeHtml((lead.claimedAt || "").slice(0, 10))}</td>
-      </tr>`;
-      })
-      .join("");
+    state.adminLeadsAll = data.leads || [];
+    renderAdminUserLeadsRows();
   } catch (err) {
-    els.adminUserLeadsBody.innerHTML = `<tr class="empty-row"><td colspan="4">Failed to load.</td></tr>`;
+    els.adminUserLeadsBody.innerHTML = `<tr class="empty-row"><td colspan="6">Failed to load.</td></tr>`;
     showToast(err.message, true);
   }
+}
+
+function sortAdminUserLeads(key, defaultDir) {
+  state.adminLeadsSortDir = state.adminLeadsSortKey === key ? state.adminLeadsSortDir * -1 : defaultDir;
+  state.adminLeadsSortKey = key;
+  state.adminLeadsAll.sort((a, b) => ADMIN_LEADS_SORT_COMPARATORS[key](a, b) * state.adminLeadsSortDir);
+  updateSortIndicators(els.adminUserLeadsTable, state.adminLeadsSortKey, state.adminLeadsSortDir);
+  renderAdminUserLeadsRows();
 }
 
 function closeAdminUserLeads() {
@@ -2527,7 +2585,13 @@ els.suggestionCancelBtn.addEventListener("click", closeSuggestionBox);
 els.suggestionOverlay.addEventListener("click", (e) => { if (e.target === els.suggestionOverlay) closeSuggestionBox(); });
 els.refreshAdminBtn.addEventListener("click", loadAdminOverview);
 els.adminUserLeadsCloseBtn.addEventListener("click", closeAdminUserLeads);
+els.adminUserLeadsCloseX.addEventListener("click", closeAdminUserLeads);
 els.adminUserLeadsOverlay.addEventListener("click", (e) => { if (e.target === els.adminUserLeadsOverlay) closeAdminUserLeads(); });
+els.adminUserLeadsSearchInput.addEventListener("input", () => {
+  state.adminLeadsSearchQuery = els.adminUserLeadsSearchInput.value;
+  renderAdminUserLeadsRows();
+});
+wireSortableHeaders(els.adminUserLeadsTable, ADMIN_LEADS_DEFAULT_SORT_DIR, sortAdminUserLeads);
 // Event delegation, not a per-row listener -- adminUsersBody is fully
 // re-rendered on every load, same reasoning as the taxonomy checkboxes
 // (see renderTaxonomyOptions' comment).
