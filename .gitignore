@@ -147,3 +147,7 @@ worker/.dev.vars
 
 # agents
 .agents/
+.codex
+
+# csvs
+*.csv
