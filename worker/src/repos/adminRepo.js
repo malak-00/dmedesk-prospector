@@ -8,6 +8,31 @@ function httpError(status, message) {
   return err;
 }
 
+// A plain unbounded .select() silently gets capped by PostgREST's own row
+// limit (the project's db-max-rows setting) -- with thousands of rows in
+// `leads`, that would silently undercount every per-user tally below
+// instead of erroring. `queryFactory` must return a FRESH query builder
+// each call (a builder can't be re-range()'d after it's already run), and
+// pagination continues until a page comes back with zero rows -- not
+// merely fewer than requested, since PostgREST enforces its own cap
+// regardless of what a wider range asks for.
+const FETCH_ALL_PAGE_SIZE = 1000;
+const FETCH_ALL_MAX_PAGES = 200; // safety net (200k+ rows even at a pessimistic 1k/page cap), not an expected ceiling
+
+async function fetchAllRows(queryFactory, errorContext) {
+  const rows = [];
+  let offset = 0;
+  for (let page = 0; page < FETCH_ALL_MAX_PAGES; page++) {
+    const { data, error } = await queryFactory().range(offset, offset + FETCH_ALL_PAGE_SIZE - 1);
+    if (error) throw httpError(500, `Failed to load ${errorContext}: ` + error.message);
+    const batch = data || [];
+    rows.push(...batch);
+    if (batch.length === 0) break;
+    offset += batch.length;
+  }
+  return rows;
+}
+
 // Per-user counts, tallied in JS from one query per table (leads,
 // suggestions, search_progress) instead of one query per user per table --
 // cheap enough at this table size and avoids an N+1 fan-out as the team
@@ -16,33 +41,31 @@ function httpError(status, message) {
 // closest available proxy for search activity, since individual search
 // requests themselves aren't logged anywhere.
 export async function getUserActivitySummary(supabase) {
-  const [usersRes, leadsRes, suggestionsRes, searchesRes] = await Promise.all([
-    supabase.from("app_users").select("id, username, display_name, is_admin").order("display_name"),
-    supabase.from("leads").select("claimed_by, is_disconnected"),
-    supabase.from("suggestions").select("submitted_by"),
-    supabase.from("search_progress").select("user_id"),
-  ]);
+  const usersRes = await supabase.from("app_users").select("id, username, display_name, is_admin").order("display_name");
   if (usersRes.error) throw httpError(500, "Failed to load users: " + usersRes.error.message);
-  if (leadsRes.error) throw httpError(500, "Failed to load leads: " + leadsRes.error.message);
-  if (suggestionsRes.error) throw httpError(500, "Failed to load suggestions: " + suggestionsRes.error.message);
-  if (searchesRes.error) throw httpError(500, "Failed to load search activity: " + searchesRes.error.message);
+
+  const [leadsRows, suggestionsRows, searchesRows] = await Promise.all([
+    fetchAllRows(() => supabase.from("leads").select("claimed_by, is_disconnected"), "leads"),
+    fetchAllRows(() => supabase.from("suggestions").select("submitted_by"), "suggestions"),
+    fetchAllRows(() => supabase.from("search_progress").select("user_id"), "search activity"),
+  ]);
 
   const claimedCounts = {};
   const disconnectedCounts = {};
-  (leadsRes.data || []).forEach((row) => {
+  leadsRows.forEach((row) => {
     if (!row.claimed_by) return;
     const bucket = row.is_disconnected ? disconnectedCounts : claimedCounts;
     bucket[row.claimed_by] = (bucket[row.claimed_by] || 0) + 1;
   });
 
   const suggestionCounts = {};
-  (suggestionsRes.data || []).forEach((row) => {
+  suggestionsRows.forEach((row) => {
     if (!row.submitted_by) return;
     suggestionCounts[row.submitted_by] = (suggestionCounts[row.submitted_by] || 0) + 1;
   });
 
   const searchCounts = {};
-  (searchesRes.data || []).forEach((row) => {
+  searchesRows.forEach((row) => {
     if (!row.user_id) return;
     searchCounts[row.user_id] = (searchCounts[row.user_id] || 0) + 1;
   });
