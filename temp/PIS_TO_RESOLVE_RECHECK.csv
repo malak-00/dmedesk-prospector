@@ -1,0 +1,23 @@
+﻿review_id,source_sheet,source_row,opener,company_name,authorized_person,source_phone,email,candidate_count,candidate_rank,candidate_npi,candidate_legal_name,candidate_state,candidate_phone,candidate_authorized_person,candidate_auth_phone,candidate_title,exact_name,phone_match,authorized_person_match,recommendation,notes
+1,New Meetings,2,Jasmine,DENISE V. LYONS MEDICAL SUPPLY HOUSE,DENISE V. LYONS,303-257-1938,denisevlyons@outlook.com,0,,,,,,,,,FALSE,FALSE,FALSE,Manual review - no exact legal-name match,
+2,Follow Ups,66,Jane,GENOME INSIGHT INC,VEENA SINGH,8.582043649E9,veesingh08@gmail.com,0,,,,,,,,,FALSE,FALSE,FALSE,Manual review - no exact legal-name match,
+3,Follow Ups,99,Jasmine,DOCTORS EQUIPMENT SERVICE INC,Anthony Gorsek,816-523-6644,anthony@drsequip.net,0,,,,,,,,,FALSE,FALSE,FALSE,Manual review - no exact legal-name match,
+4,Follow Ups,103,Selene,REVIVE PHARMACY LLC,ZIAD GAMAL ABDELNABI,973-449-0091,revivepharmacy3@gmail.com,0,,,,,,,,,FALSE,FALSE,FALSE,Manual review - no exact legal-name match,
+5,Follow Ups,108,Jasmine,LUX Diagnostics (APL),JONATHAN GOSS M.D.,(713) 819-6417,jonathan@gossmd.com,0,,,,,,,,,FALSE,FALSE,FALSE,Manual review - no exact legal-name match,
+6.1,Follow Ups,119,Jasmine,PRECISION CLINICAL LABORATORY PCL,Dawit (lab director),720-400-4412,dawit@pclcare.com,1,1,1861201022,PRECISION CLINICAL LABORATORY PCL,VA,,JOYCE MENGESHA,7204004412,OWNER,TRUE,TRUE,FALSE,Accept candidate,
+7,Contract Sent,3,Selene,DIAGNOSTIC SOLUTIONS,Jessica Wilks,325-222-0621,jessicawilks@mediplus1.com,0,,,,,,,,,FALSE,FALSE,FALSE,Manual review - no exact legal-name match,
+8.1,Contract Sent,21,Jane,GSB DIAGNOSTICS LLC,Steven Likos,610-909-7757 ,slikos@gsbdiagnostics.com,2,1,1962355941,GSB DIAGNOSTICS LLC,FL,7867037778,GRADY D KITTRELL,7867037778,OWNER,TRUE,FALSE,FALSE,Manual review - corroboration missing,
+8.2,Contract Sent,21,Jane,GSB DIAGNOSTICS LLC,Steven Likos,610-909-7757 ,slikos@gsbdiagnostics.com,2,2,1962355941,GSB DIAGNOSTICS LLC,FL,7867037778,GRADY D KITTRELL,7867037778,OWNER,TRUE,FALSE,FALSE,Manual review - corroboration missing,
+9.1,Contract Sent,30,Jane,ORANGE COUNTY LABS INC.,Bryan Muhlenbruch, 714-519-1466,bm@orangecountylabs.com,1,1,1023439809,ORANGE COUNTY LABS INC.,CA,7148941591,JAMES MICHAEL RAMSEY,7148941591,OWNER,TRUE,FALSE,FALSE,Manual review - corroboration missing,
+10.1,Temporary Inactive,66,Selene,MEDEX DIAGNOSTIC SERVICES INC,Junaid (office Manager),773 552 9901,healthcareinnovation360@gmail.com ,1,1,1053122267,MEDEX DIAGNOSTIC SERVICES INC,IL,7735440201,MOHAMMAD TARIQ SIDDIQUI,7735440201,PRESIDENT,TRUE,FALSE,FALSE,Manual review - corroboration missing,
+11,No-Show,33,Ben,Primary Care Medical Supply,James Blair,770-881-8010,primarycareusa@att.net,0,,,,,,,,,FALSE,FALSE,FALSE,Manual review - no exact legal-name match,
+12,No-Show,39,Ben,Gulf Coast Medical FL,Mark Peterson,201-736-3819,gulfcoastmedicalfl@gmail.com,0,,,,,,,,,FALSE,FALSE,FALSE,Manual review - no exact legal-name match,
+13,No-Show,52,Jane,ADVENTUS LABS,Justin Thompson,561-577-7641,justin@adventuslabs.com,0,,,,,,,,,FALSE,FALSE,FALSE,Manual review - no exact legal-name match,
+14.1,No-Show,55,Jane,LINCOLN MEDICAL SUPPLIES LLC,Harry Pervaiz,267) 327-9722,LINCOLNMEDSUPPLY@GMAIL.COM,2,1,1871080499,LINCOLN MEDICAL SUPPLIES LLC,VA,5712343370,MARCIA C WELWOLIE,5712343370,ADMINISTRATOR,TRUE,FALSE,FALSE,Manual review - corroboration missing,
+14.2,No-Show,55,Jane,LINCOLN MEDICAL SUPPLIES LLC,Harry Pervaiz,267) 327-9722,LINCOLNMEDSUPPLY@GMAIL.COM,2,2,1790549269,LINCOLN MEDICAL SUPPLIES LLC,PA,2676016295,DAYEM PERVAIZ,2676016295,OWNER,TRUE,FALSE,FALSE,Manual review - corroboration missing,
+15,No-Show,62,Jane,PROCARE ORTHOTICS &PROSTHETICS,BILL,2.816105387E9,procare123@yahoo.com,0,,,,,,,,,FALSE,FALSE,FALSE,Manual review - no exact legal-name match,
+16,No-Show,68,Ben,"SNOREIX PLLC
+(Zennity Sleep)","KRISTINA ROGOZHKINA
+Meeting with Ryan, Head of operations",303-421-4820,ryan@zennitysleep.com,0,,,,,,,,,FALSE,FALSE,FALSE,Manual review - no exact legal-name match,
+17.1,No-Show,73,Jimmy,RADIANCE TECH LLC,Hammad Ali,(307) 655-1490,HammadAli6085@gmail.com,2,1,1659168029,RADIANCE TECH LLC,IL,,NAHEED MIR,8474544975,CEO,TRUE,FALSE,FALSE,Manual review - corroboration missing,
+17.2,No-Show,73,Jimmy,RADIANCE TECH LLC,Hammad Ali,(307) 655-1490,HammadAli6085@gmail.com,2,2,1851188726,RADIANCE TECH LLC,IL,8474544975,NAHEED MIR,8474544975,CEO,TRUE,FALSE,FALSE,Manual review - corroboration missing,
