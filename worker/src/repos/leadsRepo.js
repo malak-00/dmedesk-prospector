@@ -120,18 +120,49 @@ export async function getKnownStatuses(supabase) {
   return known;
 }
 
+// A plain unbounded .select("*") silently gets capped by PostgREST's own
+// row limit (the project's db-max-rows setting) -- for someone with
+// thousands of claimed leads that meant only the first page ever reached
+// the browser, with no error, no indication anything was cut off, and no
+// way for the client-side search box to find anything past it. .range()
+// keeps paging until a page comes back with fewer rows than requested;
+// requestSize is deliberately NOT assumed to be what actually comes back
+// each page, since PostgREST enforces its own cap regardless of what a
+// wider range asks for -- offset always advances by the real batch
+// length, and only a genuinely empty batch ends the loop. The extra
+// .order("id") is a stable tiebreaker: status_updated_at/claimed_at alone
+// can tie or both be null, and without a unique final sort key, rows can
+// be skipped or repeated across pages.
+const CLAIMED_LEADS_PAGE_SIZE = 1000;
+const MAX_CLAIMED_LEADS_PAGES = 200; // 200k+ rows even at a pessimistic 1k/page cap -- a real safety net, not an expected ceiling
+
+async function fetchAllClaimedRows(supabase, matchColumn, matchValue) {
+  const rows = [];
+  let offset = 0;
+  for (let page = 0; page < MAX_CLAIMED_LEADS_PAGES; page++) {
+    const { data, error } = await supabase
+      .from("leads")
+      .select("*")
+      .eq(matchColumn, matchValue)
+      .eq("is_disconnected", false)
+      .order("status_updated_at", { ascending: false, nullsFirst: false })
+      .order("claimed_at", { ascending: false })
+      .order("id")
+      .range(offset, offset + CLAIMED_LEADS_PAGE_SIZE - 1);
+    if (error) throw httpError(500, "Failed to load claimed leads: " + error.message);
+    const batch = data || [];
+    rows.push(...batch);
+    if (batch.length === 0) break;
+    offset += batch.length;
+  }
+  return rows;
+}
+
 // Always scoped to the caller's own leads -- same privacy boundary
 // Code.js's leads/list enforced (session.displayName, never a raw param).
 export async function listClaimedLeads(supabase, session) {
-  const { data, error } = await supabase
-    .from("leads")
-    .select("*")
-    .eq("claimed_by", session.id)
-    .eq("is_disconnected", false)
-    .order("status_updated_at", { ascending: false, nullsFirst: false })
-    .order("claimed_at", { ascending: false });
-  if (error) throw httpError(500, "Failed to load claimed leads: " + error.message);
-  return (data || []).map((row) => toLeadDTO(row, session.displayName));
+  const rows = await fetchAllClaimedRows(supabase, "claimed_by", session.id);
+  return rows.map((row) => toLeadDTO(row, session.displayName));
 }
 
 // Admin-only escape hatch from listClaimedLeads' own-session scoping --
@@ -139,15 +170,8 @@ export async function listClaimedLeads(supabase, session) {
 // index.js's /admin routes). displayName is passed in separately since,
 // unlike listClaimedLeads, there's no session to pull it from.
 export async function listClaimedLeadsForUser(supabase, userId, displayName) {
-  const { data, error } = await supabase
-    .from("leads")
-    .select("*")
-    .eq("claimed_by", userId)
-    .eq("is_disconnected", false)
-    .order("status_updated_at", { ascending: false, nullsFirst: false })
-    .order("claimed_at", { ascending: false });
-  if (error) throw httpError(500, "Failed to load claimed leads: " + error.message);
-  return (data || []).map((row) => toLeadDTO(row, displayName));
+  const rows = await fetchAllClaimedRows(supabase, "claimed_by", userId);
+  return rows.map((row) => toLeadDTO(row, displayName));
 }
 
 // Same shape/scoping as listClaimedLeads, just narrowed to a checked

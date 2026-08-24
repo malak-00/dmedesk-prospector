@@ -372,19 +372,31 @@
 
   <div id="adminUserLeadsOverlay" class="suggestion-overlay" hidden>
     <div class="suggestion-card admin-leads-card">
-      <h3 id="adminUserLeadsTitle">Claimed leads</h3>
+      <div class="admin-leads-header">
+        <div>
+          <h3 id="adminUserLeadsTitle">Claimed leads</h3>
+          <div class="admin-leads-subtitle" id="adminUserLeadsSubtitle"></div>
+        </div>
+        <button type="button" class="admin-leads-close" id="adminUserLeadsCloseX" aria-label="Close">&times;</button>
+      </div>
+      <label class="field admin-leads-search">
+        <span>Search</span>
+        <input type="text" id="adminUserLeadsSearchInput" placeholder="Company, NPI, city, contact…">
+      </label>
       <div class="table-wrap admin-leads-table-wrap">
         <table class="results-table" id="adminUserLeadsTable">
           <thead>
             <tr>
-              <th>Company / contact</th>
-              <th>Location</th>
-              <th>Status</th>
-              <th>Claimed at</th>
+              <th class="sortable" data-sort-key="company">Company<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="contact">Contact<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="location">Location<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="specialty">Specialty<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="status">Status<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="claimedAt">Claimed<span class="sort-arrow"></span></th>
             </tr>
           </thead>
           <tbody id="adminUserLeadsBody">
-            <tr class="empty-row"><td colspan="4">Loading…</td></tr>
+            <tr class="empty-row"><td colspan="6">Loading…</td></tr>
           </tbody>
         </table>
       </div>

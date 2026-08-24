@@ -8,6 +8,38 @@ folder for this project.
 
 ---
 
+## 2026-08-21 — Fix claimed leads silently capped below PostgREST's row limit
+
+**Scope note:** Worker code only (`worker/src/repos/leadsRepo.js`,
+`worker/src/repos/adminRepo.js`), no schema change.
+
+**Why:** reported directly — a user with 2000+ claimed leads only saw
+about 100 in their Claimed Leads view, and searching within that view
+for a lead that genuinely was claimed by them (visible via the `leads`
+table itself) came up empty. Root cause: `listClaimedLeads`/
+`listClaimedLeadsForUser` did a plain unbounded `.select("*")` over
+`leads`, which PostgREST silently caps at its own `db-max-rows`
+setting — no error, just a truncated result. The rest of that user's
+leads never reached the browser at all, so the client-side search box
+had nothing to find them in. The same unbounded-select pattern was
+also in `adminRepo.getUserActivitySummary`'s per-user tallies over
+`leads`/`suggestions`/`search_progress`, which would have silently
+undercounted once any of those tables grew past the cap too
+(`adminRepo.getAggregateStats`'s counts were already safe — those use
+`count: "exact", head: true`, an actual `COUNT()`, not a capped row
+fetch).
+
+**Change:** both now page through with `.range()` in a loop until a
+genuinely empty batch comes back, advancing by however many rows
+actually came back each time (not by the requested page size, since
+PostgREST enforces its own cap regardless of what a wider range asks
+for). Added a stable `.order("id")` tiebreaker to the two
+`leadsRepo` list functions too — `status_updated_at`/`claimed_at`
+alone can tie or both be null, and without a unique final sort key,
+`.range()` pagination can skip or repeat rows across pages.
+
+---
+
 ## 2026-08-21 — Fix `resetProgress` not actually resetting
 
 **Scope note:** Worker code only (`worker/src/services/companyService.js`),
@@ -132,7 +164,6 @@ per search.
    addition.
 3. **Worker:** `nppes.js` normalizes the embedded `medicare` field the
    same shape `cms.js` used to produce; `companyService.js`'s separate
-   `Cms.lookupByNpis()` round trip is gone entirely.  `cms.js` itself is
    `Cms.lookupByNpis()` round trip is gone entirely. `cms.js` itself is
    left in place unused (same as `foursquare.js`/`osm.js`), in case a
    live fallback is needed later for NPIs fakeNPI doesn't have
