@@ -8,6 +8,25 @@ folder for this project.
 
 ---
 
+## 2026-08-21 — Revert the Fax column/field
+
+**Scope note:** Worker code only, no schema change. Follow-up to the
+entry immediately below.
+
+**Why:** the target Google Sheet is dropping its Fax column (no longer
+needed), so today's earlier addition of it is unnecessary.
+
+**Change:** reverted `fax` from `companyModel.js`, `nppes.js`'s
+`fax_number` extraction, and `CSV_COLUMNS`/`flattenCompany`
+(`worker/src/lib/csvExport.js`). The specialty-description resolution
+fix from the same original commit is untouched. `companyService.js`
+still references `company.fax`/`provider.fax` in a couple of places
+(`branchDedupKeys`, `fromNppesProvider`) — those predate today's
+changes entirely (part of the original Apps Script port) and are left
+as-is, just back to always being `undefined` like before any of this.
+
+---
+
 ## 2026-08-21 — Fix Export to Sheet column shift; resolve blank specialty descriptions
 
 **Scope note:** Worker code only (`worker/src/`), no schema change. Reads
