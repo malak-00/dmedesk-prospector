@@ -44,18 +44,26 @@ export async function getUserActivitySummary(supabase) {
   const usersRes = await supabase.from("app_users").select("id, username, display_name, is_admin").order("display_name");
   if (usersRes.error) throw httpError(500, "Failed to load users: " + usersRes.error.message);
 
-  const [leadsRows, suggestionsRows, searchesRows] = await Promise.all([
-    fetchAllRows(() => supabase.from("leads").select("claimed_by, is_disconnected"), "leads"),
+  const users = usersRes.data || [];
+  const [leadCounts, suggestionsRows, searchesRows] = await Promise.all([
+    Promise.all(users.map(async (user) => {
+      const [totalRes, disconnectedRes] = await Promise.all([
+        supabase.from("leads").select("id", { count: "exact", head: true }).eq("claimed_by", user.id),
+        supabase.from("leads").select("id", { count: "exact", head: true }).eq("claimed_by", user.id).eq("is_disconnected", true),
+      ]);
+      if (totalRes.error) throw httpError(500, `Failed to count claimed leads for ${user.display_name || user.username}: ` + totalRes.error.message);
+      if (disconnectedRes.error) throw httpError(500, `Failed to count disconnected leads for ${user.display_name || user.username}: ` + disconnectedRes.error.message);
+      return { userId: user.id, claimedCount: Math.max((totalRes.count || 0) - (disconnectedRes.count || 0), 0), disconnectedCount: disconnectedRes.count || 0 };
+    })),
     fetchAllRows(() => supabase.from("suggestions").select("submitted_by"), "suggestions"),
     fetchAllRows(() => supabase.from("search_progress").select("user_id"), "search activity"),
   ]);
 
   const claimedCounts = {};
   const disconnectedCounts = {};
-  leadsRows.forEach((row) => {
-    if (!row.claimed_by) return;
-    const bucket = row.is_disconnected ? disconnectedCounts : claimedCounts;
-    bucket[row.claimed_by] = (bucket[row.claimed_by] || 0) + 1;
+  leadCounts.forEach(({ userId, claimedCount, disconnectedCount }) => {
+    claimedCounts[userId] = claimedCount;
+    disconnectedCounts[userId] = disconnectedCount;
   });
 
   const suggestionCounts = {};
@@ -70,7 +78,7 @@ export async function getUserActivitySummary(supabase) {
     searchCounts[row.user_id] = (searchCounts[row.user_id] || 0) + 1;
   });
 
-  return (usersRes.data || []).map((u) => ({
+  return users.map((u) => ({
     id: u.id,
     username: u.username,
     displayName: u.display_name,
