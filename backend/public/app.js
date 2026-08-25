@@ -174,7 +174,7 @@ function leadRowHtml(company, index) {
         ${sourceBadges(company.sources)}
       </td>
       <td class="mono">${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")}</td>
-      <td>${primaryContact ? escapeHtml(primaryContact.name) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${primaryContact ? escapeHtml(primaryContact.name) : '<span class="text-muted">—</span>'}</td>
       <td class="mono">${phoneCell(primaryContact?.phone, company.phone)}</td>
       <td><span class="chevron">▸</span></td>
     </tr>
@@ -191,7 +191,7 @@ function detailRowHtml(company, index) {
         <div class="detail-grid">
           <div class="detail-block">
             <h4>Details</h4>
-            <div class="mono" style="font-size:13px; line-height:1.8;">
+            <div class="mono detail-info">
               NPI: ${escapeHtml(company.npi || "—")}<br>
               ${escapeHtml(company.address?.line1 || "")}<br>
               ${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")} ${escapeHtml(company.address?.postalCode || "")}<br>
@@ -213,7 +213,7 @@ function detailRowHtml(company, index) {
                 </div>
                 ${dm.phone ? `<div class="mono contact-phone">${escapeHtml(dm.phone)}</div>` : ""}
               </div>
-            `).join("") || '<span style="color:var(--muted); font-size:13px;">None identified</span>'}
+            `).join("") || '<span class="text-muted text-sm">None identified</span>'}
           </div>
         </div>
         <div class="brief-box">
@@ -226,9 +226,12 @@ function detailRowHtml(company, index) {
 }
 
 function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str ?? "";
-  return div.innerHTML;
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // Prefer the contact's direct line; fall back to the company's main number
@@ -238,7 +241,7 @@ function phoneCell(contactPhone, companyPhone) {
   if (direct) return `<a href="tel:${escapeHtml(direct)}">${escapeHtml(direct)}</a>`;
   const main = (companyPhone || "").trim();
   if (main) return `<a href="tel:${escapeHtml(main)}">${escapeHtml(main)}</a> <span class="muted-tag">main</span>`;
-  return '<span style="color:var(--muted)">—</span>';
+  return '<span class="text-muted">—</span>';
 }
 
 function medicareSummary(medicare) {

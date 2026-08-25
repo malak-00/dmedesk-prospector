@@ -1,11 +1,11 @@
-// Frontend for the Apps Script backend. Request layer notes:
-// - every request carries ?path= (Apps Script has no real router) and
-//   ?token= (session token from sign-in; query param rather than a header
-//   keeps requests CORS-simple so no preflight is ever sent)
-// - POST bodies go as text/plain for the same reason; the backend parses
-//   them as JSON regardless of content type
-// - every response is HTTP 200; success/failure is the `success` field in
-//   the JSON body, and body.status 401 means the session expired
+// Frontend for the Cloudflare Worker backend (see worker/). Request layer notes:
+// - every request is a real path (e.g. POST /leads/status) against
+//   API_BASE_URL, with the session token sent as a real `Authorization:
+//   Bearer` header -- no more Apps Script's ?path=/?token= query-param
+//   workaround, since a real host handles CORS preflight properly
+// - the response body shape is unchanged from the Apps Script version
+//   ({success, data} / {success, status, error}) on purpose, so unwrap()
+//   below needed no changes; body.status 401 still means the session expired
 
 const THEME_STORAGE_KEY = "dmeProspectorTheme";
 
@@ -49,19 +49,25 @@ function clearSession() {
   sessionStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
+function authHeaders() {
+  const token = getSession()?.token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function apiGet(path, params = {}) {
-  const query = new URLSearchParams(params);
-  query.set("path", path);
-  query.set("token", getSession()?.token || "");
-  const res = await fetch(`${APPS_SCRIPT_URL}?${query.toString()}`);
+  // Drop undefined/null/empty entries so e.g. `state: undefined` doesn't
+  // end up as the literal query string "state=undefined".
+  const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""));
+  const query = new URLSearchParams(clean);
+  const qs = query.toString();
+  const res = await fetch(`${API_BASE_URL}/${path}${qs ? `?${qs}` : ""}`, { headers: authHeaders() });
   return unwrap(await res.json());
 }
 
 async function apiPost(path, body) {
-  const query = new URLSearchParams({ path, token: getSession()?.token || "" });
-  const res = await fetch(`${APPS_SCRIPT_URL}?${query.toString()}`, {
+  const res = await fetch(`${API_BASE_URL}/${path}`, {
     method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
   return unwrap(await res.json());
@@ -100,6 +106,11 @@ const state = {
   searchMoreVariantSkips: {},
   searchMoreSeenNpis: [],
   view: "search",
+  adminLoaded: false,
+  adminLeadsAll: [],
+  adminLeadsSearchQuery: "",
+  adminLeadsSortKey: null,
+  adminLeadsSortDir: 1,
   claimedLoaded: false,
   claimedLeads: [],
   // The full, unfiltered set fetched from the server -- state.claimedLeads
@@ -206,10 +217,10 @@ const els = {
   taxonomyAddPanel: document.getElementById("taxonomyAddPanel"),
   taxonomyAddInput: document.getElementById("taxonomyAddInput"),
   taxonomyAddResults: document.getElementById("taxonomyAddResults"),
-  exportCsvBtn: document.getElementById("exportCsvBtn"),
   exportSheetsBtn: document.getElementById("exportSheetsBtn"),
-  exportCsvLabel: document.getElementById("exportCsvLabel"),
   exportSheetsLabel: document.getElementById("exportSheetsLabel"),
+  exportGoogleSheetBtn: document.getElementById("exportGoogleSheetBtn"),
+  exportGoogleSheetLabel: document.getElementById("exportGoogleSheetLabel"),
   sendDisconnectedBtn: document.getElementById("sendDisconnectedBtn"),
   sendDisconnectedLabel: document.getElementById("sendDisconnectedLabel"),
   selectionChip: document.getElementById("selectionChip"),
@@ -227,6 +238,23 @@ const els = {
   signOutBtn: document.getElementById("signOutBtn"),
   viewSearch: document.getElementById("viewSearch"),
   viewClaimed: document.getElementById("viewClaimed"),
+  viewAdmin: document.getElementById("viewAdmin"),
+  adminTab: document.getElementById("adminTab"),
+  statTotalUsers: document.getElementById("statTotalUsers"),
+  statClaimedLeads: document.getElementById("statClaimedLeads"),
+  statDisconnectedLeads: document.getElementById("statDisconnectedLeads"),
+  statSuggestions: document.getElementById("statSuggestions"),
+  adminUsersBody: document.getElementById("adminUsersBody"),
+  adminSuggestionsBody: document.getElementById("adminSuggestionsBody"),
+  refreshAdminBtn: document.getElementById("refreshAdminBtn"),
+  adminUserLeadsOverlay: document.getElementById("adminUserLeadsOverlay"),
+  adminUserLeadsTitle: document.getElementById("adminUserLeadsTitle"),
+  adminUserLeadsSubtitle: document.getElementById("adminUserLeadsSubtitle"),
+  adminUserLeadsTable: document.getElementById("adminUserLeadsTable"),
+  adminUserLeadsBody: document.getElementById("adminUserLeadsBody"),
+  adminUserLeadsCloseBtn: document.getElementById("adminUserLeadsCloseBtn"),
+  adminUserLeadsCloseX: document.getElementById("adminUserLeadsCloseX"),
+  adminUserLeadsSearchInput: document.getElementById("adminUserLeadsSearchInput"),
   claimedTable: document.getElementById("claimedTable"),
   claimedBody: document.getElementById("claimedBody"),
   claimedCount: document.getElementById("claimedCount"),
@@ -236,6 +264,7 @@ const els = {
   claimedClearSelectionBtn: document.getElementById("claimedClearSelectionBtn"),
   claimedReturnToProspectBtn: document.getElementById("claimedReturnToProspectBtn"),
   claimedSendDisconnectedBtn: document.getElementById("claimedSendDisconnectedBtn"),
+  claimedExportGoogleSheetBtn: document.getElementById("claimedExportGoogleSheetBtn"),
   enableNotifications: document.getElementById("enableNotifications"),
   claimedSearchInput: document.getElementById("claimedSearchInput"),
   statusFilter: document.getElementById("statusFilter"),
@@ -271,6 +300,7 @@ function showLogin() {
   els.loginOverlay.hidden = false;
   els.userChip.hidden = true;
   els.suggestBtn.hidden = true;
+  els.adminTab.hidden = true;
   els.devNotice.hidden = true;
   els.loginForm.querySelector("input[name=username]")?.focus();
 }
@@ -282,6 +312,7 @@ function hideLogin() {
     els.userName.textContent = session.displayName;
     els.userChip.hidden = false;
     els.suggestBtn.hidden = false;
+    els.adminTab.hidden = !session.isAdmin;
     els.devNotice.hidden = false; // shown fresh on every sign-in/page open, not persisted
     applyExcludeKeywordsDefaultIfBlank();
   }
@@ -448,7 +479,7 @@ async function handleLogin(evt) {
       username: formData.get("username"),
       password: formData.get("password"),
     });
-    saveSession({ token: data.token, username: data.username, displayName: data.displayName, excludeKeywords: data.excludeKeywords });
+    saveSession({ token: data.token, username: data.username, displayName: data.displayName, excludeKeywords: data.excludeKeywords, isAdmin: data.isAdmin });
     // Unconditionally resets to THIS user's own saved value (never "only if
     // blank" -- a fresh login is a hard boundary) -- otherwise, signing out
     // and signing back in as someone else in the same tab would leave the
@@ -504,6 +535,154 @@ async function handleSuggestionSubmit(evt) {
   }
 }
 
+/* ---------- Admin dashboard ---------- */
+// Only reachable via the Admin tab, which stays hidden (see hideLogin())
+// unless the signed-in session's isAdmin flag is set -- the actual
+// enforcement is server-side (index.js's requireAdmin), this is just UI.
+
+function renderAdminStats(stats) {
+  els.statTotalUsers.textContent = stats.totalUsers;
+  els.statClaimedLeads.textContent = stats.totalClaimedLeads;
+  els.statDisconnectedLeads.textContent = stats.totalDisconnectedLeads;
+  els.statSuggestions.textContent = stats.totalSuggestions;
+}
+
+function renderAdminUsers(users) {
+  if (users.length === 0) {
+    els.adminUsersBody.innerHTML = `<tr class="empty-row"><td colspan="7">No users found.</td></tr>`;
+    return;
+  }
+  els.adminUsersBody.innerHTML = users
+    .map(
+      (u) => `
+    <tr>
+      <td>${escapeHtml(u.displayName || "")}${u.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}</td>
+      <td>${escapeHtml(u.username || "")}</td>
+      <td class="mono">${u.claimedCount}</td>
+      <td class="mono">${u.disconnectedCount}</td>
+      <td class="mono">${u.suggestionsCount}</td>
+      <td class="mono">${u.distinctSearches}</td>
+      <td><button type="button" class="link-btn" data-admin-view-leads data-user-id="${escapeHtml(u.id)}" data-display-name="${escapeHtml(u.displayName || "")}">View leads</button></td>
+    </tr>`
+    )
+    .join("");
+}
+
+function renderAdminSuggestions(suggestions) {
+  if (suggestions.length === 0) {
+    els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">No suggestions yet.</td></tr>`;
+    return;
+  }
+  els.adminSuggestionsBody.innerHTML = suggestions
+    .map(
+      (s) => `
+    <tr>
+      <td>${escapeHtml(s.submittedBy || "")}</td>
+      <td>${escapeHtml(s.text || "")}</td>
+      <td class="mono">${escapeHtml((s.submittedAt || "").slice(0, 10))}</td>
+    </tr>`
+    )
+    .join("");
+}
+
+async function loadAdminOverview() {
+  els.adminUsersBody.innerHTML = skeletonRows(4, 7);
+  els.adminSuggestionsBody.innerHTML = skeletonRows(3, 3);
+  try {
+    const data = await apiGet("admin/overview");
+    renderAdminStats(data.stats);
+    renderAdminUsers(data.users);
+    renderAdminSuggestions(data.suggestions);
+    state.adminLoaded = true;
+  } catch (err) {
+    showToast(err.message, true);
+    els.adminUsersBody.innerHTML = `<tr class="empty-row"><td colspan="7">Failed to load.</td></tr>`;
+    els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">Failed to load.</td></tr>`;
+  }
+}
+
+const ADMIN_LEADS_SORT_COMPARATORS = {
+  company: (a, b) => (a.name || "").localeCompare(b.name || ""),
+  contact: (a, b) => (a.contactName || "").localeCompare(b.contactName || ""),
+  location: (a, b) => `${a.state || ""}|${a.city || ""}`.localeCompare(`${b.state || ""}|${b.city || ""}`),
+  specialty: (a, b) => (a.taxonomy || "").localeCompare(b.taxonomy || ""),
+  status: (a, b) => (a.status || "").localeCompare(b.status || ""),
+  claimedAt: (a, b) => (Date.parse(a.claimedAt) || 0) - (Date.parse(b.claimedAt) || 0),
+};
+const ADMIN_LEADS_DEFAULT_SORT_DIR = { company: 1, contact: 1, location: 1, specialty: 1, status: 1, claimedAt: -1 };
+
+function applyAdminLeadsFilter(leads) {
+  const q = state.adminLeadsSearchQuery.trim().toLowerCase();
+  if (!q) return leads;
+  return leads.filter((lead) =>
+    [lead.name, lead.npi, lead.city, lead.state, lead.contactName, lead.taxonomy]
+      .some((v) => (v || "").toLowerCase().includes(q))
+  );
+}
+
+function renderAdminUserLeadsRows() {
+  const leads = applyAdminLeadsFilter(state.adminLeadsAll);
+  els.adminUserLeadsSubtitle.textContent = `${leads.length} of ${state.adminLeadsAll.length} claimed lead${state.adminLeadsAll.length === 1 ? "" : "s"} shown`;
+  if (leads.length === 0) {
+    els.adminUserLeadsBody.innerHTML = `<tr class="empty-row"><td colspan="6">${state.adminLeadsAll.length === 0 ? "Nothing claimed." : "No leads match that search."}</td></tr>`;
+    return;
+  }
+  els.adminUserLeadsBody.innerHTML = leads
+    .map((lead) => {
+      const location = [lead.city, lead.state].filter(Boolean).join(", ");
+      const statusSlug = escapeHtml((lead.status || "").replace(/\s+/g, "-"));
+      return `
+      <tr>
+        <td>
+          <div class="company-name">${escapeHtml(lead.name || "")}</div>
+          <div class="company-taxonomy mono">${escapeHtml(lead.npi || "")}</div>
+        </td>
+        <td>
+          ${escapeHtml(lead.contactName || "—")}
+          ${lead.contactPhone || lead.companyPhone ? `<div class="company-taxonomy mono">${escapeHtml(lead.contactPhone || lead.companyPhone)}</div>` : ""}
+        </td>
+        <td>${escapeHtml(location || "—")}</td>
+        <td>${escapeHtml(lead.taxonomy || "—")}</td>
+        <td>${lead.status ? `<span class="status-badge status-${statusSlug}">${escapeHtml(lead.status)}</span>` : "—"}</td>
+        <td class="mono">${escapeHtml((lead.claimedAt || "").slice(0, 10))}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
+async function openAdminUserLeads(userId, displayName) {
+  els.adminUserLeadsTitle.textContent = `${displayName || "User"}'s claimed leads`;
+  els.adminUserLeadsSubtitle.textContent = "";
+  els.adminUserLeadsSearchInput.value = "";
+  state.adminLeadsSearchQuery = "";
+  state.adminLeadsAll = [];
+  state.adminLeadsSortKey = null;
+  state.adminLeadsSortDir = 1;
+  updateSortIndicators(els.adminUserLeadsTable, null, 1);
+  els.adminUserLeadsBody.innerHTML = skeletonRows(6, 6);
+  els.adminUserLeadsOverlay.hidden = false;
+  try {
+    const data = await apiGet("admin/leads", { userId, displayName });
+    state.adminLeadsAll = data.leads || [];
+    renderAdminUserLeadsRows();
+  } catch (err) {
+    els.adminUserLeadsBody.innerHTML = `<tr class="empty-row"><td colspan="6">Failed to load.</td></tr>`;
+    showToast(err.message, true);
+  }
+}
+
+function sortAdminUserLeads(key, defaultDir) {
+  state.adminLeadsSortDir = state.adminLeadsSortKey === key ? state.adminLeadsSortDir * -1 : defaultDir;
+  state.adminLeadsSortKey = key;
+  state.adminLeadsAll.sort((a, b) => ADMIN_LEADS_SORT_COMPARATORS[key](a, b) * state.adminLeadsSortDir);
+  updateSortIndicators(els.adminUserLeadsTable, state.adminLeadsSortKey, state.adminLeadsSortDir);
+  renderAdminUserLeadsRows();
+}
+
+function closeAdminUserLeads() {
+  els.adminUserLeadsOverlay.hidden = true;
+}
+
 /* ---------- View tabs ---------- */
 
 function switchView(view) {
@@ -513,7 +692,9 @@ function switchView(view) {
   });
   els.viewSearch.hidden = view !== "search";
   els.viewClaimed.hidden = view !== "claimed";
+  els.viewAdmin.hidden = view !== "admin";
   if (view === "claimed" && !state.claimedLoaded) loadClaimedLeads();
+  if (view === "admin" && !state.adminLoaded) loadAdminOverview();
 }
 
 /* ---------- UI helpers ---------- */
@@ -565,12 +746,7 @@ function escapeHtml(str) {
 // company, just never rendered anywhere until now.
 const SCORE_FACTOR_LABELS = {
   hasPhone: "Has phone number",
-  hasWebsite: "Has a website",
-  activeStatus: "Confirmed open (Places)",
   completeAddress: "Complete address on file",
-  placesVerified: "Verified on Foursquare",
-  goodRating: "Good rating (8+/10)",
-  establishedPresence: "Established (10+ reviews)",
   hasDecisionMaker: "Contact identified",
   medicareActive: "Active Medicare biller",
 };
@@ -632,6 +808,7 @@ function buildSearchParams(formData) {
   }
   if (!formData.get("enrich")) params.enrich = "false";
   if (formData.get("scrape")) params.scrape = "true";
+  if (formData.get("resetProgress")) params.resetProgress = "true";
   return params;
 }
 
@@ -928,7 +1105,6 @@ function renderResults(excludedAsClaimed) {
   const { companies } = state;
   const excludedNote = state.excludedAsClaimed > 0 ? ` (${state.excludedAsClaimed} already claimed, filtered out)` : "";
   els.resultsCount.textContent = `${companies.length} lead${companies.length === 1 ? "" : "s"} found${excludedNote}`;
-  els.exportCsvBtn.disabled = companies.length === 0;
   els.selectAll.checked = companies.length > 0 && state.selected.size === companies.length;
 
   if (companies.length === 0) {
@@ -954,12 +1130,13 @@ function updateSelectionUI() {
   const count = state.selected.size;
   els.selectionChip.hidden = count === 0;
   els.selectionCount.textContent = `${count} selected`;
-  els.exportCsvLabel.textContent = count > 0 ? `Export ${count} selected` : "Export CSV";
-  // Unlike Export CSV above, Export to Sheets (claiming) and Send to
-  // Disconnected have no "nothing checked -> act on everything" fallback --
-  // both stay disabled until at least one lead is actually checked.
+  // Claim Lead, Export to Sheet, and Send to Disconnected have no "nothing
+  // checked -> act on everything" fallback -- all three stay disabled until
+  // at least one lead is actually checked.
   els.exportSheetsBtn.disabled = count === 0;
-  els.exportSheetsLabel.textContent = count > 0 ? `Send ${count} selected` : "Export to Sheets";
+  els.exportSheetsLabel.textContent = count > 0 ? `Claim ${count} selected` : "Claim Lead";
+  els.exportGoogleSheetBtn.disabled = count === 0;
+  els.exportGoogleSheetLabel.textContent = count > 0 ? `Send ${count} to Sheet` : "Export to Sheet";
   els.sendDisconnectedBtn.disabled = count === 0;
   els.sendDisconnectedLabel.textContent = count > 0 ? `Send ${count} to Disconnected` : "Send to Disconnected";
 }
@@ -1156,16 +1333,9 @@ async function generateBrief(index) {
 
 /* ---------- Export ---------- */
 
-function getExportCompanies() {
-  if (state.selected.size > 0) {
-    return [...state.selected].map((i) => state.companies[i]);
-  }
-  return state.companies;
-}
-
-// Unlike getExportCompanies() above, this has no "nothing checked -> use
-// everything" fallback -- sending leads to Disconnected is a one-way move,
-// so it always requires an explicit, deliberate selection.
+// Has no "nothing checked -> use everything" fallback -- sending leads to
+// Disconnected/Claim/Sheet is a one-way or team-visible action, so it
+// always requires an explicit, deliberate selection.
 function getSelectedProspectCompanies() {
   return [...state.selected].map((i) => state.companies[i]);
 }
@@ -1189,45 +1359,22 @@ function removeCompaniesFromProspect(companies) {
   renderResults();
 }
 
-async function exportCsv() {
-  const companies = getExportCompanies();
-  els.exportCsvBtn.disabled = true; // prevents a double-click from double-exporting
-  setStatus("busy", "Exporting…");
-  try {
-    const data = await apiPost("export/csv", { companies });
-    const blob = new Blob([data.csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = data.filename || `dme-leads-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast(`Exported ${companies.length} lead(s) to CSV`);
-    setStatus("ready", "Ready");
-  } catch (err) {
-    showToast(err.message, true);
-    setStatus("error", "Error");
-  } finally {
-    els.exportCsvBtn.disabled = state.companies.length === 0;
-  }
-}
-
 async function exportSheets() {
   const companies = getSelectedProspectCompanies();
   if (companies.length === 0) {
-    showToast("Check at least one lead to send to Sheets", true);
+    showToast("Check at least one lead to claim", true);
     return;
   }
   const who = getSession()?.displayName || "you";
   // Claiming leads is a shared, team-visible action with no undo -- confirm
   // before writing.
-  if (!confirm(`Export ${companies.length} lead(s) to the shared Sheet, claimed by ${who}?`)) return;
+  if (!confirm(`Claim ${companies.length} lead(s) under ${who}?`)) return;
 
   els.exportSheetsBtn.disabled = true; // prevents a double-click from double-claiming
-  setStatus("busy", "Sending to Sheets…");
+  setStatus("busy", "Claiming…");
   try {
     const data = await apiPost("export/sheets", { companies });
-    showToast(`Added ${data.rowsAdded} row(s) claimed by ${data.claimedBy || "you"}`, false, data.sheetUrl);
+    showToast(`Claimed ${data.rowsAdded} lead(s) as ${data.claimedBy || "you"}`);
     state.claimedLoaded = false; // claimed view is now stale
     removeCompaniesFromProspect(companies); // claimed leads shouldn't linger in the Prospect view
     setStatus("ready", "Ready");
@@ -1236,6 +1383,32 @@ async function exportSheets() {
     setStatus("error", "Error");
   } finally {
     els.exportSheetsBtn.disabled = state.selected.size === 0;
+  }
+}
+
+// Separate from claiming above -- this doesn't touch the app's own Claimed
+// Leads view (backed by Supabase) at all, it just pastes a copy of the
+// checked leads into the caller's tab in the actual shared Google Sheet, so
+// leads stay selected/visible in Prospect afterward (unlike claiming, which
+// removes them).
+async function exportToGoogleSheet() {
+  const companies = getSelectedProspectCompanies();
+  if (companies.length === 0) {
+    showToast("Check at least one lead to export to Sheet", true);
+    return;
+  }
+
+  els.exportGoogleSheetBtn.disabled = true; // prevents a double-click from double-sending
+  setStatus("busy", "Exporting to Sheet…");
+  try {
+    const data = await apiPost("export/google-sheet", { companies });
+    showToast(`Added ${data.rowsAdded} row(s) to "${data.tab}"`, false, data.sheetUrl);
+    setStatus("ready", "Ready");
+  } catch (err) {
+    showToast(err.message, true);
+    setStatus("error", "Error");
+  } finally {
+    els.exportGoogleSheetBtn.disabled = state.selected.size === 0;
   }
 }
 
@@ -1505,6 +1678,7 @@ function updateClaimedSelectionUI() {
   // stay disabled until at least one lead is actually checked.
   els.claimedSendDisconnectedBtn.disabled = count === 0;
   els.claimedReturnToProspectBtn.disabled = count === 0;
+  els.claimedExportGoogleSheetBtn.disabled = count === 0;
 }
 
 // Returns whichever leads a "Send to Disconnected" or "Return to Prospect"
@@ -1573,6 +1747,32 @@ async function returnClaimedToProspect() {
     setStatus("error", "Error");
   } finally {
     els.claimedReturnToProspectBtn.disabled = state.claimedSelected.size === 0;
+  }
+}
+
+// Claimed leads view's own version of exportToGoogleSheet -- pastes a copy
+// of the checked leads into the caller's tab in the shared Google Sheet
+// without touching their status in the app (unlike Send to Disconnected /
+// Return to Prospect above, this doesn't move or remove them from here).
+async function exportClaimedToGoogleSheet() {
+  const leads = getCheckedClaimedLeads();
+  if (leads.length === 0) {
+    showToast("Check at least one lead to export to Sheet", true);
+    return;
+  }
+  const npis = leads.map((l) => l.npi).filter(Boolean);
+
+  els.claimedExportGoogleSheetBtn.disabled = true; // prevents a double-click from double-sending
+  setStatus("busy", "Exporting to Sheet…");
+  try {
+    const data = await apiPost("export/google-sheet/claimed", { npis });
+    showToast(`Added ${data.rowsAdded} row(s) to "${data.tab}"`, false, data.sheetUrl);
+    setStatus("ready", "Ready");
+  } catch (err) {
+    showToast(err.message, true);
+    setStatus("error", "Error");
+  } finally {
+    els.claimedExportGoogleSheetBtn.disabled = state.claimedSelected.size === 0;
   }
 }
 
@@ -2373,8 +2573,8 @@ els.clearSelectionBtn.addEventListener("click", clearSelection);
 els.searchMoreBtn.addEventListener("click", searchMore);
 els.pagePrevBtn.addEventListener("click", () => goToPage(state.currentPage - 1));
 els.pageNextBtn.addEventListener("click", () => goToPage(state.currentPage + 1));
-els.exportCsvBtn.addEventListener("click", exportCsv);
 els.exportSheetsBtn.addEventListener("click", exportSheets);
+els.exportGoogleSheetBtn.addEventListener("click", exportToGoogleSheet);
 els.sendDisconnectedBtn.addEventListener("click", sendProspectToDisconnected);
 
 els.loginForm.addEventListener("submit", handleLogin);
@@ -2383,6 +2583,23 @@ els.suggestBtn.addEventListener("click", openSuggestionBox);
 els.suggestionForm.addEventListener("submit", handleSuggestionSubmit);
 els.suggestionCancelBtn.addEventListener("click", closeSuggestionBox);
 els.suggestionOverlay.addEventListener("click", (e) => { if (e.target === els.suggestionOverlay) closeSuggestionBox(); });
+els.refreshAdminBtn.addEventListener("click", loadAdminOverview);
+els.adminUserLeadsCloseBtn.addEventListener("click", closeAdminUserLeads);
+els.adminUserLeadsCloseX.addEventListener("click", closeAdminUserLeads);
+els.adminUserLeadsOverlay.addEventListener("click", (e) => { if (e.target === els.adminUserLeadsOverlay) closeAdminUserLeads(); });
+els.adminUserLeadsSearchInput.addEventListener("input", () => {
+  state.adminLeadsSearchQuery = els.adminUserLeadsSearchInput.value;
+  renderAdminUserLeadsRows();
+});
+wireSortableHeaders(els.adminUserLeadsTable, ADMIN_LEADS_DEFAULT_SORT_DIR, sortAdminUserLeads);
+// Event delegation, not a per-row listener -- adminUsersBody is fully
+// re-rendered on every load, same reasoning as the taxonomy checkboxes
+// (see renderTaxonomyOptions' comment).
+els.adminUsersBody.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-admin-view-leads]");
+  if (!btn) return;
+  openAdminUserLeads(btn.dataset.userId, btn.dataset.displayName);
+});
 els.reminderForm.addEventListener("submit", handleReminderSubmit);
 els.reminderCancelBtn.addEventListener("click", closeReminderModal);
 els.reminderClearBtn.addEventListener("click", handleReminderClear);
@@ -2426,6 +2643,7 @@ els.claimedSelectAll.addEventListener("change", (e) => {
 els.claimedClearSelectionBtn.addEventListener("click", clearClaimedSelection);
 els.claimedSendDisconnectedBtn.addEventListener("click", sendClaimedToDisconnected);
 els.claimedReturnToProspectBtn.addEventListener("click", returnClaimedToProspect);
+els.claimedExportGoogleSheetBtn.addEventListener("click", exportClaimedToGoogleSheet);
 
 wireSortableHeaders(els.resultsTable, PROSPECT_DEFAULT_SORT_DIR, sortProspectResults);
 wireSortableHeaders(els.claimedTable, CLAIMED_DEFAULT_SORT_DIR, sortClaimedLeads);

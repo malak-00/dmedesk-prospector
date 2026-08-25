@@ -1,0 +1,21 @@
+name = "dmedesk-prospector-api"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# All of these are secrets, not vars -- never put real values here.
+# Set them with `wrangler secret put <NAME>` (see worker/README.md):
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+#   JWT_SECRET
+#   NPPES_VERSION                (optional, defaults to 2.1)
+#   FOURSQUARE_SERVICE_API_KEY   (optional)
+#   GEMINI_API_KEY               (optional)
+#   GEMINI_MODEL                 (optional, defaults to gemini-2.5-flash)
+#   GOOGLE_OAUTH_CLIENT_ID       (optional -- enables the "Export to Sheet" button)
+#   GOOGLE_OAUTH_CLIENT_SECRET   (optional -- same)
+#   GOOGLE_OAUTH_REFRESH_TOKEN   (optional -- same)
+#   GOOGLE_SHEET_ID              (optional -- same, the target spreadsheet's ID)
+
+[observability]
+enabled = true

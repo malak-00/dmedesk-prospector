@@ -71,6 +71,7 @@
     <nav class="view-tabs">
       <button type="button" class="tab active" data-view="search">Prospect</button>
       <button type="button" class="tab" data-view="claimed">Claimed leads</button>
+      <button type="button" class="tab" data-view="admin" id="adminTab" hidden>Admin</button>
     </nav>
 
     <div id="viewSearch">
@@ -145,6 +146,10 @@
               <span>Limit (&lt;50)</span>
               <input type="number" name="limit" value="20" min="1" max="50">
             </label>
+            <label class="field" title="Only include leads whose Medicare DMEPOS claims total is at least this many. Leave blank for no minimum.">
+              <span>Min Medicare claims</span>
+              <input type="number" name="minMedicareClaims" min="0" placeholder="Any">
+            </label>
             <div class="field field-wide" title="Excludes any company whose name contains one of these (case-insensitive). Press Enter after each one. Saved as your personal default across sessions/devices once you click Save.">
               <label for="excludeKeywordsEntry">Exclude keywords</label>
               <div class="field-with-action">
@@ -165,6 +170,10 @@
             <label class="checkbox">
               <input type="checkbox" name="scrape">
               <span>Scrape websites for contacts <em>(slower)</em></span>
+            </label>
+            <label class="checkbox" title="Ignores your saved progress for these exact filters and starts back at the top of the registry, so you'll see leads again even if a previous search already paged past them. Search more still pages forward normally from there.">
+              <input type="checkbox" name="resetProgress">
+              <span>Start over from the beginning</span>
             </label>
             <button type="submit" class="btn btn-primary" id="searchBtn">
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
@@ -188,13 +197,13 @@
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <span id="searchMoreLabel">Search more</span>
             </button>
-            <button class="btn btn-ghost" id="exportCsvBtn" disabled>
-              <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v9m0 0L4.5 6.5M8 10l3.5-3.5M2 12v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <span id="exportCsvLabel">Export CSV</span>
+            <button class="btn btn-ghost" id="exportSheetsBtn" disabled title="Claims the checked leads under your name -- they'll show up in your Claimed leads view. Check at least one lead first.">
+              <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 4.5l-7 7-3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span id="exportSheetsLabel">Claim Lead</span>
             </button>
-            <button class="btn btn-ghost" id="exportSheetsBtn" disabled title="Claims the checked leads to the shared Sheet under your name. Check at least one lead first.">
+            <button class="btn btn-ghost" id="exportGoogleSheetBtn" disabled title="Pastes a copy of the checked leads into your Claimed tab in the shared Google Sheet. This doesn't claim them in the app. Check at least one lead first.">
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 6.5h12M2 10.5h12M6.5 2v12" stroke="currentColor" stroke-width="1.4"/></svg>
-              <span id="exportSheetsLabel">Export to Sheets</span>
+              <span id="exportGoogleSheetLabel">Export to Sheet</span>
             </button>
             <button class="btn btn-ghost" id="sendDisconnectedBtn" disabled title="Sends the checked leads straight to the shared Disconnected tab, skipping the normal per-teammate Claimed tab. Check at least one lead first.">
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
@@ -264,6 +273,10 @@
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
               <span>Send to Disconnected</span>
             </button>
+            <button class="btn btn-ghost" id="claimedExportGoogleSheetBtn" disabled title="Pastes a copy of the checked leads into your Claimed tab in the shared Google Sheet. Check at least one lead first.">
+              <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 6.5h12M2 10.5h12M6.5 2v12" stroke="currentColor" stroke-width="1.4"/></svg>
+              <span id="claimedExportGoogleSheetLabel">Export to Sheet</span>
+            </button>
             <button class="btn btn-ghost" id="refreshClaimedBtn">
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <span>Refresh</span>
@@ -294,7 +307,104 @@
         </div>
       </section>
     </div>
+
+    <div id="viewAdmin" hidden>
+      <section class="results-panel admin-panel">
+        <div class="admin-stats" id="adminStats">
+          <div class="stat-card"><span class="stat-value" id="statTotalUsers">—</span><span class="stat-label">Users</span></div>
+          <div class="stat-card"><span class="stat-value" id="statClaimedLeads">—</span><span class="stat-label">Claimed leads</span></div>
+          <div class="stat-card"><span class="stat-value" id="statDisconnectedLeads">—</span><span class="stat-label">Disconnected</span></div>
+          <div class="stat-card"><span class="stat-value" id="statSuggestions">—</span><span class="stat-label">Suggestions</span></div>
+        </div>
+
+        <div class="results-toolbar">
+          <div class="results-meta">
+            <div class="results-count">User activity</div>
+          </div>
+          <div class="results-actions">
+            <button class="btn btn-ghost" id="refreshAdminBtn">
+              <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="results-table" id="adminUsersTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Claimed</th>
+                <th>Disconnected</th>
+                <th>Suggestions</th>
+                <th>Distinct searches</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="adminUsersBody">
+              <tr class="empty-row"><td colspan="7">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="results-toolbar">
+          <div class="results-meta">
+            <div class="results-count">Suggestions</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="results-table" id="adminSuggestionsTable">
+            <thead>
+              <tr>
+                <th>Submitted by</th>
+                <th>Suggestion</th>
+                <th>Submitted at</th>
+              </tr>
+            </thead>
+            <tbody id="adminSuggestionsBody">
+              <tr class="empty-row"><td colspan="3">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </main>
+
+  <div id="adminUserLeadsOverlay" class="suggestion-overlay" hidden>
+    <div class="suggestion-card admin-leads-card">
+      <div class="admin-leads-header">
+        <div>
+          <h3 id="adminUserLeadsTitle">Claimed leads</h3>
+          <div class="admin-leads-subtitle" id="adminUserLeadsSubtitle"></div>
+        </div>
+        <button type="button" class="admin-leads-close" id="adminUserLeadsCloseX" aria-label="Close">&times;</button>
+      </div>
+      <label class="field admin-leads-search">
+        <span>Search</span>
+        <input type="text" id="adminUserLeadsSearchInput" placeholder="Company, NPI, city, contact…">
+      </label>
+      <div class="table-wrap admin-leads-table-wrap">
+        <table class="results-table" id="adminUserLeadsTable">
+          <thead>
+            <tr>
+              <th class="sortable" data-sort-key="company">Company<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="contact">Contact<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="location">Location<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="specialty">Specialty<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="status">Status<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="claimedAt">Claimed<span class="sort-arrow"></span></th>
+            </tr>
+          </thead>
+          <tbody id="adminUserLeadsBody">
+            <tr class="empty-row"><td colspan="6">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="suggestion-actions">
+        <button type="button" class="btn btn-primary" id="adminUserLeadsCloseBtn">Close</button>
+      </div>
+    </div>
+  </div>
 
   <div id="suggestionOverlay" class="suggestion-overlay" hidden>
     <form id="suggestionForm" class="suggestion-card">

@@ -21,6 +21,29 @@
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
+/* ---------- Utilities ---------- */
+
+.text-muted { color: var(--muted); }
+.text-sm { font-size: 13px; }
+.detail-info { font-size: 13px; line-height: 1.8; }
+
+/* ---------- Skip link (keyboard a11y) ---------- */
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: 100;
+  background: var(--accent);
+  color: #08151A;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: none;
+}
+.skip-link:focus { left: 16px; }
+
 * { box-sizing: border-box; }
 
 body {
@@ -219,8 +242,8 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.company-name { font-weight: 600; }
-.company-taxonomy { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.company-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.company-taxonomy { font-size: 12px; color: var(--muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
 .source-badges { display: flex; gap: 4px; margin-top: 4px; }
 .source-badge {
   font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.03em;
@@ -335,6 +358,11 @@ body {
 .toast a { color: var(--accent-ink); font-weight: 600; }
 .toast.error a { color: #1A0605; text-decoration-color: currentColor; }
 
+@media (max-width: 960px) {
+  .field-grid { grid-template-columns: repeat(2, 1fr); }
+  .field-wide { grid-column: span 2; }
+}
+
 @media (max-width: 720px) {
   .field-grid { grid-template-columns: 1fr 1fr; }
   .field-wide { grid-column: span 2; }
@@ -342,4 +370,13 @@ body {
   .results-toolbar { flex-direction: column; align-items: stretch; }
   .results-actions { justify-content: stretch; }
   .results-actions .btn { flex: 1; justify-content: center; }
+  .company-name, .company-taxonomy { max-width: 180px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

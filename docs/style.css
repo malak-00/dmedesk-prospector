@@ -652,6 +652,44 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .reminder-actions.suggestion-actions { justify-content: space-between; }
 .reminder-actions-right { display: flex; gap: 10px; }
 
+/* ---------- Admin dashboard ---------- */
+
+.admin-panel { padding: 20px; display: flex; flex-direction: column; gap: 4px; }
+.admin-panel .results-toolbar { border-radius: 0; padding-left: 0; padding-right: 0; }
+.admin-panel .table-wrap { border-radius: var(--radius-lg); border: 1px solid var(--hairline); margin-bottom: 20px; }
+
+.admin-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+.stat-card {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 140px; padding: 14px 18px;
+  background: var(--surface-2); border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+}
+.stat-value { font-family: var(--font-mono); font-size: 24px; font-weight: 600; }
+.stat-label { font-size: 12px; color: var(--muted); }
+
+.admin-leads-card { width: min(1000px, 100%); max-height: 85vh; }
+.admin-leads-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.admin-leads-subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.admin-leads-close {
+  background: none; border: none; cursor: pointer; line-height: 1;
+  font-size: 22px; color: var(--muted); padding: 0 2px;
+}
+.admin-leads-close:hover { color: var(--ink); }
+.admin-leads-search { max-width: 320px; }
+.admin-leads-table-wrap { max-height: 55vh; overflow-y: auto; border: 1px solid var(--hairline); border-radius: var(--radius-lg); }
+.admin-leads-table-wrap thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+
+.status-badge {
+  display: inline-block; font-family: var(--font-mono); font-size: 12px;
+  background: var(--surface-2); color: var(--ink);
+  border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+  padding: 3px 9px;
+}
+.status-badge.status-interested { border-color: var(--score-high); color: var(--score-high); }
+.status-badge.status-not-interested, .status-badge.status-do-not-call { border-color: var(--score-low); color: var(--score-low); }
+.status-badge.status-called, .status-badge.status-voicemail { border-color: var(--score-mid); color: var(--score-mid); }
+
 /* ---------- Callback reminders ---------- */
 
 .reminder-badge, .reminder-current {

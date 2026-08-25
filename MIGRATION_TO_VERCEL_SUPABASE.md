@@ -1,5 +1,14 @@
 # Migrating to Vercel + Supabase
 
+> **Status: implemented, on Cloudflare instead of Vercel.** The team chose
+> to keep using Cloudflare rather than adopt Vercel -- see
+> [`worker/`](./worker) for the actual implementation (a Cloudflare Worker
+> using the same Supabase schema and the same custom bcrypt+JWT auth this
+> doc describes below). The plan below is kept as-written for its data
+> model / service-by-service reasoning, which the Worker follows closely;
+> anywhere it says "Vercel function" or "Vercel dashboard", read that as
+> "Cloudflare Worker" / "`wrangler secret put`".
+
 A concrete plan to move off Google Apps Script + GitHub Pages + Google
 Sheets onto Vercel (hosting) + Supabase (Postgres database + auth), starting
 from exactly where this repo is today. Read `ARCHITECTURE.md` first if you

@@ -4,11 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DME Desk Prospector</title>
+<meta name="description" content="Search and prospect DME suppliers by NPI, state, city, and specialty. Enrich leads with Places data and export to CSV or Google Sheets.">
+<meta name="robots" content="noindex, nofollow">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"></noscript>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <a href="#searchForm" class="skip-link">Skip to search</a>
   <header class="app-header">
     <div class="brand">
       <span class="brand-mark">DME</span>
@@ -108,7 +114,7 @@
         <table class="results-table" id="resultsTable">
           <thead>
             <tr>
-              <th class="col-check"><input type="checkbox" id="selectAll"></th>
+              <th class="col-check"><input type="checkbox" id="selectAll" aria-label="Select all results"></th>
               <th class="col-score">Score</th>
               <th>Company</th>
               <th>Location</th>
@@ -127,7 +133,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="/usLocations.js"></script>
-  <script src="/app.js"></script>
+  <script defer src="/usLocations.js"></script>
+  <script defer src="/app.js"></script>
 </body>
 </html>
