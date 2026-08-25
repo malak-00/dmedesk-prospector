@@ -153,3 +153,6 @@ test_output/
 
 .temp/
 scripts/migrate_npi_records.py
+scripts/migrate_npi_records.py
+
+scripts/.env
