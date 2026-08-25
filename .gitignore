@@ -152,3 +152,4 @@ worker/.dev.vars
 test_output/
 
 .temp/
+scripts/migrate_npi_records.py
