@@ -13,7 +13,6 @@ export function createCompany(opts = {}) {
     website: opts.website != null ? opts.website : null,
     email: opts.email != null ? opts.email : null,
     phone: opts.phone != null ? opts.phone : null,
-    fax: opts.fax != null ? opts.fax : null,
     address: {
       line1: address.line1 != null ? address.line1 : null,
       line2: address.line2 != null ? address.line2 : null,
