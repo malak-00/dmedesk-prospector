@@ -27,6 +27,7 @@ import { createCompany } from "../lib/companyModel.js";
 import { scoreCompany } from "../lib/scoring.js";
 import * as leadsRepo from "../repos/leadsRepo.js";
 import * as searchProgressRepo from "../repos/searchProgressRepo.js";
+import * as taxonomiesRepo from "../repos/taxonomiesRepo.js";
 
 const NPPES_PAGE_SIZE = 200;
 // A variant is exhausted once its page comes back short of
@@ -185,6 +186,33 @@ async function saveSearchProgressSafe(supabase, userId, criteria, variantSkips, 
   } catch (err) {
     console.log("[companyService] SearchProgress save failed: " + err.message);
   }
+}
+
+// fakeNPI's npi_records has taxonomy_code populated but not
+// taxonomy_description, so every company comes back with a blank
+// taxonomy.description (see nppes.js's header comment). Resolves it from
+// our own `taxonomies` table -- best-effort, a lookup failure shouldn't
+// break the search, it'd just leave descriptions blank same as before.
+async function attachTaxonomyDescriptionsSafe(supabase, companies) {
+  const codes = [...new Set(companies.map((c) => c.taxonomy && c.taxonomy.code).filter(Boolean))];
+  if (codes.length === 0) return companies;
+
+  let descriptionByCode;
+  try {
+    descriptionByCode = await taxonomiesRepo.getDescriptionsByCodes(supabase, codes);
+  } catch (err) {
+    console.log("[companyService] Taxonomy description resolve failed: " + err.message);
+    return companies;
+  }
+  if (descriptionByCode.size === 0) return companies;
+
+  return companies.map((company) => {
+    const code = company.taxonomy && company.taxonomy.code;
+    if (company.taxonomy && company.taxonomy.description) return company; // already has one, don't overwrite
+    const resolved = code ? descriptionByCode.get(code) : null;
+    if (!resolved) return company;
+    return Object.assign({}, company, { taxonomy: Object.assign({}, company.taxonomy, { description: resolved }) });
+  });
 }
 
 function buildCriteriaVariants(criteria) {
@@ -378,6 +406,8 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   const totalScanned = fetchResult.totalScanned;
   const excludedAsClaimed = fetchResult.excludedAsClaimed;
   let companies = fetchResult.companies;
+
+  companies = await attachTaxonomyDescriptionsSafe(supabase, companies);
 
   if (trackProgress && !resetProgress) {
     await saveSearchProgressSafe(supabase, options.userId, criteria, fetchResult.variantSkips, fetchResult.allSeenNpis);

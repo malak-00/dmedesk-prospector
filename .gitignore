@@ -150,3 +150,5 @@ worker/.dev.vars
 .codex
 
 test_output/
+
+.temp/
