@@ -8,6 +8,64 @@ folder for this project.
 
 ---
 
+## 2026-08-21 — Revert the Fax column/field
+
+**Scope note:** Worker code only, no schema change. Follow-up to the
+entry immediately below.
+
+**Why:** the target Google Sheet is dropping its Fax column (no longer
+needed), so today's earlier addition of it is unnecessary.
+
+**Change:** reverted `fax` from `companyModel.js`, `nppes.js`'s
+`fax_number` extraction, and `CSV_COLUMNS`/`flattenCompany`
+(`worker/src/lib/csvExport.js`). The specialty-description resolution
+fix from the same original commit is untouched. `companyService.js`
+still references `company.fax`/`provider.fax` in a couple of places
+(`branchDedupKeys`, `fromNppesProvider`) — those predate today's
+changes entirely (part of the original Apps Script port) and are left
+as-is, just back to always being `undefined` like before any of this.
+
+---
+
+## 2026-08-21 — Fix Export to Sheet column shift; resolve blank specialty descriptions
+
+**Scope note:** Worker code only (`worker/src/`), no schema change. Reads
+from the existing `taxonomies` table, doesn't modify it.
+
+**Why:** reported directly — "Export to Sheet" was writing values into
+the wrong columns starting around Specialty, and the specialty text
+under a company's name in the UI was missing entirely. Two separate
+causes:
+
+1. `CSV_COLUMNS` (`worker/src/lib/csvExport.js`) was missing a `Fax`
+   column that the actual target Google Sheet has, positioned between
+   Phone and Website — so every column from Website onward wrote one
+   slot too far left. `fax` wasn't captured anywhere in the pipeline at
+   all: `companyModel.js` never returned it (`fromNppesProvider` already
+   passed it in, silently dropped), and `nppes.js` never extracted it
+   from fakeNPI's `fax_number` field in the first place.
+2. Independently, `taxonomy.description` has been blank for every
+   search result since the fakeNPI switch (2026-08-11) — its
+   `npi_records` has `taxonomy_code` populated but not
+   `taxonomy_description` — silently breaking both the specialty text
+   under a company's name in the UI and the Specialty export column's
+   actual value, regardless of the column-shift bug above.
+
+**Changes:**
+
+1. Added `fax` end to end: `companyModel.js` now returns it, `nppes.js`
+   extracts it from fakeNPI's `fax_number`, `CSV_COLUMNS`/
+   `flattenCompany` carry it through exports in the correct position.
+2. Added `taxonomiesRepo.getDescriptionsByCodes` (the reverse of the
+   existing description→code lookup already used for search filtering)
+   and a best-effort `attachTaxonomyDescriptionsSafe` step in
+   `companyService.js` that resolves each search result's real
+   specialty description from our own `taxonomies` table after
+   fetching, so both the UI and exports show real text again instead
+   of blank.
+
+---
+
 ## 2026-08-21 — Fix claimed leads silently capped below PostgREST's row limit
 
 **Scope note:** Worker code only (`worker/src/repos/leadsRepo.js`,
