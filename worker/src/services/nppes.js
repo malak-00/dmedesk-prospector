@@ -141,6 +141,7 @@ function normalizeProvider(raw) {
       countryCode: primaryAddress.country_code || null,
     },
     phone: primaryAddress.telephone_number || null,
+    fax: primaryAddress.fax_number || null,
     taxonomy: {
       code: primaryTaxonomy.code || null,
       description: primaryTaxonomy.desc || null,
