@@ -8,6 +8,38 @@ folder for this project.
 
 ---
 
+## 2026-08-21 — Keep Claimed Leads and Admin numbers current automatically
+
+**Scope note:** Worker/frontend code only (`docs/app.js`), no schema
+change. Follow-up to the pagination fix a few entries below — that fix
+was verified correct in code but the reported numbers still didn't
+match the DB (a stale Worker deployment, not a code bug; confirmed by
+querying `leads` directly and finding the exact real counts).
+
+**Why:** reported directly — admin overview numbers (and, less
+severely, Claimed Leads) only ever loaded once per browser session
+(`state.adminLoaded`/`state.claimedLoaded` guards), so any activity
+from a teammate elsewhere — a new claim, a disconnect, a status change
+— never showed up without an explicit manual Refresh click, even after
+switching away from the tab and back.
+
+**Changes:**
+
+1. Switching to Claimed Leads or Admin now always re-fetches, instead
+   of only the first time in a session.
+2. Both tabs now also auto-refresh every 30s while open
+   (`AUTO_REFRESH_INTERVAL_MS`), without a full realtime/websocket
+   subscription. The interval is silent (no skeleton-loading flash,
+   no error toast on a transient failure — just a console log) and,
+   for Claimed Leads specifically, skips entirely while focus is
+   inside the table or a row is checked, since it has live-editable
+   notes/status inputs and a bulk-action selection that a background
+   refresh would otherwise wipe out mid-edit.
+3. Both intervals are cleared on sign-out (explicit or an auto-401),
+   so no background polling keeps running against an invalid session.
+
+---
+
 ## 2026-08-21 — Revert the Fax column/field
 
 **Scope note:** Worker code only, no schema change. Follow-up to the

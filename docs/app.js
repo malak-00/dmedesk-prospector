@@ -107,6 +107,8 @@ const state = {
   searchMoreSeenNpis: [],
   view: "search",
   adminLoaded: false,
+  claimedRefreshInterval: null,
+  adminRefreshInterval: null,
   adminLeadsAll: [],
   adminLeadsSearchQuery: "",
   adminLeadsSortKey: null,
@@ -302,6 +304,11 @@ function showLogin() {
   els.suggestBtn.hidden = true;
   els.adminTab.hidden = true;
   els.devNotice.hidden = true;
+  // Covers both an explicit sign-out and an auto-triggered one (a 401 from
+  // any API call routes here too, via unwrap()) -- either way, background
+  // polling against a session that's no longer valid should stop.
+  stopClaimedAutoRefresh();
+  stopAdminAutoRefresh();
   els.loginForm.querySelector("input[name=username]")?.focus();
 }
 
@@ -585,9 +592,15 @@ function renderAdminSuggestions(suggestions) {
     .join("");
 }
 
-async function loadAdminOverview() {
-  els.adminUsersBody.innerHTML = skeletonRows(4, 7);
-  els.adminSuggestionsBody.innerHTML = skeletonRows(3, 3);
+// silent=true is used by the background auto-refresh interval -- no
+// skeleton flash over data the admin is currently looking at, and a
+// transient failure (e.g. one flaky request) just logs instead of
+// throwing an error toast every 30s.
+async function loadAdminOverview(silent = false) {
+  if (!silent) {
+    els.adminUsersBody.innerHTML = skeletonRows(4, 7);
+    els.adminSuggestionsBody.innerHTML = skeletonRows(3, 3);
+  }
   try {
     const data = await apiGet("admin/overview");
     renderAdminStats(data.stats);
@@ -595,6 +608,10 @@ async function loadAdminOverview() {
     renderAdminSuggestions(data.suggestions);
     state.adminLoaded = true;
   } catch (err) {
+    if (silent) {
+      console.log("[admin] background refresh failed: " + err.message);
+      return;
+    }
     showToast(err.message, true);
     els.adminUsersBody.innerHTML = `<tr class="empty-row"><td colspan="7">Failed to load.</td></tr>`;
     els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">Failed to load.</td></tr>`;
@@ -685,6 +702,30 @@ function closeAdminUserLeads() {
 
 /* ---------- View tabs ---------- */
 
+// Both Claimed Leads and Admin show data that can change from OTHER
+// people's actions (a teammate claiming/disconnecting/reassigning a lead
+// elsewhere, an admin's own tallies drifting as the team works) -- a
+// "load once per session" cache goes stale the moment that happens with
+// no way to notice short of a manual Refresh click. Every switch back to
+// either tab now re-fetches unconditionally, and a light interval keeps
+// it current even while just sitting on the tab, without needing a real
+// realtime/websocket subscription.
+const AUTO_REFRESH_INTERVAL_MS = 30000;
+
+function stopClaimedAutoRefresh() {
+  if (state.claimedRefreshInterval) {
+    clearInterval(state.claimedRefreshInterval);
+    state.claimedRefreshInterval = null;
+  }
+}
+
+function stopAdminAutoRefresh() {
+  if (state.adminRefreshInterval) {
+    clearInterval(state.adminRefreshInterval);
+    state.adminRefreshInterval = null;
+  }
+}
+
 function switchView(view) {
   state.view = view;
   document.querySelectorAll(".view-tabs .tab").forEach((tab) => {
@@ -693,8 +734,26 @@ function switchView(view) {
   els.viewSearch.hidden = view !== "search";
   els.viewClaimed.hidden = view !== "claimed";
   els.viewAdmin.hidden = view !== "admin";
-  if (view === "claimed" && !state.claimedLoaded) loadClaimedLeads();
-  if (view === "admin" && !state.adminLoaded) loadAdminOverview();
+
+  stopClaimedAutoRefresh();
+  stopAdminAutoRefresh();
+
+  if (view === "claimed") {
+    loadClaimedLeads();
+    // The interval (not this initial load) skips refreshing while focus is
+    // inside the table or a row is checked -- claimedBody has
+    // live-editable notes/status inputs, and wiping an in-progress edit
+    // or a pending bulk-action selection out from under someone every 30s
+    // would be worse than the staleness this is fixing.
+    state.claimedRefreshInterval = setInterval(() => {
+      if (els.claimedBody.contains(document.activeElement)) return;
+      if (state.claimedSelected.size > 0) return;
+      loadClaimedLeads(true);
+    }, AUTO_REFRESH_INTERVAL_MS);
+  } else if (view === "admin") {
+    loadAdminOverview();
+    state.adminRefreshInterval = setInterval(() => loadAdminOverview(true), AUTO_REFRESH_INTERVAL_MS);
+  }
 }
 
 /* ---------- UI helpers ---------- */
@@ -1776,9 +1835,17 @@ async function exportClaimedToGoogleSheet() {
   }
 }
 
-async function loadClaimedLeads() {
-  els.claimedBody.innerHTML = skeletonRows(5, 10);
-  els.staleNudge.hidden = true;
+// silent=true is used by the background auto-refresh interval -- no
+// skeleton flash (and no selection-clearing re-render) over a table the
+// user might currently be looking at or working in, and a transient
+// failure just logs instead of throwing an error toast every 30s. The
+// interval caller also skips calling this at all while focus is inside
+// the table or something's checked -- see switchView.
+async function loadClaimedLeads(silent = false) {
+  if (!silent) {
+    els.claimedBody.innerHTML = skeletonRows(5, 10);
+    els.staleNudge.hidden = true;
+  }
   try {
     // Always scoped server-side to the signed-in user's own claimed leads --
     // no params needed, there's no team-wide view to opt into anymore.
@@ -1793,6 +1860,10 @@ async function loadClaimedLeads() {
     state.claimedLeadsAll = data.leads || [];
     renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
   } catch (err) {
+    if (silent) {
+      console.log("[claimed] background refresh failed: " + err.message);
+      return;
+    }
     els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="10">${escapeHtml(err.message)}</td></tr>`;
     showToast(err.message, true);
   }
