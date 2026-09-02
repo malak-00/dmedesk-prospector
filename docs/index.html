@@ -319,6 +319,17 @@
 
         <div class="results-toolbar">
           <div class="results-meta">
+            <div class="results-count">Ownership conflicts</div>
+            <div class="results-sub" id="conflictsSummary">Checking…</div>
+          </div>
+        </div>
+        <div id="conflictsPanel" class="conflicts-panel">
+          <div class="conflicts-empty" id="conflictsEmpty">Checking…</div>
+          <div id="conflictsList"></div>
+        </div>
+
+        <div class="results-toolbar">
+          <div class="results-meta">
             <div class="results-count">User activity</div>
           </div>
           <div class="results-actions">
@@ -404,6 +415,30 @@
         <button type="button" class="btn btn-primary" id="adminUserLeadsCloseBtn">Close</button>
       </div>
     </div>
+  </div>
+
+  <div id="conflictResolveOverlay" class="suggestion-overlay" hidden>
+    <form id="conflictResolveForm" class="suggestion-card conflict-resolve-card">
+      <h3>Assign this group to one owner</h3>
+      <p class="suggestion-hint" id="conflictResolveGroup"></p>
+      <div class="field">
+        <span>Who keeps this group?</span>
+        <div class="conflict-owner-options" id="conflictOwnerOptions"></div>
+      </div>
+      <label class="field">
+        <span>Reason for the decision</span>
+        <textarea name="reason" id="conflictReason" rows="3" maxlength="500" required
+          placeholder="e.g. Confirmed with both reps — Rick worked the account first."></textarea>
+      </label>
+      <p class="suggestion-hint">
+        Every claim that moves is logged with who approved it and why. Statuses, notes,
+        reminders and original claim dates are left untouched.
+      </p>
+      <div class="suggestion-actions">
+        <button type="button" class="btn btn-ghost" id="conflictResolveCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="conflictResolveSubmitBtn">Assign owner</button>
+      </div>
+    </form>
   </div>
 
   <div id="suggestionOverlay" class="suggestion-overlay" hidden>

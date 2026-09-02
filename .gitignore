@@ -156,3 +156,8 @@ scripts/migrate_npi_records.py
 scripts/migrate_npi_records.py
 
 scripts/.env
+
+# NPPES ingestion CLI output (manifests, rejects) -- run artifacts, not source
+scripts/out/
+__pycache__/
+*.pyc

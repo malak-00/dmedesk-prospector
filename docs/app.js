@@ -107,6 +107,8 @@ const state = {
   searchMoreSeenNpis: [],
   view: "search",
   adminLoaded: false,
+  conflicts: [],
+  conflictResolveGroupId: null,
   claimedRefreshInterval: null,
   adminRefreshInterval: null,
   adminLeadsAll: [],
@@ -257,6 +259,16 @@ const els = {
   adminUserLeadsCloseBtn: document.getElementById("adminUserLeadsCloseBtn"),
   adminUserLeadsCloseX: document.getElementById("adminUserLeadsCloseX"),
   adminUserLeadsSearchInput: document.getElementById("adminUserLeadsSearchInput"),
+  conflictsSummary: document.getElementById("conflictsSummary"),
+  conflictsEmpty: document.getElementById("conflictsEmpty"),
+  conflictsList: document.getElementById("conflictsList"),
+  conflictResolveOverlay: document.getElementById("conflictResolveOverlay"),
+  conflictResolveForm: document.getElementById("conflictResolveForm"),
+  conflictResolveGroup: document.getElementById("conflictResolveGroup"),
+  conflictOwnerOptions: document.getElementById("conflictOwnerOptions"),
+  conflictReason: document.getElementById("conflictReason"),
+  conflictResolveCancelBtn: document.getElementById("conflictResolveCancelBtn"),
+  conflictResolveSubmitBtn: document.getElementById("conflictResolveSubmitBtn"),
   claimedTable: document.getElementById("claimedTable"),
   claimedBody: document.getElementById("claimedBody"),
   claimedCount: document.getElementById("claimedCount"),
@@ -592,6 +604,160 @@ function renderAdminSuggestions(suggestions) {
     .join("");
 }
 
+// ---- ownership conflicts (admin) ----------------------------------------
+// An identity group whose active claims are split across more than one
+// person. These are surfaced rather than auto-resolved on purpose: the
+// system has no way to know who should own an account, so every one of
+// them waits for an explicit approved decision.
+
+function renderConflicts(payload) {
+  const available = payload && payload.available !== false;
+  const conflicts = (payload && payload.conflicts) || [];
+  state.conflicts = conflicts;
+
+  if (!available) {
+    els.conflictsSummary.textContent = "Not available";
+    els.conflictsEmpty.hidden = false;
+    els.conflictsEmpty.textContent = payload.reason || "Identity grouping isn't installed yet.";
+    els.conflictsList.innerHTML = "";
+    return;
+  }
+
+  if (conflicts.length === 0) {
+    els.conflictsSummary.textContent = "No conflicts";
+    els.conflictsEmpty.hidden = false;
+    els.conflictsEmpty.textContent = "Every identity group has a single active owner.";
+    els.conflictsList.innerHTML = "";
+    return;
+  }
+
+  els.conflictsSummary.textContent = `${conflicts.length} group${conflicts.length === 1 ? "" : "s"} need${conflicts.length === 1 ? "s" : ""} an owner decision`;
+  els.conflictsEmpty.hidden = true;
+  els.conflictsList.innerHTML = conflicts
+    .map((conflict) => {
+      const owners = conflict.owners
+        .map((owner) => `<span class="conflict-owner-chip">${escapeHtml(owner.displayName)} · ${owner.leadCount}</span>`)
+        .join("");
+      const rows = conflict.leads
+        .map((lead) => {
+          const location = [lead.city, lead.state].filter(Boolean).join(", ");
+          return `
+          <tr>
+            <td>
+              <div class="company-name">${escapeHtml(lead.companyName || "")}</div>
+              <div class="company-taxonomy mono">${escapeHtml(lead.npi || "")}</div>
+            </td>
+            <td>${escapeHtml(location || "—")}</td>
+            <td>${escapeHtml(lead.claimedByName || "")}</td>
+            <td class="mono">${escapeHtml((lead.claimedAt || "").slice(0, 10))}</td>
+          </tr>`;
+        })
+        .join("");
+      const subtitle = [conflict.groupState, `${conflict.leads.length} active claims`].filter(Boolean).join(" · ");
+      return `
+      <div class="conflict-card">
+        <div class="conflict-card-header">
+          <div>
+            <div class="conflict-title">${escapeHtml(conflict.groupName)}</div>
+            <div class="conflict-subtitle">${escapeHtml(subtitle)}</div>
+            <div class="conflict-owners">${owners}</div>
+          </div>
+          <button type="button" class="btn btn-primary" data-resolve-conflict data-group-id="${escapeHtml(conflict.groupId)}">
+            Resolve
+          </button>
+        </div>
+        <table class="conflict-leads">
+          <thead>
+            <tr><th>Company</th><th>Location</th><th>Claimed by</th><th>Claimed</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    })
+    .join("");
+}
+
+async function loadConflicts(silent = false) {
+  if (!silent) {
+    els.conflictsSummary.textContent = "Checking…";
+    els.conflictsEmpty.hidden = false;
+    els.conflictsEmpty.textContent = "Checking…";
+  }
+  try {
+    renderConflicts(await apiGet("admin/conflicts"));
+  } catch (err) {
+    if (silent) {
+      console.log("[admin] conflict refresh failed: " + err.message);
+      return;
+    }
+    els.conflictsSummary.textContent = "Failed to load";
+    els.conflictsEmpty.hidden = false;
+    els.conflictsEmpty.textContent = "Couldn't load ownership conflicts: " + err.message;
+    els.conflictsList.innerHTML = "";
+  }
+}
+
+function openConflictResolve(groupId) {
+  const conflict = state.conflicts.find((c) => c.groupId === groupId);
+  if (!conflict) return;
+  state.conflictResolveGroupId = groupId;
+  els.conflictResolveGroup.textContent = `${conflict.groupName} — ${conflict.leads.length} active claims across ${conflict.owners.length} owners.`;
+  // No owner is pre-selected: picking one is the decision being made here,
+  // and a default would quietly become the answer.
+  els.conflictOwnerOptions.innerHTML = conflict.owners
+    .map(
+      (owner) => `
+      <label class="conflict-owner-option">
+        <input type="radio" name="conflictOwner" value="${escapeHtml(owner.userId)}">
+        <span>${escapeHtml(owner.displayName)}</span>
+        <span class="conflict-owner-count">holds ${owner.leadCount}</span>
+      </label>`
+    )
+    .join("");
+  els.conflictReason.value = "";
+  els.conflictResolveSubmitBtn.disabled = false;
+  els.conflictResolveSubmitBtn.textContent = "Assign owner";
+  els.conflictResolveOverlay.hidden = false;
+}
+
+function closeConflictResolve() {
+  els.conflictResolveOverlay.hidden = true;
+  state.conflictResolveGroupId = null;
+}
+
+async function handleConflictResolve(event) {
+  event.preventDefault();
+  const groupId = state.conflictResolveGroupId;
+  const selected = els.conflictOwnerOptions.querySelector('input[name="conflictOwner"]:checked');
+  if (!groupId) return;
+  if (!selected) {
+    showToast("Pick which owner keeps this group.", true);
+    return;
+  }
+  const reason = els.conflictReason.value.trim();
+  if (!reason) {
+    showToast("A reason is required — it's recorded with the decision.", true);
+    return;
+  }
+
+  els.conflictResolveSubmitBtn.disabled = true;
+  els.conflictResolveSubmitBtn.textContent = "Assigning…";
+  try {
+    const result = await apiPost("admin/conflicts/resolve", { groupId, toUserId: selected.value, reason });
+    const moved = result.reassigned_count || 0;
+    const skipped = (result.skipped || []).length;
+    closeConflictResolve();
+    showToast(
+      `Reassigned ${moved} lead${moved === 1 ? "" : "s"}.` + (skipped ? ` ${skipped} skipped — see the audit log.` : "")
+    );
+    await Promise.all([loadConflicts(true), loadAdminOverview(true)]);
+  } catch (err) {
+    showToast(err.message, true);
+    els.conflictResolveSubmitBtn.disabled = false;
+    els.conflictResolveSubmitBtn.textContent = "Assign owner";
+  }
+}
+
 // silent=true is used by the background auto-refresh interval -- no
 // skeleton flash over data the admin is currently looking at, and a
 // transient failure (e.g. one flaky request) just logs instead of
@@ -601,6 +767,10 @@ async function loadAdminOverview(silent = false) {
     els.adminUsersBody.innerHTML = skeletonRows(4, 7);
     els.adminSuggestionsBody.innerHTML = skeletonRows(3, 3);
   }
+  // Conflicts load in parallel and own their own error handling, so a
+  // failure there (e.g. the identity schema isn't installed) degrades to a
+  // message in that one panel instead of blanking the whole dashboard.
+  const conflictsLoaded = loadConflicts(silent);
   try {
     const data = await apiGet("admin/overview");
     renderAdminStats(data.stats);
@@ -615,6 +785,8 @@ async function loadAdminOverview(silent = false) {
     showToast(err.message, true);
     els.adminUsersBody.innerHTML = `<tr class="empty-row"><td colspan="7">Failed to load.</td></tr>`;
     els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">Failed to load.</td></tr>`;
+  } finally {
+    await conflictsLoaded;
   }
 }
 
@@ -2666,6 +2838,18 @@ wireSortableHeaders(els.adminUserLeadsTable, ADMIN_LEADS_DEFAULT_SORT_DIR, sortA
 // Event delegation, not a per-row listener -- adminUsersBody is fully
 // re-rendered on every load, same reasoning as the taxonomy checkboxes
 // (see renderTaxonomyOptions' comment).
+// Same event-delegation reasoning as adminUsersBody -- the conflict list is
+// fully re-rendered on every load and after every resolution.
+els.conflictsList.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-resolve-conflict]");
+  if (!btn) return;
+  openConflictResolve(btn.dataset.groupId);
+});
+els.conflictResolveForm.addEventListener("submit", handleConflictResolve);
+els.conflictResolveCancelBtn.addEventListener("click", closeConflictResolve);
+els.conflictResolveOverlay.addEventListener("click", (e) => {
+  if (e.target === els.conflictResolveOverlay) closeConflictResolve();
+});
 els.adminUsersBody.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-admin-view-leads]");
   if (!btn) return;

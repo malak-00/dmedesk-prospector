@@ -872,3 +872,51 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
   .field-wide { grid-column: span 1; }
   .app-header .brand-logo { height: 44px; width: 110px; }
 }
+
+/* ---------- Admin: ownership conflicts ---------- */
+
+/* An identity group whose active claims are split across two people. This
+   sits at the top of the Admin tab because it's the only thing there that
+   needs a decision rather than just reading. */
+.results-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+.conflicts-panel { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+.conflicts-empty { font-size: 13px; color: var(--muted); font-style: italic; padding: 4px 0 8px; }
+.conflicts-empty[hidden] { display: none; }
+
+.conflict-card {
+  border: 1px solid var(--score-mid);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.conflict-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.conflict-title { font-weight: 600; font-size: 15px; }
+.conflict-subtitle { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.conflict-owners { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.conflict-owner-chip {
+  font-size: 12px; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--score-mid); color: var(--score-mid);
+  white-space: nowrap;
+}
+
+.conflict-leads { width: 100%; border-collapse: collapse; font-size: 13px; }
+.conflict-leads th {
+  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); font-weight: 600; padding: 4px 10px 6px 0; border-bottom: 1px solid var(--hairline);
+}
+.conflict-leads td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+.conflict-leads tr:last-child td { border-bottom: none; }
+.conflict-leads .mono { font-size: 13px; }
+
+.conflict-owner-options { display: flex; flex-direction: column; gap: 8px; }
+.conflict-owner-option {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 12px; border: 1px solid var(--hairline); border-radius: var(--radius-lg);
+  cursor: pointer; font-size: 14px;
+}
+.conflict-owner-option:hover { border-color: var(--accent); }
+.conflict-owner-option input { margin: 0; }
+.conflict-owner-count { margin-left: auto; font-size: 12px; color: var(--muted); }
+.conflict-resolve-card { width: min(520px, 100%); }

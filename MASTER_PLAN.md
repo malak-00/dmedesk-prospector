@@ -61,8 +61,8 @@ in each phase says which half is which.
 | 2 | BD Meetings reconciliation | — | ✅ done |
 | 3 | NPI data consolidation | ✅ `npi_records` copied over | ⬜ Worker still uses fakeNPI |
 | 4 | Lead identity grouping | ✅ schema + Tier 1 backfill applied | ⬜ nothing reads it yet |
-| 5 | Claim flow hardening | ⬜ atomic RPC not written | ⬜ not started |
-| 6 | NPPES & Medicare refresh tracking | 🟡 audit tables exist, staging does not | ⬜ not started |
+| 5 | Claim flow hardening | 🟡 conflict-resolution RPC written, not run | 🟡 admin conflict queue built |
+| 6 | NPPES & Medicare refresh tracking | 🟡 NPPES staging written, not run; apply step missing | 🟡 NPPES ingestion CLI built |
 | 7 | Preflight & import | ⬜ not started | ⬜ not started |
 
 ---
@@ -177,10 +177,29 @@ reviewed membership decision is never overwritten. The earlier draft,
   (see *Current known state*).
 - Only after verification holds: consider making `leads.group_id` NOT NULL.
 
-### Phase 5 — Claim flow hardening ⬜ NOT STARTED
+### Phase 5 — Claim flow hardening 🟡 CONFLICT REVIEW BUILT, CLAIM PATH NOT STARTED
 
 Update the Worker so every claim, reassign, and release writes auditable
 events and respects group-level conflict checks.
+
+**Done — the admin conflict review queue (2026-09-02).** Group-level
+ownership conflicts now surface in the Admin tab and can be resolved there:
+
+- `GET /admin/conflicts` lists identity groups whose active claims are split
+  across more than one person. It aggregates in the Worker from tables that
+  already exist, so it works whether or not the SQL below is installed.
+- `POST /admin/conflicts/resolve` assigns a group to one owner. It calls
+  `public.resolve_ownership_conflict()`
+  (`sql/005_ownership_conflict_resolution.sql`) so the conflict check, the
+  reassignment and the audit events are one transaction — the approving
+  admin comes from the session, and a reason is required.
+- No owner is pre-selected in the UI: choosing one *is* the decision, and a
+  default would quietly become the answer.
+- Claims that move keep their `claimed_at`, status, notes and reminders; only
+  `claimed_by` changes, and every move writes a `reassigned` event carrying
+  the approver and the reason.
+
+**Still not started — the claim path itself.**
 
 **Prerequisite — an atomic database-side operation.** Claiming today is a
 read-then-insert in `worker/src/repos/leadsRepo.js`
@@ -221,7 +240,7 @@ write in a single transaction — not another sequence of REST calls.
 - New admin endpoints are server-side gated on `session.isAdmin`; hiding a
   frontend tab is not an authorization control.
 
-### Phase 6 — NPPES & Medicare refresh tracking 🟡 FOUNDATION ONLY
+### Phase 6 — NPPES & Medicare refresh tracking 🟡 INGESTION BUILT, APPLY STEP MISSING
 
 Track all provider field changes from weekly NPPES updates and monthly
 Medicare DMEPOS releases.
@@ -230,9 +249,26 @@ Medicare DMEPOS releases.
 `lead_ownership_events` (which carries the review alerts). Both history
 tables are append-only at the database level.
 
-**Not in place:** staging tables, the transactional refresh procedure, the
-Medicare current-data model, and the ingestion tooling. No monthly import
-should touch `npi_records` or claimed-lead snapshots until they exist.
+**Done — NPPES ingestion (2026-09-02).** `scripts/nppes_ingest` is a
+repository-owned, dependency-free Python CLI replacing the hardcoded
+personal-machine `nppes_filter.py`. It handles all three NPPES run types,
+reads enabled taxonomy codes from `public.taxonomies`, validates every NPI
+against the CMS check digit, rejects duplicates, guards against a truncated
+release, checksums the source, writes a manifest and a rejects report, and
+stages rows under one `refresh_runs` row — rolling the run back and marking
+it `failed` if staging breaks partway. Its staging table is
+`sql/004_nppes_refresh_staging.sql`. 24 tests cover it. See
+[`scripts/README.md`](./scripts/README.md).
+
+The CLI writes **only** `refresh_runs` and `nppes_refresh_staging`. It never
+writes `npi_records` and never writes `leads` — that boundary is the whole
+point of staging.
+
+**Not in place:** the transactional apply step (compare → history → update),
+the Medicare current-data model, and Medicare staging/ingestion. No monthly
+import should touch `npi_records` or claimed-lead snapshots until they
+exist; staging a release on its own is safe precisely because nothing
+downstream happens automatically.
 
 **Update cadence:**
 
@@ -273,9 +309,12 @@ move a lead between groups.
 All other field changes log silently to `provider_field_history`.
 
 **Remaining work:**
-- SQL: `nppes_refresh_staging` and `medicare_refresh_staging` keyed by `(refresh_run_id, npi)`, a canonical current-Medicare model, staging indexes, the transactional refresh procedure, and validation/reconciliation queries.
-- A repository-owned Python ingestion CLI replacing the hardcoded personal-machine `nppes_filter.py`: arguments instead of hardcoded paths, taxonomy codes read from `public.taxonomies`, run types `monthly-full` / `weekly-incremental` / `deactivation`, source validation and checksum, a manifest with accepted/rejected counts, upload to staging only, and credentials from the environment.
-- Fixture tests for both, run against a small sample before any real release.
+- ✅ `nppes_refresh_staging` keyed by `(refresh_run_id, npi)` — `sql/004`, written, not yet run.
+- ✅ The NPPES ingestion CLI and its fixture tests.
+- ⬜ The transactional apply procedure: compare canonical values, insert `provider_field_history` before updating `npi_records`, update only provider-owned snapshot fields on affected active leads, raise review events, and mark the run `applied` — all in one transaction.
+- ⬜ `medicare_refresh_staging`, a canonical current-Medicare model, and Medicare ingestion.
+- ⬜ Reconciliation/validation queries beyond the per-file checks already in `sql/004`.
+- ⬜ A first end-to-end rehearsal against a small real release before any full file is applied.
 
 Full design: [`documentation/plans/PROVIDER_CHANGE_TRACKING_PLAN.md`](./documentation/plans/PROVIDER_CHANGE_TRACKING_PLAN.md).
 
@@ -292,15 +331,15 @@ changes, and save the import/reassignment logs in `temp/`.
 
 ## Recommended order of remaining work
 
-1. Python NPPES ingestion CLI + fixture tests (Phase 6).
-2. Staging and transactional refresh SQL, tested against a small fixture (Phase 6).
-3. Worker queries same-project `npi_records` directly, preserving response shapes (Phase 3 cutover).
-4. Refresh verification reports and provider-change review events (Phase 6).
-5. Resolve the two ownership conflicts by explicit decision, then add the group-aware atomic claim (Phases 4 and 5).
-6. Reassign/release and group/history endpoints, plus the admin review UI (Phase 5).
-7. Medicare staging and monthly change tracking (Phase 6).
-8. Preflight and the approved imports from `PIS_TO_RESOLVE.csv` (Phase 7).
-9. Scheduled runs, only after manual runs are proven reliable.
+1. ✅ Python NPPES ingestion CLI + fixture tests (Phase 6).
+2. 🟡 Staging SQL written (`sql/004`); the transactional apply step is next, tested against a small fixture (Phase 6).
+3. ⬜ Worker queries same-project `npi_records` directly, preserving response shapes (Phase 3 cutover).
+4. ⬜ Refresh verification reports and provider-change review events (Phase 6).
+5. 🟡 The two ownership conflicts are decided (`sql/006`, pending execution); the group-aware atomic claim is still to build (Phases 4 and 5).
+6. 🟡 Admin conflict review queue is live; reassign/release and group/history endpoints remain (Phase 5).
+7. ⬜ Medicare staging and monthly change tracking (Phase 6).
+8. ⬜ Preflight and the approved imports from `PIS_TO_RESOLVE.csv` (Phase 7).
+9. ⬜ Scheduled runs, only after manual runs are proven reliable.
 
 ---
 
@@ -331,15 +370,20 @@ sharing an NPI; each NPI has exactly one membership. (An earlier
 exploratory pass reported 11,684 flagged rows in 4,695 groups — that was a
 pre-backfill estimate and is superseded by the figures above.)
 
-**Open ownership conflicts — need an explicit human decision.** The
-backfill did not create or change these; it exposed them. Nothing should
-reassign them automatically, and the group-aware claim path should not ship
-before they are settled.
+**Ownership conflicts — decided 2026-09-02, not yet applied.** The backfill
+did not create or change these; it exposed them. Both now have an explicit
+approved owner decision, written as SQL in
+`sql/006_resolve_known_conflicts.sql` and awaiting manual execution.
 
-| Group | NPIs | Active owners |
-|---|---|---|
-| 1FOOT 2FOOT Centre for Foot and Ankle Care, PC (VA) | `1548921265`, `1831477868` | Rick Nelson; Kaity James |
-| Advanced Home Medical Supplies Inc. (CT) | `1598747552`, `1891506093` | Nora Atkins; Rick Nelson |
+| Group | NPIs | Was | Decision |
+|---|---|---|---|
+| 1FOOT 2FOOT Centre for Foot and Ankle Care, PC (VA) | `1548921265`, `1831477868` | Rick Nelson; Kaity James | **Rick Nelson** |
+| Advanced Home Medical Supplies Inc. (CT) | `1598747552`, `1891506093` | Nora Atkins; Rick Nelson | **Nora Atkins** |
+
+Any conflict found from here on — including any the next backfill or refresh
+surfaces — appears in the Admin tab's ownership-conflict queue and is
+resolved there, with the approver and reason recorded on every move. This
+one-time SQL file exists only because these two predate that queue.
 
 **Other:**
 - Genome Insight → Inocras is the known `possible_successor` test case.
@@ -361,7 +405,7 @@ Ticked items are verified; the rest are open.
 - [ ] High-signal changes (phone, official, name, deactivation, territory, claims cliff) surface in the admin review queue.
 - [ ] Accepted NPIs have passed Supabase duplicate/owner preflight.
 - [x] No unapproved claim is deleted, reassigned, or overwritten. *(Holds to date and must keep holding.)*
-- [ ] The two known group-level ownership conflicts have explicit approved decisions.
+- [x] The two known group-level ownership conflicts have explicit approved decisions. *(Decided 2026-09-02; `sql/006` written, execution pending.)*
 - [ ] Final import and reassignment logs are saved in `temp/`.
 
 ---
@@ -379,6 +423,7 @@ Ticked items are verified; the rest are open.
 | [`documentation/operations/WORKLOG.md`](./documentation/operations/WORKLOG.md) | Chronological record of work performed and database results |
 | [`documentation/operations/CHAT_HISTORY_2026-09-02.md`](./documentation/operations/CHAT_HISTORY_2026-09-02.md) | Durable handoff: decisions, verification output, and the intended unified architecture |
 | [`sql/README.md`](./sql/README.md) | SQL execution order and manual-run notes |
+| [`scripts/README.md`](./scripts/README.md) | NPPES ingestion CLI: usage, run types, safety guards, and the boundary it will not cross |
 | [`MIGRATION_TO_VERCEL_SUPABASE.md`](./MIGRATION_TO_VERCEL_SUPABASE.md) | Original Supabase schema and migration plan |
 | [`SUPABASE_CHANGELOG.md`](./SUPABASE_CHANGELOG.md) | All Supabase changes to date |
 | [`MARKDOWN_ORGANIZATION_PLAN.md`](./MARKDOWN_ORGANIZATION_PLAN.md) | Where each document lives and why |

@@ -122,7 +122,8 @@ entirely.
 | Table | Purpose |
 |---|---|
 | `npi_records` | A copy of the NPPES provider registry, in the same project as `leads`. Populated, and its identity columns verified — but the Worker still reaches the registry through the fakeNPI Edge Function rather than querying this table. Cutting over is a planned step (`MASTER_PLAN.md` Phase 3) |
-| `lead_groups`, `lead_group_members`, `lead_ownership_events`, `provider_field_history`, `refresh_runs`, `leads.group_id` | The identity and audit layer. Installed and backfilled; deliberately not connected to application code yet — see the next section |
+| `lead_groups`, `lead_group_members`, `lead_ownership_events`, `provider_field_history`, `refresh_runs`, `leads.group_id` | The identity and audit layer. Installed and backfilled. The admin ownership-conflict queue is the first thing to read it; the claim, search and export paths still don't — see below |
+| `nppes_refresh_staging` | Where `scripts/nppes_ingest` puts a validated NPPES release. Nothing reads it at runtime; the apply step that turns staged rows into `npi_records` updates doesn't exist yet |
 
 ### Claiming, and why it isn't atomic yet
 
@@ -277,16 +278,87 @@ nearly unchanged.
   scrolling at any screen size. A `@media (max-height: 820px)` rule shrinks
   the stack on laptop viewports so it doesn't crowd out result rows.
 
+## The NPPES ingestion CLI (`scripts/nppes_ingest`)
+
+A dependency-free Python CLI that loads an NPPES release into
+`nppes_refresh_staging` under one `refresh_runs` row. It is not part of the
+Worker and never runs in production — someone runs it by hand when a
+release lands.
+
+Its defining property is the boundary it refuses to cross: it writes
+`refresh_runs` and `nppes_refresh_staging`, and nothing else. It never
+touches `npi_records`, and never touches `leads`. Turning staged rows into
+provider updates — comparing canonical values, writing
+`provider_field_history` before any overwrite, raising review alerts — is a
+separate transactional SQL step that has not been built yet. Staging a
+release is therefore safe on its own: nothing downstream happens until
+someone deliberately builds and runs that step.
+
+Worth knowing when reading it:
+
+- **Values are canonicalized on the way in** (first valid 10-digit phone,
+  trimmed/collapsed text, real dates, hyphenated ZIP+4), so the eventual
+  compare step is a plain equality test rather than a pile of formatting
+  special cases. A reformatted phone number must not read as a provider
+  data change.
+- **NPIs are checked against the CMS check digit** (Luhn over the 80840
+  issuer prefix), not just their length — a transposition typo would
+  otherwise create a phantom provider that never matches anything.
+- **A truncated release is refused** via `--expect-rows` /
+  `--row-count-tolerance`, because a partial file that is structurally fine
+  is the dangerous input: it reads as "thousands of providers changed".
+- **Filtered rows and malformed rows are counted separately** in the
+  manifest, since "12,000 rows filtered out by state" and "3 rows were
+  malformed" mean very different things.
+- **A failed load rolls itself back** — staging rows deleted, run marked
+  `failed` — so a half-loaded release can't be mistaken for a complete one.
+- **Taxonomy scope comes from `public.taxonomies`**, the same table the
+  search form uses, so there's no second list to keep in sync.
+
+Setup, usage, run types and the test suite are in
+[`scripts/README.md`](./scripts/README.md).
+
+## Ownership conflicts in the Admin tab
+
+An identity group whose active claims are held by more than one person is a
+conflict. The Admin tab lists them at the top and can resolve one by
+assigning the whole group to a single owner.
+
+Two details matter architecturally:
+
+- **Listing is aggregated in the Worker** from `leads` + `lead_groups`
+  rather than from a database view, so the queue works as soon as the
+  Worker deploys — before any new SQL is installed. If `leads.group_id`
+  doesn't exist, the endpoint reports that in the panel instead of failing
+  the admin page.
+- **Resolving is a SQL function**, `resolve_ownership_conflict()`, not a
+  sequence of REST calls. PostgREST gives the Worker no transaction, so a
+  read-then-write resolve could interleave with a concurrent claim and
+  leave a group half-moved with a partial audit trail. Inside the function
+  the affected rows are locked, every move writes a `reassigned` event
+  carrying the approving admin and a required reason, and only `claimed_by`
+  changes — `claimed_at`, status, notes, reminders and disconnect state are
+  untouched. If the target owner already holds that NPI (which the partial
+  unique index would reject) the row is skipped and reported rather than
+  failing the whole resolution.
+
+The approver is always taken from the session, never from the request body.
+
 ## The identity & audit layer (built, not connected)
 
 This is the current area of active work, and the most important thing to
 understand about the repo's present state:
 
-**The new schema is installed, backfilled, and verified in production — and
-no application code touches it.** That is deliberate. The approach is to
-build each piece and prove it in isolation first, then connect it to the
-running app as a separate, reviewable step. Nothing about the live claim,
-search, export, or admin flow changed when this went in.
+**The new schema is installed, backfilled, and verified in production, and
+the app is only just beginning to read it.** That is deliberate. The
+approach is to build each piece and prove it in isolation first, then
+connect it to the running app as a separate, reviewable step.
+
+As of 2026-09-02 exactly one feature reads this layer: the admin
+ownership-conflict queue described above. The live claim, search, export,
+status, notes and reminder paths still don't — claiming remains the
+exact-NPI flow, and `group_id` is still write-once-by-backfill everywhere
+else.
 
 What exists in the database today (installed via `sql/001_identity_schema.sql`
 and populated by `sql/002_identity_backfill_safe.sql`):
