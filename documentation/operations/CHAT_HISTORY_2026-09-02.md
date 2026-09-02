@@ -39,9 +39,9 @@ must never be deleted, silently reassigned, or overwritten by an import.
 
 Two projects were involved and were initially easy to confuse:
 
-| Project | Reference | Role |
-|---|---|---|
-| fakeNPI | `zvthhjediuelpvzkkzvy` | Earlier self-hosted NPI search implementation |
+| Project             | Reference              | Role                                                                    |
+| ------------------- | ---------------------- | ----------------------------------------------------------------------- |
+| fakeNPI             | `zvthhjediuelpvzkkzvy` | Earlier self-hosted NPI search implementation                           |
 | DME Desk Prospector | `pcvyrkisvvtiteoiuplg` | Current application database; owns leads and now also has `npi_records` |
 
 The correct project for ownership, lead groups, refresh tracking, and future
@@ -72,7 +72,7 @@ Existing indexes included:
 - `idx_leads_npi`;
 - `idx_leads_claimed_by` for active claims;
 - `idx_leads_npi_claimed_by_active`, a partial unique index on `(npi,
-  claimed_by)` for active claims;
+claimed_by)` for active claims;
 - `idx_leads_status_updated_by`.
 
 ### Current claim behavior
@@ -141,13 +141,13 @@ monthly or incremental refreshes.
 
 The following manual SQL bundle was added under `sql/`:
 
-| File | Purpose | Status |
-|---|---|---|
-| `000_schema_checkpoint.sql` | Read-only confirmation of required tables, columns, and indexes | Executed |
-| `001_identity_schema.sql` | Adds identity, audit, and refresh-run schema | Executed |
-| `002_identity_backfill.sql` | First draft of backfill | Do not run; superseded |
-| `002_identity_backfill_safe.sql` | Safe one-time identity and historical-claim backfill | Executed |
-| `003_identity_verification.sql` | Read-only validation queries | Executed; CLI only displays last result of a multi-statement file, so checks were also run separately |
+| File                             | Purpose                                                         | Status                                                                                                |
+| -------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `000_schema_checkpoint.sql`      | Read-only confirmation of required tables, columns, and indexes | Executed                                                                                              |
+| `001_identity_schema.sql`        | Adds identity, audit, and refresh-run schema                    | Executed                                                                                              |
+| `002_identity_backfill.sql`      | First draft of backfill                                         | Do not run; superseded                                                                                |
+| `002_identity_backfill_safe.sql` | Safe one-time identity and historical-claim backfill            | Executed                                                                                              |
+| `003_identity_verification.sql`  | Read-only validation queries                                    | Executed; CLI only displays last result of a multi-statement file, so checks were also run separately |
 
 ## Schema changes applied manually
 
@@ -224,18 +224,18 @@ preserve an existing membership decision.
 
 The safe backfill was manually executed on DME Desk Prospector.
 
-| Check | Result |
-|---|---:|
-| Total leads | 4,599 |
-| Leads without `group_id` | 0 |
-| Unique NPI memberships | 4,495 |
-| Total memberships | 4,495 |
-| Strict groups | 4,168 |
-| Singleton groups | 315 |
-| Historical `claimed` events inserted | 3,494 |
-| Claimed leads missing historical claim event | 0 |
-| Exact-NPI active ownership conflicts | 0 |
-| Group-level active ownership conflicts | 2 groups |
+| Check                                        |   Result |
+| -------------------------------------------- | -------: |
+| Total leads                                  |    4,599 |
+| Leads without `group_id`                     |        0 |
+| Unique NPI memberships                       |    4,495 |
+| Total memberships                            |    4,495 |
+| Strict groups                                |    4,168 |
+| Singleton groups                             |      315 |
+| Historical `claimed` events inserted         |    3,494 |
+| Claimed leads missing historical claim event |        0 |
+| Exact-NPI active ownership conflicts         |        0 |
+| Group-level active ownership conflicts       | 2 groups |
 
 The difference between 4,599 leads and 4,495 unique NPIs reflects historical
 or disconnected rows sharing an NPI; each NPI has exactly one group membership.
@@ -245,19 +245,19 @@ or disconnected rows sharing an NPI; each NPI has exactly one group membership.
 The backfill did not create or change any ownership. It exposed two existing
 conflicts that must remain review cases until an explicit owner decision exists.
 
-| Group | NPIs | Current active owners |
-|---|---|---|
+| Group                                               | NPIs                       | Current active owners    |
+| --------------------------------------------------- | -------------------------- | ------------------------ |
 | 1FOOT 2FOOT Centre for Foot and Ankle Care, PC (VA) | `1548921265`, `1831477868` | Rick Nelson; Kaity James |
-| Advanced Home Medical Supplies Inc. (CT) | `1598747552`, `1891506093` | Nora Atkins; Rick Nelson |
+| Advanced Home Medical Supplies Inc. (CT)            | `1598747552`, `1891506093` | Nora Atkins; Rick Nelson |
 
 Detailed current claims at the time of verification:
 
-| Provider | NPI | Owner | Claimed at (UTC) |
-|---|---|---|---|
+| Provider                                       | NPI          | Owner       | Claimed at (UTC)    |
+| ---------------------------------------------- | ------------ | ----------- | ------------------- |
 | 1FOOT 2FOOT Centre for Foot and Ankle Care, PC | `1548921265` | Rick Nelson | 2026-07-06 14:39:53 |
 | 1FOOT 2FOOT Centre for Foot and Ankle Care, PC | `1831477868` | Kaity James | 2026-08-11 15:35:04 |
-| Advanced Home Medical Supplies Inc. | `1598747552` | Nora Atkins | 2026-07-06 19:43:06 |
-| Advanced Home Medical Supplies Inc. | `1891506093` | Rick Nelson | 2026-07-17 14:03:13 |
+| Advanced Home Medical Supplies Inc.            | `1598747552` | Nora Atkins | 2026-07-06 19:43:06 |
+| Advanced Home Medical Supplies Inc.            | `1891506093` | Rick Nelson | 2026-07-17 14:03:13 |
 
 No claim should be reassigned until a human makes an explicit approved-owner
 decision and the future reassignment path writes a corresponding audit event.
@@ -451,4 +451,3 @@ or `is_disconnected`.
 - Treat same NPI as a definite duplicate and same group as a review signal.
 - A fuzzy name match without corroborating phone, official, or address evidence
   must never auto-group records.
-
