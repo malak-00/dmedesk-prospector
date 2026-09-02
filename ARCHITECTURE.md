@@ -1,241 +1,391 @@
 # Architecture
 
 How DME Desk Prospector actually works today, end to end. Read this if
-you're picking up the codebase, debugging a production issue, or planning
-the Vercel + Supabase migration (see `MIGRATION_TO_VERCEL_SUPABASE.md`).
+you're picking up the codebase, debugging a production issue, or working on
+the lead-identity/ownership-audit layer described in `MASTER_PLAN.md`.
 
 ## The short version
 
-There are **two parallel implementations** of this app in one repo. Only
-one of them is where active development actually happens.
+There are **three implementations** of this app's backend in one repo. Only
+one of them is live.
 
-| | `appscript/` + `docs/` | `backend/` |
-|---|---|---|
-| Status | **Active — this is the real app** | Frozen / reference only |
-| Hosting | Google Apps Script (backend) + GitHub Pages (frontend) | Node/Express, self-hosted |
-| Database | Google Sheets | Google Sheets (via service account) |
-| Auth, claimed leads, statuses, notes, reminders, taxonomies, search-resume | ✅ | ❌ never built here |
-| Fax field, postal code search, sticky headers, per-user Claimed scoping | ✅ (latest) | ❌ predates all of this |
+| | `worker/` + `docs/` | `appscript/` | `backend/` |
+|---|---|---|---|
+| Status | **Live — this is the real app** | Frozen predecessor | Frozen / reference only |
+| Hosting | Cloudflare Workers (API) + GitHub Pages (frontend) | Google Apps Script + GitHub Pages | Node/Express, self-hosted |
+| Database | Supabase Postgres | Google Sheets | Google Sheets (service account) |
+| Auth | `app_users` + bcrypt + signed JWT | `Users` sheet tab, plaintext passwords | ❌ never built |
+| Claimed leads, statuses, notes, reminders, taxonomies, search resume, admin | ✅ | ✅ (Sheets-backed) | ❌ never built |
 
-`backend/` was the original Node implementation. It was abandoned once
-free Node hosts started requiring card verification and the team had no
-machine to self-host — `appscript/` + `docs/` is the free replacement, and
-every feature built since then (sign-in, claimed leads, taxonomies, search
-resume, sticky UI, etc.) only exists there. **Treat `backend/` as a
-historical snapshot, not a second copy of the current app.** The rest of
-this document describes `appscript/` + `docs/` exclusively.
+`backend/` was the original Node implementation, abandoned once free Node
+hosts started requiring card verification. `appscript/` was its free
+replacement and carried the app for most of its life — every feature that
+exists today was designed there first. `worker/` is the current port of
+`appscript/` onto real hosting and a real database; the frontend in `docs/`
+was carried across almost unchanged.
+
+**Treat `appscript/` and `backend/` as historical snapshots, not second
+copies of the current app.** The rest of this document describes
+`worker/` + `docs/` exclusively. The tail section, *How we got here*,
+explains the Apps Script-era decisions that are still visible in the code.
 
 ## Request flow
 
 ```
-Browser (docs/index.html + app.js)
-   │  fetch(`${APPS_SCRIPT_URL}?path=search/companies&token=...`)
-   │  (GET: query string. POST: query string + JSON body sent as text/plain)
+Browser (docs/index.html + app.js + config.js)
+   │  fetch(`${API_BASE_URL}/search/companies?...`)
+   │  Authorization: Bearer <JWT>       POST bodies are real application/json
    ▼
-Google Apps Script Web App (appscript/Code.js -- doGet/doPost)
-   │  dispatches on the `path` query param (Apps Script has no real router)
-   │  every response is HTTP 200 -- body has a `success` boolean instead
+Cloudflare Worker (worker/src/index.js -- Hono)
+   │  real routes, real HTTP status codes, real CORS
+   │  middleware: makeConfig(env) -> verify JWT -> attach session
    ▼
-appscript/services/*.js
+worker/src/services/* and worker/src/repos/*
    │
-   ├─ NppesService        → https://npiregistry.cms.hhs.gov (public NPPES API)
-   ├─ FoursquareService    → Foursquare Places API (optional, needs a key)
-   ├─ OsmService           → OpenStreetMap Nominatim (free, no key, website fallback)
-   ├─ CmsService           → CMS Medicare DMEPOS supplier data (free, no key)
-   ├─ ScraperService       → fetches a company's own website (regex-based extraction)
-   ├─ ScoringService       → pure function, no I/O
-   ├─ AiBriefService       → Gemini API (optional, needs a key)
-   └─ SheetsStore / AuthService / TaxonomyService / SearchProgressService
-          → Google Sheets (SpreadsheetApp), see "Data model" below
+   ├─ services/nppes.js        → fakeNPI Edge Function (self-hosted NPPES replica)
+   ├─ services/companyService.js → the search/dedup/score orchestrator
+   ├─ services/scraper.js       → the company's own website (regex extraction, opt-in)
+   ├─ services/aiBrief.js       → Gemini (optional, needs a key)
+   ├─ services/googleSheets.js  → Google Sheets API ("Export to Sheet" only)
+   ├─ services/{cms,foursquare,osm}.js → present but not in the live pipeline (see below)
+   ├─ lib/scoring.js            → pure function, no I/O
+   └─ repos/*.js                → Supabase (service-role client)
 ```
 
-Nothing is cached across requests except `EnrichmentCache` (Foursquare/OSM
-results, in a Sheets-backed cache tab, to avoid re-hitting those APIs for a
-company already seen) and `AuthService`'s session tokens (in
-`CacheService`, Apps Script's built-in key-value cache, max 6h TTL).
-**There is no database in the conventional sense** — every request that
-needs persistent state reads/writes a Google Sheet directly, live, on that
-request.
+The Worker is the trusted server side. It holds the Supabase
+**service-role** key and therefore bypasses RLS — the browser never talks
+to Supabase directly and never sees that key. All secrets live in
+Wrangler's secret store (`wrangler secret put`), never in `wrangler.toml`
+and never in the repo; `worker/.dev.vars.example` lists them for local dev.
 
-## Why the API looks the way it does (and why it's CORS-free by design)
+### Response shape
 
-Google Apps Script Web Apps have three real constraints that shaped
-everything in `Code.js` and `docs/app.js`'s request layer:
+Every response is `{ success: true, data }` or
+`{ success: false, status, error }`. That shape is an Apps Script holdover
+kept **on purpose** so `docs/app.js`'s existing `unwrap()` needed no
+changes during the port. Unlike Apps Script, the Worker also sends a real
+HTTP status code matching `status`, so both signals agree.
 
-1. **No custom router.** Every request — GET or POST — carries a `?path=`
-   query param that `handleRequest_` switches on.
-2. **No custom HTTP status codes.** Every response is HTTP 200; the JSON
-   body's `success` field is the real signal, and `status` inside an error
-   body is a *logical* status (400/401/502/503), not a real one.
-3. **No real CORS preflight support.** Apps Script Web Apps don't reliably
-   handle an `OPTIONS` preflight request. Rather than fight that, the app
-   is built so the browser never sends one — every request is kept a CORS
-   "simple request":
-   - the session token travels as a `?token=` query param, never an
-     `Authorization` header (a custom header is what triggers preflight)
-   - POST bodies are sent with `Content-Type: text/plain` (not
-     `application/json`, which also triggers preflight) — `Code.js`'s
-     `readJsonBody_` parses it as JSON regardless of the declared type
-
-This is **not** a real CORS bug or misconfiguration — it's a deliberate
-workaround for what Apps Script Web Apps can't do. See
-`MIGRATION_TO_VERCEL_SUPABASE.md` for why this whole layer disappears once
-the API moves to a real host.
+`app.onError` maps any error named `*NotConfiguredError`
+(Foursquare/Gemini/Sheets/Auth/GoogleSheets) to **503** — that's how an
+unset optional API key surfaces as a clear "not configured" message
+instead of a generic failure.
 
 ## Auth & sessions
 
-- Accounts live in a `Users` tab: `Username | Password | Display Name`
-  (plus an auto-created `Exclude Keywords` column for each user's saved
-  search default). Passwords are **plain text** — the tradeoff that makes
-  it possible for a non-technical owner to set/reset accounts by editing a
-  spreadsheet cell, with no hashing tool involved.
-- The `Users` tab is strongly recommended to live in a **separate,
-  private** spreadsheet (`AUTH_SHEET_ID` Script Property) that only the
-  app owner can open — otherwise teammates who share edit access to the
-  leads sheet could read each other's passwords.
-- `AuthService.login` checks the password via a constant-time SHA-256
-  comparison (hardens the *comparison*, not the plaintext storage), then
-  mints an opaque token (`Utilities.getUuid()` twice, concatenated) and
-  stores `{ username, displayName, excludeKeywords }` in `CacheService`
-  keyed by that token, TTL 21600s (6h — `CacheService`'s own maximum).
-- Every non-public route calls `requireSession_`, which is just a
-  `CacheService` lookup by token — no JWT, no signature, nothing else.
-- `PUBLIC_PATHS_` (only `health` and `auth/login`) are the sole routes
-  reachable without a valid token.
+- Accounts live in `app_users` (`id`, `username`, `password_hash`,
+  `display_name`, `exclude_keywords`, `is_admin`). Passwords are
+  **bcrypt-hashed** — the plaintext-in-a-spreadsheet tradeoff of the Apps
+  Script era is gone.
+- There is no sign-up flow. Accounts are created by running
+  `worker/scripts/seed-user.mjs` locally with the Supabase env vars set.
+- `Auth.login` looks the user up case-insensitively, `bcrypt.compare`s the
+  password (with a 400 ms delay on failure to slow brute-forcing), then
+  mints an **HS256 JWT** (`jose`) with `sub = user.id` and
+  `{ username, displayName, excludeKeywords, isAdmin }` claims, expiring in
+  6 h.
+- Sessions are **stateless**. There is no server-side session store, so
+  there is also no way to revoke a token early — `POST /auth/logout` is
+  client-side only (discard the token). Add a `revoked_tokens` table keyed
+  by JTI if that ever matters.
+- One `app.use("*")` middleware gates everything: it reads
+  `Authorization: Bearer <token>` (falling back to a `?token=` query param
+  for compatibility), verifies it, and attaches `session` to the request.
+  A bad/expired/missing token is a plain 401, never a throw.
+- `PUBLIC_PATHS` is only `/health` and `/auth/login`.
+- Admin routes call `requireAdmin(session)`, which throws 403 unless
+  `session.isAdmin`. That claim is baked into the JWT at login from
+  `app_users.is_admin` — **the server-side check is the actual control**;
+  the frontend hiding an admin tab is only cosmetic.
+- The 6 h expiry is inherited from the old `CacheService` TTL ceiling for
+  parity. Nothing forces it now that it's just a JWT claim.
 
-## The data model (today: entirely Google Sheets)
+## The data model (Supabase Postgres)
 
-One spreadsheet (`GOOGLE_SHEET_ID`) holds:
+### Tables the live app reads and writes
 
-| Tab | Purpose | Created by |
-|---|---|---|
-| `Claimed - <Display Name>` (one per teammate) | That teammate's claimed leads — full lead columns (see below) + tracking columns | `SheetsStore.getUserSheet_`, auto-created on first claim |
-| `Disconnected` | Shared dead-lead bin — leads sent here from Prospect or moved out of a Claimed tab | `SheetsStore.getDisconnectedSheet_`, auto-created |
-| `Leads` (legacy) | Pre-per-teammate-tabs claims. Still *read* for dedup, never written to | manual, historical |
-| `Users` | Sign-in accounts (see Auth above) | manual, required |
-| `Taxonomies` | `Facility Type \| Code \| Description \| Enabled` — the searchable specialty reference table behind the search form's taxonomy multiselect | manual (`Facility Type`/`Code`/`Description`), auto-appends `Enabled` |
-| `SearchProgress` | Per-user, per-filter-combination pagination bookmark (`Username \| Filter Fingerprint \| Variant Skips \| Seen Npis \| Updated At`) | `SearchProgressService`, auto-created (lives in `AUTH_SHEET_ID` if set, else the main sheet) |
-| `Suggestions` | In-app feedback submissions | `SheetsStore`, auto-created (same private-sheet preference as `Users`) |
-| `EnrichmentCache` (tab name may vary) | Cached Foursquare/OSM lookups keyed by something like normalized name+city | `EnrichmentCache.js` |
+| Table | Purpose |
+|---|---|
+| `leads` | The sales workflow table. One row per claimed or disconnected lead: `npi`, `claimed_by`, `claimed_at`, the provider snapshot captured at claim time (company name, phone, address, specialty, Medicare values, `nppes_last_updated`), and the sales fields (`status`, `status_updated_by/at`, `notes`, `reminder_at`, `is_disconnected`) |
+| `app_users` | Sign-in accounts (see Auth above) |
+| `taxonomies` | `Facility Type / Code / Description / Enabled` — the specialty reference behind the search form's multiselect, and the description→code lookup the search path needs |
+| `search_progress` | Per-user, per-filter-combination pagination bookmark (variant skips + seen NPIs) |
+| `suggestions` | In-app feedback submissions (stored only — the old email notification has no equivalent wired up) |
+| `enrichment_cache` | Key/value cache with a 1 h TTL, replacing Apps Script's `CacheService`. Distinguishes "never looked up" (absent) from "looked up, found nothing" (a real cached `null`) |
 
-**Lead columns** (every Claimed/Disconnected/legacy tab), from
-`CsvExport.CSV_COLUMNS` + `SheetsStore.TRACKING_COLUMNS`:
+One `leads` table with `claimed_by` + `is_disconnected` replaced the old
+per-teammate `Claimed - <Name>` tabs plus a shared `Disconnected` tab
+entirely.
 
-```
-Company Name, NPI, Phone, Website, Email, Address, City, State, Postal Code,
-Specialty, Contact Name, Contact Title, Contact Role, Contact Source,
-Additional Contacts Found, Rating, Score, Score %, Data Sources,
-Medicare Claims, Medicare Beneficiaries, Medicare Payment $, Contact Phone,
-NPPES Last Updated,
-Claimed By, Claimed At, Status, Status Updated By, Status Updated At,
-Notes, Reminder At
-```
+### Tables present but not yet read by the Worker
 
-Two architectural rules make this whole system safe to extend without a
-migration step, and matter a lot if you're designing a Postgres schema to
-replace it:
+| Table | Purpose |
+|---|---|
+| `npi_records` | A copy of the NPPES provider registry, in the same project as `leads`. Populated, and its identity columns verified — but the Worker still reaches the registry through the fakeNPI Edge Function rather than querying this table. Cutting over is a planned step (`MASTER_PLAN.md` Phase 3) |
+| `lead_groups`, `lead_group_members`, `lead_ownership_events`, `provider_field_history`, `refresh_runs`, `leads.group_id` | The identity and audit layer. Installed and backfilled; deliberately not connected to application code yet — see the next section |
 
-1. **Everything is looked up by column *label*, never position.**
-   `buildColMap_`/`colIndex_` read row 1 as a header and build a
-   label→index map every time. Adding a new field is just appending a
-   label to `CSV_COLUMNS`/`TRACKING_COLUMNS` — old rows in old tabs simply
-   don't have a value there (reads as blank), nothing shifts or breaks.
-2. **Rows are found by NPI, scanned across every relevant tab.** There's
-   no primary key/foreign key — `findLeadLocations_` reads a whole tab's
-   NPI column and does a linear scan. This is the single biggest thing a
-   real database fixes (see the migration doc): an indexed `WHERE npi = $1`
-   query replaces an O(rows) or, for a bulk action across many leads,
-   O(rows × leads) full-column scan. That scan cost is exactly what caused
-   the "Return to Prospect" timeout bug fixed on 2026-07-21 — Apps
-   Script's ~6-minute execution cap got hit mid-scan for a large
-   multi-select, and the killed request looked to the browser like a hung
-   fetch (easy to misdiagnose as a CORS failure, since the response never
-   arrived at all).
+### Claiming, and why it isn't atomic yet
 
-## The enrichment + scoring pipeline (`CompanyService.searchCompanies`)
+Claiming a lead is `POST /export/sheets` →
+`leadsRepo.exportCompaniesToLeads`. It does a **read-then-insert**: select
+the caller's existing active claims for those NPIs, filter those out,
+insert the rest.
+
+It is deliberately a plain `insert`, not an `upsert({ onConflict })`. The
+active-claim uniqueness rule `idx_leads_npi_claimed_by_active` is a
+*partial* unique index (only where `NOT is_disconnected`), and Postgres can
+only use a partial index as an `ON CONFLICT` arbiter if the same `WHERE`
+predicate is repeated in the `ON CONFLICT` clause — something PostgREST's
+`on_conflict` param cannot express. Trying anyway is what broke Claim Lead
+in production once.
+
+The consequence worth knowing: **two concurrent requests can both pass the
+pre-check before either inserts.** That's tolerable for today's exact-NPI
+rule, which the partial unique index still backstops at the database level.
+It is *not* good enough for a group-level ownership check, where there's no
+single index to fall back on. That's why the planned group-aware claim has
+to be one atomic database-side operation (an RPC or SQL function), not
+another read-then-write in the repo layer.
+
+Related lifecycle operations:
+
+- `POST /leads/disconnect` — `update` sets `is_disconnected = true`, scoped
+  to the caller's own rows.
+- `POST /leads/return-to-prospect` — **deletes** the caller's rows, so the
+  lead resurfaces in Prospect.
+- Status/notes/reminder writes all go through `requireOwnLead`, which
+  scopes every write to `claimed_by = session.id`.
+
+## The search pipeline (`companyService.searchCompanies`)
 
 For a broad search (not an exact NPI lookup):
 
-1. **NPPES** (`NppesService.searchProviders`) — the only *source* of leads.
-   Queries the public NPI Registry API for NPI-2 (organization) records.
-   NPPES's own filters are unreliable/partial matches for
-   name-contains/taxonomy/state, so the app re-filters everything itself
-   client-side (server-side, but "client" relative to NPPES) against the
-   *displayed* location, not just whatever NPPES happened to match.
-2. **Branch-merge + resume** — `buildCriteriaVariants_` expands a
-   multi-state/multi-taxonomy search into one NPPES query per
-   state×taxonomy combination, round-robins across them (so one abundant
-   variant can't crowd out the others before `desiredLimit` is hit), and
-   merges duplicate companies found via more than one variant into a
-   single row. `criteria.variantSkips`/`excludeNpis` (from the frontend's
-   "Search more" button, or auto-loaded from a `SearchProgress` bookmark
-   for a brand-new "Search" click) let it resume exactly where a previous
-   call left off instead of re-showing the same top-of-registry results
-   every time.
-3. **Claimed-lead exclusion** — every result is checked against
-   `SheetsStore.getClaimedNpis()` (union of every Claimed tab + Disconnected)
-   so a lead already in someone's pipeline never resurfaces in Prospect.
-4. **Enrichment**, each independently optional/degradable:
-   - `FoursquareService` → phone/website/rating (needs a key; cached)
-   - `OsmService` → Nominatim, free fallback specifically for a missing
-     website
-   - `CmsService` → Medicare DMEPOS claim volume/beneficiaries/payment for
-     that NPI, from CMS's free public data API
-   - `ScraperService` (only if the user opted in — slower) → regex-based
-     extraction of contact names/titles from the company's own website
-     (Apps Script has no `cheerio`/real DOM, so this is a lossy,
-     line-heuristic reimplementation of what `backend/`'s Node scraper
-     does properly)
-5. **`ScoringService.scoreCompany`** — a pure function over a fixed
-   `WEIGHTS` map (has website, has phone, has rating, Medicare volume,
-   etc.) — `MAX_POSSIBLE_SCORE` is derived from `WEIGHTS` automatically, so
-   adding/removing a signal never requires updating a second constant.
-6. **`AiBriefService`** (Gemini, optional) — generates a call-prep brief
-   for one company at a time, on demand (not part of the bulk search).
+1. **Taxonomy resolution.** `attachTaxonomyCodes` turns the selected
+   taxonomy *descriptions* into *codes* using our own `taxonomies` table,
+   because the registry data has `taxonomy_code` populated but not
+   `taxonomy_description`.
+2. **Resume.** Unless the request carries its own `variantSkips` (a "Search
+   more" click) or `resetProgress=true`, the saved `search_progress`
+   bookmark for this user + filter combination is loaded, so a fresh
+   "Search" continues where the last one stopped instead of re-showing the
+   top of the registry. `resetProgress` is a self-contained detour: it
+   starts from skip 0 for this run without reading *or* writing the saved
+   bookmark.
+3. **Branch-merge fan-out.** `buildCriteriaVariants` expands a
+   multi-state/multi-taxonomy search into one query per state×taxonomy
+   combination and round-robins across them, so one abundant variant can't
+   crowd out the others before the limit is hit. Duplicate companies found
+   via more than one variant merge into a single row.
+   - Page size 200, at most 30 fetches per request, and **at most 2 in
+     flight at once** — fakeNPI runs on a Nano-tier Supabase project and
+     reliably 500s several queries at a time under an unbounded
+     `Promise.all`.
+   - A variant that returns a short or empty page is marked exhausted with
+     an `EXHAUSTED_SKIP = -1` sentinel, so resuming reads back as "done"
+     rather than querying past its real total (which fakeNPI 500s on).
+   - A variant whose query fails is dropped and reported in
+     `rejectedVariants` rather than failing the whole search.
+4. **Claimed-lead exclusion.** Each round does **one batched** check of
+   that round's candidate NPIs against `leads`, so a lead already in
+   someone's pipeline never resurfaces in Prospect. (This replaced an
+   up-front whole-table preload.)
+5. **Scraping** (opt-in, `?scrape=true`) — regex/heuristic extraction of
+   contact names and titles from the company's own website. Workers ships
+   no DOM or `cheerio`, so this is best-effort only, the same tradeoff the
+   Apps Script port already made.
+6. **Medicare filters** — `requireCmsClaims` and `minMedicareClaims` filter
+   on the Medicare data already attached to each provider.
+7. **`scoreCompany`** — a pure function over a fixed `WEIGHTS` map.
+   `MAX_POSSIBLE_SCORE` is derived from `WEIGHTS` automatically, so adding
+   or removing a signal never requires updating a second constant. Results
+   are sorted by score.
+
+### Enrichment services that are no longer in the pipeline
+
+`foursquare.js`, `osm.js`, and `cms.js` are all still in the tree but
+**not called by the live search**:
+
+- **Foursquare** — the API key is over its rate limit and no longer usable.
+  `foursquare.js` still backs `GET /debug/foursquare`.
+- **OSM/Nominatim** — was only a website fallback for companies Foursquare
+  didn't cover. With Foursquare gone that meant nearly every company, and
+  Nominatim's 1 req/sec throttle added roughly a second each while eating
+  into Cloudflare's per-invocation subrequest budget.
+- **CMS** — no longer a separate live lookup: fakeNPI's Edge Function joins
+  `npi_cms_enrichment` into every result, so `provider.medicare` is already
+  populated by the time the result is normalized.
+
+All three files are left untouched in case any is revived (e.g. a live CMS
+lookup for NPIs fakeNPI has no enrichment for).
+
+### The provider registry dependency
+
+`services/nppes.js` talks to **fakeNPI** — a self-hosted NPPES replica with
+the same request/response shape as the public NPI Registry API but no cap
+on `skip` — through `FAKENPI_BASE_URL`. It defaults to an Edge Function on
+the *separate* fakeNPI Supabase project (`zvthhjediuelpvzkkzvy`), not the
+DME Desk project that holds `leads`.
+
+That split is the thing to keep in mind when reading this code: **the app's
+database and the app's provider search currently live in two different
+Supabase projects.** `npi_records` now exists in the DME Desk project too,
+so the planned cutover is to query it directly through the Worker's
+existing service-role client and drop the cross-project Edge Function hop.
+Pointing `FAKENPI_BASE_URL` back at the real NPPES API also works without a
+code change, at the cost of the `skip` cap.
+
+## Export to Sheet (separate from claiming)
+
+`POST /export/google-sheet` and `POST /export/google-sheet/claimed` paste a
+copy of selected leads into a real shared Google Sheet. This is **not**
+claiming — claiming writes to Supabase and is what powers the Claimed Leads
+view; this is a convenience copy for people who want a spreadsheet.
+
+It authenticates with an OAuth client + refresh token authorized as a real
+Google account, **not** a service-account key, because some Workspace orgs
+block service-account key creation outright
+(`iam.disableServiceAccountKeyCreation`). Setup steps are in
+`worker/README.md`. Leave the four secrets unset and the button returns a
+clear "not configured" 503.
+
+The `/claimed` variant takes NPIs rather than a client-supplied companies
+payload and re-fetches them server-side, scoped to the caller's own claimed
+leads — the same trust boundary as `/leads/disconnect`.
 
 ## Frontend (`docs/`)
 
-Plain HTML/CSS/vanilla JS — no build step, no framework, so a plain static
-host (GitHub Pages today) can serve it as-is.
+Plain HTML/CSS/vanilla JS — no build step, no framework, so a static host
+(GitHub Pages) serves it as-is. Carried over from the Apps Script era
+nearly unchanged.
 
-- `config.js` — the one file that changes per-deployment: `APPS_SCRIPT_URL`
-  (the Apps Script Web App's `/exec` URL).
-- `app.js` — everything: the request layer (`apiGet`/`apiPost`, see the CORS
-  note above), session storage (`sessionStorage`, deliberately not
-  `localStorage`, so closing the tab/browser signs you out rather than
-  persisting indefinitely up to the 6h server-side TTL), the Prospect
-  search view, the Claimed Leads view (own-leads-only, searchable,
-  sortable), taxonomy multiselect, reminders/notifications, light/dark
-  theme, and the sticky header/toolbar/table-header layout mechanics.
-- `style.css` — includes a `ResizeObserver`-driven mechanism: since
-  `.search-panel`/`.results-toolbar` heights genuinely vary (responsive
-  wrapping, a chip appearing), `app.js` keeps `--search-panel-h`/
-  `--toolbar-h` CSS custom properties live, and every sticky element below
-  references them via `calc()` for its `top` offset — the app header,
-  search panel, results toolbar, and table `<thead>` all stack correctly
-  under each other while scrolling, on any screen size. Short (laptop)
-  viewports get a `@media (max-height: 820px)` rule that shrinks that whole
-  stack so it doesn't crowd out the actual result rows.
+- `config.js` — the one file that changes per deployment: `API_BASE_URL`,
+  the deployed Worker URL. Nothing sensitive goes here.
+- `app.js` — everything: the request layer (`apiGet`/`apiPost`/`unwrap`),
+  session storage, the Prospect search view, the Claimed Leads view
+  (own-leads-only, searchable, sortable), the admin view, taxonomy
+  multiselect, reminders/notifications, light/dark theme, and the sticky
+  layout mechanics.
+  - Sessions live in `sessionStorage`, deliberately not `localStorage`, so
+    closing the tab signs you out rather than persisting up to the full 6 h
+    token lifetime.
+- `style.css` — includes a `ResizeObserver`-driven mechanism: because the
+  search panel and results toolbar genuinely vary in height (responsive
+  wrapping, a chip appearing), `app.js` keeps `--search-panel-h` and
+  `--toolbar-h` live as CSS custom properties, and every sticky element
+  below references them via `calc()` for its `top` offset — so the header,
+  search panel, toolbar, and table `<thead>` stack correctly while
+  scrolling at any screen size. A `@media (max-height: 820px)` rule shrinks
+  the stack on laptop viewports so it doesn't crowd out result rows.
+
+## The identity & audit layer (built, not connected)
+
+This is the current area of active work, and the most important thing to
+understand about the repo's present state:
+
+**The new schema is installed, backfilled, and verified in production — and
+no application code touches it.** That is deliberate. The approach is to
+build each piece and prove it in isolation first, then connect it to the
+running app as a separate, reviewable step. Nothing about the live claim,
+search, export, or admin flow changed when this went in.
+
+What exists in the database today (installed via `sql/001_identity_schema.sql`
+and populated by `sql/002_identity_backfill_safe.sql`):
+
+| Object | Purpose |
+|---|---|
+| `lead_groups` | One row per real-world provider entity, keyed by a normalized identity key |
+| `lead_group_members` | Maps each NPI to exactly one group, with relationship type (`primary`, `alias`, `possible_duplicate`, `possible_successor`, `confirmed_successor`) and review metadata |
+| `lead_ownership_events` | **Append-only** claim/reassign/release/provider-alert history |
+| `provider_field_history` | **Append-only** old→new provider field values, written *before* the current value is overwritten |
+| `refresh_runs` | One row per NPPES or Medicare import run; every staging and history row carries its `refresh_run_id` |
+| `leads.group_id` | Nullable FK to `lead_groups` |
+
+Protections that came with it: RLS enabled on all five new tables, `anon`
+and `authenticated` revoked (the service-role Worker path is the intended
+access route), and `BEFORE UPDATE OR DELETE` triggers on both history
+tables that raise an exception — audit rows cannot be edited or deleted,
+only inserted.
+
+Why it doesn't break anything: the change was purely additive. No existing
+column was dropped or renamed, no existing index or uniqueness rule
+changed, no trigger was added to `leads`, `group_id` stays nullable, and
+the backfill wrote only `leads.group_id` plus audit inserts — it never
+touched `claimed_by`, `claimed_at`, status, notes, reminders, or provider
+snapshots.
+
+The grouping rule used for the backfill is deterministic (Tier 1):
+`normalized name + state + authorized official + first valid 10-digit
+phone`. When any of those signals is missing it creates a singleton group
+(`singleton:<npi>`) rather than guessing that two providers are the same
+entity. Fuzzy matching (Tier 2) is not implemented, and by design will only
+ever *flag for review* — a name match alone must never auto-group.
+
+See `MASTER_PLAN.md` for the phase plan and `sql/README.md` for execution
+order. All Supabase changes are delivered as reviewed SQL files and run
+manually.
 
 ## Known limitations of the current architecture
 
-Worth naming explicitly, since they're exactly what motivates the Vercel +
-Supabase migration:
+- **Claiming is not atomic** (see above). Fine for the exact-NPI rule the
+  partial unique index backstops; a blocker for group-level conflict
+  checks, which is why that work needs a database-side RPC.
+- **Two Supabase projects.** Provider search goes cross-project to
+  fakeNPI's Edge Function while all app data lives in the DME Desk project.
+  `npi_records` is already copied over; the cutover hasn't happened.
+- **fakeNPI runs on Nano-tier compute**, which is why search concurrency is
+  pinned at 2 and why a variant can fail mid-search and get dropped.
+- **No token revocation.** Stateless JWTs mean a compromised token is valid
+  until it expires.
+- **Enrichment is thinner than it looks.** Three enrichment services are in
+  the tree but disabled; scoring signals that depended on Foursquare
+  (rating, some phone/website coverage) are effectively degraded.
+- **Scraping has no real HTML parser** — regex heuristics only.
+- **Suggestions are stored but never delivered** — no email path is wired
+  up in the Worker.
+- **Two ownership conflicts are known and unresolved.** The identity
+  backfill surfaced two groups whose NPIs are actively claimed by different
+  people. They are documented in
+  `documentation/operations/CHAT_HISTORY_2026-09-02.md` and must be settled
+  by an explicit human decision — nothing in the system will resolve them
+  automatically, and the group-aware claim path shouldn't ship before they
+  are.
 
-- **Apps Script's ~6-minute execution cap.** A slow enough request (large
-  bulk action, cold Sheets access, many NPPES pages) can get killed
-  mid-flight with no response ever sent — this already caused one real bug
-  (see above).
-- **Google Sheets as a database has no indexes.** Every lookup by NPI is a
-  linear scan of a tab's column; every "how many leads does X have" is a
-  full read. Fine at the current, modest per-teammate row counts; will not
-  scale gracefully.
-- **No real transactions.** A multi-step write (e.g. move a row from a
-  Claimed tab to Disconnected) is "append then delete," not atomic — a
-  crash mid-operation could in theory leave a row duplicated or dropped.
-- **Every response is HTTP 200; every request is a CORS workaround.** Not
-  wrong, just entirely a byproduct of the hosting choice — a real host
-  removes the need for all of it.
-- **Plaintext passwords.** Acceptable today only because the `Users` tab
-  is meant to live in a private, owner-only spreadsheet that teammates
-  never see.
+## How we got here
+
+Some of the code's shape only makes sense with the history, especially in
+`docs/`, which predates the Worker.
+
+**Google Apps Script (`appscript/`) had three constraints** that dictated
+the original API design:
+
+1. **No custom router** — every request carried a `?path=` query param that
+   a single `doGet`/`doPost` switch dispatched on.
+2. **No custom HTTP status codes** — every response was HTTP 200, and the
+   body's `success` field was the real signal. That's why the response
+   envelope exists at all.
+3. **No reliable CORS preflight** — so every request was kept a CORS
+   "simple request": the session token travelled as `?token=` rather than
+   an `Authorization` header, and POST bodies were sent as `text/plain`.
+
+The Worker fixed all three (real routes, real status codes, real CORS,
+`Authorization: Bearer`, real `application/json`), but **kept the response
+envelope** so the frontend's `unwrap()` didn't have to change. The
+`?token=` fallback in the auth middleware is the last visible remnant.
+
+**Google Sheets as the database** had its own consequences, which the
+Postgres schema was designed to fix:
+
+- Every lookup was a linear scan of a tab's NPI column — there were no
+  indexes and no keys. That scan cost is what caused the "Return to
+  Prospect" timeout bug in July 2026: Apps Script's ~6-minute execution cap
+  got hit mid-scan on a large multi-select, and the killed request looked
+  to the browser like a hung fetch (easy to misdiagnose as a CORS failure,
+  since no response ever arrived).
+- Multi-step writes were "append then delete", not transactions.
+- Passwords were plaintext, acceptable only because the `Users` tab was
+  meant to live in a private, owner-only spreadsheet.
+
+`MIGRATION_TO_VERCEL_SUPABASE.md` is the original migration plan and still
+documents the Supabase schema design; the app landed on Cloudflare Workers
+rather than Vercel, but the database half is what was actually built.
+`SUPABASE_CHANGELOG.md` records every database change since.
