@@ -173,8 +173,8 @@ changes.
 
 | Document | Contents |
 |---|---|
-| [`LEAD_GROUPING_PLAN.md`](file:///C:/Users/ben.arthur/.gemini/antigravity-ide/brain/950ba7f6-4205-41b3-869a-9e333b787fba/LEAD_GROUPING_PLAN.md) | Full DDL, algorithm details, Worker endpoint specs, open questions for colleague review |
-| [`MASTER_PLAN_NAME_HISTORY_ADDENDUM.md`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/MASTER_PLAN_NAME_HISTORY_ADDENDUM.md) | Name alias, successor link, and ownership event design principles |
-| [`ARCHITECTURE.md`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/ARCHITECTURE.md) | Current system architecture |
-| [`MIGRATION_TO_VERCEL_SUPABASE.md`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/MIGRATION_TO_VERCEL_SUPABASE.md) | Original Supabase schema and migration plan |
-| [`SUPABASE_CHANGELOG.md`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/SUPABASE_CHANGELOG.md) | All Supabase changes to date |
+| `LEAD_GROUPING_PLAN.md` | Full DDL, algorithm details, Worker endpoint specs, open questions for colleague review |
+| [`MASTER_PLAN_NAME_HISTORY_ADDENDUM.md`](./documentation/plans/MASTER_PLAN_NAME_HISTORY_ADDENDUM.md) | Name alias, successor link, and ownership event design principles |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Current system architecture |
+| [`MIGRATION_TO_VERCEL_SUPABASE.md`](./MIGRATION_TO_VERCEL_SUPABASE.md) | Original Supabase schema and migration plan |
+| [`SUPABASE_CHANGELOG.md`](./SUPABASE_CHANGELOG.md) | All Supabase changes to date |
