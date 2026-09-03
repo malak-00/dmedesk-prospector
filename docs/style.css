@@ -81,6 +81,7 @@ body {
   font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.5;
+  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -117,7 +118,7 @@ body {
 
 /* ---------- Layout ---------- */
 
-.app-main { max-width: 1800px; margin: 0 auto; padding: 20px 24px 48px; display: flex; flex-direction: column; gap: 18px; }
+.app-main { max-width: 1800px; min-width: 0; margin: 0 auto; padding: 20px 24px 48px; display: flex; flex-direction: column; gap: 18px; }
 
 /* Frozen while scrolling a long lead list, so a rep never has to scroll
    back to the top to change a filter or click an action button. Stacked in
@@ -135,6 +136,7 @@ body {
 }
 
 .search-panel, .results-panel {
+  min-width: 0;
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
@@ -426,7 +428,7 @@ body {
   top: calc(var(--header-h) + var(--search-panel-h));
   z-index: 12;
 }
-.results-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.results-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
 .inline-field { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
 .inline-field select {
   font-family: var(--font-ui); font-size: 12px; color: var(--ink);
@@ -449,7 +451,7 @@ body {
   padding: 3px 10px 3px 10px; border-radius: 999px;
 }
 .selection-chip[hidden] { display: none; } /* wins over .selection-chip's own display:flex */
-.results-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.results-actions { display: flex; gap: 8px; flex-shrink: 0; min-width: 0; }
 
 /* ---------- Table ---------- */
 
@@ -460,6 +462,7 @@ body {
    for the thead below, which is why its `top` offset accounts for the app
    header's own height (plus the search-panel and toolbar stacked above it,
    see the .search-panel/.results-toolbar comment) instead of being 0. */
+.table-wrap { max-width: 100%; }
 .results-table { width: 100%; border-collapse: collapse; }
 .results-table thead th {
   position: sticky;
@@ -720,14 +723,16 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 
 /* ---------- Header user chip ---------- */
 
-.header-right { display: flex; align-items: center; gap: 16px; }
+.header-right { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .user-chip {
   display: flex; align-items: center; gap: 10px;
   font-size: 13px; color: var(--muted);
   padding: 4px 12px; border: 1px solid var(--hairline); border-radius: 999px;
+  min-width: 0;
 }
 .user-chip[hidden] { display: none; }
 .user-chip #userName { color: var(--ink); font-weight: 600; }
+.user-chip #userName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- View tabs ---------- */
 
@@ -864,12 +869,32 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
   .header-right { gap: 8px; }
   .status { display: none; }
   #suggestBtn span { display: none; }
+
+  /* Keep dense operational tables readable without widening the whole page. */
+  .table-wrap {
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+  }
+  .results-table { min-width: 760px; }
+  .claimed-table { min-width: 1120px; }
+  .admin-panel .results-table,
+  .admin-leads-table-wrap .results-table { min-width: 700px; }
+  .results-table thead th { position: static; }
 }
 
-/* Narrow phones -- even 2 field columns get cramped below ~480px. */
-@media (max-width: 480px) {
+/* Split-window widths are narrower than a normal tablet, so stack the form
+   before controls become unreadable. */
+@media (max-width: 640px) {
+  .app-main { padding-left: 14px; padding-right: 14px; }
+  .search-panel { padding-left: 14px; padding-right: 14px; }
   .field-grid { grid-template-columns: 1fr; }
   .field-wide { grid-column: span 1; }
+  .results-toolbar { padding-left: 14px; padding-right: 14px; }
+}
+
+/* Narrow phones -- even compact controls get cramped below ~480px. */
+@media (max-width: 480px) {
   .app-header .brand-logo { height: 44px; width: 110px; }
 }
 

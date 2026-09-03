@@ -2943,12 +2943,14 @@ window.debugFoursquare = async function () {
 // panel doesn't exist at all in the Claimed view -- so a fixed CSS value
 // can't track them, but a live-measured custom property can.
 (function setUpStickyOffsets() {
+  const header = document.querySelector(".app-header");
   const searchPanel = document.querySelector(".search-panel");
   const toolbars = document.querySelectorAll(".results-toolbar");
-  if (!searchPanel && toolbars.length === 0) return;
+  if (!header && !searchPanel && toolbars.length === 0) return;
 
   const root = document.documentElement;
   function refresh() {
+    if (header) root.style.setProperty("--header-h", `${header.getBoundingClientRect().height}px`);
     // A hidden ancestor (display:none via the [hidden] attribute on
     // whichever view isn't active) makes getBoundingClientRect() report 0
     // height -- exactly the "not currently relevant" value this stack
@@ -2960,6 +2962,7 @@ window.debugFoursquare = async function () {
   }
 
   const observer = new ResizeObserver(refresh);
+  if (header) observer.observe(header);
   if (searchPanel) observer.observe(searchPanel);
   toolbars.forEach((el) => observer.observe(el));
   refresh();
