@@ -1,3 +1,5 @@
+clia/
+
 # Logs
 logs
 *.log
@@ -159,5 +161,6 @@ scripts/.env
 
 # NPPES ingestion CLI output (manifests, rejects) -- run artifacts, not source
 scripts/out/
+.test-tmp/
 __pycache__/
 *.pyc

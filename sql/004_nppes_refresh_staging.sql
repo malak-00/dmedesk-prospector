@@ -105,3 +105,21 @@ revoke all on public.nppes_refresh_staging from anon, authenticated;
 --   left join public.nppes_refresh_staging s on s.refresh_run_id = r.id
 --  where r.source = 'nppes'
 --  group by r.id order by r.started_at desc limit 10;
+--
+-- 5. Apply preflight: only rows returned here are eligible for a future
+--    staged-to-live apply procedure.
+-- select r.id, r.status, r.row_count,
+--        (r.metadata ->> 'staging_state') as staging_state,
+--        (r.metadata ->> 'expected_staged_rows')::integer as expected_staged_rows,
+--        (r.metadata ->> 'staged_rows')::integer as recorded_staged_rows,
+--        count(s.npi) as actual_staged_rows
+--   from public.refresh_runs r
+--   left join public.nppes_refresh_staging s on s.refresh_run_id = r.id
+--  where r.source = 'nppes'
+--  group by r.id
+--  having r.status = 'staged'
+--     and r.metadata ->> 'staging_state' = 'complete'
+--     and r.row_count = (r.metadata ->> 'expected_staged_rows')::integer
+--     and (r.metadata ->> 'expected_staged_rows')::integer =
+--         (r.metadata ->> 'staged_rows')::integer
+--     and count(s.npi) = (r.metadata ->> 'staged_rows')::integer;

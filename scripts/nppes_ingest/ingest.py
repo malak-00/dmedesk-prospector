@@ -96,7 +96,12 @@ def write_rejects_csv(path: Path, rejections: Sequence[Rejection]) -> Path:
 
 
 def create_refresh_run(client: SupabaseClient, manifest: RunManifest) -> str:
-    """Insert the `refresh_runs` row this load belongs to, status `staged`."""
+    """Insert a run marked uploading until every staging batch succeeds."""
+    metadata = manifest.to_run_metadata()
+    metadata.update({
+        "staging_state": "uploading",
+        "expected_staged_rows": manifest.accepted_rows,
+    })
     rows = client.insert(
         REFRESH_RUNS_TABLE,
         [
@@ -105,7 +110,7 @@ def create_refresh_run(client: SupabaseClient, manifest: RunManifest) -> str:
                 "source_version": manifest.source_version or manifest.release_date or manifest.run_type,
                 "status": "staged",
                 "row_count": manifest.accepted_rows,
-                "metadata": manifest.to_run_metadata(),
+                "metadata": metadata,
             }
         ],
         returning=True,
@@ -220,6 +225,19 @@ def run_ingest(
             staged += len(batch)
             log(f"  staged {staged:,}/{len(accepted):,}")
         manifest.staged_rows = staged
+        manifest.finish("staged")
+        complete_metadata = manifest.to_run_metadata()
+        complete_metadata.update({
+            "staging_state": "complete",
+            "expected_staged_rows": manifest.accepted_rows,
+            "staged_rows": manifest.staged_rows,
+        })
+        client.update(
+            REFRESH_RUNS_TABLE,
+            {"id": f"eq.{refresh_run_id}"},
+            {"row_count": manifest.staged_rows, "metadata": complete_metadata},
+        )
+        manifest_path = manifest.write(options.output_dir / f"{stem}.manifest.json")
     except Exception as err:
         # Leave nothing half-loaded: a partial staging set that still looks
         # `staged` is exactly the input that would make an apply step
@@ -227,23 +245,26 @@ def run_ingest(
         log(f"Staging failed ({err}); rolling back run {refresh_run_id}")
         try:
             client.delete(STAGING_TABLE, {"refresh_run_id": f"eq.{refresh_run_id}"})
-        finally:
-            manifest.finish("failed", str(err))
+        except Exception as cleanup_err:
+            log(f"Could not delete failed staging rows: {cleanup_err}")
+        manifest.finish("failed", str(err))
+        failed_metadata = manifest.to_run_metadata()
+        failed_metadata.update({
+            "staging_state": "failed",
+            "expected_staged_rows": manifest.accepted_rows,
+            "staged_rows": manifest.staged_rows,
+        })
+        try:
             client.update(
                 REFRESH_RUNS_TABLE,
                 {"id": f"eq.{refresh_run_id}"},
-                {"status": "failed", "metadata": manifest.to_run_metadata()},
+                {"status": "failed", "metadata": failed_metadata},
             )
+        except Exception as mark_err:
+            log(f"Could not mark refresh run failed: {mark_err}")
         manifest_path = manifest.write(options.output_dir / f"{stem}.manifest.json")
         raise RuntimeError(f"Staging failed and was rolled back (manifest: {manifest_path}): {err}") from err
 
-    manifest.finish("staged")
-    client.update(
-        REFRESH_RUNS_TABLE,
-        {"id": f"eq.{refresh_run_id}"},
-        {"row_count": manifest.staged_rows, "metadata": manifest.to_run_metadata()},
-    )
-    manifest_path = manifest.write(options.output_dir / f"{stem}.manifest.json")
     log(f"Staged {manifest.staged_rows:,} rows under refresh run {refresh_run_id}")
     log(f"Manifest: {manifest_path}")
     return IngestResult(manifest=manifest, manifest_path=manifest_path, rejects_path=rejects_path)

@@ -14,6 +14,9 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+TEST_TMP = Path(__file__).resolve().parents[2] / '.test-tmp'
+TEST_TMP.mkdir(exist_ok=True)
+tempfile.tempdir = str(TEST_TMP)
 
 from nppes_ingest import normalize, validate  # noqa: E402
 from nppes_ingest.ingest import (  # noqa: E402
@@ -46,13 +49,14 @@ def quiet(_message: str) -> None:
 class FakeSupabaseClient:
     """Records what would have been written, so staging can be asserted on."""
 
-    def __init__(self, *, fail_on_insert_batch: int | None = None) -> None:
+    def __init__(self, *, fail_on_insert_batch: int | None = None, fail_on_complete_update: bool = False) -> None:
         self.runs: list[dict] = []
         self.staged: list[dict] = []
         self.updates: list[tuple[dict, dict]] = []
         self.deletes: list[dict] = []
         self._insert_calls = 0
         self._fail_on_insert_batch = fail_on_insert_batch
+        self._fail_on_complete_update = fail_on_complete_update
 
     def insert(self, table: str, rows, *, returning: bool = False):
         if table == "refresh_runs":
@@ -65,6 +69,9 @@ class FakeSupabaseClient:
         return []
 
     def update(self, table: str, filters, values) -> None:
+        if (self._fail_on_complete_update and table == 'refresh_runs'
+                and values.get('metadata', {}).get('staging_state') == 'complete'):
+            raise RuntimeError('simulated finalization failure')
         self.updates.append((filters, values))
 
     def delete(self, table: str, filters) -> None:
@@ -199,6 +206,27 @@ class IngestRunTests(unittest.TestCase):
             run_ingest(self._options(tmp), client, log=quiet)
             run_ids = {row["refresh_run_id"] for row in client.staged}
             self.assertEqual(run_ids, {"00000000-0000-4000-8000-000000000001"})
+
+    def test_staging_metadata_moves_from_uploading_to_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FakeSupabaseClient()
+            run_ingest(self._options(tmp), client, log=quiet)
+            self.assertEqual(client.runs[0]['metadata']['staging_state'], 'uploading')
+            complete = [values for _filters, values in client.updates
+                        if values['metadata']['staging_state'] == 'complete']
+            self.assertEqual(len(complete), 1)
+            self.assertEqual(complete[0]['metadata']['expected_staged_rows'], 3)
+            self.assertEqual(complete[0]['metadata']['staged_rows'], 3)
+
+    def test_finalization_failure_cleans_up_and_marks_run_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FakeSupabaseClient(fail_on_complete_update=True)
+            with self.assertRaises(RuntimeError):
+                run_ingest(self._options(tmp), client, log=quiet)
+            self.assertEqual(client.deletes, [{'refresh_run_id': 'eq.00000000-0000-4000-8000-000000000001'}])
+            failed = [values for _filters, values in client.updates if values.get('status') == 'failed']
+            self.assertEqual(len(failed), 1)
+            self.assertEqual(failed[0]['metadata']['staging_state'], 'failed')
 
     def test_state_filter_narrows_the_release(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -93,6 +93,13 @@ with `--all-taxonomies`. `--states VA,CT` narrows by practice location.
 - If staging fails partway, the run's rows are deleted and the run is
   marked `failed`, so a half-loaded release can never be mistaken for a
   complete one.
+- A created run starts with `metadata.staging_state = uploading`. Only after
+  every staging batch and the final count update succeeds does it become
+  `complete`, with expected, recorded, and actual staged counts available for
+  apply preflight.
+- REST calls are separate operations: hard process termination or a lost
+  connection cannot be rolled back by the CLI. Future apply SQL must reject
+  any run that is still `uploading`, is `failed`, or has mismatched counts.
 
 ## Output
 

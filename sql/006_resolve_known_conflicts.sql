@@ -21,42 +21,51 @@
 -- reports 0 moves.
 
 -- =========================================================================
--- EDIT THIS: the username of the admin approving these decisions.
+-- EDIT THESE: use exact usernames from public.app_users.
 -- =========================================================================
 do $$
 declare
   v_approver_username text := 'REPLACE_WITH_APPROVING_ADMIN_USERNAME';
+  v_rick_username     text := 'REPLACE_WITH_RICK_USERNAME';
+  v_nora_username     text := 'REPLACE_WITH_NORA_USERNAME';
 
   v_approver_id  uuid;
   v_group_id     uuid;
   v_to_user_id   uuid;
+  v_group_count  integer;
+  v_member_count integer;
+  v_target_count integer;
   v_result       jsonb;
 begin
-  select id into v_approver_id
+  select count(*), min(id) into v_target_count, v_approver_id
     from public.app_users
    where lower(username) = lower(btrim(v_approver_username));
 
-  if v_approver_id is null then
+  if v_target_count <> 1 then
     raise exception
-      'Approving admin % not found. Edit v_approver_username at the top of this file to a real app_users.username.',
-      v_approver_username;
+      'Approving username % must match exactly one app_users row; found %. Edit the username at the top of this file.',
+      v_approver_username, v_target_count;
   end if;
   if not exists (select 1 from public.app_users where id = v_approver_id and is_admin) then
     raise exception 'User % is not an admin; ownership decisions must be approved by an admin.', v_approver_username;
   end if;
 
   -- ---- 1FOOT 2FOOT Centre for Foot and Ankle Care, PC (VA) -> Rick Nelson
-  select distinct m.group_id into v_group_id
+  select count(distinct m.group_id), count(distinct m.npi), min(m.group_id)
+    into v_group_count, v_member_count, v_group_id
     from public.lead_group_members m
    where m.npi in ('1548921265', '1831477868');
 
-  if v_group_id is null then
-    raise exception 'No identity group found for NPIs 1548921265 / 1831477868. Was the identity backfill run?';
+  if v_member_count <> 2 or v_group_count <> 1 or v_group_id is null then
+    raise exception 'NPIs 1548921265 / 1831477868 must resolve to exactly one shared group; found % NPIs across % groups.',
+      v_member_count, v_group_count;
   end if;
 
-  select id into v_to_user_id from public.app_users where display_name = 'Rick Nelson';
-  if v_to_user_id is null then
-    raise exception 'Target owner "Rick Nelson" not found in app_users.';
+  select count(*), min(id) into v_target_count, v_to_user_id
+    from public.app_users
+   where lower(username) = lower(btrim(v_rick_username));
+  if v_target_count <> 1 then
+    raise exception 'Rick target username % must match exactly one app_users row; found %.', v_rick_username, v_target_count;
   end if;
 
   v_result := public.resolve_ownership_conflict(
@@ -68,17 +77,21 @@ begin
   raise notice '1FOOT 2FOOT -> Rick Nelson: %', v_result;
 
   -- ---- Advanced Home Medical Supplies Inc. (CT) -> Nora Atkins
-  select distinct m.group_id into v_group_id
+  select count(distinct m.group_id), count(distinct m.npi), min(m.group_id)
+    into v_group_count, v_member_count, v_group_id
     from public.lead_group_members m
    where m.npi in ('1598747552', '1891506093');
 
-  if v_group_id is null then
-    raise exception 'No identity group found for NPIs 1598747552 / 1891506093. Was the identity backfill run?';
+  if v_member_count <> 2 or v_group_count <> 1 or v_group_id is null then
+    raise exception 'NPIs 1598747552 / 1891506093 must resolve to exactly one shared group; found % NPIs across % groups.',
+      v_member_count, v_group_count;
   end if;
 
-  select id into v_to_user_id from public.app_users where display_name = 'Nora Atkins';
-  if v_to_user_id is null then
-    raise exception 'Target owner "Nora Atkins" not found in app_users.';
+  select count(*), min(id) into v_target_count, v_to_user_id
+    from public.app_users
+   where lower(username) = lower(btrim(v_nora_username));
+  if v_target_count <> 1 then
+    raise exception 'Nora target username % must match exactly one app_users row; found %.', v_nora_username, v_target_count;
   end if;
 
   v_result := public.resolve_ownership_conflict(
