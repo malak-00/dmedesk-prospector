@@ -1,4 +1,4 @@
-"""Tests for the NPPES ingestion CLI.
+﻿"""Tests for the NPPES ingestion CLI.
 
 Run from the repository root:
 
@@ -8,14 +8,15 @@ Run from the repository root:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-TEST_TMP = Path(__file__).resolve().parents[2] / '.test-tmp'
-TEST_TMP.mkdir(exist_ok=True)
+TEST_TMP = Path(os.environ.get('NPPES_TEST_TMP', r'C:\\tmp\\dmedesk-nppes-tests'))
+TEST_TMP.mkdir(parents=True, exist_ok=True)
 tempfile.tempdir = str(TEST_TMP)
 
 from nppes_ingest import normalize, validate  # noqa: E402
@@ -304,3 +305,6 @@ class IngestRunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+

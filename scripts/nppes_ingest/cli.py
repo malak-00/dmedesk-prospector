@@ -37,10 +37,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("source", type=Path, nargs="?", help="Path to the NPPES release CSV")
     parser.add_argument(
         "--run-type",
-        required=True,
+        required=False,
         choices=RUN_TYPES,
         help="Which kind of NPPES release this file is",
     )
+    parser.add_argument("--recover-run", help="Finalize an interrupted uploading run by UUID")
+    parser.add_argument("--abort-run", help="Abort an uploading run by UUID")
+    parser.add_argument("--reason", help="Required reason for --abort-run")
     parser.add_argument("--release-date", help="Release date of the source file, e.g. 2026-09-01")
     parser.add_argument("--source-version", help="Version/label recorded on refresh_runs.source_version")
     parser.add_argument("--label", help="Short run label; also names the manifest/rejects files")
@@ -114,6 +117,29 @@ def resolve_taxonomy_codes(args: argparse.Namespace, client: SupabaseClient | No
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
+    if args.recover_run or args.abort_run:
+        if args.recover_run and args.abort_run:
+            print("error: choose only one recovery command", flush=True)
+            return 2
+        if args.abort_run and not args.reason:
+            print("error: --abort-run requires --reason", flush=True)
+            return 2
+        try:
+            client = SupabaseClient(load_supabase_config(args.env_file))
+            function = "finalize_nppes_staging" if args.recover_run else "abort_nppes_refresh"
+            params = {"p_run_id": args.recover_run or args.abort_run}
+            if args.abort_run:
+                params["p_reason"] = args.reason
+            print(client.rpc(function, params), flush=True)
+            return 0
+        except (ConfigError, RuntimeError) as err:
+            print(f"error: {err}", flush=True)
+            return 1
+
+    if args.source is None or args.run_type is None:
+        print("error: source and --run-type are required unless using a recovery command", flush=True)
+        return 2
+
     client: SupabaseClient | None = None
     try:
         if args.dry_run:
@@ -155,4 +181,5 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {err}", flush=True)
         return 1
     return 0
+
 

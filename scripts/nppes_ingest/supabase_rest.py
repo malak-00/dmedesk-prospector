@@ -81,7 +81,12 @@ class SupabaseClient:
 
         raise SupabaseError(str(last_error))
 
-    def rpc(self, function: str, params: dict[str, object] | None = None) -> list[dict[str, object]]:`n        """Call a reviewed PostgreSQL function through PostgREST."""`n        result = self._request("POST", "rpc/" + function, body=params or {}, prefer="return=representation")`n        return result if isinstance(result, list) else []`n`n    # -- operations used by the ingest run --------------------------------
+    def rpc(self, function: str, params: dict[str, object] | None = None) -> list[dict[str, object]]:
+        """Call a reviewed PostgreSQL function through PostgREST."""
+        result = self._request("POST", "rpc/" + function, body=params or {}, prefer="return=representation")
+        return result if isinstance(result, list) else []
+
+    # -- operations used by the ingest run --------------------------------
 
     def select(self, table: str, *, columns: str = "*", filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
         params = {"select": columns}
@@ -101,4 +106,5 @@ class SupabaseClient:
 
     def delete(self, table: str, filters: dict[str, str]) -> None:
         self._request("DELETE", table, params=filters, prefer="return=minimal")
+
 

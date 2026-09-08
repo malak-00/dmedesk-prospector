@@ -1,4 +1,4 @@
-# NPPES ingestion CLI
+﻿# NPPES ingestion CLI
 
 Loads an NPPES release into the `nppes_refresh_staging` table under a single
 `refresh_runs` row, with validation, a source checksum, and a manifest.
@@ -13,15 +13,15 @@ environment.
 It writes **only** `refresh_runs` and `nppes_refresh_staging`.
 
 It never writes `npi_records`, and never writes `leads`. Applying staged
-data to the live provider record — comparing canonical values, writing
-`provider_field_history` *before* any overwrite, and raising review alerts —
+data to the live provider record â€” comparing canonical values, writing
+`provider_field_history` *before* any overwrite, and raising review alerts â€”
 is a separate transactional SQL step that does not exist yet. Staging a
 release is safe on its own precisely because nothing downstream happens
 until that step is built and run deliberately.
 
 ## Setup
 
-No third-party dependencies — Python 3.11+ and the standard library.
+No third-party dependencies â€” Python 3.11+ and the standard library.
 
 Credentials come from the environment, or from `scripts/.env` (gitignored):
 
@@ -87,7 +87,7 @@ with `--all-taxonomies`. `--states VA,CT` narrows by practice location.
   cut short". The guard runs on raw source rows, before any of our own
   filters.
 - Every NPI is checked against the **CMS check digit** (Luhn over the 80840
-  issuer prefix), not just "is it 10 digits" — a transposition typo would
+  issuer prefix), not just "is it 10 digits" â€” a transposition typo would
   otherwise create a phantom provider that never matches anything.
 - Duplicate NPIs within one release are rejected after the first.
 - If staging fails partway, the run's rows are deleted and the run is
@@ -105,10 +105,10 @@ with `--all-taxonomies`. `--states VA,CT` narrows by practice location.
 
 Written to `--output-dir` (default `scripts/out/`, gitignored):
 
-- `<label>.manifest.json` — run type, source path, SHA-256 checksum, byte
+- `<label>.manifest.json` â€” run type, source path, SHA-256 checksum, byte
   size, filters, row counts, and rejections broken down by reason. The same
   content is stored on `refresh_runs.metadata`.
-- `<label>.rejects.csv` — every rejected row with its source row number,
+- `<label>.rejects.csv` â€” every rejected row with its source row number,
   NPI, reason code, and detail. Row numbers are 1-based including the
   header, so they line up with what a spreadsheet shows.
 
@@ -116,7 +116,7 @@ Reason codes: `missing_npi`, `bad_npi_format`, `bad_npi_checksum`,
 `duplicate_npi_in_release`, `missing_name`, `state_not_selected`,
 `taxonomy_not_enabled`.
 
-Filtered rows and malformed rows are counted separately on purpose — "12,000
+Filtered rows and malformed rows are counted separately on purpose â€” "12,000
 rows filtered out by state" and "3 rows were malformed" mean very different
 things when a release looks unexpectedly small.
 
@@ -129,7 +129,7 @@ python3 -m unittest discover -s scripts/tests -t scripts
 24 tests covering NPI check-digit validation, phone/date/postal
 normalization, header mapping (including primary-taxonomy selection and
 deactivate-vs-reactivate ordering), the row-count guard, and full ingest
-runs against a fixture — staging contents, manifest and rejects output, dry
+runs against a fixture â€” staging contents, manifest and rejects output, dry
 run, and rollback when staging fails partway.
 
 ## Layout
@@ -149,3 +149,9 @@ tests/
   test_ingest.py     the suite above
   fixtures/          small NPPES-shaped CSVs
 ```
+
+
+## Local test scratch directory
+
+On the managed Windows workstation, tests use NPPES_TEST_TMP when set; otherwise they use C:\\tmp\\dmedesk-nppes-tests. Set it to another writable directory for CI or a different workstation.
+
