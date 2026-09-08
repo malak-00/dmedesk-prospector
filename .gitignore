@@ -1,3 +1,5 @@
+clia/
+
 # Logs
 logs
 *.log
@@ -152,7 +154,14 @@ worker/.dev.vars
 test_output/
 
 .temp/
+temp/
 scripts/migrate_npi_records.py
 scripts/migrate_npi_records.py
 
 scripts/.env
+
+# NPPES ingestion CLI output (manifests, rejects) -- run artifacts, not source
+scripts/out/
+.test-tmp/
+__pycache__/
+*.pyc

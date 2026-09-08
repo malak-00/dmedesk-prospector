@@ -330,6 +330,33 @@ app.get("/admin/overview", async (c) => {
   return c.json(ok({ users, suggestions, stats }));
 });
 
+// Identity groups whose active claims are split across more than one
+// person. Read-only: every row here needs an explicit approved decision,
+// so nothing is resolved automatically.
+app.get("/admin/conflicts", async (c) => {
+  requireAdmin(c.get("session"));
+  const data = await adminRepo.getOwnershipConflicts(supabaseFor(c));
+  return c.json(ok(data));
+});
+
+// Assigns one conflicted group to a single owner. The actual work happens
+// in a SQL function (sql/005_ownership_conflict_resolution.sql) so the
+// conflict check, the reassignment and the audit events are one
+// transaction -- the approving admin is taken from the session, never from
+// the request body.
+app.post("/admin/conflicts/resolve", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  const data = await adminRepo.resolveOwnershipConflict(supabaseFor(c), {
+    groupId: body.groupId,
+    toUserId: body.toUserId,
+    approvedBy: session.id,
+    reason: body.reason,
+  });
+  return c.json(ok(data));
+});
+
 app.get("/admin/leads", async (c) => {
   const session = c.get("session");
   requireAdmin(session);
