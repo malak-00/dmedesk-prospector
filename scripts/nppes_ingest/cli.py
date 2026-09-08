@@ -1,4 +1,4 @@
-"""Command-line interface.
+﻿"""Command-line interface.
 
 Every input is an argument -- no hardcoded source paths, no hardcoded
 output directory, no credentials in the file. `--dry-run` needs no
@@ -34,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("source", type=Path, help="Path to the NPPES release CSV")
+    parser.add_argument("source", type=Path, nargs="?", help="Path to the NPPES release CSV")
     parser.add_argument(
         "--run-type",
         required=True,
@@ -155,3 +155,4 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {err}", flush=True)
         return 1
     return 0
+

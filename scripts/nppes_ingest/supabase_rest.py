@@ -1,4 +1,4 @@
-"""Minimal PostgREST client over the standard library.
+﻿"""Minimal PostgREST client over the standard library.
 
 Deliberately no third-party dependency: this tool has to be runnable by
 whoever is holding the monthly file, on a machine with nothing but Python
@@ -81,7 +81,7 @@ class SupabaseClient:
 
         raise SupabaseError(str(last_error))
 
-    # -- operations used by the ingest run --------------------------------
+    def rpc(self, function: str, params: dict[str, object] | None = None) -> list[dict[str, object]]:`n        """Call a reviewed PostgreSQL function through PostgREST."""`n        result = self._request("POST", "rpc/" + function, body=params or {}, prefer="return=representation")`n        return result if isinstance(result, list) else []`n`n    # -- operations used by the ingest run --------------------------------
 
     def select(self, table: str, *, columns: str = "*", filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
         params = {"select": columns}
@@ -101,3 +101,4 @@ class SupabaseClient:
 
     def delete(self, table: str, filters: dict[str, str]) -> None:
         self._request("DELETE", table, params=filters, prefer="return=minimal")
+
