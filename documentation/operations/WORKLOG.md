@@ -124,3 +124,17 @@ The next implementation should add reusable grouping/preflight code and tests,
 then add atomic group-aware claiming only after the two ownership conflicts have
 explicit owner decisions.
 
+
+## 2026-09-09 — Local migration verification and remote history reconciliation
+
+- Pulled the linked Supabase schema into `supabase/migrations/20260909151917_remote_schema.sql`.
+- Started the local Docker Supabase stack and reset the local database with the pulled migration.
+- Confirmed local migration history and direct local/remote schema comparison are clean; local and linked lint reported no schema errors.
+- Created `supabase/backups/remote-20260909-1825.sql` before further work. This is a schema backup, not a full production data backup.
+- Did not execute the pulled schema snapshot against production because it represents objects already present in the cloud database, rather than a new schema change migration.
+- Reconciled the remote migration-history row `20260909151917` as applied without executing SQL against the production schema.
+- Production schema was not changed in this step.
+
+### Next implementation step
+
+Build the reusable grouping/preflight layer and dry-run intake report. After that, create a narrowly scoped migration only for any genuinely new schema required by the intake/claim workflow, test it locally, take a full production backup, and apply it through the reviewed deployment path.

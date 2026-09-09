@@ -414,7 +414,7 @@ Ticked items are verified; the rest are open.
 
 | Document | Contents |
 |---|---|
-| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | How the live system works today — Worker + Supabase + `docs/`, and what's built but not yet connected |
+| [`ARCHITECTURE.md`](../architecture/ARCHITECTURE.md) | How the live system works today — Worker + Supabase + `docs/`, and what's built but not yet connected |
 | [`documentation/plans/PROVIDER_CHANGE_TRACKING_PLAN.md`](./documentation/plans/PROVIDER_CHANGE_TRACKING_PLAN.md) | Full NPPES/Medicare refresh design: staging, comparison, history-before-update, review alerts, safety gates |
 | [`documentation/plans/MASTER_PLAN_NAME_HISTORY_ADDENDUM.md`](./documentation/plans/MASTER_PLAN_NAME_HISTORY_ADDENDUM.md) | Name alias, successor link, and ownership event design principles |
 | [`documentation/plans/NAME_CHANGE_OWNERSHIP_PLAN_DRAFT.md`](./documentation/plans/NAME_CHANGE_OWNERSHIP_PLAN_DRAFT.md) | Earlier draft of the rename/successor model, including the open questions still worth answering |
@@ -424,9 +424,9 @@ Ticked items are verified; the rest are open.
 | [`documentation/operations/CHAT_HISTORY_2026-09-02.md`](./documentation/operations/CHAT_HISTORY_2026-09-02.md) | Durable handoff: decisions, verification output, and the intended unified architecture |
 | [`sql/README.md`](./sql/README.md) | SQL execution order and manual-run notes |
 | [`scripts/README.md`](./scripts/README.md) | NPPES ingestion CLI: usage, run types, safety guards, and the boundary it will not cross |
-| [`MIGRATION_TO_VERCEL_SUPABASE.md`](./MIGRATION_TO_VERCEL_SUPABASE.md) | Original Supabase schema and migration plan |
-| [`SUPABASE_CHANGELOG.md`](./SUPABASE_CHANGELOG.md) | All Supabase changes to date |
-| [`MARKDOWN_ORGANIZATION_PLAN.md`](./MARKDOWN_ORGANIZATION_PLAN.md) | Where each document lives and why |
+| [`MIGRATION_TO_VERCEL_SUPABASE.md`](../reference/MIGRATION_TO_VERCEL_SUPABASE.md) | Original Supabase schema and migration plan |
+| [`SUPABASE_CHANGELOG.md`](../operations/SUPABASE_CHANGELOG.md) | All Supabase changes to date |
+| [`MARKDOWN_ORGANIZATION_PLAN.md`](../planning/MARKDOWN_ORGANIZATION_PLAN.md) | Where each document lives and why |
 
 `LEAD_GROUPING_PLAN.md` is referenced in earlier notes as holding the full
 DDL and endpoint specs. It is an external working document and is **not in

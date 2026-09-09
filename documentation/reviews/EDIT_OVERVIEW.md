@@ -4,9 +4,9 @@
 
 ### Planning and tracking
 
-- `task_plan.md` — implementation phases and constraints.
-- `findings.md` — repository discoveries, risks, and design decisions.
-- `progress.md` — session progress and verification record.
+- `../planning/task_plan.md` — implementation phases and constraints.
+- `../planning/findings.md` — repository discoveries, risks, and design decisions.
+- `../operations/progress.md` — session progress and verification record.
 - `IMPLEMENTATION_REVIEW.md` — backward-compatibility review and SQL
   guardrails.
 - `WORKLOG.md` — chronological record of work completed and database results.
