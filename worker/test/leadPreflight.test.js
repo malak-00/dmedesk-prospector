@@ -12,10 +12,11 @@ test('normalizes identity signals and phone values deterministically', () => {
 
 test('requires corroborating evidence for fuzzy review', () => {
   const candidate = { npi: '1234567890', name: 'Genome Insight Inc', state: 'CA', phone: '4155550100' };
-  const possibleSuccessor = { npi: '9876543210', name: 'Genome Insights Incorporated', state: 'CA', phone: '4155550100' };
+  const possibleSuccessor = { npi: '9876543210', name: 'Genome Insight Inc', state: 'CA', phone: '4155550100' };
   assert.ok(tokenSimilarity(candidate.name, possibleSuccessor.name) >= 88);
-  const results = preflightCandidates([candidate], { existingRecords: [possibleSuccessor] });
-  assert.equal(results[0].decision, 'accept');
+  const reviews = findTierTwoReviews([candidate], [possibleSuccessor]);
+  assert.equal(reviews[0].decision, 'needs_review');
+  assert.deepEqual(reviews[0].evidence, ['phone']);
 });
 
 test('returns deterministic batch and ownership decisions without writes', () => {
