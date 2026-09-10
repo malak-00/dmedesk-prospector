@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import re
+import time
 from pathlib import Path
 
 from .config import load_supabase_config
@@ -24,7 +25,7 @@ COMPANY_KEYWORDS = [
     "opthamology", "wig", "sleep", "hospital", "university", "state of",
     "city of", "super market", "county of", "regents", "cvs", "piggly wiggly",
     "publix", "wellpartner", "walmart", "wal green", "walgreen", "wal-mart",
-    "scooter store", "holiday cvs", "hook-superx", "mayo clinic",
+    "scooter store", "holiday cvs", "hook-superx", "mayo clinic", "dds", "dentist"
 ]
 
 OFFICIALS = {
@@ -77,21 +78,30 @@ def main() -> int:
     parser.add_argument("--taxonomy-codes", required=True, help="Exactly two taxonomy codes, comma-separated")
     parser.add_argument("--apply", action="store_true", help="Insert into npi_records; without this, report only")
     parser.add_argument("--chunk-size", type=int, default=500)
+    parser.add_argument("--progress-every", type=int, default=100_000, help="Print scan progress every N input rows (default: 100000)")
     args = parser.parse_args()
     codes = {code.strip().upper() for code in args.taxonomy_codes.split(",") if code.strip()}
     if len(codes) != 2:
         parser.error("--taxonomy-codes must contain exactly two codes")
     if not args.source.is_file():
         parser.error(f"NPPES CSV not found: {args.source}")
+    if args.progress_every <= 0:
+        parser.error("--progress-every must be greater than zero")
 
     candidates = []
     stats = {"input": 0, "taxonomy_match": 0, "excluded": 0, "duplicate_in_file": 0}
     seen = set()
+    started = time.monotonic()
+    print(f"Scanning {args.source} for taxonomy codes: {', '.join(sorted(codes))}", flush=True)
     with args.source.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         index = HeaderIndex(reader.fieldnames or [])
         for row_number, raw in enumerate(reader, start=2):
             stats["input"] += 1
+            if stats["input"] % args.progress_every == 0:
+                elapsed = time.monotonic() - started
+                rate = stats["input"] / elapsed if elapsed else 0
+                print(f"Scanned {stats['input']:,} rows | matches {stats['taxonomy_match']:,} | candidates {len(candidates):,} | {rate:,.0f} rows/sec", flush=True)
             provider = map_provider_row(index, raw, row_number)
             if not set(provider.taxonomy_codes).intersection(codes):
                 continue
@@ -104,6 +114,11 @@ def main() -> int:
                 stats["excluded"] += 1
                 continue
             candidates.append(provider)
+
+        if stats["input"] % args.progress_every != 0:
+            elapsed = time.monotonic() - started
+            rate = stats["input"] / elapsed if elapsed else 0
+            print(f"Scanned {stats['input']:,} rows | matches {stats['taxonomy_match']:,} | candidates {len(candidates):,} | {rate:,.0f} rows/sec", flush=True)
 
     existing = set()
     client = None
