@@ -88,6 +88,7 @@ def main() -> int:
     if args.progress_every <= 0:
         parser.error("--progress-every must be greater than zero")
 
+    config = load_supabase_config() if args.apply else None
     candidates = []
     stats = {"input": 0, "taxonomy_match": 0, "excluded": 0, "duplicate_in_file": 0}
     seen = set()
@@ -96,15 +97,16 @@ def main() -> int:
     with args.source.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         index = HeaderIndex(reader.fieldnames or [])
+        taxonomy_columns = index.taxonomy_columns()
         for row_number, raw in enumerate(reader, start=2):
             stats["input"] += 1
             if stats["input"] % args.progress_every == 0:
                 elapsed = time.monotonic() - started
                 rate = stats["input"] / elapsed if elapsed else 0
                 print(f"Scanned {stats['input']:,} rows | matches {stats['taxonomy_match']:,} | candidates {len(candidates):,} | {rate:,.0f} rows/sec", flush=True)
-            provider = map_provider_row(index, raw, row_number)
-            if not set(provider.taxonomy_codes).intersection(codes):
+            if not any((raw.get(column) or "").strip().upper() in codes for column in taxonomy_columns):
                 continue
+            provider = map_provider_row(index, raw, row_number)
             stats["taxonomy_match"] += 1
             if provider.npi in seen:
                 stats["duplicate_in_file"] += 1
@@ -123,7 +125,7 @@ def main() -> int:
     existing = set()
     client = None
     if args.apply:
-        client = SupabaseClient(load_supabase_config())
+        client = SupabaseClient(config)
         for start in range(0, len(candidates), args.chunk_size):
             values = [p.npi for p in candidates[start:start + args.chunk_size]]
             if values:
