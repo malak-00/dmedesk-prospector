@@ -12,6 +12,7 @@ Required manual sequence:
 004_nppes_refresh_staging.sql
 005_ownership_conflict_resolution.sql
 006_resolve_known_conflicts.sql
+007_nppes_refresh_lifecycle.sql   (only before an NPPES apply; needs 004)
 008_identity_match_tiers.sql
 009_identity_match_review.sql
 ```
@@ -28,14 +29,15 @@ in `003`); save their output with the run.
 |---|---|---|
 | `000_schema_checkpoint.sql` | Read-only check of required tables, columns, indexes | Executed 2026-08-31 |
 | `001_identity_schema.sql` | Identity, audit, and refresh-run tables | Executed 2026-08-31 |
-| `002_identity_backfill.sql` | First draft of the backfill | **Superseded â€” do not run** |
+| `002_identity_backfill.sql` | First draft of the backfill | **Superseded — do not run** |
 | `002_identity_backfill_safe.sql` | Safe identity + historical-claim backfill | Executed 2026-08-31 |
 | `003_identity_verification.sql` | Read-only validation queries | Executed 2026-08-31 |
 | `004_nppes_refresh_staging.sql` | Staging table written by `scripts/nppes_ingest` | **Not yet run** |
-| `005_ownership_conflict_resolution.sql` | `resolve_ownership_conflict()` + `ownership_conflicts` view | **Not yet run** |
-| `006_resolve_known_conflicts.sql` | Applies the two approved owner decisions | **Not yet run — usernames filled in (approver: Ben Arthur)** |
-| `008_identity_match_tiers.sql` | Three-tier identity keys, regroup of existing leads, `conflict_detected` events, `identity_review_candidates` view | **Not yet run — back up first; run after 005 and 006** |
-| `009_identity_match_review.sql` | `identity_match_decisions`, `identity_review_queue` view, `resolve_identity_match()` for the admin Possible duplicates screen | **Not yet run — run after 008** |
+| `005_ownership_conflict_resolution.sql` | `resolve_ownership_conflict()` + `ownership_conflicts` view | Executed 2026-09-16 |
+| `006_resolve_known_conflicts.sql` | Applies the two approved owner decisions | Executed 2026-09-16 (approver: Ben Arthur) |
+| `007_nppes_refresh_lifecycle.sql` | Finalize, abort, and transactional NPPES apply functions | **Not yet run — after 004 and read-only verification** |
+| `008_identity_match_tiers.sql` | Three-tier identity keys, regroup of existing leads, `conflict_detected` events, `identity_review_candidates` view | Executed 2026-09-16 |
+| `009_identity_match_review.sql` | `identity_match_decisions`, `identity_review_queue` view, `resolve_identity_match()` for the admin Possible duplicates screen | Executed 2026-09-16 |
 
 ## Notes on individual files
 
@@ -52,7 +54,7 @@ adaptation point.
 
 **`004`** must be installed before the ingestion CLI can stage a real
 release. The CLI's staging row and this table's columns are written to match
-each other exactly â€” change one and you must change the other.
+each other exactly — change one and you must change the other.
 
 **`005`** is what the admin UI's "Resolve" button calls. Until it is
 installed, the Admin tab still *lists* ownership conflicts (the Worker
@@ -83,19 +85,19 @@ usernames at the top are filled in: Ben Arthur approves, Rick Nelson receives
 1FOOT 2FOOT, and Nora Atkins receives Advanced Home Medical Supplies. The
 groups are found by NPI, so the other current owner (Kaity James) and users
 not involved need no entry. All three usernames are checked for exactly one
-match, and the approver must be an admin; it raises rather than guessing. It is one transaction and is safe to re-run â€”
-once a group has a single owner there is nothing left to reassign.
+match, and the approver must be an admin; it raises rather than guessing. It
+is one transaction and is safe to re-run — once a group has a single owner
+there is nothing left to reassign.
 
 The table above records the current execution state: 000, 001, safe 002, and
-003 were executed on 2026-08-31. 004, 005, and 006 remain manual and have not
-been executed by the agent. Verify after every step.
+003 were executed on 2026-08-31; 005, 006, 008, and 009 on 2026-09-16 (006 and
+008 were first fixed for the Supabase SQL Editor in PR #31). 004 and 007 are
+still manual and are only needed before the NPPES ingest applies a release.
+The agent never executes SQL against Supabase. Verify after every step.
 
 The future staged-to-live apply must reject any run unless status is staged,
 staging_state is complete, expected and recorded staged counts match, and the
 database staging count matches those recorded counts. A hard process
 termination can leave separate REST calls incomplete; it cannot be rolled
 back by REST alone, so apply preflight must reject uploading and failed runs.
-
-
-| 007_nppes_refresh_lifecycle.sql | Finalize, abort, and transactional NPPES apply functions | Manual; execute only after 004 and read-only verification |
 
