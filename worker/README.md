@@ -3,7 +3,7 @@
 Replaces `appscript/` (Google Apps Script) as the backend. Same feature set
 (auth, NPPES/company search, claimed-leads tracking, taxonomies, search
 resume, suggestions), same Supabase database as the migration plan in
-`../MIGRATION_TO_VERCEL_SUPABASE.md` -- just deployed to Cloudflare Workers
+`../documentation/reference/MIGRATION_TO_VERCEL_SUPABASE.md` -- just deployed to Cloudflare Workers
 instead of Vercel, and with real routes/HTTP status codes/CORS instead of
 Apps Script's `?path=` dispatcher.
 

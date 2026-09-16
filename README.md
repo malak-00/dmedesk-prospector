@@ -24,11 +24,11 @@ App -- see [`worker/README.md`](./worker/README.md) for deployment.
 deployment, and `backend/` (Node/Express, described below) is an earlier,
 frozen implementation that predates sign-in/claimed-leads/taxonomies/
 search-resume entirely -- neither is being kept in sync going forward. If
-you're picking this repo up, read **[`ARCHITECTURE.md`](./ARCHITECTURE.md)**
+you're picking this repo up, read **[`ARCHITECTURE.md`](./documentation/architecture/ARCHITECTURE.md)**
 for how the app works end to end today (and how the Apps Script era still
-shows through), **[`MASTER_PLAN.md`](./MASTER_PLAN.md)** for the current
+shows through), **[`MASTER_PLAN.md`](./documentation/plans/MASTER_PLAN.md)** for the current
 roadmap, and
-**[`MIGRATION_TO_VERCEL_SUPABASE.md`](./MIGRATION_TO_VERCEL_SUPABASE.md)**
+**[`MIGRATION_TO_VERCEL_SUPABASE.md`](./documentation/reference/MIGRATION_TO_VERCEL_SUPABASE.md)**
 for the original migration plan this Worker implements (written against
 Vercel; the actual implementation moved to Cloudflare instead, same
 Supabase schema).
