@@ -128,7 +128,8 @@ new claims.
 
 - Undoing a merge or dismissal from the UI (decisions are one-way today).
 - Automated intake/import from source files or provider refreshes.
-- Group-aware atomic claim checks.
+- Notifying a rep when their held claim is decided (they retry the claim).
+- Claiming every branch NPI of a merged "N locations" search row at once.
 - Explicit reassign and release APIs.
 - Group and ownership-history API endpoints.
 - NPPES/Medicare compare-before-update application.
@@ -299,16 +300,28 @@ The admin UI should show conflicts and ambiguous matches with enough evidence
 to decide. Review decisions then call explicit server-side endpoints and write
 their own audit events.
 
-## How claims will become group-aware
+## How claims are group-aware
 
-The claim operation should be a single server-side transaction or SQL RPC:
+Implemented by `claim_leads()` in `sql/010_group_aware_claim.sql`, called by
+`POST /export/sheets`. In one transaction, per lead:
 
-1. Lock/check the candidate NPI and its group.
-2. Check for an existing active claim on the NPI.
-3. Check for active claims by another owner anywhere in the group.
-4. If a conflict exists, return a reviewable conflict payload and write a
-   conflict event; do not claim or reassign.
-5. Otherwise insert/update the lead and write a `claimed` event.
+1. Find or create the NPI's identity group (same keys as the tiers above;
+   an existing or reviewed membership wins) and lock every touched group in
+   a fixed order.
+2. Skip it if the caller already actively claims the NPI.
+3. **Block** it if anyone else actively claims the NPI or any NPI in its
+   group. Nothing is written and nobody's ownership changes.
+4. **Hold it for review** if it has a Tier 2/3 match to someone else's active
+   lead with no admin decision between the two businesses. The request is
+   recorded (`identity_claim_requests`) and appears in Possible duplicates
+   marked "Claim request". After "Not the same" the rep can claim it; after
+   a merge it stays blocked because the business is owned.
+5. Otherwise insert the lead with its `group_id` and write a `claimed` event.
+
+A batch is partial: allowed leads are claimed, and the rep sees a dialog
+listing blocked leads (with owner) and held leads (with the matching lead
+and owner). Search hides NPIs whose group a teammate owns. Tier 2/3 blocking
+uses exact keys only — a match that needs a fuzzy name doesn't hold a claim.
 
 Reassign and release must be separate admin-authorized operations. Each must
 require a reason and preserve the previous owner in the event history.

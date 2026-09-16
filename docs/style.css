@@ -980,6 +980,22 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .match-review-table tr.is-match td { color: var(--ink); font-weight: 600; }
 .match-review-table tr.is-match td .company-taxonomy { font-weight: 400; }
 .match-review-check { color: var(--score-high); }
+.match-request-chip { background: transparent; border: 1px solid var(--score-mid); color: var(--score-mid); }
+.match-review-request { color: var(--score-mid); }
+
+/* ---------- Claim results (blocked / held for review) ---------- */
+
+.claim-result-card { width: min(560px, 100%); max-height: min(80vh, 720px); overflow-y: auto; }
+.claim-result-section { display: flex; flex-direction: column; gap: 6px; }
+.claim-result-section[hidden] { display: none; }
+.claim-result-section h4 { margin: 4px 0 0; font-size: 14px; }
+.claim-result-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.claim-result-list li { padding: 9px 0; border-bottom: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 3px; }
+.claim-result-list li:last-child { border-bottom: none; }
+.claim-result-detail { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.claim-result-detail strong { color: var(--ink); font-weight: 600; }
+.claim-result-detail .mono { font-size: 12px; }
+.claim-result-npi { font-size: 12px; color: var(--muted); font-weight: 400; }
 .match-review-note { font-size: 11px; color: var(--muted); font-weight: 400; }
 
 /* Phones: keep both NPIs visible -- the field label takes its own line and

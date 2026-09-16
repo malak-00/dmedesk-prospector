@@ -15,6 +15,7 @@ Required manual sequence:
 007_nppes_refresh_lifecycle.sql   (only before an NPPES apply; needs 004)
 008_identity_match_tiers.sql
 009_identity_match_review.sql
+010_group_aware_claim.sql
 ```
 
 Run each file in the Supabase SQL Editor, save its read-only verification
@@ -38,6 +39,7 @@ in `003`); save their output with the run.
 | `007_nppes_refresh_lifecycle.sql` | Finalize, abort, and transactional NPPES apply functions | **Not yet run — after 004 and read-only verification** |
 | `008_identity_match_tiers.sql` | Three-tier identity keys, regroup of existing leads, `conflict_detected` events, `identity_review_candidates` view | Executed 2026-09-16 |
 | `009_identity_match_review.sql` | `identity_match_decisions`, `identity_review_queue` view, `resolve_identity_match()` for the admin Possible duplicates screen | Executed 2026-09-16 |
+| `010_group_aware_claim.sql` | `claim_leads()` (group-aware atomic claim), `owned_group_npis()` for search, `assign_lead_groups()`, `identity_claim_requests`, extended `identity_review_queue`, backfill of ungrouped leads | **Not yet run — back up first; run after 009, then deploy the Worker** |
 
 ## Notes on individual files
 
@@ -79,6 +81,27 @@ them) and, if that puts different users' claims together, writes pending
 `conflict_detected` events so the group appears under Ownership conflicts.
 Ownership never changes here. "Not the same" records a dismissal and nothing
 moves. Each pair can be decided once; both decisions require a reason.
+
+**`010`** makes claiming group-aware. `POST /export/sheets` calls
+`claim_leads()`, which for each lead (one transaction, groups locked in a
+fixed order):
+
+- skips an NPI the caller already claims;
+- **blocks** an NPI whose identity group has an active claim by someone else;
+- **holds for review** an NPI with an undecided Tier 2/3 match to someone
+  else's active lead, recording an `identity_claim_requests` row so the pair
+  shows in the Admin tab's Possible duplicates list;
+- otherwise inserts the lead with its `group_id` and a `claimed` event.
+
+A "Not the same" decision covers both businesses (every NPI in either
+group), so a dismissed pair never holds a later claim. Search hides NPIs whose
+group a teammate owns (`owned_group_npis()`), and Disconnected rows get a
+group via `assign_lead_groups()` without an ownership check. Identity uses
+`npi_records`, falling back to the search result or the lead's own columns
+when the NPI isn't there — `008` now uses the same fallback, so rerunning it
+keeps those groups. `010` backfills a group for every lead that has none.
+Run it **before** deploying the Worker: until it exists, claiming returns an
+"isn't installed yet" error instead of claiming without the check. Rerun-safe.
 
 **`006`** carries the two approved owner decisions from 2026-09-02. The
 usernames at the top are filled in: Ben Arthur approves, Rick Nelson receives

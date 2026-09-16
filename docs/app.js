@@ -273,6 +273,13 @@ const els = {
   conflictReason: document.getElementById("conflictReason"),
   conflictResolveCancelBtn: document.getElementById("conflictResolveCancelBtn"),
   conflictResolveSubmitBtn: document.getElementById("conflictResolveSubmitBtn"),
+  claimResultOverlay: document.getElementById("claimResultOverlay"),
+  claimResultSummary: document.getElementById("claimResultSummary"),
+  claimResultBlocked: document.getElementById("claimResultBlocked"),
+  claimResultBlockedList: document.getElementById("claimResultBlockedList"),
+  claimResultHeld: document.getElementById("claimResultHeld"),
+  claimResultHeldList: document.getElementById("claimResultHeldList"),
+  claimResultCloseBtn: document.getElementById("claimResultCloseBtn"),
   matchReviewsSummary: document.getElementById("matchReviewsSummary"),
   matchReviewsTierFilter: document.getElementById("matchReviewsTierFilter"),
   matchReviewsEmpty: document.getElementById("matchReviewsEmpty"),
@@ -800,14 +807,18 @@ function filteredMatchReviews() {
   return reviews.filter((review) => String(review.tier) === state.matchReviewsTier);
 }
 
-function renderMatchReviewSide(record) {
+// requestedBy: set on the side of a held claim (sql/010) -- that NPI isn't a
+// lead yet, someone tried to claim it.
+function renderMatchReviewSide(record, requestedBy) {
   // Only the state is compared, so the city is shown as secondary context.
   const location = record.state
     ? `${escapeHtml(record.state)}${record.city ? ` <span class="match-review-note">${escapeHtml(record.city)}</span>` : ""}`
     : escapeHtml(record.city || "—");
   const owners = record.owners.length
     ? record.owners.map((owner) => escapeHtml(owner.displayName)).join(", ")
-    : "Unclaimed";
+    : requestedBy
+      ? `<span class="match-review-request">Requested by ${escapeHtml(requestedBy.displayName)}</span>`
+      : "Unclaimed";
   return {
     name: `<div class="company-name">${escapeHtml(record.name || "(no name)")}</div><div class="company-taxonomy mono">${escapeHtml(record.npi)}</div>`,
     state: location,
@@ -855,12 +866,15 @@ function renderMatchReviews() {
   const visible = reviews.slice(0, state.matchReviewsLimit);
   els.matchReviewsList.innerHTML = visible
     .map((review) => {
-      const left = renderMatchReviewSide(review.left);
-      const right = renderMatchReviewSide(review.right);
+      const requestedBy = review.source === "claim_request" ? review.requestedBy : null;
+      const left = renderMatchReviewSide(review.left, requestedBy && review.requestedNpi === review.left.npi ? requestedBy : null);
+      const right = renderMatchReviewSide(review.right, requestedBy && review.requestedNpi === review.right.npi ? requestedBy : null);
       const matched = new Set(review.matchedKeys);
-      const keyChips = review.matchedKeys
-        .map((key) => `<span class="match-key-chip">${escapeHtml(MATCH_KEY_LABELS[key] || key)}</span>`)
-        .join("");
+      const keyChips =
+        (requestedBy ? `<span class="match-key-chip match-request-chip">Claim request · ${escapeHtml(requestedBy.displayName)}</span>` : "") +
+        review.matchedKeys
+          .map((key) => `<span class="match-key-chip">${escapeHtml(MATCH_KEY_LABELS[key] || key)}</span>`)
+          .join("");
       const row = (label, field, key) => {
         const isMatch = key && matched.has(key);
         return `
@@ -939,16 +953,19 @@ function openMatchReview(reviewKey, decision) {
   els.matchReviewPair.textContent =
     `${review.left.name || review.left.npi} (${review.left.npi}) and ${review.right.name || review.right.npi} (${review.right.npi})`;
 
+  const requester = review.source === "claim_request" && review.requestedBy ? review.requestedBy.displayName : null;
   if (decision === "merged") {
     const owners = new Set([...review.left.owners, ...review.right.owners].map((owner) => owner.userId));
     els.matchReviewTitle.textContent = "Merge into one business";
     els.matchReviewEffect.textContent =
       `Their groups (${review.left.groupSize + review.right.groupSize} NPIs in total) become one group. Nobody's claims change.` +
-      (owners.size > 1 ? " These NPIs are claimed by different people, so the merged group will appear under Ownership conflicts." : "");
+      (owners.size > 1 ? " These NPIs are claimed by different people, so the merged group will appear under Ownership conflicts." : "") +
+      (requester ? ` ${requester}'s claim request stays blocked, because the business is already owned.` : "");
     els.matchReviewSubmitBtn.textContent = "Merge";
   } else {
     els.matchReviewTitle.textContent = "Not the same business";
-    els.matchReviewEffect.textContent = "Nothing is moved. This pair won't be flagged again.";
+    els.matchReviewEffect.textContent =
+      "Nothing is moved. This pair won't be flagged again." + (requester ? ` ${requester} can then claim the lead.` : "");
     els.matchReviewSubmitBtn.textContent = "Dismiss";
   }
 
@@ -1583,7 +1600,7 @@ function updatePageNav() {
 function renderResults(excludedAsClaimed) {
   if (excludedAsClaimed !== undefined) state.excludedAsClaimed = excludedAsClaimed; // remembered across re-renders (e.g. a sort click)
   const { companies } = state;
-  const excludedNote = state.excludedAsClaimed > 0 ? ` (${state.excludedAsClaimed} already claimed, filtered out)` : "";
+  const excludedNote = state.excludedAsClaimed > 0 ? ` (${state.excludedAsClaimed} already claimed or owned by a teammate, filtered out)` : "";
   els.resultsCount.textContent = `${companies.length} lead${companies.length === 1 ? "" : "s"} found${excludedNote}`;
   els.selectAll.checked = companies.length > 0 && state.selected.size === companies.length;
 
@@ -1854,9 +1871,15 @@ async function exportSheets() {
   setStatus("busy", "Claiming…");
   try {
     const data = await apiPost("export/sheets", { companies });
-    showToast(`Claimed ${data.rowsAdded} lead(s) as ${data.claimedBy || "you"}`);
     state.claimedLoaded = false; // claimed view is now stale
-    removeCompaniesFromProspect(companies); // claimed leads shouldn't linger in the Prospect view
+    // Only claimed (or already-yours) leads leave Prospect -- blocked and
+    // held-for-review ones stay so the rep can see them and retry later.
+    // An older Worker without claimedNpis claimed everything it was sent.
+    const done = data.claimedNpis
+      ? new Set([...data.claimedNpis, ...(data.alreadyClaimedNpis || [])])
+      : new Set(companies.map((c) => String(c.npi)));
+    removeCompaniesFromProspect(companies.filter((c) => done.has(String(c.npi))));
+    showClaimResult(data);
     setStatus("ready", "Ready");
   } catch (err) {
     showToast(err.message, true);
@@ -1864,6 +1887,68 @@ async function exportSheets() {
   } finally {
     els.exportSheetsBtn.disabled = state.selected.size === 0;
   }
+}
+
+// Claiming is group-aware (sql/010): a lead whose business a teammate already
+// owns is blocked, and a possible duplicate of a teammate's lead is held for
+// admin review. A plain toast covers the all-claimed case; anything blocked
+// or held gets a dialog, since the rep needs to know who owns what.
+const MATCH_KEY_WORDS = { name: "name", state: "state", official: "authorized official", phone: "phone" };
+
+function claimedCountText(data) {
+  const n = data.rowsAdded || 0;
+  return `Claimed ${n} lead${n === 1 ? "" : "s"} as ${data.claimedBy || "you"}.`;
+}
+
+function showClaimResult(data) {
+  const blocked = data.blocked || [];
+  const held = data.heldForReview || [];
+  if (blocked.length === 0 && held.length === 0) {
+    showToast(claimedCountText(data));
+    return;
+  }
+
+  const parts = [claimedCountText(data)];
+  if (blocked.length) parts.push(`${blocked.length} already owned by a teammate.`);
+  if (held.length) parts.push(`${held.length} held for admin review.`);
+  els.claimResultSummary.textContent = parts.join(" ");
+
+  els.claimResultBlocked.hidden = blocked.length === 0;
+  els.claimResultBlockedList.innerHTML = blocked
+    .map((b) => {
+      const owners = b.owners.length ? b.owners.join(", ") : "a teammate";
+      const group = b.groupName && b.groupName.toLowerCase() !== String(b.companyName || "").toLowerCase() ? ` — part of ${escapeHtml(b.groupName)}` : "";
+      return `
+        <li>
+          <div class="company-name">${escapeHtml(b.companyName || b.npi)}</div>
+          <div class="claim-result-detail"><span class="mono">${escapeHtml(b.npi)}</span> · Owned by <strong>${escapeHtml(owners)}</strong>${group}</div>
+        </li>`;
+    })
+    .join("");
+
+  els.claimResultHeld.hidden = held.length === 0;
+  els.claimResultHeldList.innerHTML = held
+    .map((h) => {
+      const matches = h.matches
+        .map((m) => {
+          const keys = m.matchedKeys.map((k) => MATCH_KEY_WORDS[k] || k).join(", ");
+          return `<div class="claim-result-detail">May be the same as <strong>${escapeHtml(m.companyName || m.npi)}</strong> (<span class="mono">${escapeHtml(m.npi)}</span>, ${escapeHtml(m.ownerName)}) — same ${escapeHtml(keys)}</div>`;
+        })
+        .join("");
+      return `
+        <li>
+          <div class="company-name">${escapeHtml(h.companyName || h.npi)} <span class="mono claim-result-npi">${escapeHtml(h.npi)}</span></div>
+          ${matches}
+        </li>`;
+    })
+    .join("");
+
+  els.claimResultOverlay.hidden = false;
+  els.claimResultCloseBtn.focus();
+}
+
+function closeClaimResult() {
+  els.claimResultOverlay.hidden = true;
 }
 
 // Separate from claiming above -- this doesn't touch the app's own Claimed
@@ -3098,6 +3183,10 @@ els.conflictResolveForm.addEventListener("submit", handleConflictResolve);
 els.conflictResolveCancelBtn.addEventListener("click", closeConflictResolve);
 els.conflictResolveOverlay.addEventListener("click", (e) => {
   if (e.target === els.conflictResolveOverlay) closeConflictResolve();
+});
+els.claimResultCloseBtn.addEventListener("click", closeClaimResult);
+els.claimResultOverlay.addEventListener("click", (e) => {
+  if (e.target === els.claimResultOverlay) closeClaimResult();
 });
 els.matchReviewsList.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-match-review]");

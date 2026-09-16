@@ -342,7 +342,7 @@ changes, and save the import/reassignment logs in `temp/`.
 2. 🟡 Staging SQL written (`sql/004`); the transactional apply step is next, tested against a small fixture (Phase 6).
 3. ⬜ Worker queries same-project `npi_records` directly, preserving response shapes (Phase 3 cutover).
 4. ⬜ Refresh verification reports and provider-change review events (Phase 6).
-5. 🟡 The two ownership conflicts are decided (`sql/006`, pending execution); the group-aware atomic claim is still to build (Phases 4 and 5).
+5. 🟡 The two ownership conflicts are resolved (`sql/006`, executed 2026-09-16). Group-aware atomic claiming is built (`sql/010` + Worker): blocks claims on groups a teammate owns and holds Tier 2/3 matches for admin review — `sql/010` not yet run.
 6. 🟡 Admin conflict review queue is live; reassign/release and group/history endpoints remain (Phase 5).
 7. ⬜ Medicare staging and monthly change tracking (Phase 6).
 8. ⬜ Preflight and the approved imports from `PIS_TO_RESOLVE.csv` (Phase 7).
