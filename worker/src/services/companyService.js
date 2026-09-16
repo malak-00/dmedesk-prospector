@@ -171,6 +171,28 @@ async function getClaimedNpisAmongSafe(supabase, npis) {
   }
 }
 
+// NPIs whose identity group a teammate already owns -- hidden like claimed
+// NPIs, since claim_leads() would refuse them anyway. Same "assume none" on
+// failure (including sql/010 not installed yet) as the claimed-NPI check.
+async function getOwnedGroupNpisAmongSafe(supabase, userId, providers) {
+  if (!userId || providers.length === 0) return new Set();
+  const candidates = providers.map((p) => ({
+    npi: String(p.npi),
+    name: p.name || null,
+    state: (p.address && p.address.state) || null,
+    phone: p.phone || null,
+    officialFirstName: (p.authorizedOfficial && p.authorizedOfficial.firstName) || null,
+    officialLastName: (p.authorizedOfficial && p.authorizedOfficial.lastName) || null,
+    officialPhone: (p.authorizedOfficial && p.authorizedOfficial.phone) || null,
+  }));
+  try {
+    return await leadsRepo.getOwnedGroupNpisAmong(supabase, userId, candidates);
+  } catch (err) {
+    console.log("[companyService] Group ownership check failed: " + err.message);
+    return new Set();
+  }
+}
+
 async function getSearchProgressSafe(supabase, userId, criteria) {
   try {
     return await searchProgressRepo.getProgress(supabase, userId, criteria);
@@ -234,7 +256,7 @@ function variantKey(variant) {
   return (variant.state || "") + "|" + (variant.taxonomyDescription || "");
 }
 
-async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
+async function fetchFreshProviders(config, supabase, criteria, desiredLimit, userId) {
   const variants = criteria.npi ? [criteria] : buildCriteriaVariants(criteria);
   const mergeBranches = !criteria.npi;
   const merger = createBranchMerger();
@@ -304,6 +326,15 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
       }
     }
     const claimedThisRound = await getClaimedNpisAmongSafe(supabase, candidateNpis);
+    const unclaimedProviders = [];
+    for (const pr of pageResults) {
+      if (!pr.ok) continue;
+      for (const provider of pr.result.results) {
+        const npi = provider.npi && String(provider.npi);
+        if (npi && !claimedThisRound.has(npi) && !Object.prototype.hasOwnProperty.call(seenNpis, npi)) unclaimedProviders.push(provider);
+      }
+    }
+    const ownedThisRound = await getOwnedGroupNpisAmongSafe(supabase, userId, unclaimedProviders);
 
     for (const pr of pageResults) {
       if (acceptedCount() >= desiredLimit) break;
@@ -334,7 +365,7 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit) {
           const provider = results[i];
           if (provider.npi && Object.prototype.hasOwnProperty.call(seenNpis, String(provider.npi))) continue;
 
-          const isClaimed = provider.npi && claimedThisRound.has(String(provider.npi));
+          const isClaimed = provider.npi && (claimedThisRound.has(String(provider.npi)) || ownedThisRound.has(String(provider.npi)));
           if (isClaimed) {
             excludedAsClaimed++;
           } else {
@@ -402,7 +433,7 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
     }
   }
 
-  const fetchResult = await fetchFreshProviders(config, supabase, effectiveCriteria, desiredLimit);
+  const fetchResult = await fetchFreshProviders(config, supabase, effectiveCriteria, desiredLimit, options.userId);
   const totalScanned = fetchResult.totalScanned;
   const excludedAsClaimed = fetchResult.excludedAsClaimed;
   let companies = fetchResult.companies;

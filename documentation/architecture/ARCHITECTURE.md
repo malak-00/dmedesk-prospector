@@ -122,31 +122,46 @@ entirely.
 | Table | Purpose |
 |---|---|
 | `npi_records` | A copy of the NPPES provider registry, in the same project as `leads`. Populated, and its identity columns verified — but the Worker still reaches the registry through the fakeNPI Edge Function rather than querying this table. Cutting over is a planned step (`MASTER_PLAN.md` Phase 3) |
-| `lead_groups`, `lead_group_members`, `lead_ownership_events`, `provider_field_history`, `refresh_runs`, `leads.group_id` | The identity and audit layer. Installed and backfilled. The admin ownership-conflict queue is the first thing to read it; the claim, search and export paths still don't — see below |
+| `lead_groups`, `lead_group_members`, `lead_ownership_events`, `provider_field_history`, `refresh_runs`, `leads.group_id` | The identity and audit layer. Installed and backfilled. Read by the admin conflict and duplicate queues, and (with `sql/010`) by claiming and search — see below |
 | `nppes_refresh_staging` | Where `scripts/nppes_ingest` puts a validated NPPES release. Nothing reads it at runtime; the apply step that turns staged rows into `npi_records` updates doesn't exist yet |
 
-### Claiming, and why it isn't atomic yet
+### Claiming is group-aware and atomic
 
 Claiming a lead is `POST /export/sheets` →
-`leadsRepo.exportCompaniesToLeads`. It does a **read-then-insert**: select
-the caller's existing active claims for those NPIs, filter those out,
-insert the rest.
+`leadsRepo.exportCompaniesToLeads` → the `claim_leads()` SQL function
+(`sql/010_group_aware_claim.sql`). The Worker only builds the payload (the
+flattened lead row plus the identity signals: name, state, phone, and the
+NPPES authorized official — a website-scraped contact never counts) and maps
+the result.
 
-It is deliberately a plain `insert`, not an `upsert({ onConflict })`. The
-active-claim uniqueness rule `idx_leads_npi_claimed_by_active` is a
-*partial* unique index (only where `NOT is_disconnected`), and Postgres can
-only use a partial index as an `ON CONFLICT` arbiter if the same `WHERE`
-predicate is repeated in the `ON CONFLICT` clause — something PostgREST's
-`on_conflict` param cannot express. Trying anyway is what broke Claim Lead
-in production once.
+Inside one transaction, `claim_leads()` finds or creates each NPI's identity
+group, takes an advisory lock on every touched group in a fixed order, and
+then per lead:
 
-The consequence worth knowing: **two concurrent requests can both pass the
-pre-check before either inserts.** That's tolerable for today's exact-NPI
-rule, which the partial unique index still backstops at the database level.
-It is *not* good enough for a group-level ownership check, where there's no
-single index to fall back on. That's why the planned group-aware claim has
-to be one atomic database-side operation (an RPC or SQL function), not
-another read-then-write in the repo layer.
+| Situation | Result |
+|---|---|
+| Caller already actively claims the NPI | skipped |
+| Someone else actively claims the NPI or any NPI in its group | **blocked** — nothing written |
+| Undecided Tier 2/3 match to someone else's active lead | **held for review** — an `identity_claim_requests` row puts the pair in Admin → Possible duplicates |
+| Otherwise | claimed — lead row with `group_id`, plus a `claimed` ownership event |
+
+Batches are partial: allowed leads are claimed and the response lists the
+blocked and held ones (`blocked[]`, `heldForReview[]`), which the Prospect
+view shows in a dialog while leaving those rows in place. An admin "Not the
+same" decision covers both groups, so the rep's retry then succeeds; a merge
+puts the NPI in the owner's group, so it stays blocked.
+
+The lock makes the group check safe against simultaneous claims on the same
+company. Tier 2/3 matches span different groups and are not locked — they
+are a review signal, and a race there at worst produces a pair in the review
+queue. The partial unique index `idx_leads_npi_claimed_by_active` still
+backstops a double claim by the same user.
+
+If `sql/010` isn't installed, claiming returns a 503 rather than falling back
+to an unchecked insert. Search hides NPIs whose group a teammate owns
+(`owned_group_npis()`, best-effort like the claimed-NPI filter), and "Send to
+Disconnected" rows get a group via `assign_lead_groups()` with no ownership
+check.
 
 Related lifecycle operations:
 
@@ -398,9 +413,11 @@ manually.
 
 ## Known limitations of the current architecture
 
-- **Claiming is not atomic** (see above). Fine for the exact-NPI rule the
-  partial unique index backstops; a blocker for group-level conflict
-  checks, which is why that work needs a database-side RPC.
+- **Merged "N locations" search rows claim only their primary NPI.** The
+  other branch NPIs join the same group when they're claimed or grouped
+  later, and are then blocked for other reps.
+- **Held claims don't notify the rep** when an admin decides; the rep
+  retries the claim.
 - **Two Supabase projects.** Provider search goes cross-project to
   fakeNPI's Edge Function while all app data lives in the DME Desk project.
   `npi_records` is already copied over; the cutover hasn't happened.
@@ -414,13 +431,11 @@ manually.
 - **Scraping has no real HTML parser** — regex heuristics only.
 - **Suggestions are stored but never delivered** — no email path is wired
   up in the Worker.
-- **Two ownership conflicts are known and unresolved.** The identity
-  backfill surfaced two groups whose NPIs are actively claimed by different
-  people. They are documented in
-  `documentation/operations/CHAT_HISTORY_2026-09-02.md` and must be settled
-  by an explicit human decision — nothing in the system will resolve them
-  automatically, and the group-aware claim path shouldn't ship before they
-  are.
+- **Existing ownership conflicts still need admin decisions.** The two
+  from the 2026-08-31 backfill were resolved by `sql/006` on 2026-09-16.
+  Regrouping (`sql/008`) and review merges can surface more; group-aware
+  claiming stops new ones from being created, but existing ones stay in
+  the Admin tab's Ownership conflicts panel until an admin assigns an owner.
 
 ## How we got here
 

@@ -252,19 +252,27 @@ function formatPhone(value) {
   return digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : String(value || "");
 }
 
+const QUEUE_COLUMNS = "tier, matched_keys, left_npi, left_name, left_group_id, right_npi, right_name, right_group_id";
+// Added by sql/010 (claims held for review). Read separately so the queue
+// still works on a database that has 009 but not 010 yet.
+const QUEUE_REQUEST_COLUMNS = ", source, requested_by, requested_npi, request_snapshot";
+
+async function fetchQueuePairs(supabase, columns) {
+  return fetchAllRows(
+    () => supabase.from("identity_review_queue").select(columns).order("tier").order("left_npi").order("right_npi"),
+    "review flags"
+  );
+}
+
 export async function getMatchReviews(supabase) {
   let pairs;
   try {
-    pairs = await fetchAllRows(
-      () =>
-        supabase
-          .from("identity_review_queue")
-          .select("tier, matched_keys, left_npi, left_name, left_group_id, right_npi, right_name, right_group_id")
-          .order("tier")
-          .order("left_npi")
-          .order("right_npi"),
-      "review flags"
-    );
+    try {
+      pairs = await fetchQueuePairs(supabase, QUEUE_COLUMNS + QUEUE_REQUEST_COLUMNS);
+    } catch (err) {
+      if (!/requested_by|requested_npi|request_snapshot|source/.test(err.message || "") || !/does not exist|42703|schema cache/.test(err.message || "")) throw err;
+      pairs = await fetchQueuePairs(supabase, QUEUE_COLUMNS);
+    }
   } catch (err) {
     if (isMissingRelation({ message: err.message }, "identity_review_queue")) {
       return {
@@ -310,36 +318,51 @@ export async function getMatchReviews(supabase) {
     leadsByNpi.get(row.npi).push(row);
   });
 
-  const side = (npi, fallbackName, groupId) => {
+  // snapshot: the search-result identity a held claim was made with, used
+  // when the requested NPI has no npi_records row to show.
+  const side = (npi, fallbackName, groupId, snapshot) => {
     const record = recordByNpi.get(npi) || {};
+    const snap = (!record.npi && snapshot) || {};
     const rows = leadsByNpi.get(npi) || [];
     const lead = rows.find((row) => !row.is_disconnected) || rows[0] || {};
     const owners = [...new Set(rows.filter((row) => !row.is_disconnected && row.claimed_by).map((row) => row.claimed_by))];
+    const phone = record.phone || snap.phone;
+    const officialPhone = record.authorizedofficial_phone || snap.officialPhone;
     return {
       npi,
-      name: record.name || fallbackName || lead.company_name || "",
+      name: record.name || fallbackName || lead.company_name || snap.name || "",
       city: lead.city || "",
-      state: record.address_state || lead.state || "",
-      official: [record.authorizedofficial_firstname, record.authorizedofficial_lastname].filter(Boolean).join(" "),
-      phone: formatPhone(record.phone || record.authorizedofficial_phone),
-      phoneSource: record.phone ? "location" : record.authorizedofficial_phone ? "authorized official" : "",
+      state: record.address_state || lead.state || snap.state || "",
+      official: [record.authorizedofficial_firstname, record.authorizedofficial_lastname].filter(Boolean).join(" ") || snap.officialName || "",
+      phone: formatPhone(phone || officialPhone),
+      phoneSource: phone ? "location" : officialPhone ? "authorized official" : "",
       groupId: groupId || null,
       groupSize: groupId ? groupSize.get(groupId) || 1 : 1,
       owners: owners.map((id) => ({ userId: id, displayName: userNameById.get(id) || "(unknown user)" })),
     };
   };
 
-  const reviews = pairs.map((p) => ({
-    leftNpi: p.left_npi,
-    rightNpi: p.right_npi,
-    tier: p.tier,
-    matchedKeys: String(p.matched_keys || "")
-      .split("+")
-      .filter(Boolean)
-      .sort((a, b) => MATCH_KEY_ORDER.indexOf(a) - MATCH_KEY_ORDER.indexOf(b)),
-    left: side(p.left_npi, p.left_name, p.left_group_id),
-    right: side(p.right_npi, p.right_name, p.right_group_id),
-  }));
+  const reviews = pairs.map((p) => {
+    const isRequest = p.source === "claim_request";
+    const snapshot = isRequest ? p.request_snapshot || {} : null;
+    return {
+      leftNpi: p.left_npi,
+      rightNpi: p.right_npi,
+      tier: p.tier,
+      matchedKeys: String(p.matched_keys || "")
+        .split("+")
+        .filter(Boolean)
+        .sort((a, b) => MATCH_KEY_ORDER.indexOf(a) - MATCH_KEY_ORDER.indexOf(b)),
+      source: isRequest ? "claim_request" : "leads",
+      // A held claim: requestedNpi is the NPI someone tried to claim.
+      requestedNpi: isRequest ? p.requested_npi : null,
+      requestedBy: isRequest && p.requested_by
+        ? { userId: p.requested_by, displayName: userNameById.get(p.requested_by) || "(unknown user)" }
+        : null,
+      left: side(p.left_npi, p.left_name, p.left_group_id, isRequest && p.requested_npi === p.left_npi ? snapshot : null),
+      right: side(p.right_npi, p.right_name, p.right_group_id, isRequest && p.requested_npi === p.right_npi ? snapshot : null),
+    };
+  });
 
   return { available: true, reviews };
 }

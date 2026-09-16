@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=35">
+<link rel="stylesheet" href="style.css?v=36">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -463,6 +463,26 @@
     </form>
   </div>
 
+  <div id="claimResultOverlay" class="suggestion-overlay" hidden>
+    <div class="suggestion-card claim-result-card" role="dialog" aria-labelledby="claimResultTitle">
+      <h3 id="claimResultTitle">Claim results</h3>
+      <p class="suggestion-hint" id="claimResultSummary"></p>
+      <div id="claimResultBlocked" class="claim-result-section" hidden>
+        <h4>Already owned by a teammate</h4>
+        <p class="suggestion-hint">These belong to a business someone else has claimed, so they weren't claimed. Ask an admin if ownership should change.</p>
+        <ul class="claim-result-list" id="claimResultBlockedList"></ul>
+      </div>
+      <div id="claimResultHeld" class="claim-result-section" hidden>
+        <h4>Held for admin review</h4>
+        <p class="suggestion-hint">These may be the same business as a teammate's lead. An admin will decide under Possible duplicates; try claiming again after that.</p>
+        <ul class="claim-result-list" id="claimResultHeldList"></ul>
+      </div>
+      <div class="suggestion-actions">
+        <button type="button" class="btn btn-primary" id="claimResultCloseBtn">OK</button>
+      </div>
+    </div>
+  </div>
+
   <div id="matchReviewOverlay" class="suggestion-overlay" hidden>
     <form id="matchReviewForm" class="suggestion-card conflict-resolve-card">
       <h3 id="matchReviewTitle">Review this match</h3>
@@ -518,6 +538,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=33"></script>
+  <script src="app.js?v=34"></script>
 </body>
 </html>

@@ -105,6 +105,17 @@ export async function getClaimedNpisAmong(supabase, npis) {
   return new Set((data || []).map((row) => String(row.npi)));
 }
 
+// Which of these search candidates belong to an identity group that someone
+// other than userId actively claims (sql/010's owned_group_npis). candidates:
+// [{ npi, name, state, phone, officialFirstName, officialLastName, officialPhone }].
+export async function getOwnedGroupNpisAmong(supabase, userId, candidates) {
+  const list = (candidates || []).filter((c) => c && c.npi);
+  if (!userId || list.length === 0) return new Set();
+  const { data, error } = await supabase.rpc("owned_group_npis", { p_user_id: userId, p_candidates: list });
+  if (error) throw httpError(500, "Failed to check group ownership: " + error.message);
+  return new Set((data || []).map(String));
+}
+
 export async function getKnownStatuses(supabase) {
   const { data, error } = await supabase.from("leads").select("status").eq("is_disconnected", false);
   if (error) throw httpError(500, "Failed to load statuses: " + error.message);
@@ -189,39 +200,78 @@ export async function getClaimedLeadsByNpis(supabase, npis, session) {
   return (data || []).map((row) => toLeadDTO(row, session.displayName));
 }
 
+// The identity signals claim_leads() groups a lead by (sql/010). Only the
+// NPPES authorized official counts as the official -- a contact scraped from
+// a website is someone else. npi_records wins over these when the NPI is
+// there, so this only decides identity for NPIs missing from it.
+function identityFromCompany(company, flat) {
+  const official = (company.decisionMakers || []).find((d) => d && d.source === "nppes" && d.name);
+  return {
+    name: flat.name || null,
+    state: flat.state || null,
+    phone: flat.phone || null,
+    officialName: official ? official.name : null,
+    officialPhone: official && official.phone ? official.phone : null,
+  };
+}
+
+// Claiming is one database function (sql/010_group_aware_claim.sql), not a
+// read-then-insert here: it locks each lead's identity group, refuses NPIs
+// whose group someone else owns, holds Tier 2/3 near-matches of someone
+// else's lead for admin review, and inserts + audits the rest -- atomically,
+// so two simultaneous claims on one company can't both get through. A batch
+// is partial on purpose: allowed leads are claimed, the others are returned.
 export async function exportCompaniesToLeads(supabase, companies, session, flattenCompany) {
   companies = companies || [];
   if (!Array.isArray(companies) || companies.length === 0) throw httpError(400, "At least one company is required to export");
 
-  // Plain insert with a pre-check, not .upsert({onConflict}) -- the active-
-  // lead uniqueness rule (idx_leads_npi_claimed_by_active) is a PARTIAL
-  // index (only enforced where NOT is_disconnected), and Postgres can only
-  // use a partial index as an ON CONFLICT arbiter when the same WHERE
-  // predicate is repeated in the ON CONFLICT clause itself -- something
-  // PostgREST's on_conflict query param has no way to express. Without it,
-  // Postgres can't find a matching constraint and errors out, which is
-  // exactly what broke Claim Lead in production (fine in the earlier bulk
-  // CSV import, which used plain INSERTs with no ON CONFLICT at all).
-  const npis = companies.map((c) => String(c.npi)).filter(Boolean);
-  const { data: existing, error: findErr } = await supabase
-    .from("leads")
-    .select("npi")
-    .eq("claimed_by", session.id)
-    .eq("is_disconnected", false)
-    .in("npi", npis);
-  if (findErr) throw httpError(500, "Failed to check existing claims: " + findErr.message);
-  const alreadyClaimed = new Set((existing || []).map((r) => String(r.npi)));
+  const items = companies
+    .filter((c) => c && c.npi)
+    .map((c) => {
+      const flat = flattenCompany(c);
+      return {
+        npi: String(c.npi),
+        identity: identityFromCompany(c, flat),
+        lead: companyToLeadRow(flat, session, { status: "new", isDisconnected: false }),
+      };
+    });
+  if (items.length === 0) throw httpError(400, "At least one company with an NPI is required to claim");
 
-  const rows = companies
-    .filter((c) => !alreadyClaimed.has(String(c.npi)))
-    .map((c) => companyToLeadRow(flattenCompany(c), session, { status: "new", isDisconnected: false }));
+  const { data, error } = await supabase.rpc("claim_leads", { p_user_id: session.id, p_leads: items });
+  if (error) {
+    if (error.code === "PGRST202" || /Could not find the function/i.test(error.message || "")) {
+      throw httpError(503, "Group-aware claiming isn't installed yet. Run sql/010_group_aware_claim.sql in Supabase, then try again.");
+    }
+    throw httpError(500, "Failed to claim leads: " + error.message);
+  }
 
-  if (rows.length === 0) return { rowsAdded: 0, claimedBy: session.displayName };
-
-  const { error } = await supabase.from("leads").insert(rows);
-  if (error) throw httpError(500, "Failed to save claimed leads: " + error.message);
-
-  return { rowsAdded: rows.length, claimedBy: session.displayName };
+  const result = data || {};
+  const claimed = result.claimed || [];
+  const skipped = result.skipped || [];
+  return {
+    rowsAdded: claimed.length,
+    claimedBy: session.displayName,
+    claimedNpis: claimed.map((c) => String(c.npi)),
+    alreadyClaimedNpis: skipped.filter((s) => s.reason === "already_claimed_by_you").map((s) => String(s.npi)),
+    blocked: (result.blocked || []).map((b) => ({
+      npi: String(b.npi),
+      companyName: b.companyName || "",
+      groupName: b.groupName || "",
+      owners: (b.owners || []).map((o) => o.displayName || "(unknown user)"),
+    })),
+    heldForReview: (result.held || []).map((h) => ({
+      npi: String(h.npi),
+      companyName: h.companyName || "",
+      matches: (h.matches || []).map((m) => ({
+        npi: String(m.npi),
+        companyName: m.companyName || "",
+        tier: m.tier,
+        matchedKeys: String(m.matchedKeys || "").split("+").filter(Boolean),
+        ownerName: m.ownerDisplayName || "(unknown user)",
+      })),
+    })),
+    invalid: skipped.filter((s) => s.reason !== "already_claimed_by_you").map((s) => ({ npi: String(s.npi || ""), reason: s.reason })),
+  };
 }
 
 export async function exportCompaniesToDisconnected(supabase, companies, session, flattenCompany) {
@@ -231,6 +281,12 @@ export async function exportCompaniesToDisconnected(supabase, companies, session
   const rows = companies.map((c) => companyToLeadRow(flattenCompany(c), session, { status: "disconnected", isDisconnected: true }));
   const { error } = await supabase.from("leads").insert(rows);
   if (error) throw httpError(500, "Failed to save disconnected leads: " + error.message);
+
+  // Disconnected rows aren't claims, so there's no ownership check -- but they
+  // still get an identity group so they line up with the rest of the business.
+  // Best-effort: a missing sql/010 must not fail the disconnect itself.
+  const { error: groupErr } = await supabase.rpc("assign_lead_groups", { p_npis: rows.map((r) => r.npi) });
+  if (groupErr) console.log("[leadsRepo] assign_lead_groups failed: " + groupErr.message);
 
   return { rowsAdded: rows.length };
 }

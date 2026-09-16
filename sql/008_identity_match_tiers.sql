@@ -130,16 +130,27 @@ begin
     select distinct on (l.npi)
       l.npi, r.name, r.address_state,
       r.authorizedofficial_firstname, r.authorizedofficial_lastname,
-      r.phone, r.authorizedofficial_phone
+      r.phone, r.authorizedofficial_phone,
+      (r.npi is not null) as in_npi_records,
+      l.company_name as lead_name, l.state as lead_state, l.phone as lead_phone,
+      case when l.contact_source = 'nppes' then l.contact_name end as lead_official,
+      case when l.contact_source = 'nppes' then l.contact_phone end as lead_official_phone
     from public.leads l
     left join public.npi_records r on r.npi = l.npi
-    order by l.npi
+    order by l.npi, l.claimed_at desc nulls last
   ), keyed as (
+    -- New keys: npi_records when the NPI is there, otherwise the lead's own
+    -- columns (same identity sql/010's claim uses). The old_* keys below stay
+    -- npi_records-only, exactly as 002 computed them.
     select s.*,
-           public.identity_name_key(s.name) as name_key,
-           public.identity_state_key(s.address_state) as state_key,
-           public.identity_official_key(s.authorizedofficial_firstname, s.authorizedofficial_lastname) as official_key,
-           public.identity_phone_key(s.phone, s.authorizedofficial_phone) as phone_key,
+           public.identity_name_key(case when s.in_npi_records then s.name else s.lead_name end) as name_key,
+           public.identity_state_key(case when s.in_npi_records then s.address_state else s.lead_state end) as state_key,
+           case when s.in_npi_records
+                then public.identity_official_key(s.authorizedofficial_firstname, s.authorizedofficial_lastname)
+                else public.identity_official_key(s.lead_official, null) end as official_key,
+           case when s.in_npi_records
+                then public.identity_phone_key(s.phone, s.authorizedofficial_phone)
+                else public.identity_phone_key(s.lead_phone, s.lead_official_phone) end as phone_key,
            -- The key sql/002_identity_backfill_safe.sql grouped this lead by.
            -- Used to tell a conflict regrouping created from one that already
            -- existed, without needing a snapshot taken earlier in this run.
@@ -164,9 +175,9 @@ begin
   insert into public.lead_groups
     (identity_key, canonical_name, state, authorized_official, phone_key, grouping_tier)
   select c.identity_key,
-         min(c.name),
+         min(coalesce(c.name, c.lead_name)),
          case when count(distinct nullif(c.state_key, '')) <= 1 then min(nullif(c.state_key, '')) end,
-         nullif(min(concat_ws(' ', c.authorizedofficial_firstname, c.authorizedofficial_lastname)), ''),
+         nullif(min(coalesce(nullif(concat_ws(' ', c.authorizedofficial_firstname, c.authorizedofficial_lastname), ''), c.lead_official)), ''),
          nullif(min(c.phone_key), ''),
          case when c.identity_key like 'singleton:%' then 'singleton'
               when count(distinct nullif(c.state_key, '')) > 1 then 'cross_state'
