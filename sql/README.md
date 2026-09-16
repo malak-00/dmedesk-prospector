@@ -127,9 +127,12 @@ search can't switch off fakeNPI until this has loaded. `apply_medicare_refresh()
 applies only NPIs present in `npi_records`, records changed values in
 `provider_field_history` (source `medicare`), raises a pending
 `provider_data_changed` event for a claimed lead whose claims fell by more
-than half, never clears an NPI just because it's missing from a release, and
-refuses to apply identical content twice without `operator_override`. CMS
-publishes one data year at a time, so most monthly runs change nothing.
+than half, never clears an NPI just because it's missing from a release, and refuses
+identical content without `operator_override` only when there are no
+newly eligible providers to load (so re-running after an NPPES refresh picks
+up suppliers that were skipped before). CMS publishes one data year at a
+time, so most monthly runs change little. Re-run this file to update the
+function (it is rerun-safe).
 
 **`011`** lets an integration account (e.g. BD MEETINGS) claim for a named
 teammate via `POST /admin/claim-for-user` (see

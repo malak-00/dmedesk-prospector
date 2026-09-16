@@ -17,8 +17,9 @@
 --     'provider_data_changed' review event;
 --   * an NPI missing from the new release is NOT cleared -- nothing is
 --     inferred from omission;
---   * the same release content (checksum) can't be applied twice unless
---     refresh_runs.metadata.operator_override = 'true'.
+--   * the same release content (checksum) is refused only when it has no
+--     newly eligible providers to load (e.g. after an NPPES refresh added
+--     NPIs it is accepted), unless refresh_runs.metadata.operator_override = 'true'.
 -- CMS publishes this data once a year, so most monthly runs apply no changes.
 
 begin;
@@ -69,11 +70,18 @@ begin
     raise exception 'refresh run % staging count changed (% staged, % recorded)', p_run_id, v_staged, v_run.row_count;
   end if;
 
+  -- Identical content is only refused when it would add nothing: after an
+  -- NPPES refresh adds providers, re-running the same Medicare release must
+  -- still load their rows (re-applying unchanged rows records nothing).
   if exists (select 1 from public.refresh_runs x
               where x.id <> p_run_id and x.source = 'medicare' and x.status = 'applied'
                 and x.metadata->>'content_checksum' = v_run.metadata->>'content_checksum')
+     and not exists (select 1 from public.medicare_refresh_staging s
+                      where s.refresh_run_id = p_run_id
+                        and exists (select 1 from public.npi_records r where r.npi = s.npi)
+                        and not exists (select 1 from public.npi_cms_enrichment e where e.npi = s.npi))
      and coalesce(v_run.metadata->>'operator_override', 'false') <> 'true' then
-    raise exception 'this Medicare release (checksum %) was already applied; set metadata.operator_override to re-apply', v_run.metadata->>'content_checksum';
+    raise exception 'this Medicare release (checksum %) was already applied and has no new providers to load; set metadata.operator_override to re-apply', v_run.metadata->>'content_checksum';
   end if;
 
   select count(*) into v_skipped

@@ -135,9 +135,11 @@ updates `npi_cms_enrichment`, writes `provider_field_history`, and raises a
 review alert when a claimed lead's claims fall by more than half. It finds
 the newest data year in the CMS catalog automatically (falling back to the
 last known version; `--dataset-id` pins one) and prints which one it used. A
-release shorter than the row count CMS reports is refused and rolled back;
-identical content is refused by the database, so monthly runs are safe.
-Install `sql/012_medicare_refresh.sql` first.
+release shorter than the row count CMS reports is refused and rolled back.
+Identical content is refused by the database unless it has providers that
+are now in `npi_records` but weren't loaded before — so run it **after** the
+NPPES refresh each month, and suppliers for newly added providers get their
+Medicare data. Install `sql/012_medicare_refresh.sql` first.
 
 ### Plumbing
 
