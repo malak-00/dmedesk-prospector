@@ -142,17 +142,23 @@ Applied alongside it: supporting indexes, RLS on all five new tables,
 `anon`/`authenticated` revoked, and `BEFORE UPDATE OR DELETE` triggers that
 make both history tables genuinely append-only.
 
-**Grouping algorithm — two tiers:**
+**Grouping algorithm — three tiers** (full rules in
+`documentation/plans/LEAD_INTAKE_AND_GROUPING_GUIDE.md`). Keys: name (legal
+suffixes stripped), state, authorized official (middle names ignored), phone
+(location first, official second).
 
-1. **Tier 1 (auto-group) — ✅ implemented in SQL and executed.** Strict
-   normalized key: `normalized_name + state + authorized_official +
-   first_10_digit_phone`. High confidence, no review needed. Where any
-   signal is missing it creates a singleton group (`singleton:<npi>`)
-   rather than guessing.
-2. **Tier 2 (flag for review) — ⬜ not started.** RapidFuzz
-   `token_sort_ratio ≥ 88` on stripped names, gated by at least one
-   corroborating signal (phone, official, or address). Writes
-   `possible_duplicate` rows for review only; never auto-groups.
+1. **Tier 1 (auto-group):** all four keys match. The original strict
+   backfill executed 2026-08-31; `sql/008_identity_match_tiers.sql`
+   (**not yet run**) regroups existing leads under the new keys.
+2. **Tier 2:** name + official + phone in any state **auto-groups**
+   (intended: shared ownership across states). Name + state + phone,
+   name + state + official, or state + official + phone is **flagged**.
+3. **Tier 3 (flag):** official + phone, name + phone, or name + official.
+
+A fuzzy name (`token_sort_ratio ≥ 88` on stripped names) can only ever flag.
+Ownership conflicts created by auto-grouping show in the admin conflicts
+panel. Tier 2/3 flags are merged or dismissed in the Admin tab's Possible
+duplicates panel (`sql/009_identity_match_review.sql`, **not yet run**).
 
 **One-time migration steps — ✅ steps 1–5 done via `sql/002_identity_backfill_safe.sql`:**
 
@@ -161,7 +167,8 @@ make both history tables genuinely append-only.
 3. ✅ Populate `lead_group_members` — link each `leads.npi` to its group.
 4. ✅ Backfill `leads.group_id`.
 5. ✅ Backfill `lead_ownership_events` — one `claimed` event per existing claimed `leads` row.
-6. ⬜ Run Tier 2 fuzzy matching, write `possible_duplicate` entries for review.
+6. ⬜ Run `sql/008_identity_match_tiers.sql`: regroup under the three-tier keys, flag new ownership conflicts, and create the Tier 2/3 review view.
+7. ⬜ Run `sql/009_identity_match_review.sql`, then work the Possible duplicates queue in the Admin tab.
 
 The backfill is rerun-safe: it uses `ON CONFLICT (npi) DO NOTHING` so a
 reviewed membership decision is never overwritten. The earlier draft,

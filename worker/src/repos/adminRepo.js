@@ -105,6 +105,24 @@ export async function getAggregateStats(supabase) {
 
 // ---- group-level ownership conflicts --------------------------------------
 
+// Why a group's NPIs were put together, from the tier recorded on the group
+// (see sql/008_identity_match_tiers.sql). Groups keyed before 008 keep their
+// original 'strict:' keys until it runs, so they're labelled separately.
+function describeGroupMatch(group) {
+  const tier = group && group.grouping_tier;
+  const key = (group && group.identity_key) || "";
+  if (tier === "singleton") return { matchTier: null, matchReason: "Same NPI" };
+  if (key.startsWith("group:") && tier === "strict") {
+    return { matchTier: 1, matchReason: "Same name, state, authorized official and phone" };
+  }
+  if (key.startsWith("group:") && tier === "cross_state") {
+    return { matchTier: 2, matchReason: "Same name, authorized official and phone in different states" };
+  }
+  if (tier === "strict") return { matchTier: 1, matchReason: "Same name, state, authorized official and phone (pre-tier grouping)" };
+  if (tier === "review") return { matchTier: null, matchReason: "Grouped by manual review" };
+  return { matchTier: null, matchReason: "" };
+}
+
 // An identity group whose active claims are split across more than one
 // person. The authoritative definition lives in SQL as
 // public.ownership_conflicts (sql/005_ownership_conflict_resolution.sql);
@@ -156,7 +174,7 @@ export async function getOwnershipConflicts(supabase) {
 
   const groupIds = conflicted.map(([groupId]) => groupId);
   const [groupsRes, usersRes] = await Promise.all([
-    supabase.from("lead_groups").select("id, canonical_name, state, identity_key").in("id", groupIds),
+    supabase.from("lead_groups").select("id, canonical_name, state, identity_key, grouping_tier").in("id", groupIds),
     supabase.from("app_users").select("id, display_name"),
   ]);
   if (usersRes.error) throw httpError(500, "Failed to load users: " + usersRes.error.message);
@@ -169,11 +187,13 @@ export async function getOwnershipConflicts(supabase) {
     const ownerCounts = new Map();
     rows.forEach((row) => ownerCounts.set(row.claimed_by, (ownerCounts.get(row.claimed_by) || 0) + 1));
     const group = groupById.get(groupId);
+    const states = [...new Set(rows.map((row) => row.state).filter(Boolean))].sort();
     return {
       groupId,
       groupName: (group && group.canonical_name) || rows[0].company_name || "(unnamed group)",
-      groupState: (group && group.state) || rows[0].state || "",
+      groupState: (group && group.state) || states.join(", "),
       identityKey: (group && group.identity_key) || "",
+      ...describeGroupMatch(group),
       owners: [...ownerCounts.entries()]
         .map(([userId, leadCount]) => ({
           userId,
@@ -198,6 +218,163 @@ export async function getOwnershipConflicts(supabase) {
 
   conflicts.sort((a, b) => a.groupName.localeCompare(b.groupName));
   return { available: true, conflicts };
+}
+
+// ---- identity review flags (Tier 2 / Tier 3) ---------------------------------
+
+// Pairs of NPIs that matched a review-only tier rule and haven't been merged
+// or dismissed yet. The pairs come from public.identity_review_queue
+// (sql/008 + sql/009); this adds what an admin needs to decide -- both
+// records side by side, group sizes, and who currently holds each claim.
+const IN_CHUNK_SIZE = 200; // keeps .in() filters well under URL length limits
+
+const MATCH_KEY_ORDER = ["name", "state", "official", "phone"];
+
+function isMissingRelation(error, name) {
+  const message = (error && error.message) || "";
+  return (
+    (error && (error.code === "42P01" || error.code === "PGRST205")) ||
+    (message.includes(name) && /does not exist|Could not find the table|schema cache/i.test(message))
+  );
+}
+
+async function fetchInChunks(values, queryForChunk, errorContext) {
+  const rows = [];
+  for (let i = 0; i < values.length; i += IN_CHUNK_SIZE) {
+    const chunk = values.slice(i, i + IN_CHUNK_SIZE);
+    rows.push(...(await fetchAllRows(() => queryForChunk(chunk), errorContext)));
+  }
+  return rows;
+}
+
+function formatPhone(value) {
+  const digits = String(value || "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+  return digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : String(value || "");
+}
+
+export async function getMatchReviews(supabase) {
+  let pairs;
+  try {
+    pairs = await fetchAllRows(
+      () =>
+        supabase
+          .from("identity_review_queue")
+          .select("tier, matched_keys, left_npi, left_name, left_group_id, right_npi, right_name, right_group_id")
+          .order("tier")
+          .order("left_npi")
+          .order("right_npi"),
+      "review flags"
+    );
+  } catch (err) {
+    if (isMissingRelation({ message: err.message }, "identity_review_queue")) {
+      return {
+        available: false,
+        reviews: [],
+        reason: "The review queue isn't installed yet. Run sql/008_identity_match_tiers.sql and sql/009_identity_match_review.sql first.",
+      };
+    }
+    throw err;
+  }
+  if (pairs.length === 0) return { available: true, reviews: [] };
+
+  const npis = [...new Set(pairs.flatMap((p) => [p.left_npi, p.right_npi]))];
+  const groupIds = [...new Set(pairs.flatMap((p) => [p.left_group_id, p.right_group_id]).filter(Boolean))];
+
+  const [records, leads, members, usersRes] = await Promise.all([
+    fetchInChunks(
+      npis,
+      (chunk) =>
+        supabase
+          .from("npi_records")
+          .select("npi, name, address_state, authorizedofficial_firstname, authorizedofficial_lastname, phone, authorizedofficial_phone")
+          .in("npi", chunk),
+      "provider records"
+    ),
+    fetchInChunks(
+      npis,
+      (chunk) => supabase.from("leads").select("npi, company_name, city, state, claimed_by, is_disconnected").in("npi", chunk),
+      "leads"
+    ),
+    fetchInChunks(groupIds, (chunk) => supabase.from("lead_group_members").select("group_id").in("group_id", chunk), "group members"),
+    supabase.from("app_users").select("id, display_name"),
+  ]);
+  if (usersRes.error) throw httpError(500, "Failed to load users: " + usersRes.error.message);
+
+  const recordByNpi = new Map(records.map((r) => [r.npi, r]));
+  const userNameById = new Map((usersRes.data || []).map((u) => [u.id, u.display_name]));
+  const groupSize = new Map();
+  members.forEach((m) => groupSize.set(m.group_id, (groupSize.get(m.group_id) || 0) + 1));
+  const leadsByNpi = new Map();
+  leads.forEach((row) => {
+    if (!leadsByNpi.has(row.npi)) leadsByNpi.set(row.npi, []);
+    leadsByNpi.get(row.npi).push(row);
+  });
+
+  const side = (npi, fallbackName, groupId) => {
+    const record = recordByNpi.get(npi) || {};
+    const rows = leadsByNpi.get(npi) || [];
+    const lead = rows.find((row) => !row.is_disconnected) || rows[0] || {};
+    const owners = [...new Set(rows.filter((row) => !row.is_disconnected && row.claimed_by).map((row) => row.claimed_by))];
+    return {
+      npi,
+      name: record.name || fallbackName || lead.company_name || "",
+      city: lead.city || "",
+      state: record.address_state || lead.state || "",
+      official: [record.authorizedofficial_firstname, record.authorizedofficial_lastname].filter(Boolean).join(" "),
+      phone: formatPhone(record.phone || record.authorizedofficial_phone),
+      phoneSource: record.phone ? "location" : record.authorizedofficial_phone ? "authorized official" : "",
+      groupId: groupId || null,
+      groupSize: groupId ? groupSize.get(groupId) || 1 : 1,
+      owners: owners.map((id) => ({ userId: id, displayName: userNameById.get(id) || "(unknown user)" })),
+    };
+  };
+
+  const reviews = pairs.map((p) => ({
+    leftNpi: p.left_npi,
+    rightNpi: p.right_npi,
+    tier: p.tier,
+    matchedKeys: String(p.matched_keys || "")
+      .split("+")
+      .filter(Boolean)
+      .sort((a, b) => MATCH_KEY_ORDER.indexOf(a) - MATCH_KEY_ORDER.indexOf(b)),
+    left: side(p.left_npi, p.left_name, p.left_group_id),
+    right: side(p.right_npi, p.right_name, p.right_group_id),
+  }));
+
+  return { available: true, reviews };
+}
+
+// Merge or dismiss one flagged pair. Like conflict resolution, the whole
+// decision is one SQL function (sql/009_identity_match_review.sql) so a merge
+// can't be left half-applied.
+export async function resolveMatchReview(supabase, { leftNpi, rightNpi, decision, decidedBy, reason, tier, matchedKeys }) {
+  if (!leftNpi || !rightNpi) throw httpError(400, "Both NPIs are required");
+  if (decision !== "merged" && decision !== "dismissed") throw httpError(400, "decision must be merged or dismissed");
+  if (!reason || !String(reason).trim()) {
+    throw httpError(400, "A reason is required -- review decisions have to record why they were made");
+  }
+
+  const { data, error } = await supabase.rpc("resolve_identity_match", {
+    p_left_npi: String(leftNpi),
+    p_right_npi: String(rightNpi),
+    p_decision: decision,
+    p_decided_by: decidedBy,
+    p_reason: String(reason).trim(),
+    p_tier: Number.isInteger(tier) ? tier : null,
+    p_matched_keys: Array.isArray(matchedKeys) ? matchedKeys.join("+") : null,
+  });
+
+  if (error) {
+    if (error.code === "PGRST202" || /Could not find the function/i.test(error.message || "")) {
+      throw httpError(503, "Review decisions aren't installed yet. Run sql/009_identity_match_review.sql in Supabase, then try again.");
+    }
+    if (/already been decided/i.test(error.message || "")) {
+      throw httpError(409, "Someone already decided this pair. Refresh to see the current list.");
+    }
+    throw httpError(500, "Failed to save the decision: " + error.message);
+  }
+
+  return data || {};
 }
 
 // Hands the whole decision to one SQL function. Deliberately NOT a

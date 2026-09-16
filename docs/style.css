@@ -919,6 +919,7 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .conflict-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .conflict-title { font-weight: 600; font-size: 15px; }
 .conflict-subtitle { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.conflict-match { font-size: 12px; color: var(--muted); margin-top: 3px; }
 .conflict-owners { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .conflict-owner-chip {
   font-size: 12px; padding: 3px 9px; border-radius: 999px;
@@ -945,3 +946,55 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .conflict-owner-option input { margin: 0; }
 .conflict-owner-count { margin-left: auto; font-size: 12px; color: var(--muted); }
 .conflict-resolve-card { width: min(520px, 100%); }
+
+/* ---------- Admin: possible duplicates (Tier 2 / Tier 3 review) ---------- */
+
+.match-reviews-list { display: flex; flex-direction: column; gap: 12px; }
+.match-reviews-list:empty { display: none; }
+.match-reviews-more { align-self: flex-start; }
+.match-reviews-more[hidden] { display: none; }
+
+.match-review-card { border-color: var(--hairline); }
+.match-review-card.match-review-tier-2 { box-shadow: inset 3px 0 0 var(--score-mid); }
+.match-review-card.match-review-tier-3 { box-shadow: inset 3px 0 0 var(--accent); }
+
+.match-key-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.match-key-chip {
+  font-size: 12px; padding: 3px 9px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent-ink);
+  white-space: nowrap;
+}
+
+.match-review-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.match-review-actions .btn-primary { margin-left: 0; }
+
+.match-review-table-wrap { overflow-x: auto; }
+.match-review-table { table-layout: fixed; min-width: 480px; }
+.match-review-table th[scope="row"] {
+  width: 150px; text-transform: none; letter-spacing: 0; font-size: 12px;
+  border-bottom: 1px solid var(--hairline); padding: 7px 10px 7px 0; vertical-align: top;
+}
+.match-review-table tr:last-child th[scope="row"] { border-bottom: none; }
+.match-review-table td { overflow-wrap: anywhere; }
+.match-review-table tr.is-match th[scope="row"],
+.match-review-table tr.is-match td { color: var(--ink); font-weight: 600; }
+.match-review-table tr.is-match td .company-taxonomy { font-weight: 400; }
+.match-review-check { color: var(--score-high); }
+.match-review-note { font-size: 11px; color: var(--muted); font-weight: 400; }
+
+/* Phones: keep both NPIs visible -- the field label takes its own line and
+   the two values sit side by side beneath it, instead of a wide table that
+   scrolls the second NPI out of view. */
+@media (max-width: 640px) {
+  .match-review-actions { width: 100%; }
+  .match-review-actions .btn { flex: 1; justify-content: center; }
+  .match-review-table { min-width: 0; table-layout: auto; }
+  .match-review-table tbody, .match-review-table tr { display: block; }
+  .match-review-table tr {
+    display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px;
+    padding: 8px 0; border-bottom: 1px solid var(--hairline);
+  }
+  .match-review-table tr:last-child { border-bottom: none; }
+  .match-review-table th[scope="row"] { grid-column: 1 / -1; width: auto; border-bottom: none; padding: 0 0 4px; }
+  .match-review-table td { border-bottom: none; padding: 0; }
+}
