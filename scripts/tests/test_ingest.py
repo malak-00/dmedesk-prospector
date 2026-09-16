@@ -303,6 +303,155 @@ class IngestRunTests(unittest.TestCase):
                 run_ingest(self._options(tmp, source_path=Path(tmp) / "missing.csv"), FakeSupabaseClient(), log=quiet)
 
 
+class StreamingIngestTests(unittest.TestCase):
+    """The release is staged in batches as it is read, not held in memory."""
+
+    def _options(self, tmp: str, **overrides) -> IngestOptions:
+        defaults = dict(
+            source_path=SAMPLE,
+            run_type=RUN_TYPE_MONTHLY_FULL,
+            output_dir=Path(tmp),
+            taxonomy_codes=DME_TAXONOMY,
+            label="stream-run",
+        )
+        defaults.update(overrides)
+        return IngestOptions(**defaults)
+
+    def test_batches_are_staged_while_reading_under_one_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FakeSupabaseClient()
+            result = run_ingest(self._options(tmp, batch_size=1), client, log=quiet)
+            self.assertEqual(len(client.runs), 1)
+            self.assertEqual(client._insert_calls, 3)
+            self.assertEqual(result.manifest.staged_rows, 3)
+            complete = [v for _f, v in client.updates if v["metadata"]["staging_state"] == "complete"]
+            self.assertEqual(complete[0]["metadata"]["expected_staged_rows"], 3)
+
+    def test_no_accepted_rows_creates_no_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FakeSupabaseClient()
+            with self.assertRaises(RuntimeError):
+                run_ingest(self._options(tmp, taxonomy_codes=frozenset({"000000000X"})), client, log=quiet)
+            self.assertEqual(client.runs, [])
+            self.assertEqual(client.staged, [])
+
+    def test_rejects_file_only_written_when_there_are_rejections(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_ingest(self._options(tmp, limit=1), FakeSupabaseClient(), log=quiet)
+            self.assertIsNone(result.rejects_path)
+            self.assertFalse((Path(tmp) / "stream-run.rejects.csv").exists())
+
+    def test_organizations_only_rejects_individuals(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FakeSupabaseClient()
+            result = run_ingest(self._options(tmp, organizations_only=True), client, log=quiet)
+            self.assertEqual([row["npi"] for row in client.staged], ["1881462752", "1598747552"])
+            self.assertEqual(result.manifest.rejections_by_reason.get("individual_provider"), 1)
+            self.assertTrue(result.manifest.filters["organizations_only"])
+
+    def test_organizations_only_is_ignored_for_deactivation_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FakeSupabaseClient()
+            run_ingest(
+                self._options(tmp, source_path=DEACTIVATION_SAMPLE, run_type=RUN_TYPE_DEACTIVATION,
+                              taxonomy_codes=None, organizations_only=True),
+                client, log=quiet,
+            )
+            self.assertEqual([row["npi"] for row in client.staged], ["1598747552", "1881462752"])
+
+    def test_cli_defaults_to_organizations_only(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        captured = {}
+
+        def fake_run_ingest(options, client):
+            captured["options"] = options
+            raise RuntimeError("stop")
+
+        with mock.patch.object(cli, "run_ingest", side_effect=fake_run_ingest), mock.patch("builtins.print"):
+            cli.main([str(SAMPLE), "--run-type", RUN_TYPE_MONTHLY_FULL, "--taxonomy-codes", "332B00000X", "--dry-run"])
+            self.assertTrue(captured["options"].organizations_only)
+            cli.main([str(SAMPLE), "--run-type", RUN_TYPE_MONTHLY_FULL, "--taxonomy-codes", "332B00000X", "--dry-run", "--include-individuals"])
+            self.assertFalse(captured["options"].organizations_only)
+
+    def test_matching_expected_row_count_is_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FakeSupabaseClient()
+            result = run_ingest(self._options(tmp, expect_rows=7, row_count_tolerance=0), client, log=quiet)
+            self.assertEqual(result.manifest.status, "staged")
+
+
+class FakeApplyClient:
+    def __init__(self, batches) -> None:
+        self.batches = list(batches)
+        self.calls: list[tuple[str, dict]] = []
+
+    def rpc(self, function: str, params=None):
+        self.calls.append((function, params))
+        if function == "apply_nppes_refresh_batch":
+            return self.batches.pop(0)
+        if function == "finish_nppes_apply":
+            return {"status": "applied"}
+        raise AssertionError(function)
+
+
+class ApplyRunTests(unittest.TestCase):
+    def test_loops_until_nothing_remains_then_finishes(self) -> None:
+        from nppes_ingest.apply import run_apply
+
+        client = FakeApplyClient([
+            {"processed": 2, "inserted": 1, "updated": 1, "unchanged": 0, "skipped": 0, "changed_fields": 3, "remaining": 1},
+            {"processed": 1, "inserted": 0, "updated": 0, "unchanged": 1, "skipped": 0, "changed_fields": 0, "remaining": 0},
+        ])
+        result = run_apply(client, "run-1", batch_size=2, log=quiet)
+        self.assertEqual(result.batches, 2)
+        self.assertEqual(result.totals["processed"], 3)
+        self.assertEqual(result.totals["changed_fields"], 3)
+        self.assertEqual(result.finish, {"status": "applied"})
+        self.assertEqual(client.calls[0], ("apply_nppes_refresh_batch", {"p_run_id": "run-1", "p_batch_size": 2}))
+        self.assertEqual(client.calls[-1], ("finish_nppes_apply", {"p_run_id": "run-1"}))
+
+    def test_unexpected_response_and_batch_cap(self) -> None:
+        from nppes_ingest.apply import run_apply
+
+        with self.assertRaises(RuntimeError):
+            run_apply(FakeApplyClient([[]]), "run-1", log=quiet)
+        with self.assertRaises(RuntimeError):
+            run_apply(FakeApplyClient([{"processed": 1, "remaining": 5}] * 3), "run-1", log=quiet, max_batches=2)
+        with self.assertRaises(ValueError):
+            run_apply(FakeApplyClient([]), "run-1", batch_size=0, log=quiet)
+
+
+class CliApplyTests(unittest.TestCase):
+    def test_apply_run_drives_the_batches(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        fake = FakeApplyClient([{"processed": 1, "remaining": 0}])
+        with mock.patch.object(cli, "load_supabase_config", return_value=object()), \
+                mock.patch.object(cli, "SupabaseClient", return_value=fake), \
+                mock.patch("builtins.print"):
+            code = cli.main(["--apply-run", "run-9", "--apply-batch-size", "250"])
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.calls[0], ("apply_nppes_refresh_batch", {"p_run_id": "run-9", "p_batch_size": 250}))
+
+    def test_apply_is_refused_with_dry_run_and_with_a_source(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        with mock.patch("builtins.print"):
+            self.assertEqual(cli.main(["--apply-run", "run-9", str(SAMPLE)]), 2)
+        with mock.patch.object(cli, "load_supabase_config", return_value=object()), \
+                mock.patch.object(cli, "SupabaseClient", return_value=object()), \
+                mock.patch("builtins.print"):
+            code = cli.main([str(SAMPLE), "--run-type", RUN_TYPE_MONTHLY_FULL, "--taxonomy-codes", "332B00000X", "--dry-run", "--apply"])
+        self.assertEqual(code, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
 

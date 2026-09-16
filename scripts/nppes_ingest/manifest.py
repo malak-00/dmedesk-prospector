@@ -20,11 +20,26 @@ CHECKSUM_CHUNK_BYTES = 1024 * 1024
 
 def file_checksum(path: Path) -> str:
     """Streaming SHA-256 -- dissemination files are far too big to slurp."""
+    return file_checksum_and_lines(path)[0]
+
+
+def file_checksum_and_lines(path: Path) -> tuple[str, int]:
+    """SHA-256 plus a newline count, in the one pass that reads the file anyway.
+
+    The line count lets the truncated-file guard run before anything is
+    staged, even though rows are streamed to staging as they're read.
+    """
     digest = hashlib.sha256()
+    lines = 0
+    last = b""
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(CHECKSUM_CHUNK_BYTES), b""):
             digest.update(chunk)
-    return digest.hexdigest()
+            lines += chunk.count(b"\n")
+            last = chunk
+    if last and not last.endswith(b"\n"):
+        lines += 1
+    return digest.hexdigest(), lines
 
 
 @dataclass

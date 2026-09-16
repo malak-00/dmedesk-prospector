@@ -65,51 +65,47 @@ All three files (`roles.sql`, `schema.sql`, `data.sql`) must show `Length > 0`. 
 
 ---
 
-## Step 2 — NPPES ingest dry-run (no DB writes)
+## Step 2 — NPPES refresh dry-run (no DB writes)
 
-This scans the 11.6 GB CSV and counts candidates. Nothing is written.
+> The old `insert_new.py` loader is **deprecated**: it only inserted new NPIs, never updated changed providers, and wrote no history. Use the staged refresh below (`scripts/README.md` has the details).
+
+This validates the 11.6 GB CSV and reports what would be staged. Nothing is written. It keeps **organizations** (NPI type 2; add `--include-individuals` to keep individuals too) in the specialties **enabled in the app's `taxonomies` table** — check that list first (and that `291U00000X`, if enabled, is really what you want: in the NUCC code set it is Clinical Medical Laboratory, not home health).
 
 > Use **single** backslashes in the UNC path. PowerShell does not treat `\` as an escape character, so `\\\\GGO-FILESERVER\\...` is passed through literally and the file will not be found.
 
 ```powershell
 cd scripts
 
-python -m nppes_ingest.insert_new `
-  "\\GGO-FILESERVER\FileServer\BD\npidata_pfile_20050523-20260809.csv" `
-  --taxonomy-codes 332B00000X,291U00000X `
-  --progress-every 1000
+python -m nppes_ingest "\\GGO-FILESERVER\FileServer\BD\npidata_pfile_20050523-20260809.csv" `
+  --run-type monthly-full --release-date 2026-08-09 --label 2026-08-full `
+  --expect-rows 9726865 --dry-run
 ```
 
-You'll see live progress:
-```
-Scanning ... for taxonomy codes: 291U00000X, 332B00000X
-Scanned 1,000 rows | matches 14 | candidates 11 | 3,500 rows/sec
-...
-Scanned 9,726,865 rows | matches 135,548 | candidates 105,919 | ~3,800 rows/sec
-{'input': 9726865, 'taxonomy_match': 135548, 'excluded': 29629, 'new_candidates': 105919, 'inserted': 0}
-```
-
-**Expected:** `new_candidates: 105919`, `inserted: 0`
-
-> ⏱ Takes ~40–45 minutes. Do not close the terminal.
+It prints the source row count, accepted rows, and rejections by reason, and writes `scripts\out\2026-08-full.manifest.json`.
 
 ---
 
-## Step 3 — Ingest with `--apply` (writes to `npi_records`)
+## Step 3 — Stage and apply (writes to `npi_records`)
 
-Only run this after Step 1 (backup verified), Step 2 (dry-run), and Step 4a (Python tests) all pass.
+Only run this after Step 1 (backup verified), Step 2 (dry-run), and Step 4a (Python tests) all pass, and after `sql/004_nppes_refresh_staging.sql` and `sql/007_nppes_refresh_lifecycle.sql` have been run in Supabase.
+
+First check how staged columns map onto the live table (read-only):
+
+```sql
+select * from public.nppes_apply_column_map();
+```
+
+Then:
 
 ```powershell
 cd scripts
 
-python -m nppes_ingest.insert_new `
-  "\\GGO-FILESERVER\FileServer\BD\npidata_pfile_20050523-20260809.csv" `
-  --taxonomy-codes 332B00000X,291U00000X `
-  --progress-every 1000 `
-  --apply
+python -m nppes_ingest "\\GGO-FILESERVER\FileServer\BD\npidata_pfile_20050523-20260809.csv" `
+  --run-type monthly-full --release-date 2026-08-09 --label 2026-08-full `
+  --expect-rows 9726865 --apply
 ```
 
-Final line should include `"inserted": 105919` (minus any NPIs already in the table).
+It stages the release in batches, then applies it in batches, printing progress, and ends with the number of new providers, updated providers, and field changes recorded in `provider_field_history`. If it's interrupted during the apply, run `python -m nppes_ingest --apply-run <refresh run id>` and it continues where it stopped.
 
 > ⚠️ This writes to the **live `npi_records` table**. Only run once the backup is verified.
 
@@ -121,7 +117,7 @@ There are two test suites to run, both from the **project root** (`cd ..` if you
 
 ### 4a — Python unit tests (NPPES ingest + normalization)
 
-26 tests covering NPI validation, name/phone normalization, header mapping, row-count guards, and full ingest runs against fixture CSVs.
+37 tests covering NPI validation, name/phone normalization, header mapping, row-count guards, full and streaming ingest runs against fixture CSVs, the organizations-only filter, and the batched apply driver and CLI options.
 
 ```powershell
 python -m unittest discover -s scripts/tests -t scripts
@@ -131,7 +127,7 @@ python -m unittest discover -s scripts/tests -t scripts
 ```
 ..........................
 ----------------------------------------------------------------------
-Ran 26 tests in X.XXXs
+Ran 37 tests in X.XXXs
 
 OK
 ```
@@ -224,7 +220,7 @@ If the summary matches `accept: 1, duplicate: 1, invalid: 1` and the unit tests 
 | Code | Description |
 |---|---|
 | `332B00000X` | Durable Medical Equipment & Medical Supplies |
-| `291U00000X` | Home Health Aide |
+| `291U00000X` | Clinical Medical Laboratory (NUCC). Earlier versions of this doc called it "Home Health Aide" — confirm which specialty is intended before enabling it. |
 
 ---
 
@@ -234,7 +230,8 @@ If the summary matches `accept: 1, duplicate: 1, invalid: 1` and the unit tests 
 |---|---|
 | `ModuleNotFoundError: No module named 'nppes_ingest.config'` | Wrong directory. `cd` into `scripts\` before running the ingest (Steps 2–3). |
 | `NPPES CSV not found` | Use the full UNC path with **single** backslashes: `\\GGO-FILESERVER\FileServer\BD\...` (see Step 2). |
-| `unrecognized arguments: 291U00000X` | Space after comma in `--taxonomy-codes`. Use `332B00000X,291U00000X` — no space. |
+| `source row count ... is outside the expected` | The file is truncated or a different release. Re-download, or adjust `--expect-rows` deliberately. |
+| `this source file ... was already applied` | That exact file was applied before. Nothing to do, unless an admin intentionally sets `operator_override` on the new run. |
 | `roles.sql`, `schema.sql` or `data.sql` still 0 bytes | Dump failed. Check Docker Desktop is running, then check `$DB_URL` — wrong password or project ID. |
 | `NPPES_TEST_TMP` error in Python tests | Set the env var to a writable temp path (see Step 4a note). |
 | `Cannot find module '../../worker/src/services/leadPreflight.js'` | Run the node command from the **project root**, not from `scripts\`. |
@@ -246,8 +243,9 @@ If the summary matches `accept: 1, duplicate: 1, invalid: 1` and the unit tests 
 
 | File | Purpose |
 |---|---|
-| [`scripts/nppes_ingest/insert_new.py`](scripts/nppes_ingest/insert_new.py) | NPPES ingest script |
-| [`scripts/tests/test_ingest.py`](scripts/tests/test_ingest.py) | Python unit tests (26 tests) |
+| [`scripts/nppes_ingest/`](scripts/nppes_ingest/) | NPPES stage + apply CLI (`python -m nppes_ingest`) |
+| [`sql/007_nppes_refresh_lifecycle.sql`](sql/007_nppes_refresh_lifecycle.sql) | Batched, schema-adaptive apply into `npi_records` |
+| [`scripts/tests/test_ingest.py`](scripts/tests/test_ingest.py) | Python unit tests (37 tests) |
 | [`worker/src/services/leadPreflight.js`](worker/src/services/leadPreflight.js) | Grouping/preflight logic (Tier 1 / 2 / 3) |
 | [`sql/008_identity_match_tiers.sql`](sql/008_identity_match_tiers.sql) | Regroups existing leads under the tier keys (manual, not yet run) |
 | [`sql/009_identity_match_review.sql`](sql/009_identity_match_review.sql) | Merge/dismiss decisions behind the Admin tab's Possible duplicates panel (manual, not yet run) |

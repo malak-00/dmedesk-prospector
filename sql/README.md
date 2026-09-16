@@ -37,7 +37,7 @@ in `003`); save their output with the run.
 | `004_nppes_refresh_staging.sql` | Staging table written by `scripts/nppes_ingest` | **Not yet run** |
 | `005_ownership_conflict_resolution.sql` | `resolve_ownership_conflict()` + `ownership_conflicts` view | Executed 2026-09-16 |
 | `006_resolve_known_conflicts.sql` | Applies the two approved owner decisions | Executed 2026-09-16 (approver: Ben Arthur) |
-| `007_nppes_refresh_lifecycle.sql` | Finalize, abort, and transactional NPPES apply functions | **Not yet run — after 004 and read-only verification** |
+| `007_nppes_refresh_lifecycle.sql` | Recover/abort staging, `nppes_apply_column_map()`, batched schema-adaptive `apply_nppes_refresh_batch()` + `finish_nppes_apply()` | **Not yet run — after 004, before the first `--apply`** |
 | `008_identity_match_tiers.sql` | Three-tier identity keys, regroup of existing leads, `conflict_detected` events, `identity_review_candidates` view | Executed 2026-09-16 |
 | `009_identity_match_review.sql` | `identity_match_decisions`, `identity_review_queue` view, `resolve_identity_match()` for the admin Possible duplicates screen | Executed 2026-09-16 |
 | `010_group_aware_claim.sql` | Identity helpers, `owned_group_npis()` for search, `assign_lead_groups()`, `identity_claim_requests`, extended `identity_review_queue`, backfill of ungrouped leads (`claim_leads()` now lives in 011) | Executed 2026-09-16 (Worker deployed after) |
@@ -59,6 +59,20 @@ adaptation point.
 **`004`** must be installed before the ingestion CLI can stage a real
 release. The CLI's staging row and this table's columns are written to match
 each other exactly — change one and you must change the other.
+
+**`007`** adds `deactivation_date` and `taxonomy_codes` to `npi_records`
+(the live table, checked 2026-09-16, has neither; the first fill of
+`taxonomy_codes` writes no history), then applies a staged run to
+`npi_records` in batches, driven by
+`python -m nppes_ingest ... --apply` (or `--apply-run <id>`). It writes only
+columns present in both staging and the live `npi_records` — check with
+`select * from public.nppes_apply_column_map();` before the first apply —
+records a `provider_field_history` row per real change (canonical comparison,
+so formatting-only differences don't count) and one `record_created` row per
+new provider, refuses to apply the same source file twice without
+`operator_override`, and never inserts from a deactivation file. Batches are
+resumable. It replaces the earlier single-transaction draft of this file,
+which was never run.
 
 **`005`** is what the admin UI's "Resolve" button calls. Until it is
 installed, the Admin tab still *lists* ownership conflicts (the Worker

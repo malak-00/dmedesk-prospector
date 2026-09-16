@@ -1,7 +1,18 @@
-"""Insert new NPPES providers into npi_records without updating existing rows.
+"""DEPRECATED -- use the staged refresh instead:
 
-The command is intentionally separate from the refresh lifecycle apply. It is
-for the August lead intake while the grouping system is being finalized.
+    python -m nppes_ingest FILE.csv --run-type monthly-full --apply
+
+That path stages the release, records provider_field_history, updates changed
+providers (this script only ever inserted new ones), and never writes a
+partial release. Kept only for reference; it prints a warning and refuses
+--apply unless --i-know-this-is-deprecated is passed.
+
+Insert new NPPES providers into npi_records without updating existing rows.
+
+The command is intentionally separate from the refresh lifecycle apply. It was
+for the August lead intake while the grouping system was being finalized.
+Its hard-coded company-keyword and authorized-official exclusions are lead
+selection rules; npi_records itself is meant to be a faithful registry copy.
 
 Examples:
   python -m nppes_ingest.insert_new FILE.csv --taxonomy-codes 332B00000X,333600000X
@@ -79,7 +90,14 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", help="Insert into npi_records; without this, report only")
     parser.add_argument("--chunk-size", type=int, default=500)
     parser.add_argument("--progress-every", type=int, default=100_000, help="Print scan progress every N input rows (default: 100000)")
+    parser.add_argument("--i-know-this-is-deprecated", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    print(
+        "WARNING: insert_new is deprecated. Use: python -m nppes_ingest FILE.csv --run-type monthly-full --apply",
+        flush=True,
+    )
+    if args.apply and not args.i_know_this_is_deprecated:
+        parser.error("--apply is disabled for this deprecated script; use the staged refresh (see scripts/README.md)")
     codes = {code.strip().upper() for code in args.taxonomy_codes.split(",") if code.strip()}
     if len(codes) != 2:
         parser.error("--taxonomy-codes must contain exactly two codes")

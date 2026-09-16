@@ -54,6 +54,9 @@ create table if not exists public.nppes_refresh_staging (
   certification_date date,
 
   created_at timestamptz not null default now(),
+  -- Set by apply_nppes_refresh_batch (sql/007) once this row is applied, so
+  -- a large release is applied in resumable batches.
+  applied_at timestamptz,
 
   -- One row per NPI per run. The ingestion CLI already rejects duplicate
   -- NPIs within a release; this makes that a database guarantee rather
@@ -69,6 +72,9 @@ create index if not exists idx_nppes_refresh_staging_run
 -- join against npi_records.
 create index if not exists idx_nppes_refresh_staging_run_state
   on public.nppes_refresh_staging(refresh_run_id, address_state);
+-- Finds the next batch of not-yet-applied rows in a run.
+create index if not exists idx_nppes_refresh_staging_unapplied
+  on public.nppes_refresh_staging(refresh_run_id, npi) where applied_at is null;
 
 comment on table public.nppes_refresh_staging is
   'Normalized NPPES release rows awaiting comparison/apply. Written by scripts/nppes_ingest; never read by the app at runtime.';
