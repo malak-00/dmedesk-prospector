@@ -122,6 +122,23 @@ Deactivation files carry no entity type and are never filtered this way.
   `--recover-run <id>` (if its counts match) or discarded with
   `--abort-run <id> --reason "..."`.
 
+### Medicare (CMS DMEPOS by Supplier)
+
+```powershell
+python -m nppes_ingest.medicare --dry-run   # read + validate, writes nothing
+python -m nppes_ingest.medicare --apply     # stage, then apply into npi_cms_enrichment
+```
+
+Pages the free CMS data API (about 60,000 suppliers) into
+`medicare_refresh_staging`, then `sql/012`'s `apply_medicare_refresh()`
+updates `npi_cms_enrichment`, writes `provider_field_history`, and raises a
+review alert when a claimed lead's claims fall by more than half. It finds
+the newest data year in the CMS catalog automatically (falling back to the
+last known version; `--dataset-id` pins one) and prints which one it used. A
+release shorter than the row count CMS reports is refused and rolled back;
+identical content is refused by the database, so monthly runs are safe.
+Install `sql/012_medicare_refresh.sql` first.
+
 ### Plumbing
 
 `--batch-size` (default 500) sets rows per staging insert;
@@ -147,7 +164,7 @@ Reason codes: `missing_npi`, `bad_npi_format`, `bad_npi_checksum`,
 python -m unittest discover -s scripts/tests -t scripts
 ```
 
-37 tests: NPI check-digit validation, normalization, header mapping, the
+46 tests: NPI check-digit validation, normalization, header mapping, the
 row-count guard, full ingest runs against fixtures (staging contents,
 manifest and rejects, dry run, rollback), streaming behaviour, the
 organizations-only filter, the apply driver, and the `--apply` /
@@ -164,6 +181,7 @@ nppes_ingest/
   config.py          env/dotenv credentials
   ingest.py          streaming stage into refresh_runs/staging
   apply.py           drives the batched SQL apply
+  medicare.py        CMS DMEPOS by-Supplier loader (python -m nppes_ingest.medicare)
   mapping.py         NPPES headers -> staging columns
   normalize.py       canonical values (phone, name, dates, postal)
   supabase_rest.py   minimal PostgREST client (stdlib only)
@@ -172,6 +190,7 @@ nppes_ingest/
   manifest.py        checksum + line count + run manifest
   insert_new.py      DEPRECATED insert-only loader (kept for reference)
 tests/
-  test_ingest.py     the suite above
+  test_ingest.py     ingest/apply suite
+  test_medicare.py   Medicare loader suite
   fixtures/          small NPPES-shaped CSVs
 ```

@@ -17,6 +17,7 @@ Required manual sequence:
 009_identity_match_review.sql
 010_group_aware_claim.sql
 011_claim_for_user.sql
+012_medicare_refresh.sql          (before the first Medicare load)
 ```
 
 Run each file in the Supabase SQL Editor, save its read-only verification
@@ -42,6 +43,7 @@ in `003`); save their output with the run.
 | `009_identity_match_review.sql` | `identity_match_decisions`, `identity_review_queue` view, `resolve_identity_match()` for the admin Possible duplicates screen | Executed 2026-09-16 |
 | `010_group_aware_claim.sql` | Identity helpers, `owned_group_npis()` for search, `assign_lead_groups()`, `identity_claim_requests`, extended `identity_review_queue`, backfill of ungrouped leads (`claim_leads()` now lives in 011) | Executed 2026-09-16 (Worker deployed after) |
 | `011_claim_for_user.sql` | `app_users.can_claim_for_others`; `claim_leads()` redefined with an optional actor for claims on behalf of another user | Executed 2026-09-16 (Worker deployed after) |
+| `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | **Not yet run — before the first `python -m nppes_ingest.medicare --apply`** |
 
 ## Notes on individual files
 
@@ -118,6 +120,16 @@ when the NPI isn't there — `008` now uses the same fallback, so rerunning it
 keeps those groups. `010` backfills a group for every lead that has none.
 Run it **before** deploying the Worker: until it exists, claiming returns an
 "isn't installed yet" error instead of claiming without the check. Rerun-safe.
+
+**`012`** backs the Medicare loader (`python -m nppes_ingest.medicare`).
+`npi_cms_enrichment` in DME Desk exists but was empty (checked 2026-09-16), so
+search can't switch off fakeNPI until this has loaded. `apply_medicare_refresh()`
+applies only NPIs present in `npi_records`, records changed values in
+`provider_field_history` (source `medicare`), raises a pending
+`provider_data_changed` event for a claimed lead whose claims fell by more
+than half, never clears an NPI just because it's missing from a release, and
+refuses to apply identical content twice without `operator_override`. CMS
+publishes one data year at a time, so most monthly runs change nothing.
 
 **`011`** lets an integration account (e.g. BD MEETINGS) claim for a named
 teammate via `POST /admin/claim-for-user` (see
