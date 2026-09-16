@@ -163,6 +163,23 @@ to an unchecked insert. Search hides NPIs whose group a teammate owns
 Disconnected" rows get a group via `assign_lead_groups()` with no ownership
 check.
 
+#### Claiming on behalf of a teammate
+
+`POST /admin/claim-for-user` (`leadsRepo.claimForUser`) is for integrations
+such as BD MEETINGS, which sign in as their own **non-admin** account and name
+the teammate who owns the leads. There is no impersonated session: the
+Worker checks the caller's `is_admin` or `app_users.can_claim_for_others`
+fresh from the database, looks the teammate up by exact username (404 if
+absent), and calls `claim_leads(owner, leads, actor)` (`sql/011`). All the
+rules above apply unchanged; the `claimed` event records the caller as
+`approved_by` with `source = 'claim_for_user'`, and the database refuses an
+actor without the permission. Contract and setup:
+`documentation/operations/BD_MEETINGS_CLAIM_FOR_USER.md`.
+
+Username lookups (login, `seed-user.mjs`, this endpoint) use
+`lib/users.js`'s exact case-insensitive match: PostgREST's `ilike` treats
+`%`, `_` and `*` as wildcards, so it only narrows candidates.
+
 Related lifecycle operations:
 
 - `POST /leads/disconnect` — `update` sets `is_disconnected = true`, scoped

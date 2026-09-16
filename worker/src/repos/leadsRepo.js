@@ -3,6 +3,10 @@
 // `leads` table. One table, `claimed_by` + `is_disconnected` replacing the
 // old per-teammate-tab-plus-shared-Disconnected-tab layout entirely -- see
 // MIGRATION_TO_VERCEL_SUPABASE.md's schema notes for why.
+import { createCompany } from "../lib/companyModel.js";
+import { classifyRole } from "../lib/roleClassifier.js";
+import { findUserByUsernameExact } from "../lib/users.js";
+
 const DEFAULT_STATUSES = ["new", "called", "voicemail", "interested", "not interested", "do not call"];
 const MAX_STATUS_LENGTH = 40;
 
@@ -221,7 +225,9 @@ function identityFromCompany(company, flat) {
 // else's lead for admin review, and inserts + audits the rest -- atomically,
 // so two simultaneous claims on one company can't both get through. A batch
 // is partial on purpose: allowed leads are claimed, the others are returned.
-export async function exportCompaniesToLeads(supabase, companies, session, flattenCompany) {
+// options.actorId: set when someone other than `session` performs the claim
+// (claimForUser below); recorded on the claimed event by sql/011.
+export async function exportCompaniesToLeads(supabase, companies, session, flattenCompany, options = {}) {
   companies = companies || [];
   if (!Array.isArray(companies) || companies.length === 0) throw httpError(400, "At least one company is required to export");
 
@@ -237,10 +243,20 @@ export async function exportCompaniesToLeads(supabase, companies, session, flatt
     });
   if (items.length === 0) throw httpError(400, "At least one company with an NPI is required to claim");
 
-  const { data, error } = await supabase.rpc("claim_leads", { p_user_id: session.id, p_leads: items });
+  const args = { p_user_id: session.id, p_leads: items };
+  if (options.actorId) args.p_actor_id = options.actorId;
+  const { data, error } = await supabase.rpc("claim_leads", args);
   if (error) {
     if (error.code === "PGRST202" || /Could not find the function/i.test(error.message || "")) {
-      throw httpError(503, "Group-aware claiming isn't installed yet. Run sql/010_group_aware_claim.sql in Supabase, then try again.");
+      throw httpError(
+        503,
+        options.actorId
+          ? "Claiming on behalf of another user isn't installed yet. Run sql/011_claim_for_user.sql in Supabase, then try again."
+          : "Group-aware claiming isn't installed yet. Run sql/010_group_aware_claim.sql and sql/011_claim_for_user.sql in Supabase, then try again."
+      );
+    }
+    if (/not allowed to claim on behalf/i.test(error.message || "")) {
+      throw httpError(403, "This account isn't allowed to claim leads for other users.");
     }
     throw httpError(500, "Failed to claim leads: " + error.message);
   }
@@ -271,6 +287,89 @@ export async function exportCompaniesToLeads(supabase, companies, session, flatt
       })),
     })),
     invalid: skipped.filter((s) => s.reason !== "already_claimed_by_you").map((s) => ({ npi: String(s.npi || ""), reason: s.reason })),
+  };
+}
+
+// ---- claim on behalf of another user ----------------------------------------
+
+// For integrations such as BD MEETINGS: the integration signs in as its own
+// account (with app_users.can_claim_for_others, or an admin) and names the
+// teammate the leads belong to. No teammate password is involved, and there
+// is no impersonated session: the lead is owned by the named user while the
+// claimed event records the caller as the actor (sql/011). Every group-aware
+// rule (blocked / held for review) applies exactly as for a normal claim.
+const MAX_CLAIM_FOR_USER_COMPANIES = 200;
+
+// Accepts either the search-result company shape the app already sends, or a
+// flat row: { npi, name, state, city, addressLine1, postalCode, phone,
+// website, email, taxonomy, authorizedOfficial, authorizedOfficialTitle,
+// authorizedOfficialPhone }. `authorizedOfficial` must be the NPPES
+// authorized official (it takes part in business grouping), not just any
+// contact person.
+function toCompany(input) {
+  if (!input || typeof input !== "object") return input;
+  if (input.address || input.decisionMakers) return input;
+  const official = input.authorizedOfficial ? String(input.authorizedOfficial).trim() : "";
+  return createCompany({
+    npi: input.npi != null ? String(input.npi).trim() : null,
+    name: input.name || null,
+    phone: input.phone || null,
+    website: input.website || null,
+    email: input.email || null,
+    address: { line1: input.addressLine1 || null, city: input.city || null, state: input.state || null, postalCode: input.postalCode || null },
+    taxonomy: { code: input.taxonomyCode || null, description: input.taxonomy || null },
+    decisionMakers: official
+      ? [{
+          name: official,
+          title: input.authorizedOfficialTitle || null,
+          roleCategory: classifyRole(input.authorizedOfficialTitle || "authorized official"),
+          phone: input.authorizedOfficialPhone || null,
+          source: "nppes",
+          sourceUrl: null,
+        }]
+      : [],
+    sources: { nppes: true },
+  });
+}
+
+export async function claimForUser(supabase, callerSession, { username, companies }, flattenCompany) {
+  if (!username || !String(username).trim()) throw httpError(400, "username is required");
+  if (!Array.isArray(companies) || companies.length === 0) throw httpError(400, "At least one company is required to claim");
+  if (companies.length > MAX_CLAIM_FOR_USER_COMPANIES) {
+    throw httpError(400, `At most ${MAX_CLAIM_FOR_USER_COMPANIES} companies per request -- split the batch`);
+  }
+
+  // Read the permission fresh from the database rather than trusting the
+  // token, so revoking can_claim_for_others takes effect immediately.
+  const { data: caller, error: callerErr } = await supabase
+    .from("app_users")
+    .select("id, is_admin, can_claim_for_others")
+    .eq("id", callerSession.id)
+    .maybeSingle();
+  if (callerErr) {
+    if (/can_claim_for_others/.test(callerErr.message || "") && /does not exist|42703|schema cache/.test(callerErr.message || "")) {
+      throw httpError(503, "Claiming on behalf of another user isn't installed yet. Run sql/011_claim_for_user.sql in Supabase, then try again.");
+    }
+    throw httpError(500, "Failed to check permissions: " + callerErr.message);
+  }
+  if (!caller || !(caller.is_admin || caller.can_claim_for_others)) {
+    throw httpError(403, "This account isn't allowed to claim leads for other users.");
+  }
+
+  const target = await findUserByUsernameExact(supabase, username, "id, username, display_name");
+  if (!target) throw httpError(404, `No user with username "${String(username).trim()}"`);
+
+  const result = await exportCompaniesToLeads(
+    supabase,
+    companies.map(toCompany),
+    { id: target.id, displayName: target.display_name },
+    flattenCompany,
+    { actorId: callerSession.id }
+  );
+  return {
+    ...result,
+    claimedFor: { username: target.username, displayName: target.display_name },
+    claimedVia: callerSession.username,
   };
 }
 

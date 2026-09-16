@@ -10,8 +10,15 @@
 //
 // Run this locally (never commit real passwords anywhere). Re-running with
 // the same --username updates that person's password/display name in place.
+//
+// Integration accounts (e.g. BD MEETINGS) that claim leads for other users:
+//     node scripts/seed-user.mjs --username bd-meetings-bot --password "..." \
+//       --displayName "BD Meetings (integration)" --can-claim-for-others
+// which sets app_users.can_claim_for_others (needs sql/011). Never give that
+// flag to a person's own account.
 import { createClient } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
+import { findUserByUsernameExact } from "../src/lib/users.js";
 
 function arg(name) {
   const i = process.argv.indexOf(`--${name}`);
@@ -21,6 +28,7 @@ function arg(name) {
 const username = arg("username");
 const password = arg("password");
 const displayName = arg("displayName") || username;
+const canClaimForOthers = process.argv.includes("--can-claim-for-others");
 
 if (!username || !password) {
   console.error("Usage: node scripts/seed-user.mjs --username <u> --password <p> --displayName \"<Name>\"");
@@ -37,14 +45,19 @@ if (!url || !key) {
 const supabase = createClient(url, key);
 const passwordHash = await bcrypt.hash(password, 10);
 
-const { data: existing } = await supabase.from("app_users").select("id").ilike("username", username).maybeSingle();
+// Exact match only -- a wildcard lookup could overwrite a different user's password.
+const existing = await findUserByUsernameExact(supabase, username, "id");
+
+// The flag is only ever written when asked for, so re-seeding a normal user
+// never touches it (and works on a database without sql/011).
+const permission = canClaimForOthers ? { can_claim_for_others: true } : {};
 
 if (existing) {
-  const { error } = await supabase.from("app_users").update({ password_hash: passwordHash, display_name: displayName }).eq("id", existing.id);
+  const { error } = await supabase.from("app_users").update({ password_hash: passwordHash, display_name: displayName, ...permission }).eq("id", existing.id);
   if (error) throw error;
-  console.log(`Updated ${username} (${displayName}).`);
+  console.log(`Updated ${username} (${displayName})${canClaimForOthers ? " -- can claim for others" : ""}.`);
 } else {
-  const { error } = await supabase.from("app_users").insert({ username, password_hash: passwordHash, display_name: displayName, exclude_keywords: "" });
+  const { error } = await supabase.from("app_users").insert({ username, password_hash: passwordHash, display_name: displayName, exclude_keywords: "", ...permission });
   if (error) throw error;
-  console.log(`Created ${username} (${displayName}).`);
+  console.log(`Created ${username} (${displayName})${canClaimForOthers ? " -- can claim for others" : ""}.`);
 }

@@ -357,6 +357,24 @@ app.post("/admin/conflicts/resolve", async (c) => {
   return c.json(ok(data));
 });
 
+// Claim leads on behalf of a named teammate, for integrations like BD
+// MEETINGS that sign in with their own account. Deliberately NOT
+// requireAdmin: the integration account shouldn't be an admin. The
+// permission (admin or app_users.can_claim_for_others) is checked fresh in
+// the repo, the teammate is looked up by exact username, and the caller is
+// recorded as the actor on every claimed event.
+// Body: { username: "<exact app username>", companies: [...] }
+app.post("/admin/claim-for-user", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const data = await leadsRepo.claimForUser(
+    supabaseFor(c),
+    c.get("session"),
+    { username: body.username, companies: body.companies },
+    CsvExport.flattenCompany
+  );
+  return c.json(ok(data));
+});
+
 // Tier 2/3 identity matches waiting for an admin decision. Read-only.
 app.get("/admin/match-reviews", async (c) => {
   requireAdmin(c.get("session"));

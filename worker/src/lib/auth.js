@@ -8,6 +8,7 @@
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { getSupabase } from "./supabase.js";
+import { findUserByUsernameExact } from "./users.js";
 
 const SESSION_TTL_SECONDS = 6 * 60 * 60; // 6h, same as the old CacheService TTL
 const MAX_EXCLUDE_KEYWORDS_LENGTH = 500;
@@ -24,14 +25,8 @@ function secretKey(config) {
   return new TextEncoder().encode(secret);
 }
 
-async function findUserByUsername(supabase, username) {
-  const { data, error } = await supabase
-    .from("app_users")
-    .select("id, username, password_hash, display_name, exclude_keywords, is_admin")
-    .ilike("username", String(username).trim())
-    .maybeSingle();
-  if (error) throw httpError(500, "Failed to look up user: " + error.message);
-  return data;
+function findUserByUsername(supabase, username) {
+  return findUserByUsernameExact(supabase, username, "id, username, password_hash, display_name, exclude_keywords, is_admin");
 }
 
 export async function login(config, username, password) {
