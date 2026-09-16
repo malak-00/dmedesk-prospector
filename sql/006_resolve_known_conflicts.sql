@@ -21,13 +21,15 @@
 -- reports 0 moves.
 
 -- =========================================================================
--- EDIT THESE: use exact usernames from public.app_users.
+-- Usernames from public.app_users (confirmed 2026-09-16). The approver is
+-- Ben Arthur, an admin. Each is still checked below to match exactly one
+-- row, and the approver to be an admin, before anything moves.
 -- =========================================================================
 do $$
 declare
-  v_approver_username text := 'REPLACE_WITH_APPROVING_ADMIN_USERNAME';
-  v_rick_username     text := 'REPLACE_WITH_RICK_USERNAME';
-  v_nora_username     text := 'REPLACE_WITH_NORA_USERNAME';
+  v_approver_username text := 'ben.arthur.wiz@gmail.com';
+  v_rick_username     text := 'rickk.nelson.wiz@gmail.com';
+  v_nora_username     text := 'nora.atkins.wiz@gmail.com';
 
   v_approver_id  uuid;
   v_group_id     uuid;
