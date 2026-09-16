@@ -126,8 +126,7 @@ new claims.
 
 ## What is not complete
 
-- Tier 2 fuzzy matching and review records.
-- A reusable grouping/preflight service.
+- Undoing a merge or dismissal from the UI (decisions are one-way today).
 - Automated intake/import from source files or provider refreshes.
 - Group-aware atomic claim checks.
 - Explicit reassign and release APIs.
@@ -168,26 +167,78 @@ through staging and preflight.
 
 ## Grouping rules
 
-### Tier 1: deterministic auto-grouping
+Implemented in `worker/src/services/leadPreflight.js` (`MATCH_RULES`,
+`matchRecords`) and, for existing leads, `sql/008_identity_match_tiers.sql`.
+The two must normalize identically.
 
-Automatically group only when the normalized identity key is strong enough:
+### Keys
 
-`normalized_name + state + authorized_official + first_valid_phone`
+| Key | Normalization |
+|---|---|
+| **N** name | Lowercased, accents/punctuation removed, legal suffixes stripped (inc, incorporated, llc, ltd, limited, corp, corporation, co, company, pc, pllc, lp, llp) |
+| **S** state | Uppercased letters only |
+| **O** authorized official | First + last name only; middle names and single-letter initials ignored |
+| **P** phone | Practice-location phone first, authorized-official phone as fallback; leading `1` dropped, 10 digits |
 
-This process must be idempotent. Running it twice must not create duplicate
-groups or overwrite a reviewed membership decision.
+Suffix stripping applies to the name in every tier.
+
+### Rules (first match wins)
+
+| Tier | Keys matched | Action |
+|---|---|---|
+| 1 | N + S + O + P | Auto-group |
+| 2 | N + O + P (any state) | Auto-group — same business across states shares ownership |
+| 2 | N + S + P | Flag for review |
+| 2 | N + S + O | Flag for review (phone changed) |
+| 2 | S + O + P | Flag for review (renamed business) |
+| 3 | O + P | Flag for review |
+| 3 | N + P | Flag for review |
+| 3 | N + O | Flag for review |
+
+Deliberately not matched: N + S, S + O, S + P, or phone alone. Those are
+too common between unrelated businesses (generic names, common official
+names, shared billing/answering-service numbers).
+
+A **fuzzy** name (suffix-stripped `token_sort_ratio ≥ 88`) can satisfy the N
+key, but a match that relied on it is always flagged, never auto-grouped.
+
+Because Tier 1 is a subset of N + O + P, both auto-group tiers use one group
+key: `group:<name>|<official>|<phone>`. Groups whose members share a state
+have `grouping_tier = 'strict'`; groups spanning states are `'cross_state'`.
+Records missing N, O, or P get `singleton:<npi>`.
 
 Same NPI is always the same provider record and is a definite duplicate.
 
-### Tier 2: review-only matching
+Grouping is idempotent. Running it twice must not create duplicate groups or
+move a membership a person has reviewed.
 
-Use fuzzy name matching only to create review candidates. A fuzzy name match
-alone must never auto-group. It requires a corroborating signal such as phone,
-authorized official, or address.
+### Ownership conflicts from auto-grouping
 
-Tier 2 should create a `possible_duplicate` or `possible_successor`
-membership with evidence and confidence, then wait for an explicit decision.
-It must not silently merge leads, change owners, or delete duplicate records.
+Auto-grouping can put leads claimed by different users into one group. Those
+groups appear in the Admin tab's **Ownership conflicts** panel, labelled with
+the tier that grouped them, and are resolved with an explicit owner decision.
+`sql/008` writes a pending `conflict_detected` event for every conflict the
+regroup newly creates.
+
+### Review flags
+
+Flagged pairs never merge leads, change owners, or delete records on their
+own. For new candidates, preflight returns `needs_review` with each match's
+tier and keys. For existing leads, `public.identity_review_candidates` lists
+the exact-key Tier 2/3 pairs that sit in different groups, and
+`public.identity_review_queue` (sql/009) is the subset nobody has decided.
+
+Admins work that queue in the Admin tab's **Possible duplicates** panel. Each
+card shows both NPIs side by side with the matching keys ticked, group sizes,
+and current owners. The two decisions, both requiring a reason:
+
+- **Same business — merge:** the two groups become one. Moved memberships are
+  marked as reviewed. If the merged group now holds claims from different
+  users, it appears under Ownership conflicts for an owner decision.
+- **Not the same:** recorded as dismissed; the pair is not flagged again.
+
+Decisions are stored in `public.identity_match_decisions` with who decided,
+when, and why.
 
 ### Manual decisions
 

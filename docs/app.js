@@ -109,6 +109,10 @@ const state = {
   adminLoaded: false,
   conflicts: [],
   conflictResolveGroupId: null,
+  matchReviews: null,
+  matchReviewsTier: "all",
+  matchReviewsLimit: 25,
+  matchReviewPending: null,
   claimedRefreshInterval: null,
   adminRefreshInterval: null,
   adminLeadsAll: [],
@@ -269,6 +273,19 @@ const els = {
   conflictReason: document.getElementById("conflictReason"),
   conflictResolveCancelBtn: document.getElementById("conflictResolveCancelBtn"),
   conflictResolveSubmitBtn: document.getElementById("conflictResolveSubmitBtn"),
+  matchReviewsSummary: document.getElementById("matchReviewsSummary"),
+  matchReviewsTierFilter: document.getElementById("matchReviewsTierFilter"),
+  matchReviewsEmpty: document.getElementById("matchReviewsEmpty"),
+  matchReviewsList: document.getElementById("matchReviewsList"),
+  matchReviewsMoreBtn: document.getElementById("matchReviewsMoreBtn"),
+  matchReviewOverlay: document.getElementById("matchReviewOverlay"),
+  matchReviewForm: document.getElementById("matchReviewForm"),
+  matchReviewTitle: document.getElementById("matchReviewTitle"),
+  matchReviewPair: document.getElementById("matchReviewPair"),
+  matchReviewEffect: document.getElementById("matchReviewEffect"),
+  matchReviewReason: document.getElementById("matchReviewReason"),
+  matchReviewCancelBtn: document.getElementById("matchReviewCancelBtn"),
+  matchReviewSubmitBtn: document.getElementById("matchReviewSubmitBtn"),
   claimedTable: document.getElementById("claimedTable"),
   claimedBody: document.getElementById("claimedBody"),
   claimedCount: document.getElementById("claimedCount"),
@@ -654,12 +671,16 @@ function renderConflicts(payload) {
         })
         .join("");
       const subtitle = [conflict.groupState, `${conflict.leads.length} active claims`].filter(Boolean).join(" · ");
+      const matchLine = [conflict.matchTier ? `Tier ${conflict.matchTier}` : "", conflict.matchReason || ""]
+        .filter(Boolean)
+        .join(" — ");
       return `
       <div class="conflict-card">
         <div class="conflict-card-header">
           <div>
             <div class="conflict-title">${escapeHtml(conflict.groupName)}</div>
             <div class="conflict-subtitle">${escapeHtml(subtitle)}</div>
+            ${matchLine ? `<div class="conflict-match">Grouped by: ${escapeHtml(matchLine)}</div>` : ""}
             <div class="conflict-owners">${owners}</div>
           </div>
           <button type="button" class="btn btn-primary" data-resolve-conflict data-group-id="${escapeHtml(conflict.groupId)}">
@@ -758,6 +779,230 @@ async function handleConflictResolve(event) {
   }
 }
 
+// ---- possible duplicates (admin) ------------------------------------------
+// Pairs of NPIs that matched a Tier 2 or Tier 3 identity rule. Unlike
+// Tier 1 and the cross-state Tier 2 rule, these are never grouped
+// automatically: an admin decides "same business" (merge the two groups) or
+// "not the same" (dismiss). A merge never changes who owns anything -- if it
+// puts two reps' claims together, the group shows up under Ownership
+// conflicts for that decision.
+
+const MATCH_REVIEWS_PAGE = 25;
+const MATCH_KEY_LABELS = { name: "Name", state: "State", official: "Authorized official", phone: "Phone" };
+
+function matchReviewKey(review) {
+  return `${review.leftNpi}:${review.rightNpi}`;
+}
+
+function filteredMatchReviews() {
+  const reviews = (state.matchReviews && state.matchReviews.reviews) || [];
+  if (state.matchReviewsTier === "all") return reviews;
+  return reviews.filter((review) => String(review.tier) === state.matchReviewsTier);
+}
+
+function renderMatchReviewSide(record) {
+  // Only the state is compared, so the city is shown as secondary context.
+  const location = record.state
+    ? `${escapeHtml(record.state)}${record.city ? ` <span class="match-review-note">${escapeHtml(record.city)}</span>` : ""}`
+    : escapeHtml(record.city || "—");
+  const owners = record.owners.length
+    ? record.owners.map((owner) => escapeHtml(owner.displayName)).join(", ")
+    : "Unclaimed";
+  return {
+    name: `<div class="company-name">${escapeHtml(record.name || "(no name)")}</div><div class="company-taxonomy mono">${escapeHtml(record.npi)}</div>`,
+    state: location,
+    official: escapeHtml(record.official || "—"),
+    phone: record.phone
+      ? `${escapeHtml(record.phone)}${record.phoneSource === "authorized official" ? ' <span class="match-review-note">(official)</span>' : ""}`
+      : "—",
+    group: record.groupSize > 1 ? `${record.groupSize} NPIs` : "Only this NPI",
+    owners,
+  };
+}
+
+function renderMatchReviews() {
+  const payload = state.matchReviews;
+  if (!payload) return;
+
+  if (payload.available === false) {
+    els.matchReviewsSummary.textContent = "Not available";
+    els.matchReviewsEmpty.hidden = false;
+    els.matchReviewsEmpty.textContent = payload.reason || "The review queue isn't installed yet.";
+    els.matchReviewsList.innerHTML = "";
+    els.matchReviewsMoreBtn.hidden = true;
+    return;
+  }
+
+  const all = payload.reviews || [];
+  const tier2 = all.filter((review) => review.tier === 2).length;
+  const tier3 = all.filter((review) => review.tier === 3).length;
+  els.matchReviewsSummary.textContent = all.length
+    ? `${all.length} pair${all.length === 1 ? "" : "s"} to review · Tier 2: ${tier2} · Tier 3: ${tier3}`
+    : "Nothing to review";
+
+  const reviews = filteredMatchReviews();
+  if (reviews.length === 0) {
+    els.matchReviewsEmpty.hidden = false;
+    els.matchReviewsEmpty.textContent = all.length
+      ? "No pairs in this tier."
+      : "No possible duplicates are waiting for a decision.";
+    els.matchReviewsList.innerHTML = "";
+    els.matchReviewsMoreBtn.hidden = true;
+    return;
+  }
+
+  els.matchReviewsEmpty.hidden = true;
+  const visible = reviews.slice(0, state.matchReviewsLimit);
+  els.matchReviewsList.innerHTML = visible
+    .map((review) => {
+      const left = renderMatchReviewSide(review.left);
+      const right = renderMatchReviewSide(review.right);
+      const matched = new Set(review.matchedKeys);
+      const keyChips = review.matchedKeys
+        .map((key) => `<span class="match-key-chip">${escapeHtml(MATCH_KEY_LABELS[key] || key)}</span>`)
+        .join("");
+      const row = (label, field, key) => {
+        const isMatch = key && matched.has(key);
+        return `
+          <tr class="${isMatch ? "is-match" : ""}">
+            <th scope="row">${escapeHtml(label)}${isMatch ? ' <span class="match-review-check" aria-label="matches">✓</span>' : ""}</th>
+            <td>${left[field]}</td>
+            <td>${right[field]}</td>
+          </tr>`;
+      };
+      return `
+      <div class="conflict-card match-review-card match-review-tier-${review.tier}">
+        <div class="conflict-card-header">
+          <div>
+            <div class="conflict-title">Tier ${review.tier} match</div>
+            <div class="match-key-chips">${keyChips}</div>
+          </div>
+          <div class="match-review-actions">
+            <button type="button" class="btn btn-ghost" data-match-review="dismissed" data-review-key="${escapeHtml(matchReviewKey(review))}">
+              Not the same
+            </button>
+            <button type="button" class="btn btn-primary" data-match-review="merged" data-review-key="${escapeHtml(matchReviewKey(review))}">
+              Same business — merge
+            </button>
+          </div>
+        </div>
+        <div class="match-review-table-wrap">
+          <table class="conflict-leads match-review-table">
+            <tbody>
+              ${row("Name / NPI", "name", "name")}
+              ${row("State", "state", "state")}
+              ${row("Authorized official", "official", "official")}
+              ${row("Phone", "phone", "phone")}
+              ${row("Group", "group", null)}
+              ${row("Claimed by", "owners", null)}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  const remaining = reviews.length - visible.length;
+  els.matchReviewsMoreBtn.hidden = remaining <= 0;
+  els.matchReviewsMoreBtn.textContent = `Show ${Math.min(remaining, MATCH_REVIEWS_PAGE)} more (${remaining} left)`;
+}
+
+async function loadMatchReviews(silent = false) {
+  if (!silent) {
+    els.matchReviewsSummary.textContent = "Checking…";
+    if (!state.matchReviews) {
+      els.matchReviewsEmpty.hidden = false;
+      els.matchReviewsEmpty.textContent = "Checking…";
+    }
+  }
+  try {
+    state.matchReviews = await apiGet("admin/match-reviews");
+    renderMatchReviews();
+  } catch (err) {
+    if (silent) {
+      console.log("[admin] match review refresh failed: " + err.message);
+      return;
+    }
+    els.matchReviewsSummary.textContent = "Failed to load";
+    els.matchReviewsEmpty.hidden = false;
+    els.matchReviewsEmpty.textContent = "Couldn't load possible duplicates: " + err.message;
+    els.matchReviewsList.innerHTML = "";
+    els.matchReviewsMoreBtn.hidden = true;
+  }
+}
+
+function openMatchReview(reviewKey, decision) {
+  const review = ((state.matchReviews && state.matchReviews.reviews) || []).find((r) => matchReviewKey(r) === reviewKey);
+  if (!review) return;
+  state.matchReviewPending = { review, decision };
+
+  els.matchReviewPair.textContent =
+    `${review.left.name || review.left.npi} (${review.left.npi}) and ${review.right.name || review.right.npi} (${review.right.npi})`;
+
+  if (decision === "merged") {
+    const owners = new Set([...review.left.owners, ...review.right.owners].map((owner) => owner.userId));
+    els.matchReviewTitle.textContent = "Merge into one business";
+    els.matchReviewEffect.textContent =
+      `Their groups (${review.left.groupSize + review.right.groupSize} NPIs in total) become one group. Nobody's claims change.` +
+      (owners.size > 1 ? " These NPIs are claimed by different people, so the merged group will appear under Ownership conflicts." : "");
+    els.matchReviewSubmitBtn.textContent = "Merge";
+  } else {
+    els.matchReviewTitle.textContent = "Not the same business";
+    els.matchReviewEffect.textContent = "Nothing is moved. This pair won't be flagged again.";
+    els.matchReviewSubmitBtn.textContent = "Dismiss";
+  }
+
+  els.matchReviewReason.value = "";
+  els.matchReviewSubmitBtn.disabled = false;
+  els.matchReviewOverlay.hidden = false;
+  els.matchReviewReason.focus();
+}
+
+function closeMatchReview() {
+  els.matchReviewOverlay.hidden = true;
+  state.matchReviewPending = null;
+}
+
+async function handleMatchReviewSubmit(event) {
+  event.preventDefault();
+  const pending = state.matchReviewPending;
+  if (!pending) return;
+  const reason = els.matchReviewReason.value.trim();
+  if (!reason) {
+    showToast("A reason is required — it's recorded with the decision.", true);
+    return;
+  }
+
+  const idleLabel = els.matchReviewSubmitBtn.textContent;
+  els.matchReviewSubmitBtn.disabled = true;
+  els.matchReviewSubmitBtn.textContent = "Saving…";
+  try {
+    const { review, decision } = pending;
+    const result = await apiPost("admin/match-reviews/resolve", {
+      leftNpi: review.leftNpi,
+      rightNpi: review.rightNpi,
+      decision,
+      reason,
+      tier: review.tier,
+      matchedKeys: review.matchedKeys,
+    });
+    closeMatchReview();
+    if (decision === "merged") {
+      showToast(
+        "Merged into one group." +
+          (result.new_conflict ? " It now has claims from more than one person — resolve it under Ownership conflicts." : "")
+      );
+    } else {
+      showToast("Dismissed. This pair won't be flagged again.");
+    }
+    await Promise.all([loadMatchReviews(true), loadConflicts(true)]);
+  } catch (err) {
+    showToast(err.message, true);
+    els.matchReviewSubmitBtn.disabled = false;
+    els.matchReviewSubmitBtn.textContent = idleLabel;
+  }
+}
+
 // silent=true is used by the background auto-refresh interval -- no
 // skeleton flash over data the admin is currently looking at, and a
 // transient failure (e.g. one flaky request) just logs instead of
@@ -771,6 +1016,10 @@ async function loadAdminOverview(silent = false) {
   // failure there (e.g. the identity schema isn't installed) degrades to a
   // message in that one panel instead of blanking the whole dashboard.
   const conflictsLoaded = loadConflicts(silent);
+  // The review queue is computed from every active lead, so the 30s
+  // background refresh skips it; it reloads on open, Refresh, and after
+  // each decision. (A click handler passes the event object, not `true`.)
+  const reviewsLoaded = silent === true ? Promise.resolve() : loadMatchReviews();
   try {
     const data = await apiGet("admin/overview");
     renderAdminStats(data.stats);
@@ -786,7 +1035,7 @@ async function loadAdminOverview(silent = false) {
     els.adminUsersBody.innerHTML = `<tr class="empty-row"><td colspan="7">Failed to load.</td></tr>`;
     els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">Failed to load.</td></tr>`;
   } finally {
-    await conflictsLoaded;
+    await Promise.all([conflictsLoaded, reviewsLoaded]);
   }
 }
 
@@ -2849,6 +3098,25 @@ els.conflictResolveForm.addEventListener("submit", handleConflictResolve);
 els.conflictResolveCancelBtn.addEventListener("click", closeConflictResolve);
 els.conflictResolveOverlay.addEventListener("click", (e) => {
   if (e.target === els.conflictResolveOverlay) closeConflictResolve();
+});
+els.matchReviewsList.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-match-review]");
+  if (!btn) return;
+  openMatchReview(btn.dataset.reviewKey, btn.dataset.matchReview);
+});
+els.matchReviewsTierFilter.addEventListener("change", () => {
+  state.matchReviewsTier = els.matchReviewsTierFilter.value;
+  state.matchReviewsLimit = MATCH_REVIEWS_PAGE;
+  renderMatchReviews();
+});
+els.matchReviewsMoreBtn.addEventListener("click", () => {
+  state.matchReviewsLimit += MATCH_REVIEWS_PAGE;
+  renderMatchReviews();
+});
+els.matchReviewForm.addEventListener("submit", handleMatchReviewSubmit);
+els.matchReviewCancelBtn.addEventListener("click", closeMatchReview);
+els.matchReviewOverlay.addEventListener("click", (e) => {
+  if (e.target === els.matchReviewOverlay) closeMatchReview();
 });
 els.adminUsersBody.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-admin-view-leads]");
