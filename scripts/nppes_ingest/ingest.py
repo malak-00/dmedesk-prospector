@@ -33,6 +33,7 @@ RUN_TYPE_DEACTIVATION = "deactivation"
 RUN_TYPES = (RUN_TYPE_MONTHLY_FULL, RUN_TYPE_WEEKLY_INCREMENTAL, RUN_TYPE_DEACTIVATION)
 
 DEFAULT_BATCH_SIZE = 500
+READ_PROGRESS_EVERY_ROWS = 500_000
 
 # NPPES rows are wide; the default field-size cap trips on the taxonomy tail.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
@@ -164,8 +165,9 @@ def run_ingest(
     if client is None and not options.dry_run:
         raise ValueError("A Supabase client is required unless --dry-run is set")
 
-    log(f"Checksumming {options.source_path.name} ...")
-    checksum, line_count = file_checksum_and_lines(options.source_path)
+    log(f"Checksumming {options.source_path.name} ({options.source_path.stat().st_size / 1024**3:,.1f} GB) ...")
+    checksum, line_count = file_checksum_and_lines(options.source_path, log=log)
+    log(f"Checksum done: {max(line_count - 1, 0):,} data rows. Reading rows ...")
     manifest = RunManifest(
         run_type=options.run_type,
         source_file=str(options.source_path),
@@ -238,6 +240,8 @@ def run_ingest(
     try:
         for source_row_number, row, index in read_source_rows(options.source_path):
             source_rows += 1
+            if source_rows % READ_PROGRESS_EVERY_ROWS == 0:
+                log(f"  read {source_rows:,} of ~{max(line_count - 1, 0):,} rows ({accepted_rows:,} accepted so far)")
             provider = mapper(index, row, source_row_number)
             rejection = validator.check(provider)
             if rejection is not None:

@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 CHECKSUM_CHUNK_BYTES = 1024 * 1024
 
@@ -23,20 +24,39 @@ def file_checksum(path: Path) -> str:
     return file_checksum_and_lines(path)[0]
 
 
-def file_checksum_and_lines(path: Path) -> tuple[str, int]:
+PROGRESS_EVERY_BYTES = 256 * 1024 * 1024
+
+
+def file_checksum_and_lines(path: Path, log: Callable[[str], None] | None = None) -> tuple[str, int]:
     """SHA-256 plus a newline count, in the one pass that reads the file anyway.
 
     The line count lets the truncated-file guard run before anything is
     staged, even though rows are streamed to staging as they're read.
+    With `log`, reports progress every 256 MB -- over a network share a full
+    NPPES release takes minutes to read and would otherwise look stuck.
     """
     digest = hashlib.sha256()
     lines = 0
     last = b""
+    total = path.stat().st_size
+    done = 0
+    next_report = PROGRESS_EVERY_BYTES
+    started = time.monotonic()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(CHECKSUM_CHUNK_BYTES), b""):
             digest.update(chunk)
             lines += chunk.count(b"\n")
             last = chunk
+            done += len(chunk)
+            if log is not None and done >= next_report:
+                next_report += PROGRESS_EVERY_BYTES
+                elapsed = max(time.monotonic() - started, 0.001)
+                rate = done / elapsed
+                remaining = (total - done) / rate if rate else 0
+                log(
+                    f"  checksummed {done / 1024**3:,.1f} of {total / 1024**3:,.1f} GB "
+                    f"({done / total:.0%}, {rate / 1024**2:,.0f} MB/s, ~{remaining / 60:,.0f} min left)"
+                )
     if last and not last.endswith(b"\n"):
         lines += 1
     return digest.hexdigest(), lines
