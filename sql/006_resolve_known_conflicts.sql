@@ -39,7 +39,7 @@ declare
   v_target_count integer;
   v_result       jsonb;
 begin
-  select count(*), min(id) into v_target_count, v_approver_id
+  select count(*), min(id::text)::uuid into v_target_count, v_approver_id
     from public.app_users
    where lower(username) = lower(btrim(v_approver_username));
 
@@ -53,7 +53,7 @@ begin
   end if;
 
   -- ---- 1FOOT 2FOOT Centre for Foot and Ankle Care, PC (VA) -> Rick Nelson
-  select count(distinct m.group_id), count(distinct m.npi), min(m.group_id)
+  select count(distinct m.group_id), count(distinct m.npi), min(m.group_id::text)::uuid
     into v_group_count, v_member_count, v_group_id
     from public.lead_group_members m
    where m.npi in ('1548921265', '1831477868');
@@ -63,7 +63,7 @@ begin
       v_member_count, v_group_count;
   end if;
 
-  select count(*), min(id) into v_target_count, v_to_user_id
+  select count(*), min(id::text)::uuid into v_target_count, v_to_user_id
     from public.app_users
    where lower(username) = lower(btrim(v_rick_username));
   if v_target_count <> 1 then
@@ -79,7 +79,7 @@ begin
   raise notice '1FOOT 2FOOT -> Rick Nelson: %', v_result;
 
   -- ---- Advanced Home Medical Supplies Inc. (CT) -> Nora Atkins
-  select count(distinct m.group_id), count(distinct m.npi), min(m.group_id)
+  select count(distinct m.group_id), count(distinct m.npi), min(m.group_id::text)::uuid
     into v_group_count, v_member_count, v_group_id
     from public.lead_group_members m
    where m.npi in ('1598747552', '1891506093');
@@ -89,7 +89,7 @@ begin
       v_member_count, v_group_count;
   end if;
 
-  select count(*), min(id) into v_target_count, v_to_user_id
+  select count(*), min(id::text)::uuid into v_target_count, v_to_user_id
     from public.app_users
    where lower(username) = lower(btrim(v_nora_username));
   if v_target_count <> 1 then
