@@ -330,6 +330,59 @@ app.get("/admin/overview", async (c) => {
   return c.json(ok({ users, suggestions, stats }));
 });
 
+// Identity groups whose active claims are split across more than one
+// person. Read-only: every row here needs an explicit approved decision,
+// so nothing is resolved automatically.
+app.get("/admin/conflicts", async (c) => {
+  requireAdmin(c.get("session"));
+  const data = await adminRepo.getOwnershipConflicts(supabaseFor(c));
+  return c.json(ok(data));
+});
+
+// Assigns one conflicted group to a single owner. The actual work happens
+// in a SQL function (sql/005_ownership_conflict_resolution.sql) so the
+// conflict check, the reassignment and the audit events are one
+// transaction -- the approving admin is taken from the session, never from
+// the request body.
+app.post("/admin/conflicts/resolve", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  const data = await adminRepo.resolveOwnershipConflict(supabaseFor(c), {
+    groupId: body.groupId,
+    toUserId: body.toUserId,
+    approvedBy: session.id,
+    reason: body.reason,
+  });
+  return c.json(ok(data));
+});
+
+// Tier 2/3 identity matches waiting for an admin decision. Read-only.
+app.get("/admin/match-reviews", async (c) => {
+  requireAdmin(c.get("session"));
+  const data = await adminRepo.getMatchReviews(supabaseFor(c));
+  return c.json(ok(data));
+});
+
+// Merge (same business) or dismiss (not the same) one flagged pair. The
+// deciding admin comes from the session, never the request body; the work
+// is one SQL function (sql/009_identity_match_review.sql).
+app.post("/admin/match-reviews/resolve", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  const data = await adminRepo.resolveMatchReview(supabaseFor(c), {
+    leftNpi: body.leftNpi,
+    rightNpi: body.rightNpi,
+    decision: body.decision,
+    decidedBy: session.id,
+    reason: body.reason,
+    tier: body.tier,
+    matchedKeys: body.matchedKeys,
+  });
+  return c.json(ok(data));
+});
+
 app.get("/admin/leads", async (c) => {
   const session = c.get("session");
   requireAdmin(session);

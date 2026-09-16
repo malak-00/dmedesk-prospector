@@ -107,6 +107,12 @@ const state = {
   searchMoreSeenNpis: [],
   view: "search",
   adminLoaded: false,
+  conflicts: [],
+  conflictResolveGroupId: null,
+  matchReviews: null,
+  matchReviewsTier: "all",
+  matchReviewsLimit: 25,
+  matchReviewPending: null,
   claimedRefreshInterval: null,
   adminRefreshInterval: null,
   adminLeadsAll: [],
@@ -257,6 +263,36 @@ const els = {
   adminUserLeadsCloseBtn: document.getElementById("adminUserLeadsCloseBtn"),
   adminUserLeadsCloseX: document.getElementById("adminUserLeadsCloseX"),
   adminUserLeadsSearchInput: document.getElementById("adminUserLeadsSearchInput"),
+  conflictsSummary: document.getElementById("conflictsSummary"),
+  conflictsEmpty: document.getElementById("conflictsEmpty"),
+  conflictsList: document.getElementById("conflictsList"),
+  conflictResolveOverlay: document.getElementById("conflictResolveOverlay"),
+  conflictResolveForm: document.getElementById("conflictResolveForm"),
+  conflictResolveGroup: document.getElementById("conflictResolveGroup"),
+  conflictOwnerOptions: document.getElementById("conflictOwnerOptions"),
+  conflictReason: document.getElementById("conflictReason"),
+  conflictResolveCancelBtn: document.getElementById("conflictResolveCancelBtn"),
+  conflictResolveSubmitBtn: document.getElementById("conflictResolveSubmitBtn"),
+  claimResultOverlay: document.getElementById("claimResultOverlay"),
+  claimResultSummary: document.getElementById("claimResultSummary"),
+  claimResultBlocked: document.getElementById("claimResultBlocked"),
+  claimResultBlockedList: document.getElementById("claimResultBlockedList"),
+  claimResultHeld: document.getElementById("claimResultHeld"),
+  claimResultHeldList: document.getElementById("claimResultHeldList"),
+  claimResultCloseBtn: document.getElementById("claimResultCloseBtn"),
+  matchReviewsSummary: document.getElementById("matchReviewsSummary"),
+  matchReviewsTierFilter: document.getElementById("matchReviewsTierFilter"),
+  matchReviewsEmpty: document.getElementById("matchReviewsEmpty"),
+  matchReviewsList: document.getElementById("matchReviewsList"),
+  matchReviewsMoreBtn: document.getElementById("matchReviewsMoreBtn"),
+  matchReviewOverlay: document.getElementById("matchReviewOverlay"),
+  matchReviewForm: document.getElementById("matchReviewForm"),
+  matchReviewTitle: document.getElementById("matchReviewTitle"),
+  matchReviewPair: document.getElementById("matchReviewPair"),
+  matchReviewEffect: document.getElementById("matchReviewEffect"),
+  matchReviewReason: document.getElementById("matchReviewReason"),
+  matchReviewCancelBtn: document.getElementById("matchReviewCancelBtn"),
+  matchReviewSubmitBtn: document.getElementById("matchReviewSubmitBtn"),
   claimedTable: document.getElementById("claimedTable"),
   claimedBody: document.getElementById("claimedBody"),
   claimedCount: document.getElementById("claimedCount"),
@@ -592,6 +628,398 @@ function renderAdminSuggestions(suggestions) {
     .join("");
 }
 
+// ---- ownership conflicts (admin) ----------------------------------------
+// An identity group whose active claims are split across more than one
+// person. These are surfaced rather than auto-resolved on purpose: the
+// system has no way to know who should own an account, so every one of
+// them waits for an explicit approved decision.
+
+function renderConflicts(payload) {
+  const available = payload && payload.available !== false;
+  const conflicts = (payload && payload.conflicts) || [];
+  state.conflicts = conflicts;
+
+  if (!available) {
+    els.conflictsSummary.textContent = "Not available";
+    els.conflictsEmpty.hidden = false;
+    els.conflictsEmpty.textContent = payload.reason || "Identity grouping isn't installed yet.";
+    els.conflictsList.innerHTML = "";
+    return;
+  }
+
+  if (conflicts.length === 0) {
+    els.conflictsSummary.textContent = "No conflicts";
+    els.conflictsEmpty.hidden = false;
+    els.conflictsEmpty.textContent = "Every identity group has a single active owner.";
+    els.conflictsList.innerHTML = "";
+    return;
+  }
+
+  els.conflictsSummary.textContent = `${conflicts.length} group${conflicts.length === 1 ? "" : "s"} need${conflicts.length === 1 ? "s" : ""} an owner decision`;
+  els.conflictsEmpty.hidden = true;
+  els.conflictsList.innerHTML = conflicts
+    .map((conflict) => {
+      const owners = conflict.owners
+        .map((owner) => `<span class="conflict-owner-chip">${escapeHtml(owner.displayName)} · ${owner.leadCount}</span>`)
+        .join("");
+      const rows = conflict.leads
+        .map((lead) => {
+          const location = [lead.city, lead.state].filter(Boolean).join(", ");
+          return `
+          <tr>
+            <td>
+              <div class="company-name">${escapeHtml(lead.companyName || "")}</div>
+              <div class="company-taxonomy mono">${escapeHtml(lead.npi || "")}</div>
+            </td>
+            <td>${escapeHtml(location || "—")}</td>
+            <td>${escapeHtml(lead.claimedByName || "")}</td>
+            <td class="mono">${escapeHtml((lead.claimedAt || "").slice(0, 10))}</td>
+          </tr>`;
+        })
+        .join("");
+      const subtitle = [conflict.groupState, `${conflict.leads.length} active claims`].filter(Boolean).join(" · ");
+      const matchLine = [conflict.matchTier ? `Tier ${conflict.matchTier}` : "", conflict.matchReason || ""]
+        .filter(Boolean)
+        .join(" — ");
+      return `
+      <div class="conflict-card">
+        <div class="conflict-card-header">
+          <div>
+            <div class="conflict-title">${escapeHtml(conflict.groupName)}</div>
+            <div class="conflict-subtitle">${escapeHtml(subtitle)}</div>
+            ${matchLine ? `<div class="conflict-match">Grouped by: ${escapeHtml(matchLine)}</div>` : ""}
+            <div class="conflict-owners">${owners}</div>
+          </div>
+          <button type="button" class="btn btn-primary" data-resolve-conflict data-group-id="${escapeHtml(conflict.groupId)}">
+            Resolve
+          </button>
+        </div>
+        <table class="conflict-leads">
+          <thead>
+            <tr><th>Company</th><th>Location</th><th>Claimed by</th><th>Claimed</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    })
+    .join("");
+}
+
+async function loadConflicts(silent = false) {
+  if (!silent) {
+    els.conflictsSummary.textContent = "Checking…";
+    els.conflictsEmpty.hidden = false;
+    els.conflictsEmpty.textContent = "Checking…";
+  }
+  try {
+    renderConflicts(await apiGet("admin/conflicts"));
+  } catch (err) {
+    if (silent) {
+      console.log("[admin] conflict refresh failed: " + err.message);
+      return;
+    }
+    els.conflictsSummary.textContent = "Failed to load";
+    els.conflictsEmpty.hidden = false;
+    els.conflictsEmpty.textContent = "Couldn't load ownership conflicts: " + err.message;
+    els.conflictsList.innerHTML = "";
+  }
+}
+
+function openConflictResolve(groupId) {
+  const conflict = state.conflicts.find((c) => c.groupId === groupId);
+  if (!conflict) return;
+  state.conflictResolveGroupId = groupId;
+  els.conflictResolveGroup.textContent = `${conflict.groupName} — ${conflict.leads.length} active claims across ${conflict.owners.length} owners.`;
+  // No owner is pre-selected: picking one is the decision being made here,
+  // and a default would quietly become the answer.
+  els.conflictOwnerOptions.innerHTML = conflict.owners
+    .map(
+      (owner) => `
+      <label class="conflict-owner-option">
+        <input type="radio" name="conflictOwner" value="${escapeHtml(owner.userId)}">
+        <span>${escapeHtml(owner.displayName)}</span>
+        <span class="conflict-owner-count">holds ${owner.leadCount}</span>
+      </label>`
+    )
+    .join("");
+  els.conflictReason.value = "";
+  els.conflictResolveSubmitBtn.disabled = false;
+  els.conflictResolveSubmitBtn.textContent = "Assign owner";
+  els.conflictResolveOverlay.hidden = false;
+}
+
+function closeConflictResolve() {
+  els.conflictResolveOverlay.hidden = true;
+  state.conflictResolveGroupId = null;
+}
+
+async function handleConflictResolve(event) {
+  event.preventDefault();
+  const groupId = state.conflictResolveGroupId;
+  const selected = els.conflictOwnerOptions.querySelector('input[name="conflictOwner"]:checked');
+  if (!groupId) return;
+  if (!selected) {
+    showToast("Pick which owner keeps this group.", true);
+    return;
+  }
+  const reason = els.conflictReason.value.trim();
+  if (!reason) {
+    showToast("A reason is required — it's recorded with the decision.", true);
+    return;
+  }
+
+  els.conflictResolveSubmitBtn.disabled = true;
+  els.conflictResolveSubmitBtn.textContent = "Assigning…";
+  try {
+    const result = await apiPost("admin/conflicts/resolve", { groupId, toUserId: selected.value, reason });
+    const moved = result.reassigned_count || 0;
+    const skipped = (result.skipped || []).length;
+    closeConflictResolve();
+    showToast(
+      `Reassigned ${moved} lead${moved === 1 ? "" : "s"}.` + (skipped ? ` ${skipped} skipped — see the audit log.` : "")
+    );
+    await Promise.all([loadConflicts(true), loadAdminOverview(true)]);
+  } catch (err) {
+    showToast(err.message, true);
+    els.conflictResolveSubmitBtn.disabled = false;
+    els.conflictResolveSubmitBtn.textContent = "Assign owner";
+  }
+}
+
+// ---- possible duplicates (admin) ------------------------------------------
+// Pairs of NPIs that matched a Tier 2 or Tier 3 identity rule. Unlike
+// Tier 1 and the cross-state Tier 2 rule, these are never grouped
+// automatically: an admin decides "same business" (merge the two groups) or
+// "not the same" (dismiss). A merge never changes who owns anything -- if it
+// puts two reps' claims together, the group shows up under Ownership
+// conflicts for that decision.
+
+const MATCH_REVIEWS_PAGE = 25;
+const MATCH_KEY_LABELS = { name: "Name", state: "State", official: "Authorized official", phone: "Phone" };
+
+function matchReviewKey(review) {
+  return `${review.leftNpi}:${review.rightNpi}`;
+}
+
+function filteredMatchReviews() {
+  const reviews = (state.matchReviews && state.matchReviews.reviews) || [];
+  if (state.matchReviewsTier === "all") return reviews;
+  return reviews.filter((review) => String(review.tier) === state.matchReviewsTier);
+}
+
+// requestedBy: set on the side of a held claim (sql/010) -- that NPI isn't a
+// lead yet, someone tried to claim it.
+function renderMatchReviewSide(record, requestedBy) {
+  // Only the state is compared, so the city is shown as secondary context.
+  const location = record.state
+    ? `${escapeHtml(record.state)}${record.city ? ` <span class="match-review-note">${escapeHtml(record.city)}</span>` : ""}`
+    : escapeHtml(record.city || "—");
+  const owners = record.owners.length
+    ? record.owners.map((owner) => escapeHtml(owner.displayName)).join(", ")
+    : requestedBy
+      ? `<span class="match-review-request">Requested by ${escapeHtml(requestedBy.displayName)}</span>`
+      : "Unclaimed";
+  return {
+    name: `<div class="company-name">${escapeHtml(record.name || "(no name)")}</div><div class="company-taxonomy mono">${escapeHtml(record.npi)}</div>`,
+    state: location,
+    official: escapeHtml(record.official || "—"),
+    phone: record.phone
+      ? `${escapeHtml(record.phone)}${record.phoneSource === "authorized official" ? ' <span class="match-review-note">(official)</span>' : ""}`
+      : "—",
+    group: record.groupSize > 1 ? `${record.groupSize} NPIs` : "Only this NPI",
+    owners,
+  };
+}
+
+function renderMatchReviews() {
+  const payload = state.matchReviews;
+  if (!payload) return;
+
+  if (payload.available === false) {
+    els.matchReviewsSummary.textContent = "Not available";
+    els.matchReviewsEmpty.hidden = false;
+    els.matchReviewsEmpty.textContent = payload.reason || "The review queue isn't installed yet.";
+    els.matchReviewsList.innerHTML = "";
+    els.matchReviewsMoreBtn.hidden = true;
+    return;
+  }
+
+  const all = payload.reviews || [];
+  const tier2 = all.filter((review) => review.tier === 2).length;
+  const tier3 = all.filter((review) => review.tier === 3).length;
+  els.matchReviewsSummary.textContent = all.length
+    ? `${all.length} pair${all.length === 1 ? "" : "s"} to review · Tier 2: ${tier2} · Tier 3: ${tier3}`
+    : "Nothing to review";
+
+  const reviews = filteredMatchReviews();
+  if (reviews.length === 0) {
+    els.matchReviewsEmpty.hidden = false;
+    els.matchReviewsEmpty.textContent = all.length
+      ? "No pairs in this tier."
+      : "No possible duplicates are waiting for a decision.";
+    els.matchReviewsList.innerHTML = "";
+    els.matchReviewsMoreBtn.hidden = true;
+    return;
+  }
+
+  els.matchReviewsEmpty.hidden = true;
+  const visible = reviews.slice(0, state.matchReviewsLimit);
+  els.matchReviewsList.innerHTML = visible
+    .map((review) => {
+      const requestedBy = review.source === "claim_request" ? review.requestedBy : null;
+      const left = renderMatchReviewSide(review.left, requestedBy && review.requestedNpi === review.left.npi ? requestedBy : null);
+      const right = renderMatchReviewSide(review.right, requestedBy && review.requestedNpi === review.right.npi ? requestedBy : null);
+      const matched = new Set(review.matchedKeys);
+      const keyChips =
+        (requestedBy ? `<span class="match-key-chip match-request-chip">Claim request · ${escapeHtml(requestedBy.displayName)}</span>` : "") +
+        review.matchedKeys
+          .map((key) => `<span class="match-key-chip">${escapeHtml(MATCH_KEY_LABELS[key] || key)}</span>`)
+          .join("");
+      const row = (label, field, key) => {
+        const isMatch = key && matched.has(key);
+        return `
+          <tr class="${isMatch ? "is-match" : ""}">
+            <th scope="row">${escapeHtml(label)}${isMatch ? ' <span class="match-review-check" aria-label="matches">✓</span>' : ""}</th>
+            <td>${left[field]}</td>
+            <td>${right[field]}</td>
+          </tr>`;
+      };
+      return `
+      <div class="conflict-card match-review-card match-review-tier-${review.tier}">
+        <div class="conflict-card-header">
+          <div>
+            <div class="conflict-title">Tier ${review.tier} match</div>
+            <div class="match-key-chips">${keyChips}</div>
+          </div>
+          <div class="match-review-actions">
+            <button type="button" class="btn btn-ghost" data-match-review="dismissed" data-review-key="${escapeHtml(matchReviewKey(review))}">
+              Not the same
+            </button>
+            <button type="button" class="btn btn-primary" data-match-review="merged" data-review-key="${escapeHtml(matchReviewKey(review))}">
+              Same business — merge
+            </button>
+          </div>
+        </div>
+        <div class="match-review-table-wrap">
+          <table class="conflict-leads match-review-table">
+            <tbody>
+              ${row("Name / NPI", "name", "name")}
+              ${row("State", "state", "state")}
+              ${row("Authorized official", "official", "official")}
+              ${row("Phone", "phone", "phone")}
+              ${row("Group", "group", null)}
+              ${row("Claimed by", "owners", null)}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  const remaining = reviews.length - visible.length;
+  els.matchReviewsMoreBtn.hidden = remaining <= 0;
+  els.matchReviewsMoreBtn.textContent = `Show ${Math.min(remaining, MATCH_REVIEWS_PAGE)} more (${remaining} left)`;
+}
+
+async function loadMatchReviews(silent = false) {
+  if (!silent) {
+    els.matchReviewsSummary.textContent = "Checking…";
+    if (!state.matchReviews) {
+      els.matchReviewsEmpty.hidden = false;
+      els.matchReviewsEmpty.textContent = "Checking…";
+    }
+  }
+  try {
+    state.matchReviews = await apiGet("admin/match-reviews");
+    renderMatchReviews();
+  } catch (err) {
+    if (silent) {
+      console.log("[admin] match review refresh failed: " + err.message);
+      return;
+    }
+    els.matchReviewsSummary.textContent = "Failed to load";
+    els.matchReviewsEmpty.hidden = false;
+    els.matchReviewsEmpty.textContent = "Couldn't load possible duplicates: " + err.message;
+    els.matchReviewsList.innerHTML = "";
+    els.matchReviewsMoreBtn.hidden = true;
+  }
+}
+
+function openMatchReview(reviewKey, decision) {
+  const review = ((state.matchReviews && state.matchReviews.reviews) || []).find((r) => matchReviewKey(r) === reviewKey);
+  if (!review) return;
+  state.matchReviewPending = { review, decision };
+
+  els.matchReviewPair.textContent =
+    `${review.left.name || review.left.npi} (${review.left.npi}) and ${review.right.name || review.right.npi} (${review.right.npi})`;
+
+  const requester = review.source === "claim_request" && review.requestedBy ? review.requestedBy.displayName : null;
+  if (decision === "merged") {
+    const owners = new Set([...review.left.owners, ...review.right.owners].map((owner) => owner.userId));
+    els.matchReviewTitle.textContent = "Merge into one business";
+    els.matchReviewEffect.textContent =
+      `Their groups (${review.left.groupSize + review.right.groupSize} NPIs in total) become one group. Nobody's claims change.` +
+      (owners.size > 1 ? " These NPIs are claimed by different people, so the merged group will appear under Ownership conflicts." : "") +
+      (requester ? ` ${requester}'s claim request stays blocked, because the business is already owned.` : "");
+    els.matchReviewSubmitBtn.textContent = "Merge";
+  } else {
+    els.matchReviewTitle.textContent = "Not the same business";
+    els.matchReviewEffect.textContent =
+      "Nothing is moved. This pair won't be flagged again." + (requester ? ` ${requester} can then claim the lead.` : "");
+    els.matchReviewSubmitBtn.textContent = "Dismiss";
+  }
+
+  els.matchReviewReason.value = "";
+  els.matchReviewSubmitBtn.disabled = false;
+  els.matchReviewOverlay.hidden = false;
+  els.matchReviewReason.focus();
+}
+
+function closeMatchReview() {
+  els.matchReviewOverlay.hidden = true;
+  state.matchReviewPending = null;
+}
+
+async function handleMatchReviewSubmit(event) {
+  event.preventDefault();
+  const pending = state.matchReviewPending;
+  if (!pending) return;
+  const reason = els.matchReviewReason.value.trim();
+  if (!reason) {
+    showToast("A reason is required — it's recorded with the decision.", true);
+    return;
+  }
+
+  const idleLabel = els.matchReviewSubmitBtn.textContent;
+  els.matchReviewSubmitBtn.disabled = true;
+  els.matchReviewSubmitBtn.textContent = "Saving…";
+  try {
+    const { review, decision } = pending;
+    const result = await apiPost("admin/match-reviews/resolve", {
+      leftNpi: review.leftNpi,
+      rightNpi: review.rightNpi,
+      decision,
+      reason,
+      tier: review.tier,
+      matchedKeys: review.matchedKeys,
+    });
+    closeMatchReview();
+    if (decision === "merged") {
+      showToast(
+        "Merged into one group." +
+          (result.new_conflict ? " It now has claims from more than one person — resolve it under Ownership conflicts." : "")
+      );
+    } else {
+      showToast("Dismissed. This pair won't be flagged again.");
+    }
+    await Promise.all([loadMatchReviews(true), loadConflicts(true)]);
+  } catch (err) {
+    showToast(err.message, true);
+    els.matchReviewSubmitBtn.disabled = false;
+    els.matchReviewSubmitBtn.textContent = idleLabel;
+  }
+}
+
 // silent=true is used by the background auto-refresh interval -- no
 // skeleton flash over data the admin is currently looking at, and a
 // transient failure (e.g. one flaky request) just logs instead of
@@ -601,6 +1029,14 @@ async function loadAdminOverview(silent = false) {
     els.adminUsersBody.innerHTML = skeletonRows(4, 7);
     els.adminSuggestionsBody.innerHTML = skeletonRows(3, 3);
   }
+  // Conflicts load in parallel and own their own error handling, so a
+  // failure there (e.g. the identity schema isn't installed) degrades to a
+  // message in that one panel instead of blanking the whole dashboard.
+  const conflictsLoaded = loadConflicts(silent);
+  // The review queue is computed from every active lead, so the 30s
+  // background refresh skips it; it reloads on open, Refresh, and after
+  // each decision. (A click handler passes the event object, not `true`.)
+  const reviewsLoaded = silent === true ? Promise.resolve() : loadMatchReviews();
   try {
     const data = await apiGet("admin/overview");
     renderAdminStats(data.stats);
@@ -615,6 +1051,8 @@ async function loadAdminOverview(silent = false) {
     showToast(err.message, true);
     els.adminUsersBody.innerHTML = `<tr class="empty-row"><td colspan="7">Failed to load.</td></tr>`;
     els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">Failed to load.</td></tr>`;
+  } finally {
+    await Promise.all([conflictsLoaded, reviewsLoaded]);
   }
 }
 
@@ -1162,7 +1600,7 @@ function updatePageNav() {
 function renderResults(excludedAsClaimed) {
   if (excludedAsClaimed !== undefined) state.excludedAsClaimed = excludedAsClaimed; // remembered across re-renders (e.g. a sort click)
   const { companies } = state;
-  const excludedNote = state.excludedAsClaimed > 0 ? ` (${state.excludedAsClaimed} already claimed, filtered out)` : "";
+  const excludedNote = state.excludedAsClaimed > 0 ? ` (${state.excludedAsClaimed} already claimed or owned by a teammate, filtered out)` : "";
   els.resultsCount.textContent = `${companies.length} lead${companies.length === 1 ? "" : "s"} found${excludedNote}`;
   els.selectAll.checked = companies.length > 0 && state.selected.size === companies.length;
 
@@ -1433,9 +1871,15 @@ async function exportSheets() {
   setStatus("busy", "Claiming…");
   try {
     const data = await apiPost("export/sheets", { companies });
-    showToast(`Claimed ${data.rowsAdded} lead(s) as ${data.claimedBy || "you"}`);
     state.claimedLoaded = false; // claimed view is now stale
-    removeCompaniesFromProspect(companies); // claimed leads shouldn't linger in the Prospect view
+    // Only claimed (or already-yours) leads leave Prospect -- blocked and
+    // held-for-review ones stay so the rep can see them and retry later.
+    // An older Worker without claimedNpis claimed everything it was sent.
+    const done = data.claimedNpis
+      ? new Set([...data.claimedNpis, ...(data.alreadyClaimedNpis || [])])
+      : new Set(companies.map((c) => String(c.npi)));
+    removeCompaniesFromProspect(companies.filter((c) => done.has(String(c.npi))));
+    showClaimResult(data);
     setStatus("ready", "Ready");
   } catch (err) {
     showToast(err.message, true);
@@ -1443,6 +1887,68 @@ async function exportSheets() {
   } finally {
     els.exportSheetsBtn.disabled = state.selected.size === 0;
   }
+}
+
+// Claiming is group-aware (sql/010): a lead whose business a teammate already
+// owns is blocked, and a possible duplicate of a teammate's lead is held for
+// admin review. A plain toast covers the all-claimed case; anything blocked
+// or held gets a dialog, since the rep needs to know who owns what.
+const MATCH_KEY_WORDS = { name: "name", state: "state", official: "authorized official", phone: "phone" };
+
+function claimedCountText(data) {
+  const n = data.rowsAdded || 0;
+  return `Claimed ${n} lead${n === 1 ? "" : "s"} as ${data.claimedBy || "you"}.`;
+}
+
+function showClaimResult(data) {
+  const blocked = data.blocked || [];
+  const held = data.heldForReview || [];
+  if (blocked.length === 0 && held.length === 0) {
+    showToast(claimedCountText(data));
+    return;
+  }
+
+  const parts = [claimedCountText(data)];
+  if (blocked.length) parts.push(`${blocked.length} already owned by a teammate.`);
+  if (held.length) parts.push(`${held.length} held for admin review.`);
+  els.claimResultSummary.textContent = parts.join(" ");
+
+  els.claimResultBlocked.hidden = blocked.length === 0;
+  els.claimResultBlockedList.innerHTML = blocked
+    .map((b) => {
+      const owners = b.owners.length ? b.owners.join(", ") : "a teammate";
+      const group = b.groupName && b.groupName.toLowerCase() !== String(b.companyName || "").toLowerCase() ? ` — part of ${escapeHtml(b.groupName)}` : "";
+      return `
+        <li>
+          <div class="company-name">${escapeHtml(b.companyName || b.npi)}</div>
+          <div class="claim-result-detail"><span class="mono">${escapeHtml(b.npi)}</span> · Owned by <strong>${escapeHtml(owners)}</strong>${group}</div>
+        </li>`;
+    })
+    .join("");
+
+  els.claimResultHeld.hidden = held.length === 0;
+  els.claimResultHeldList.innerHTML = held
+    .map((h) => {
+      const matches = h.matches
+        .map((m) => {
+          const keys = m.matchedKeys.map((k) => MATCH_KEY_WORDS[k] || k).join(", ");
+          return `<div class="claim-result-detail">May be the same as <strong>${escapeHtml(m.companyName || m.npi)}</strong> (<span class="mono">${escapeHtml(m.npi)}</span>, ${escapeHtml(m.ownerName)}) — same ${escapeHtml(keys)}</div>`;
+        })
+        .join("");
+      return `
+        <li>
+          <div class="company-name">${escapeHtml(h.companyName || h.npi)} <span class="mono claim-result-npi">${escapeHtml(h.npi)}</span></div>
+          ${matches}
+        </li>`;
+    })
+    .join("");
+
+  els.claimResultOverlay.hidden = false;
+  els.claimResultCloseBtn.focus();
+}
+
+function closeClaimResult() {
+  els.claimResultOverlay.hidden = true;
 }
 
 // Separate from claiming above -- this doesn't touch the app's own Claimed
@@ -2666,6 +3172,41 @@ wireSortableHeaders(els.adminUserLeadsTable, ADMIN_LEADS_DEFAULT_SORT_DIR, sortA
 // Event delegation, not a per-row listener -- adminUsersBody is fully
 // re-rendered on every load, same reasoning as the taxonomy checkboxes
 // (see renderTaxonomyOptions' comment).
+// Same event-delegation reasoning as adminUsersBody -- the conflict list is
+// fully re-rendered on every load and after every resolution.
+els.conflictsList.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-resolve-conflict]");
+  if (!btn) return;
+  openConflictResolve(btn.dataset.groupId);
+});
+els.conflictResolveForm.addEventListener("submit", handleConflictResolve);
+els.conflictResolveCancelBtn.addEventListener("click", closeConflictResolve);
+els.conflictResolveOverlay.addEventListener("click", (e) => {
+  if (e.target === els.conflictResolveOverlay) closeConflictResolve();
+});
+els.claimResultCloseBtn.addEventListener("click", closeClaimResult);
+els.claimResultOverlay.addEventListener("click", (e) => {
+  if (e.target === els.claimResultOverlay) closeClaimResult();
+});
+els.matchReviewsList.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-match-review]");
+  if (!btn) return;
+  openMatchReview(btn.dataset.reviewKey, btn.dataset.matchReview);
+});
+els.matchReviewsTierFilter.addEventListener("change", () => {
+  state.matchReviewsTier = els.matchReviewsTierFilter.value;
+  state.matchReviewsLimit = MATCH_REVIEWS_PAGE;
+  renderMatchReviews();
+});
+els.matchReviewsMoreBtn.addEventListener("click", () => {
+  state.matchReviewsLimit += MATCH_REVIEWS_PAGE;
+  renderMatchReviews();
+});
+els.matchReviewForm.addEventListener("submit", handleMatchReviewSubmit);
+els.matchReviewCancelBtn.addEventListener("click", closeMatchReview);
+els.matchReviewOverlay.addEventListener("click", (e) => {
+  if (e.target === els.matchReviewOverlay) closeMatchReview();
+});
 els.adminUsersBody.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-admin-view-leads]");
   if (!btn) return;
@@ -2759,12 +3300,14 @@ window.debugFoursquare = async function () {
 // panel doesn't exist at all in the Claimed view -- so a fixed CSS value
 // can't track them, but a live-measured custom property can.
 (function setUpStickyOffsets() {
+  const header = document.querySelector(".app-header");
   const searchPanel = document.querySelector(".search-panel");
   const toolbars = document.querySelectorAll(".results-toolbar");
-  if (!searchPanel && toolbars.length === 0) return;
+  if (!header && !searchPanel && toolbars.length === 0) return;
 
   const root = document.documentElement;
   function refresh() {
+    if (header) root.style.setProperty("--header-h", `${header.getBoundingClientRect().height}px`);
     // A hidden ancestor (display:none via the [hidden] attribute on
     // whichever view isn't active) makes getBoundingClientRect() report 0
     // height -- exactly the "not currently relevant" value this stack
@@ -2776,6 +3319,7 @@ window.debugFoursquare = async function () {
   }
 
   const observer = new ResizeObserver(refresh);
+  if (header) observer.observe(header);
   if (searchPanel) observer.observe(searchPanel);
   toolbars.forEach((el) => observer.observe(el));
   refresh();
