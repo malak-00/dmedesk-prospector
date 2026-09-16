@@ -2,11 +2,11 @@
 
 Loads an NPPES release (monthly full dissemination, weekly incremental, or
 deactivation file) into the `nppes_refresh_staging` table under a single
-`refresh_runs` row. It never writes to `npi_records` and never touches
-`leads` -- applying staged data to the live provider record is a separate,
-transactional SQL step (see documentation/plans/PROVIDER_CHANGE_TRACKING_PLAN.md).
+`refresh_runs` row, streaming it in batches. Applying a staged run to
+`npi_records` is done by reviewed SQL (sql/007_nppes_refresh_lifecycle.sql),
+driven in batches by `--apply` / `--apply-run`. It never touches `leads`.
 """
 
 __all__ = ["__version__"]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

@@ -16,6 +16,8 @@ Required manual sequence:
 008_identity_match_tiers.sql
 009_identity_match_review.sql
 010_group_aware_claim.sql
+011_claim_for_user.sql
+012_medicare_refresh.sql          (before the first Medicare load)
 ```
 
 Run each file in the Supabase SQL Editor, save its read-only verification
@@ -36,10 +38,12 @@ in `003`); save their output with the run.
 | `004_nppes_refresh_staging.sql` | Staging table written by `scripts/nppes_ingest` | **Not yet run** |
 | `005_ownership_conflict_resolution.sql` | `resolve_ownership_conflict()` + `ownership_conflicts` view | Executed 2026-09-16 |
 | `006_resolve_known_conflicts.sql` | Applies the two approved owner decisions | Executed 2026-09-16 (approver: Ben Arthur) |
-| `007_nppes_refresh_lifecycle.sql` | Finalize, abort, and transactional NPPES apply functions | **Not yet run — after 004 and read-only verification** |
+| `007_nppes_refresh_lifecycle.sql` | Recover/abort staging, `nppes_apply_column_map()`, batched schema-adaptive `apply_nppes_refresh_batch()` + `finish_nppes_apply()` | **Not yet run — after 004, before the first `--apply`** |
 | `008_identity_match_tiers.sql` | Three-tier identity keys, regroup of existing leads, `conflict_detected` events, `identity_review_candidates` view | Executed 2026-09-16 |
 | `009_identity_match_review.sql` | `identity_match_decisions`, `identity_review_queue` view, `resolve_identity_match()` for the admin Possible duplicates screen | Executed 2026-09-16 |
-| `010_group_aware_claim.sql` | `claim_leads()` (group-aware atomic claim), `owned_group_npis()` for search, `assign_lead_groups()`, `identity_claim_requests`, extended `identity_review_queue`, backfill of ungrouped leads | **Not yet run — back up first; run after 009, then deploy the Worker** |
+| `010_group_aware_claim.sql` | Identity helpers, `owned_group_npis()` for search, `assign_lead_groups()`, `identity_claim_requests`, extended `identity_review_queue`, backfill of ungrouped leads (`claim_leads()` now lives in 011) | Executed 2026-09-16 (Worker deployed after) |
+| `011_claim_for_user.sql` | `app_users.can_claim_for_others`; `claim_leads()` redefined with an optional actor for claims on behalf of another user | Executed 2026-09-16 (Worker deployed after) |
+| `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | **Not yet run — before the first `python -m nppes_ingest.medicare --apply`** |
 
 ## Notes on individual files
 
@@ -57,6 +61,20 @@ adaptation point.
 **`004`** must be installed before the ingestion CLI can stage a real
 release. The CLI's staging row and this table's columns are written to match
 each other exactly — change one and you must change the other.
+
+**`007`** adds `deactivation_date` and `taxonomy_codes` to `npi_records`
+(the live table, checked 2026-09-16, has neither; the first fill of
+`taxonomy_codes` writes no history), then applies a staged run to
+`npi_records` in batches, driven by
+`python -m nppes_ingest ... --apply` (or `--apply-run <id>`). It writes only
+columns present in both staging and the live `npi_records` — check with
+`select * from public.nppes_apply_column_map();` before the first apply —
+records a `provider_field_history` row per real change (canonical comparison,
+so formatting-only differences don't count) and one `record_created` row per
+new provider, refuses to apply the same source file twice without
+`operator_override`, and never inserts from a deactivation file. Batches are
+resumable. It replaces the earlier single-transaction draft of this file,
+which was never run.
 
 **`005`** is what the admin UI's "Resolve" button calls. Until it is
 installed, the Admin tab still *lists* ownership conflicts (the Worker
@@ -103,6 +121,30 @@ keeps those groups. `010` backfills a group for every lead that has none.
 Run it **before** deploying the Worker: until it exists, claiming returns an
 "isn't installed yet" error instead of claiming without the check. Rerun-safe.
 
+**`012`** backs the Medicare loader (`python -m nppes_ingest.medicare`).
+`npi_cms_enrichment` in DME Desk exists but was empty (checked 2026-09-16), so
+search can't switch off fakeNPI until this has loaded. `apply_medicare_refresh()`
+applies only NPIs present in `npi_records`, records changed values in
+`provider_field_history` (source `medicare`), raises a pending
+`provider_data_changed` event for a claimed lead whose claims fell by more
+than half, never clears an NPI just because it's missing from a release, and refuses
+identical content without `operator_override` only when there are no
+newly eligible providers to load (so re-running after an NPPES refresh picks
+up suppliers that were skipped before). CMS publishes one data year at a
+time, so most monthly runs change little. Re-run this file to update the
+function (it is rerun-safe).
+
+**`011`** lets an integration account (e.g. BD MEETINGS) claim for a named
+teammate via `POST /admin/claim-for-user` (see
+`documentation/operations/BD_MEETINGS_CLAIM_FOR_USER.md`). It adds
+`app_users.can_claim_for_others` and replaces `claim_leads(uuid, jsonb)` with
+`claim_leads(uuid, jsonb, p_actor_id uuid default null)`: normal claims call it
+exactly as before; an on-behalf claim records `source = 'claim_for_user'`,
+`approved_by` and `metadata.actor_user_id`, and the database refuses an actor
+that is neither an admin nor flagged. `claim_leads` is defined only in `011`
+(no longer in `010`), so re-running `010` can't recreate the old overload
+beside it. Rerun-safe.
+
 **`006`** carries the two approved owner decisions from 2026-09-02. The
 usernames at the top are filled in: Ben Arthur approves, Rick Nelson receives
 1FOOT 2FOOT, and Nora Atkins receives Advanced Home Medical Supplies. The
@@ -113,8 +155,10 @@ is one transaction and is safe to re-run — once a group has a single owner
 there is nothing left to reassign.
 
 The table above records the current execution state: 000, 001, safe 002, and
-003 were executed on 2026-08-31; 005, 006, 008, and 009 on 2026-09-16 (006 and
-008 were first fixed for the Supabase SQL Editor in PR #31). 004 and 007 are
+003 were executed on 2026-08-31; 005, 006, 008, 009, 010, and 011 on 2026-09-16
+(006 and 008 were first fixed for the Supabase SQL Editor in PR #31; the Worker
+with group-aware claiming was deployed after 010, and with claim-for-user after
+011). 004 and 007 are
 still manual and are only needed before the NPPES ingest applies a release.
 The agent never executes SQL against Supabase. Verify after every step.
 

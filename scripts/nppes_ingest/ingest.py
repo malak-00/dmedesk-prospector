@@ -19,10 +19,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterator, Sequence
 
-from .manifest import RunManifest, file_checksum
+from .manifest import RunManifest, file_checksum_and_lines
 from .mapping import HeaderIndex, StagedProvider, map_deactivation_row, map_provider_row
 from .supabase_rest import SupabaseClient
-from .validate import Rejection, RowValidator, check_expected_row_count, summarize_rejections
+from .validate import Rejection, RowValidator, check_expected_row_count
 
 REFRESH_RUNS_TABLE = "refresh_runs"
 STAGING_TABLE = "nppes_refresh_staging"
@@ -55,6 +55,8 @@ class IngestOptions:
     batch_size: int = DEFAULT_BATCH_SIZE
     dry_run: bool = False
     limit: int | None = None
+    # The CLI turns this on by default (--include-individuals turns it off).
+    organizations_only: bool = False
 
 
 @dataclass
@@ -93,6 +95,34 @@ def write_rejects_csv(path: Path, rejections: Sequence[Rejection]) -> Path:
         for rejection in rejections:
             writer.writerow([rejection.source_row_number, rejection.npi, rejection.reason, rejection.detail])
     return path
+
+
+class RejectsWriter:
+    """Streams rejections to CSV as they happen; the file only appears if there are any.
+
+    A national file rejects millions of rows (mostly out-of-scope taxonomies),
+    so they are written out rather than kept in memory.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._handle = None
+        self._writer = None
+
+    def write(self, rejection: Rejection) -> None:
+        if self._writer is None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._handle = self.path.open("w", encoding="utf-8", newline="")
+            self._writer = csv.writer(self._handle)
+            self._writer.writerow(["source_row_number", "npi", "reason", "detail"])
+        self._writer.writerow([rejection.source_row_number, rejection.npi, rejection.reason, rejection.detail])
+
+    def close(self) -> Path | None:
+        if self._handle is None:
+            return None
+        self._handle.close()
+        self._handle = None
+        return self.path
 
 
 def create_refresh_run(client: SupabaseClient, manifest: RunManifest) -> str:
@@ -135,10 +165,11 @@ def run_ingest(
         raise ValueError("A Supabase client is required unless --dry-run is set")
 
     log(f"Checksumming {options.source_path.name} ...")
+    checksum, line_count = file_checksum_and_lines(options.source_path)
     manifest = RunManifest(
         run_type=options.run_type,
         source_file=str(options.source_path),
-        source_checksum=file_checksum(options.source_path),
+        source_checksum=checksum,
         source_bytes=options.source_path.stat().st_size,
         source_version=options.source_version,
         release_date=options.release_date,
@@ -148,8 +179,25 @@ def run_ingest(
             "states": sorted(options.states) if options.states else None,
             "taxonomy_codes": sorted(options.taxonomy_codes) if options.taxonomy_codes else None,
             "limit": options.limit,
+            "organizations_only": options.organizations_only and options.run_type != RUN_TYPE_DEACTIVATION,
         },
     )
+    stem = options.label or options.source_path.stem
+
+    def fail_before_staging(message: str) -> RuntimeError:
+        manifest.finish("failed", message)
+        manifest_path = manifest.write(options.output_dir / f"{stem}.manifest.json")
+        return RuntimeError(f"{message} (manifest: {manifest_path})")
+
+    # The count guard runs against raw source rows, not accepted rows: a
+    # truncated download is what this is meant to catch, and our own state
+    # and taxonomy filters legitimately remove most of a national file. The
+    # line count (minus the header) is checked before anything is staged;
+    # the exact parsed row count is checked again once the file is read.
+    try:
+        check_expected_row_count(max(line_count - 1, 0), options.expect_rows, options.row_count_tolerance)
+    except Exception as err:
+        raise fail_before_staging(str(err)) from err
 
     validator = RowValidator(
         states=options.states,
@@ -157,73 +205,79 @@ def run_ingest(
         # A deactivation row is only an NPI and a date -- requiring a name
         # would reject every row in the file.
         require_name=options.run_type != RUN_TYPE_DEACTIVATION,
+        # A deactivation row carries no entity type, so it can't be filtered.
+        organizations_only=options.organizations_only and options.run_type != RUN_TYPE_DEACTIVATION,
     )
     mapper = _mapper_for(options.run_type)
+    rejects = RejectsWriter(options.output_dir / f"{stem}.rejects.csv")
+    rejection_counts: dict[str, int] = {}
+    staging_enabled = not options.dry_run and client is not None
 
-    accepted: list[StagedProvider] = []
-    rejections: list[Rejection] = []
+    # Rows are staged in batches as the file is read, so memory stays flat
+    # for a full national release. The refresh run is created lazily with
+    # the first batch: a file with no accepted rows never creates one.
+    refresh_run_id: str | None = None
+    batch: list[dict] = []
     source_rows = 0
+    accepted_rows = 0
+    staged = 0
 
-    for source_row_number, row, index in read_source_rows(options.source_path):
-        source_rows += 1
-        provider = mapper(index, row, source_row_number)
-        rejection = validator.check(provider)
-        if rejection is not None:
-            rejections.append(rejection)
-            continue
-        accepted.append(provider)
-        if options.limit is not None and len(accepted) >= options.limit:
-            log(f"Stopping early at --limit {options.limit}")
-            break
-
-    manifest.source_rows = source_rows
-    manifest.accepted_rows = len(accepted)
-    manifest.rejected_rows = len(rejections)
-    manifest.rejections_by_reason = summarize_rejections(rejections)
-
-    log(
-        f"Read {source_rows:,} source rows: {len(accepted):,} accepted, {len(rejections):,} rejected "
-        f"({', '.join(f'{k}={v:,}' for k, v in sorted(manifest.rejections_by_reason.items())) or 'none'})"
-    )
-
-    stem = options.label or options.source_path.stem
-    rejects_path: Path | None = None
-    if rejections:
-        rejects_path = write_rejects_csv(options.output_dir / f"{stem}.rejects.csv", rejections)
-        log(f"Wrote rejected rows to {rejects_path}")
-
-    # The count guard runs against raw source rows, not accepted rows: a
-    # truncated download is what this is meant to catch, and our own state
-    # and taxonomy filters legitimately remove most of a national file.
-    try:
-        check_expected_row_count(source_rows, options.expect_rows, options.row_count_tolerance)
-    except Exception as err:
-        manifest.finish("failed", str(err))
-        manifest_path = manifest.write(options.output_dir / f"{stem}.manifest.json")
-        raise RuntimeError(f"{err} (manifest: {manifest_path})") from err
-
-    if not accepted:
-        manifest.finish("failed", "no rows passed validation")
-        manifest_path = manifest.write(options.output_dir / f"{stem}.manifest.json")
-        raise RuntimeError(f"No rows passed validation; nothing staged (manifest: {manifest_path})")
-
-    if options.dry_run or client is None:
-        manifest.finish("dry-run")
-        manifest_path = manifest.write(options.output_dir / f"{stem}.manifest.json")
-        log(f"Dry run -- nothing was written to Supabase. Manifest: {manifest_path}")
-        return IngestResult(manifest=manifest, manifest_path=manifest_path, rejects_path=rejects_path)
-
-    refresh_run_id = create_refresh_run(client, manifest)
-    manifest.refresh_run_id = refresh_run_id
-    log(f"Created refresh run {refresh_run_id}")
+    def flush() -> None:
+        nonlocal refresh_run_id, staged
+        if not batch:
+            return
+        if refresh_run_id is None:
+            refresh_run_id = create_refresh_run(client, manifest)
+            manifest.refresh_run_id = refresh_run_id
+            log(f"Created refresh run {refresh_run_id}")
+        client.insert(STAGING_TABLE, [dict(row, refresh_run_id=refresh_run_id) for row in batch])
+        staged += len(batch)
+        batch.clear()
+        log(f"  staged {staged:,}")
 
     try:
-        staged = 0
-        for start in range(0, len(accepted), options.batch_size):
-            batch = accepted[start : start + options.batch_size]
-            client.insert(STAGING_TABLE, [provider.to_staging_row(refresh_run_id) for provider in batch])
-            staged += len(batch)
-            log(f"  staged {staged:,}/{len(accepted):,}")
+        for source_row_number, row, index in read_source_rows(options.source_path):
+            source_rows += 1
+            provider = mapper(index, row, source_row_number)
+            rejection = validator.check(provider)
+            if rejection is not None:
+                rejection_counts[rejection.reason] = rejection_counts.get(rejection.reason, 0) + 1
+                rejects.write(rejection)
+                continue
+            accepted_rows += 1
+            if staging_enabled:
+                batch.append(provider.to_staging_row(""))
+                if len(batch) >= options.batch_size:
+                    flush()
+            if options.limit is not None and accepted_rows >= options.limit:
+                log(f"Stopping early at --limit {options.limit}")
+                break
+        rejects_path = rejects.close()
+
+        manifest.source_rows = source_rows
+        manifest.accepted_rows = accepted_rows
+        manifest.rejected_rows = sum(rejection_counts.values())
+        manifest.rejections_by_reason = dict(sorted(rejection_counts.items()))
+        log(
+            f"Read {source_rows:,} source rows: {accepted_rows:,} accepted, {manifest.rejected_rows:,} rejected "
+            f"({', '.join(f'{k}={v:,}' for k, v in manifest.rejections_by_reason.items()) or 'none'})"
+        )
+        if rejects_path is not None:
+            log(f"Wrote rejected rows to {rejects_path}")
+
+        if options.limit is None:
+            check_expected_row_count(source_rows, options.expect_rows, options.row_count_tolerance)
+
+        if not accepted_rows:
+            raise fail_before_staging("No rows passed validation; nothing staged")
+
+        if not staging_enabled:
+            manifest.finish("dry-run")
+            manifest_path = manifest.write(options.output_dir / f"{stem}.manifest.json")
+            log(f"Dry run -- nothing was written to Supabase. Manifest: {manifest_path}")
+            return IngestResult(manifest=manifest, manifest_path=manifest_path, rejects_path=rejects_path)
+
+        flush()
         manifest.staged_rows = staged
         manifest.finish("staged")
         complete_metadata = manifest.to_run_metadata()
@@ -239,9 +293,17 @@ def run_ingest(
         )
         manifest_path = manifest.write(options.output_dir / f"{stem}.manifest.json")
     except Exception as err:
+        rejects.close()
+        if refresh_run_id is None:
+            # Nothing reached Supabase (dry run, a guard, or a read error
+            # before the first batch) -- just record the failure locally.
+            if isinstance(err, RuntimeError) and "(manifest:" in str(err):
+                raise
+            raise fail_before_staging(str(err)) from err
         # Leave nothing half-loaded: a partial staging set that still looks
         # `staged` is exactly the input that would make an apply step
         # report thousands of spurious provider changes.
+        manifest.staged_rows = staged
         log(f"Staging failed ({err}); rolling back run {refresh_run_id}")
         try:
             client.delete(STAGING_TABLE, {"refresh_run_id": f"eq.{refresh_run_id}"})

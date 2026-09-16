@@ -20,6 +20,7 @@ REASON_DUPLICATE_NPI = "duplicate_npi_in_release"
 REASON_MISSING_NAME = "missing_name"
 REASON_STATE_FILTERED = "state_not_selected"
 REASON_TAXONOMY_FILTERED = "taxonomy_not_enabled"
+REASON_NOT_ORGANIZATION = "individual_provider"
 
 
 @dataclass(frozen=True)
@@ -72,10 +73,14 @@ class RowValidator:
         states: frozenset[str] | None = None,
         taxonomy_codes: frozenset[str] | None = None,
         require_name: bool = True,
+        organizations_only: bool = False,
     ) -> None:
         self.states = states
         self.taxonomy_codes = taxonomy_codes
         self.require_name = require_name
+        # Search and leads only ever use organizations (NPI type 2); enabled
+        # specialties like Internal Medicine are otherwise mostly individuals.
+        self.organizations_only = organizations_only
         self._seen_npis: dict[str, int] = {}
 
     def check(self, provider: StagedProvider) -> Rejection | None:
@@ -96,6 +101,9 @@ class RowValidator:
 
         if self.require_name and not provider.name:
             return Rejection(provider.source_row_number, npi, REASON_MISSING_NAME)
+
+        if self.organizations_only and provider.isorganization is False:
+            return Rejection(provider.source_row_number, npi, REASON_NOT_ORGANIZATION, provider.enumerationtype or "")
 
         if self.states is not None and (provider.address_state or "") not in self.states:
             return Rejection(

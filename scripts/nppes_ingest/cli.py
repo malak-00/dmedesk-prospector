@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .apply import DEFAULT_APPLY_BATCH_SIZE, run_apply
 from .config import ConfigError, load_supabase_config
 from .ingest import (
     DEFAULT_BATCH_SIZE,
@@ -29,8 +30,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m nppes_ingest",
         description=(
-            "Load an NPPES release into nppes_refresh_staging under one refresh run. "
-            "Never writes npi_records or leads -- applying staged data is a separate SQL step."
+            "Stage an NPPES release into nppes_refresh_staging under one refresh run, and optionally "
+            "apply it to npi_records in batches (--apply, or --apply-run for an already staged run). "
+            "Never writes leads."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -40,6 +42,21 @@ def build_parser() -> argparse.ArgumentParser:
         required=False,
         choices=RUN_TYPES,
         help="Which kind of NPPES release this file is",
+    )
+    parser.add_argument(
+        "--apply-run",
+        help="Apply an already staged run (by UUID) to npi_records in batches; resumes an interrupted apply",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="After staging the source file, apply it to npi_records in the same command",
+    )
+    parser.add_argument(
+        "--apply-batch-size",
+        type=int,
+        default=DEFAULT_APPLY_BATCH_SIZE,
+        help="Staged rows per apply transaction",
     )
     parser.add_argument("--recover-run", help="Finalize an interrupted uploading run by UUID")
     parser.add_argument("--abort-run", help="Abort an uploading run by UUID")
@@ -60,6 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         help="Explicit taxonomy codes to keep; repeatable. Overrides the taxonomies table.",
+    )
+    filters.add_argument(
+        "--include-individuals",
+        action="store_true",
+        help="Also stage individual providers (NPI type 1). By default only organizations are kept, "
+        "since search and leads only use organizations",
     )
     filters.add_argument(
         "--all-taxonomies",
@@ -117,6 +140,18 @@ def resolve_taxonomy_codes(args: argparse.Namespace, client: SupabaseClient | No
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
+    if args.apply_run:
+        if args.recover_run or args.abort_run or args.source is not None:
+            print("error: --apply-run is used on its own (it applies an already staged run)", flush=True)
+            return 2
+        try:
+            client = SupabaseClient(load_supabase_config(args.env_file))
+            run_apply(client, args.apply_run, batch_size=args.apply_batch_size)
+            return 0
+        except (ConfigError, RuntimeError, ValueError) as err:
+            print(f"error: {err}", flush=True)
+            return 1
+
     if args.recover_run or args.abort_run:
         if args.recover_run and args.abort_run:
             print("error: choose only one recovery command", flush=True)
@@ -173,11 +208,25 @@ def main(argv: list[str] | None = None) -> int:
         batch_size=args.batch_size,
         dry_run=args.dry_run,
         limit=args.limit,
+        organizations_only=not args.include_individuals,
     )
 
+    if args.apply and args.dry_run:
+        print("error: --apply can't be combined with --dry-run", flush=True)
+        return 2
+
     try:
-        run_ingest(options, None if args.dry_run else client)
-    except (FileNotFoundError, ValueError, RuntimeError) as err:
+        result = run_ingest(options, None if args.dry_run else client)
+        if args.apply:
+            run_apply(client, result.manifest.refresh_run_id, batch_size=args.apply_batch_size)
+    except PermissionError as err:
+        print(
+            f"error: permission denied reading {err.filename or args.source} -- this Windows account can't open "
+            "the file. Ask the share owner for read access, or copy the file somewhere you can read it.",
+            flush=True,
+        )
+        return 1
+    except (FileNotFoundError, ValueError, RuntimeError, OSError) as err:
         print(f"error: {err}", flush=True)
         return 1
     return 0

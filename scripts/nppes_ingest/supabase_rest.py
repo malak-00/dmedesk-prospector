@@ -81,10 +81,13 @@ class SupabaseClient:
 
         raise SupabaseError(str(last_error))
 
-    def rpc(self, function: str, params: dict[str, object] | None = None) -> list[dict[str, object]]:
-        """Call a reviewed PostgreSQL function through PostgREST."""
-        result = self._request("POST", "rpc/" + function, body=params or {}, prefer="return=representation")
-        return result if isinstance(result, list) else []
+    def rpc(self, function: str, params: dict[str, object] | None = None) -> Any:
+        """Call a reviewed PostgreSQL function through PostgREST.
+
+        Returns the decoded result as-is: a jsonb-returning function comes
+        back as a dict, a set-returning one as a list.
+        """
+        return self._request("POST", "rpc/" + function, body=params or {}, prefer="return=representation")
 
     # -- operations used by the ingest run --------------------------------
 
