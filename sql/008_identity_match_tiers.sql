@@ -31,6 +31,8 @@
 --   4. Writes one pending 'conflict_detected' event per active claim in every
 --      group that regrouping newly split across more than one owner. Those
 --      groups show up in the Admin tab's Ownership conflicts panel.
+--      Steps 3 and 4 run as one DO block, so they don't depend on the SQL
+--      Editor keeping separate statements in one session.
 --   5. Creates public.identity_review_candidates, the Tier 2/3 review pairs.
 --
 -- Old groups left with no members are kept (audit events reference them).
@@ -112,125 +114,133 @@ alter table public.lead_groups drop constraint if exists lead_groups_grouping_ti
 alter table public.lead_groups add constraint lead_groups_grouping_tier_check
   check (grouping_tier in ('strict', 'cross_state', 'singleton', 'review'));
 
--- ---- 3. regroup ------------------------------------------------------------
+-- ---- 3 + 4. regroup and flag newly conflicted groups -----------------------
+--
+-- One DO block on purpose: its temp tables live inside a single statement, so
+-- this works even when the SQL Editor does not keep separate statements in one
+-- session/transaction (or when only part of the file is run).
 
--- Claims that were already in a conflicted group before regrouping. Tracked
--- per lead, not per group id: nearly every group gets a new key (and id), and
--- an existing conflict must not be re-reported just because its id changed.
-create temporary table regroup_conflicts_before on commit drop as
-select l.id as lead_id, l.group_id
-  from public.leads l
- where not l.is_disconnected
-   and l.claimed_by is not null
-   and l.group_id in (
-     select x.group_id from public.leads x
-      where not x.is_disconnected and x.claimed_by is not null and x.group_id is not null
-      group by x.group_id
-     having count(distinct x.claimed_by) > 1);
+do $$
+begin
+  drop table if exists pg_temp.regroup_candidates;
+  drop table if exists pg_temp.regroup_moves;
 
-create temporary table regroup_candidates on commit drop as
-with source_rows as (
-  select distinct on (l.npi)
-    l.npi, r.name, r.address_state,
-    r.authorizedofficial_firstname, r.authorizedofficial_lastname,
-    r.phone, r.authorizedofficial_phone
-  from public.leads l
-  left join public.npi_records r on r.npi = l.npi
-  order by l.npi
-), keyed as (
-  select s.*,
-         public.identity_name_key(s.name) as name_key,
-         public.identity_state_key(s.address_state) as state_key,
-         public.identity_official_key(s.authorizedofficial_firstname, s.authorizedofficial_lastname) as official_key,
-         public.identity_phone_key(s.phone, s.authorizedofficial_phone) as phone_key
-  from source_rows s
-)
-select k.*,
-       case when k.name_key <> '' and k.official_key <> '' and k.phone_key <> ''
-            then 'group:' || k.name_key || '|' || k.official_key || '|' || k.phone_key
-            else 'singleton:' || k.npi end as identity_key
-from keyed k;
+  create temporary table regroup_candidates on commit drop as
+  with source_rows as (
+    select distinct on (l.npi)
+      l.npi, r.name, r.address_state,
+      r.authorizedofficial_firstname, r.authorizedofficial_lastname,
+      r.phone, r.authorizedofficial_phone
+    from public.leads l
+    left join public.npi_records r on r.npi = l.npi
+    order by l.npi
+  ), keyed as (
+    select s.*,
+           public.identity_name_key(s.name) as name_key,
+           public.identity_state_key(s.address_state) as state_key,
+           public.identity_official_key(s.authorizedofficial_firstname, s.authorizedofficial_lastname) as official_key,
+           public.identity_phone_key(s.phone, s.authorizedofficial_phone) as phone_key,
+           -- The key sql/002_identity_backfill_safe.sql grouped this lead by.
+           -- Used to tell a conflict regrouping created from one that already
+           -- existed, without needing a snapshot taken earlier in this run.
+           upper(regexp_replace(coalesce(s.name, ''), '[^A-Za-z0-9]', '', 'g')) as old_name_key,
+           upper(regexp_replace(coalesce(s.address_state, ''), '[^A-Za-z]', '', 'g')) as old_state_key,
+           upper(regexp_replace(concat_ws(' ', s.authorizedofficial_firstname, s.authorizedofficial_lastname), '[^A-Za-z0-9]', '', 'g')) as old_official_key,
+           coalesce(
+             (regexp_match(regexp_replace(coalesce(s.phone, ''), '[^0-9]', '', 'g'), '(?:^1)?([0-9]{10})'))[1],
+             (regexp_match(regexp_replace(coalesce(s.authorizedofficial_phone, ''), '[^0-9]', '', 'g'), '(?:^1)?([0-9]{10})'))[1],
+             '') as old_phone_key
+    from source_rows s
+  )
+  select k.*,
+         case when k.name_key <> '' and k.official_key <> '' and k.phone_key <> ''
+              then 'group:' || k.name_key || '|' || k.official_key || '|' || k.phone_key
+              else 'singleton:' || k.npi end as identity_key,
+         case when k.old_name_key <> '' and k.old_state_key <> '' and k.old_official_key <> '' and k.old_phone_key <> ''
+              then 'strict:' || k.old_name_key || ':' || k.old_state_key || ':' || k.old_official_key || ':' || k.old_phone_key
+              else 'singleton:' || k.npi end as old_identity_key
+  from keyed k;
 
-insert into public.lead_groups
-  (identity_key, canonical_name, state, authorized_official, phone_key, grouping_tier)
-select c.identity_key,
-       min(c.name),
-       case when count(distinct nullif(c.state_key, '')) <= 1 then min(nullif(c.state_key, '')) end,
-       nullif(min(concat_ws(' ', c.authorizedofficial_firstname, c.authorizedofficial_lastname)), ''),
-       nullif(min(c.phone_key), ''),
-       case when c.identity_key like 'singleton:%' then 'singleton'
-            when count(distinct nullif(c.state_key, '')) > 1 then 'cross_state'
-            else 'strict' end
-from regroup_candidates c
-group by c.identity_key
-on conflict (identity_key) do update set
-  state = excluded.state,
-  grouping_tier = excluded.grouping_tier,
-  canonical_name = coalesce(public.lead_groups.canonical_name, excluded.canonical_name),
-  authorized_official = coalesce(public.lead_groups.authorized_official, excluded.authorized_official),
-  phone_key = coalesce(public.lead_groups.phone_key, excluded.phone_key),
-  updated_at = now();
-
-create temporary table regroup_moves on commit drop as
-select m.npi, m.group_id as from_group_id, g.id as to_group_id, c.identity_key
-  from public.lead_group_members m
-  join regroup_candidates c on c.npi = m.npi
-  join public.lead_groups g on g.identity_key = c.identity_key
- where m.group_id <> g.id
-   and m.reviewed_by is null
-   and m.relationship_type = 'primary';
-
-update public.lead_group_members m
-   set group_id = mv.to_group_id,
-       evidence = m.evidence || jsonb_build_object('regrouped', jsonb_build_object(
-         'rule', 'identity_match_tiers_008',
-         'from_group_id', mv.from_group_id,
-         'identity_key', mv.identity_key,
-         'at', now()))
-  from regroup_moves mv
- where mv.npi = m.npi;
-
-insert into public.lead_group_members
-  (group_id, npi, relationship_type, review_status, evidence)
-select g.id, c.npi, 'primary', 'approved',
-       jsonb_build_object('backfill', true, 'rule', 'identity_match_tiers_008', 'identity_key', c.identity_key)
+  insert into public.lead_groups
+    (identity_key, canonical_name, state, authorized_official, phone_key, grouping_tier)
+  select c.identity_key,
+         min(c.name),
+         case when count(distinct nullif(c.state_key, '')) <= 1 then min(nullif(c.state_key, '')) end,
+         nullif(min(concat_ws(' ', c.authorizedofficial_firstname, c.authorizedofficial_lastname)), ''),
+         nullif(min(c.phone_key), ''),
+         case when c.identity_key like 'singleton:%' then 'singleton'
+              when count(distinct nullif(c.state_key, '')) > 1 then 'cross_state'
+              else 'strict' end
   from regroup_candidates c
-  join public.lead_groups g on g.identity_key = c.identity_key
-on conflict (npi) do nothing;
+  group by c.identity_key
+  on conflict (identity_key) do update set
+    state = excluded.state,
+    grouping_tier = excluded.grouping_tier,
+    canonical_name = coalesce(public.lead_groups.canonical_name, excluded.canonical_name),
+    authorized_official = coalesce(public.lead_groups.authorized_official, excluded.authorized_official),
+    phone_key = coalesce(public.lead_groups.phone_key, excluded.phone_key),
+    updated_at = now();
 
-update public.leads l
-   set group_id = m.group_id
-  from public.lead_group_members m
- where m.npi = l.npi
-   and l.group_id is distinct from m.group_id;
+  create temporary table regroup_moves on commit drop as
+  select m.npi, m.group_id as from_group_id, g.id as to_group_id, c.identity_key
+    from public.lead_group_members m
+    join regroup_candidates c on c.npi = m.npi
+    join public.lead_groups g on g.identity_key = c.identity_key
+   where m.group_id <> g.id
+     and m.reviewed_by is null
+     and m.relationship_type = 'primary';
 
--- ---- 4. flag newly conflicted groups ---------------------------------------
+  update public.lead_group_members m
+     set group_id = mv.to_group_id,
+         evidence = m.evidence || jsonb_build_object('regrouped', jsonb_build_object(
+           'rule', 'identity_match_tiers_008',
+           'from_group_id', mv.from_group_id,
+           'identity_key', mv.identity_key,
+           'at', now()))
+    from regroup_moves mv
+   where mv.npi = m.npi;
 
-insert into public.lead_ownership_events
-  (lead_id, npi, group_id, event_type, reason, source, requires_review, review_status, metadata)
-select l.id, l.npi, l.group_id, 'conflict_detected',
-       'Identity regrouping placed this claim in a group with active claims held by other users',
-       'identity_match_tiers_008', true, 'pending',
-       jsonb_build_object('owner_user_id', l.claimed_by, 'identity_key', g.identity_key, 'grouping_tier', g.grouping_tier)
-  from public.leads l
-  join public.lead_groups g on g.id = l.group_id
- where not l.is_disconnected
-   and l.claimed_by is not null
-   -- Conflicted now, and not simply the same set of claims that was already
-   -- one conflicted group before.
-   and l.group_id in (
-     select x.group_id from public.leads x
-       left join regroup_conflicts_before b on b.lead_id = x.id
-      where not x.is_disconnected and x.claimed_by is not null and x.group_id is not null
-      group by x.group_id
-     having count(distinct x.claimed_by) > 1
-        and not (count(b.lead_id) = count(*) and count(distinct b.group_id) = 1))
-   and not exists (
-     select 1 from public.lead_ownership_events e
-      where e.lead_id = l.id
-        and e.group_id = l.group_id
-        and e.event_type = 'conflict_detected'
-        and e.source = 'identity_match_tiers_008');
+  insert into public.lead_group_members
+    (group_id, npi, relationship_type, review_status, evidence)
+  select g.id, c.npi, 'primary', 'approved',
+         jsonb_build_object('backfill', true, 'rule', 'identity_match_tiers_008', 'identity_key', c.identity_key)
+    from regroup_candidates c
+    join public.lead_groups g on g.identity_key = c.identity_key
+  on conflict (npi) do nothing;
+
+  update public.leads l
+     set group_id = m.group_id
+    from public.lead_group_members m
+   where m.npi = l.npi
+     and l.group_id is distinct from m.group_id;
+
+  -- Flag each active claim in a group that is conflicted now, unless all of
+  -- that group's claims already shared one pre-008 group (that conflict
+  -- existed before and was already visible).
+  insert into public.lead_ownership_events
+    (lead_id, npi, group_id, event_type, reason, source, requires_review, review_status, metadata)
+  select l.id, l.npi, l.group_id, 'conflict_detected',
+         'Identity regrouping placed this claim in a group with active claims held by other users',
+         'identity_match_tiers_008', true, 'pending',
+         jsonb_build_object('owner_user_id', l.claimed_by, 'identity_key', g.identity_key, 'grouping_tier', g.grouping_tier)
+    from public.leads l
+    join public.lead_groups g on g.id = l.group_id
+   where not l.is_disconnected
+     and l.claimed_by is not null
+     and l.group_id in (
+       select x.group_id from public.leads x
+         join regroup_candidates c on c.npi = x.npi
+        where not x.is_disconnected and x.claimed_by is not null and x.group_id is not null
+        group by x.group_id
+       having count(distinct x.claimed_by) > 1
+          and count(distinct c.old_identity_key) > 1)
+     and not exists (
+       select 1 from public.lead_ownership_events e
+        where e.lead_id = l.id
+          and e.group_id = l.group_id
+          and e.event_type = 'conflict_detected'
+          and e.source = 'identity_match_tiers_008');
+end $$;
 
 -- ---- 5. Tier 2 / Tier 3 review pairs ---------------------------------------
 
