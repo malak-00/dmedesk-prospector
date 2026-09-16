@@ -268,14 +268,21 @@ def run_ingest(
         client.insert(STAGING_TABLE, [dict(row, refresh_run_id=refresh_run_id) for row in batch])
         staged += len(batch)
         batch.clear()
+        sys.stderr.write("\r" + " " * 120 + "\r")
+        sys.stderr.flush()
         log(f"  staged {staged:,}")
 
     try:
         total_rows = options.expect_rows if options.expect_rows else None
+        start_time = time.time()
+        last_progress_time = 0.0
+        _print_progress(0, total_rows, 0, start_time)
         for source_row_number, row, index in read_source_rows(options.source_path):
             source_rows += 1
-            if source_rows % _PROGRESS_INTERVAL == 0:
-                _print_progress(source_rows, total_rows)
+            now = time.time()
+            if source_rows % 5_000 == 0 or (now - last_progress_time >= 0.5):
+                _print_progress(source_rows, total_rows, accepted_rows, start_time)
+                last_progress_time = now
             provider = mapper(index, row, source_row_number)
             rejection = validator.check(provider)
             if rejection is not None:
@@ -290,7 +297,7 @@ def run_ingest(
             if options.limit is not None and accepted_rows >= options.limit:
                 log(f"Stopping early at --limit {options.limit}")
                 break
-        sys.stderr.write("\r" + " " * 70 + "\r")  # clear the progress line
+        sys.stderr.write("\r" + " " * 120 + "\r")  # clear the progress line
         sys.stderr.flush()
         rejects_path = rejects.close()
 
