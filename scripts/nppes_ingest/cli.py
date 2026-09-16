@@ -219,7 +219,14 @@ def main(argv: list[str] | None = None) -> int:
         result = run_ingest(options, None if args.dry_run else client)
         if args.apply:
             run_apply(client, result.manifest.refresh_run_id, batch_size=args.apply_batch_size)
-    except (FileNotFoundError, ValueError, RuntimeError) as err:
+    except PermissionError as err:
+        print(
+            f"error: permission denied reading {err.filename or args.source} -- this Windows account can't open "
+            "the file. Ask the share owner for read access, or copy the file somewhere you can read it.",
+            flush=True,
+        )
+        return 1
+    except (FileNotFoundError, ValueError, RuntimeError, OSError) as err:
         print(f"error: {err}", flush=True)
         return 1
     return 0

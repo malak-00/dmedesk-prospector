@@ -438,6 +438,17 @@ class CliApplyTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(fake.calls[0], ("apply_nppes_refresh_batch", {"p_run_id": "run-9", "p_batch_size": 250}))
 
+    def test_unreadable_source_is_a_clean_error(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        denied = PermissionError(5, "Access is denied", r"\\server\share\file.csv")
+        with mock.patch.object(cli, "run_ingest", side_effect=denied), mock.patch("builtins.print") as printed:
+            code = cli.main([str(SAMPLE), "--run-type", RUN_TYPE_MONTHLY_FULL, "--taxonomy-codes", "332B00000X", "--dry-run"])
+        self.assertEqual(code, 1)
+        self.assertIn("permission denied", printed.call_args[0][0])
+
     def test_apply_is_refused_with_dry_run_and_with_a_source(self) -> None:
         from unittest import mock
 
