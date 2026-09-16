@@ -39,6 +39,8 @@ def _format_time(seconds: float) -> str:
 
 def _print_progress(current: int, total: int | None, accepted: int, start_time: float) -> None:
     """Write a dynamic single-line progress bar with rate and ETA to stderr."""
+    if not getattr(sys.stderr, "isatty", lambda: False)():
+        return
     elapsed = max(time.time() - start_time, 0.001)
     rate = current / elapsed
     if total:
@@ -52,6 +54,13 @@ def _print_progress(current: int, total: int | None, accepted: int, start_time: 
         line = f"\r{current:,} rows | {rate:,.0f} r/s | acc: {accepted:,} | {_format_time(elapsed)}"
     sys.stderr.write(line[:120].ljust(120))
     sys.stderr.flush()
+
+
+def _clear_progress() -> None:
+    """Clear the single-line progress bar on stderr."""
+    if getattr(sys.stderr, "isatty", lambda: False)():
+        sys.stderr.write("\r" + " " * 120 + "\r")
+        sys.stderr.flush()
 
 
 RUN_TYPE_MONTHLY_FULL = "monthly-full"
@@ -268,8 +277,7 @@ def run_ingest(
         client.insert(STAGING_TABLE, [dict(row, refresh_run_id=refresh_run_id) for row in batch])
         staged += len(batch)
         batch.clear()
-        sys.stderr.write("\r" + " " * 120 + "\r")
-        sys.stderr.flush()
+        _clear_progress()
         log(f"  staged {staged:,}")
 
     try:
@@ -297,8 +305,7 @@ def run_ingest(
             if options.limit is not None and accepted_rows >= options.limit:
                 log(f"Stopping early at --limit {options.limit}")
                 break
-        sys.stderr.write("\r" + " " * 120 + "\r")  # clear the progress line
-        sys.stderr.flush()
+        _clear_progress()
         rejects_path = rejects.close()
 
         manifest.source_rows = source_rows
