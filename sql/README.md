@@ -22,10 +22,11 @@ Required manual sequence:
 014_claim_preflight.sql           (before "Send to Sheet" can refuse anything)
 015_provider_change_alerts.sql    (before the first NPPES apply; needs 007)
 016_refresh_run_recovery.sql      (abort a Medicare run; abort a 'complete' run)
+017_lead_sync_restart.sql         (run a claimed-lead sync again from the start)
 ```
 
-**Outstanding: re-run `015`, and run `016`** (see their rows below). The
-bundle described next is kept for the same situation next time.
+**Outstanding: `017`.** The bundle described next always holds whatever that
+is.
 
 **Everything still outstanding is bundled into one file:**
 [`RUN_PENDING.sql`](./RUN_PENDING.sql) — regenerated whenever the backlog
@@ -63,8 +64,9 @@ in `003`); save their output with the run.
 | `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | Executed 2026-09-17; re-run 2026-09-17 with the narrowed duplicate guard, so the 9,292 suppliers skipped on the first load can be picked up by the next `--apply` |
 | `013_release_claimed_leads.sql` | `release_claimed_leads()`: "Return to Prospect" as a soft release with a `released` event | Executed 2026-09-17 (Worker deployed after) |
 | `014_claim_preflight.sql` | `identity_group_lookup()` + `claim_leads(..., p_dry_run)`: the claim rules with nothing written, so "Send to Sheet" refuses what claiming would refuse | Executed 2026-09-17 (Worker deployed after) |
-| `015_provider_change_alerts.sql` | `apply_provider_changes_to_leads()`: refreshes claimed leads from an applied release and raises `provider_data_changed` alerts; `provider_change_queue` + `resolve_provider_change()` for the admin queue | Executed 2026-09-17 (in the bundle) — **re-run it**: the sync now only walks NPIs somebody holds a lead for |
-| `016_refresh_run_recovery.sql` | `abort_medicare_refresh()`, and `abort_nppes_refresh()` relaxed to accept a `complete` run: closing out a staged run whose staging is gone | **Not yet run — needed to close out the empty Medicare run** |
+| `015_provider_change_alerts.sql` | `apply_provider_changes_to_leads()`: refreshes claimed leads from an applied release and raises `provider_data_changed` alerts; `provider_change_queue` + `resolve_provider_change()` for the admin queue | Executed 2026-09-17, re-run the same day with the lead-scoped sync |
+| `016_refresh_run_recovery.sql` | `abort_medicare_refresh()`, and `abort_nppes_refresh()` relaxed to accept a `complete` run: closing out a staged run whose staging is gone | Executed 2026-09-17 (used to close out the empty Medicare run) |
+| `017_lead_sync_restart.sql` | `reset_lead_sync()`: clears the sync cursor so a run that has been synced can be synced again | **Not yet run — needed for `--sync-run --restart`** |
 
 ## Notes on individual files
 
@@ -171,6 +173,16 @@ live in `provider_change_decisions` rather than on the event, because
 `lead_ownership_events` is append-only. `python -m nppes_ingest --apply`
 runs it automatically once the apply finishes (`--skip-lead-sync` opts out;
 applying the same run again picks it up later). Rerun-safe.
+
+**`017`** makes a finished lead sync runnable again. The sync resumes from a
+cursor on the run, which means a run that has been synced once can never be
+synced again: the cursor sits past the last NPI, the next call finds nothing
+below it and reports "nothing to do". That bit — a release synced once under
+the older, unscoped query left a cursor past the end, so the next run
+reported 0 refreshed while 3,558 claimed leads still showed pre-refresh data.
+`reset_lead_sync(run)` clears the cursor, and `--sync-run <id> --restart`
+calls it. Re-running a sync is safe by construction: the snapshot copy is
+idempotent, and an alert for one lead in one run can only exist once.
 
 **`016`** closes out a run that can't go anywhere. A Medicare run was left
 at `staged` / `staging_state = complete` with `row_count` 60,060 while

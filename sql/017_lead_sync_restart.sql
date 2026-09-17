@@ -1,31 +1,3 @@
--- DME Desk Prospector: everything still to run, in one file.
---
--- MANUAL ONLY: review against the live schema before execution.
--- Generated from the files below, unchanged apart from their own
--- begin/commit -- running them individually, in this order, does the same
--- thing. Keep doing that for anything added later; this file exists so the
--- backlog can be cleared in one paste.
---
---   sql/017_lead_sync_restart.sql
---     Let a claimed-lead sync run again from the start, instead of resuming past the end.
---
--- They are wrapped in a single transaction: if anything fails, nothing
--- is applied and the error names the statement. Every file is rerun-safe on
--- its own, so re-running this one is safe too.
---
--- Paste the WHOLE file into the Supabase SQL Editor with nothing selected --
--- a partial selection cuts a dollar-quoted function body in half and fails
--- with "unterminated dollar-quoted string".
---
--- Verification queries are at the bottom. Run them after, and keep the
--- output with the run.
-
-begin;
-
--- ========================================================================
--- sql/017_lead_sync_restart.sql
--- ========================================================================
-
 -- DME Desk Prospector: run a claimed-lead sync again from the start.
 -- MANUAL ONLY: review against the live schema before execution.
 -- Run after 015.
@@ -51,6 +23,7 @@ begin;
 -- unique index enforces it), so nothing is duplicated or re-raised.
 -- Rerun-safe.
 
+begin;
 
 create or replace function public.reset_lead_sync(p_run_id uuid)
 returns jsonb
@@ -85,6 +58,7 @@ $$;
 revoke all on function public.reset_lead_sync(uuid) from public, anon, authenticated;
 grant execute on function public.reset_lead_sync(uuid) to service_role;
 
+commit;
 
 -- Verification (read-only):
 -- select proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -98,34 +72,3 @@ grant execute on function public.reset_lead_sync(uuid) to service_role;
 --   from public.refresh_runs
 --  where source = 'nppes' and metadata->>'apply_state' = 'applied'
 --  order by started_at desc;
-
-commit;
-
--- ---------------------------------------------------------------------------
--- Verification (read-only). Run these after the commit above.
--- ---------------------------------------------------------------------------
-
--- 1. The functions this file should have created or replaced.
-select p.proname as object, pg_get_function_identity_arguments(p.oid) as arguments
-  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
- where n.nspname = 'public'
-   and p.proname in ('reset_lead_sync', 'apply_provider_changes_to_leads')
- order by p.proname;
---   -> 2 rows.
-
--- 2. Releases that were applied but never reached claimed leads. Each one
---    needs `python -m nppes_ingest --sync-run <id>`.
-select id, started_at, row_count, metadata->>'run_type' as run_type
-  from public.refresh_runs
- where source = 'nppes' and metadata->>'apply_state' = 'applied'
-   and metadata->>'lead_sync_state' is null
- order by started_at;
-
--- 3. Runs that claim to hold staged rows but don't -- candidates for an abort.
-select r.id, r.source, r.status, r.row_count,
-       case r.source when 'nppes'
-            then (select count(*) from public.nppes_refresh_staging s where s.refresh_run_id = r.id)
-            else (select count(*) from public.medicare_refresh_staging s where s.refresh_run_id = r.id) end as staged_now
-  from public.refresh_runs r
- where r.status = 'staged'
- order by r.started_at desc;

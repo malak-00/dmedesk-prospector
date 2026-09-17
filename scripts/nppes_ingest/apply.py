@@ -51,11 +51,29 @@ def run_lead_sync(
     *,
     batch_size: int = DEFAULT_LEAD_SYNC_BATCH_SIZE,
     log: Callable[[str], None] = print,
+    restart: bool = False,
 ) -> dict[str, int] | None:
     """Refresh claimed leads from the applied release and raise change alerts.
 
+    The sync resumes from a cursor on the run, so a second call over a run
+    that already finished has nothing below the cursor and does nothing.
+    `restart` clears the cursor first, which is safe: the snapshot copy is
+    idempotent and an alert for one lead in one run can only exist once.
+
     Returns the totals, or None when sql/015 has not been installed.
     """
+    if restart:
+        try:
+            cleared = client.rpc("reset_lead_sync", {"p_run_id": run_id})
+            if isinstance(cleared, dict) and cleared.get("cleared_cursor"):
+                log(f"Starting again from the beginning (was stopped at NPI {cleared['cleared_cursor']}).")
+        except Exception as err:
+            if _is_missing_function(err):
+                raise RuntimeError(
+                    "--restart needs sql/017_lead_sync_restart.sql. Run it, then try again."
+                ) from err
+            raise
+
     totals = {key: 0 for key in LEAD_SYNC_COUNTERS}
     batches = 0
     while True:
@@ -81,6 +99,16 @@ def run_lead_sync(
             f"  lead sync batch {batches}: {int(batch.get('processed') or 0):,} NPIs, "
             f"{int(batch.get('alerts') or 0):,} alerts -- {int(batch.get('remaining') or 0):,} remaining"
         )
+
+    if totals["processed"] == 0:
+        # Either nobody holds a lead for anything this release touched, or
+        # this run has been synced before -- the cursor can't tell them apart,
+        # so say both rather than implying there was nothing to do.
+        log(
+            "Nothing to sync for this run: no claimed lead is affected, or it has been synced already. "
+            f"To run it again from the start: --sync-run {run_id} --restart"
+        )
+        return totals
 
     log(
         f"Claimed leads: {totals['leads_updated']:,} refreshed from the release, "

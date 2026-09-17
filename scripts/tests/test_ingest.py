@@ -443,6 +443,8 @@ class FakeApplyClient:
             return {"status": "applied"}
         if function == "apply_provider_changes_to_leads":
             return self.lead_sync.pop(0)
+        if function == "reset_lead_sync":
+            return {"run_id": params["p_run_id"], "cleared_cursor": "1999999999", "was_complete": True}
         raise AssertionError(function)
 
 
@@ -591,6 +593,39 @@ class LeadSyncTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             run_apply(BrokenSync([{"processed": 1, "remaining": 0}]), "run-1", log=quiet)
 
+    def test_a_second_sync_says_how_to_run_it_again(self) -> None:
+        """The cursor can't tell "nothing to do" from "done before"."""
+        from nppes_ingest.apply import run_lead_sync
+
+        messages: list[str] = []
+        totals = run_lead_sync(FakeApplyClient([]), "run-5", log=messages.append)
+        self.assertEqual(totals, {"processed": 0, "leads_updated": 0, "alerts": 0})
+        self.assertTrue(any("--sync-run run-5 --restart" in m for m in messages), messages)
+        self.assertFalse(any("refreshed from the release" in m for m in messages), messages)
+
+    def test_restart_clears_the_cursor_first(self) -> None:
+        from nppes_ingest.apply import run_lead_sync
+
+        messages: list[str] = []
+        client = FakeApplyClient([], lead_sync=[{"processed": 2, "leads_updated": 2, "alerts": 1, "remaining": 0, "done": True}])
+        totals = run_lead_sync(client, "run-5", log=messages.append, restart=True)
+        self.assertEqual([call[0] for call in client.calls], ["reset_lead_sync", "apply_provider_changes_to_leads"])
+        self.assertEqual(totals["leads_updated"], 2)
+        self.assertTrue(any("1999999999" in m for m in messages), messages)
+
+    def test_restart_without_sql_017_says_so(self) -> None:
+        from nppes_ingest.apply import run_lead_sync
+
+        class NoReset(FakeApplyClient):
+            def rpc(self, function: str, params=None):
+                if function == "reset_lead_sync":
+                    raise RuntimeError("PGRST202: Could not find the function public.reset_lead_sync")
+                return super().rpc(function, params)
+
+        with self.assertRaises(RuntimeError) as caught:
+            run_lead_sync(NoReset([]), "run-5", log=quiet, restart=True)
+        self.assertIn("sql/017", str(caught.exception))
+
     def test_an_unexpected_sync_response_is_refused(self) -> None:
         from nppes_ingest.apply import run_lead_sync
 
@@ -649,6 +684,25 @@ class CliApplyTests(unittest.TestCase):
         with mock.patch.object(cli, "load_supabase_config", return_value=object()),                 mock.patch.object(cli, "SupabaseClient", return_value=NoSyncFunction([])),                 mock.patch("builtins.print"):
             code = cli.main(["--sync-run", "45cff87f"])
         self.assertEqual(code, 1)
+
+    def test_restart_belongs_to_sync_run(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        with mock.patch("builtins.print"):
+            self.assertEqual(cli.main(["--apply-run", "run-9", "--restart"]), 2)
+
+    def test_sync_run_passes_restart_through(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        fake = FakeApplyClient([])
+        with mock.patch.object(cli, "load_supabase_config", return_value=object()),                 mock.patch.object(cli, "SupabaseClient", return_value=fake),                 mock.patch("builtins.print"):
+            code = cli.main(["--sync-run", "run-9", "--restart"])
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.calls[0][0], "reset_lead_sync")
 
     def test_sync_run_is_used_on_its_own(self) -> None:
         from unittest import mock

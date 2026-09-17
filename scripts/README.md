@@ -166,6 +166,18 @@ python -m nppes_ingest --sync-run <refresh run id>
 `--apply-run <id>` on a run that is already applied does the same thing
 rather than failing, since there are no staged rows left to apply. The sync
 reads `provider_field_history`, not staging, so it works for any applied run.
+
+It resumes from a cursor on the run, so a run that has been synced before
+reports "nothing to sync" — that message and `--restart` (needs `sql/017`)
+are how to run it again from the beginning:
+
+```powershell
+python -m nppes_ingest --sync-run <refresh run id> --restart
+```
+
+Re-running is safe: the snapshot copy is idempotent, and an alert for one
+lead in one run can only be raised once.
+
 Find the runs that never had it:
 
 ```sql

@@ -54,6 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
         "(sql/015) -- for a release that was applied before that step existed",
     )
     parser.add_argument(
+        "--restart",
+        action="store_true",
+        help="With --sync-run: start the sync over instead of resuming, for a run that has been synced before "
+        "(needs sql/017). Re-running raises no alert twice",
+    )
+    parser.add_argument(
         "--apply",
         action="store_true",
         help="After staging the source file, apply it to npi_records in the same command",
@@ -157,13 +163,17 @@ def resolve_taxonomy_codes(args: argparse.Namespace, client: SupabaseClient | No
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
+    if args.restart and not args.sync_run:
+        print("error: --restart is only used with --sync-run", flush=True)
+        return 2
+
     if args.sync_run:
         if args.apply_run or args.recover_run or args.abort_run or args.source is not None:
             print("error: --sync-run is used on its own (it syncs an already applied run)", flush=True)
             return 2
         try:
             client = SupabaseClient(load_supabase_config(args.env_file))
-            if run_lead_sync(client, args.sync_run, batch_size=args.apply_batch_size) is None:
+            if run_lead_sync(client, args.sync_run, batch_size=args.apply_batch_size, restart=args.restart) is None:
                 return 1
             return 0
         except (ConfigError, RuntimeError, ValueError) as err:
