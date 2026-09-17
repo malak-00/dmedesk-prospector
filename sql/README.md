@@ -23,6 +23,16 @@ Required manual sequence:
 015_provider_change_alerts.sql    (before the first NPPES apply; needs 007)
 ```
 
+**Everything still outstanding is also bundled into one file:**
+[`RUN_PENDING_004_007_015.sql`](./RUN_PENDING_004_007_015.sql) — `004`, `007`
+and `015`, unchanged apart from their own `begin`/`commit`, wrapped in a
+single transaction so a failure anywhere leaves the database untouched. Paste
+the whole file with nothing selected (a partial selection cuts a
+dollar-quoted function body in half), then run the verification queries at
+its bottom. Running the three files individually, in order, does exactly the
+same thing. It was tested by installing it on top of everything already run
+here and then driving a full refresh through it.
+
 Run each file in the Supabase SQL Editor, save its read-only verification
 output, and stop if verification reports an error. No SQL is executed
 automatically by the repository tools.
