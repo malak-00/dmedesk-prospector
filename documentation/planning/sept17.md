@@ -418,3 +418,85 @@ The soft-release pattern:
 1. **Preserves the audit contract**: Works with `lead_ownership_events` without violating the immutability trigger.
 2. **Maintains identity groups**: Retains real-world organization mapping in `lead_group_members`.
 3. **Respects group ownership**: Uses `claimed_by IS NOT NULL`, which matches existing conflict detection and claim locking.
+
+---
+
+## BD MEETINGS → Prospector NPI Auto-Claim Sync
+
+### Background
+
+BD Meetings openers sometimes dial leads outside the Prospector UI. A Google Apps Script in the **BD MEETINGS 2026** sister project (already coded and deployed) runs every 30 minutes, reads any row in the BD Meetings sheet with a 10-digit NPI in column Q and no `SYNCED` stamp in column R, and claims that lead in the Prospector under the correct opener's account.
+
+The BD MEETINGS script logs in as a single **admin account** and calls one endpoint per opener batch — no individual opener passwords are stored anywhere.
+
+**Current state**: 110 of 312 NPIs in the BD sheet are not yet claimed in the Prospector. The sync trigger is written and pushed but blocked on steps below.
+
+---
+
+### What needs to be done (3 blockers)
+
+#### 1. Wire up `POST /admin/claim-for-user` in the Worker
+
+**File**: [`worker/src/index.js`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/worker/src/index.js)
+
+The SQL function `claim_leads(p_user_id, p_leads, p_actor_id)` is **already written** in [`sql/011_claim_for_user.sql`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/sql/011_claim_for_user.sql) — it just needs an HTTP route. Add after the existing `/admin/leads` route:
+
+```javascript
+// BD MEETINGS sync: claim leads on behalf of a named user.
+// Actor must be admin or have can_claim_for_others = true.
+app.post("/admin/claim-for-user", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+
+  const body = await c.req.json().catch(() => ({}));
+  const { companies, username } = body;
+  if (!username) return c.json({ success: false, status: 400, error: "username is required" }, 400);
+  if (!Array.isArray(companies) || companies.length === 0)
+    return c.json({ success: false, status: 400, error: "companies array is required" }, 400);
+
+  const supabase = supabaseFor(c);
+
+  // Look up target user
+  const { data: targetUser, error } = await supabase
+    .from("app_users")
+    .select("id, display_name")
+    .ilike("username", String(username).trim())
+    .maybeSingle();
+  if (error) throw new Error("Failed to look up user: " + error.message);
+  if (!targetUser)
+    return c.json({ success: false, status: 404, error: `User "${username}" not found` }, 404);
+
+  const targetSession = { id: targetUser.id, displayName: targetUser.display_name };
+  const data = await leadsRepo.exportCompaniesToLeads(
+    supabase, companies, targetSession, CsvExport.flattenCompany
+  );
+  return c.json(ok(data));
+});
+```
+
+#### 2. Deploy the Worker
+
+```bash
+cd worker
+wrangler deploy
+```
+
+#### 3. Update `syncNpiToProspector()` in BD MEETINGS + set Script Properties
+
+**File**: [`BD MEETINGS 2026/src/code.js`](file:///c:/Users/ben.arthur/Desktop/BD%20MEETINGS%202026/src/code.js) — update the sync function to use admin login once + call `/admin/claim-for-user` per opener batch instead of the current per-opener login approach.
+
+**Script Properties to set** in the BD MEETINGS Apps Script project settings:
+
+| Property | Value |
+|---|---|
+| `PROSPECTOR_WORKER_URL` | Cloudflare Worker URL |
+| `PROSPECTOR_ADMIN_USER` | admin username |
+| `PROSPECTOR_ADMIN_PASS` | admin password |
+| `PROSPECTOR_USER_Ben` | `ben` |
+| `PROSPECTOR_USER_Jane` | `jane` |
+| `PROSPECTOR_USER_Jimmy` | `jimmy` |
+| `PROSPECTOR_USER_Selene` | `selene` |
+| `PROSPECTOR_USER_Jasmine` | `jasmine` |
+| `PROSPECTOR_USER_Nora` | `nora` |
+
+Then run `setupProspectorSyncTrigger()` once from the Apps Script editor to activate the 30-min trigger.
