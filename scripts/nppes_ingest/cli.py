@@ -58,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_APPLY_BATCH_SIZE,
         help="Staged rows per apply transaction",
     )
+    parser.add_argument(
+        "--skip-lead-sync",
+        action="store_true",
+        help="Don't refresh claimed leads from the applied release or raise provider-change alerts "
+        "(sql/015). The sync can be run later by applying the same run again",
+    )
     parser.add_argument("--recover-run", help="Finalize an interrupted uploading run by UUID")
     parser.add_argument("--abort-run", help="Abort an uploading run by UUID")
     parser.add_argument("--reason", help="Required reason for --abort-run")
@@ -151,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         try:
             client = SupabaseClient(load_supabase_config(args.env_file))
-            run_apply(client, args.apply_run, batch_size=args.apply_batch_size)
+            run_apply(client, args.apply_run, batch_size=args.apply_batch_size, sync_leads=not args.skip_lead_sync)
             return 0
         except (ConfigError, RuntimeError, ValueError) as err:
             print(f"error: {err}", flush=True)
@@ -224,7 +230,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run_ingest(options, None if args.dry_run else client)
         if args.apply:
-            run_apply(client, result.manifest.refresh_run_id, batch_size=args.apply_batch_size)
+            run_apply(client, result.manifest.refresh_run_id, batch_size=args.apply_batch_size,
+                      sync_leads=not args.skip_lead_sync)
     except PermissionError as err:
         print(
             f"error: permission denied reading {err.filename or args.source} -- this Windows account can't open "

@@ -396,6 +396,31 @@ app.post("/admin/claim-for-user", async (c) => {
 });
 
 // Tier 2/3 identity matches waiting for an admin decision. Read-only.
+// What the last NPPES refresh changed about claimed leads (sql/015). A rep
+// sees their own as a badge in Claimed leads; this is the admin's full list,
+// where a change that moves a lead's identity keys can be acted on before the
+// group is re-cut -- groups are never re-cut automatically.
+app.get("/admin/provider-changes", async (c) => {
+  requireAdmin(c.get("session"));
+  const data = await adminRepo.getProviderChanges(supabaseFor(c));
+  return c.json(ok(data));
+});
+
+// "Seen, no action" (dismissed) or "acted on it" (approved). The alert itself
+// is append-only, so the decision is recorded beside it, never on it.
+app.post("/admin/provider-changes/resolve", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  const data = await adminRepo.resolveProviderChange(supabaseFor(c), {
+    eventId: body.eventId,
+    decision: body.decision,
+    reviewerId: session.id,
+    note: body.note,
+  });
+  return c.json(ok(data));
+});
+
 app.get("/admin/match-reviews", async (c) => {
   requireAdmin(c.get("session"));
   const data = await adminRepo.getMatchReviews(supabaseFor(c));

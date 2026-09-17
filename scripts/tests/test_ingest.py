@@ -426,9 +426,13 @@ class ChecksumProgressTests(unittest.TestCase):
             self.assertTrue(messages and "checksummed" in messages[0] and "min left" in messages[0])
 
 
+SYNC_DONE = {"processed": 0, "leads_updated": 0, "alerts": 0, "remaining": 0, "done": True}
+
+
 class FakeApplyClient:
-    def __init__(self, batches) -> None:
+    def __init__(self, batches, lead_sync=None) -> None:
         self.batches = list(batches)
+        self.lead_sync = list(lead_sync) if lead_sync is not None else [SYNC_DONE]
         self.calls: list[tuple[str, dict]] = []
 
     def rpc(self, function: str, params=None):
@@ -437,6 +441,8 @@ class FakeApplyClient:
             return self.batches.pop(0)
         if function == "finish_nppes_apply":
             return {"status": "applied"}
+        if function == "apply_provider_changes_to_leads":
+            return self.lead_sync.pop(0)
         raise AssertionError(function)
 
 
@@ -454,7 +460,11 @@ class ApplyRunTests(unittest.TestCase):
         self.assertEqual(result.totals["changed_fields"], 3)
         self.assertEqual(result.finish, {"status": "applied"})
         self.assertEqual(client.calls[0], ("apply_nppes_refresh_batch", {"p_run_id": "run-1", "p_batch_size": 2}))
-        self.assertEqual(client.calls[-1], ("finish_nppes_apply", {"p_run_id": "run-1"}))
+        # The run is finished before the claimed-lead sync reads from npi_records.
+        self.assertEqual([call[0] for call in client.calls], [
+            "apply_nppes_refresh_batch", "apply_nppes_refresh_batch",
+            "finish_nppes_apply", "apply_provider_changes_to_leads",
+        ])
 
     def test_unexpected_response_and_batch_cap(self) -> None:
         from nppes_ingest.apply import run_apply
@@ -475,15 +485,11 @@ class ApplyRunTests(unittest.TestCase):
                 self.timed_out = False
 
             def rpc(self, function: str, params=None):
-                self.calls.append((function, params))
                 if function == "apply_nppes_refresh_batch" and not self.timed_out:
+                    self.calls.append((function, params))
                     self.timed_out = True
                     raise RuntimeError("canceling statement due to statement timeout (57014)")
-                if function == "apply_nppes_refresh_batch":
-                    return self.batches.pop(0)
-                if function == "finish_nppes_apply":
-                    return {"status": "applied"}
-                raise AssertionError(function)
+                return super().rpc(function, params)
 
         client = TimeoutClient()
         result = run_apply(client, "run-1", batch_size=200, log=quiet)
@@ -492,6 +498,72 @@ class ApplyRunTests(unittest.TestCase):
         self.assertEqual(client.calls[0], ("apply_nppes_refresh_batch", {"p_run_id": "run-1", "p_batch_size": 200}))
         self.assertEqual(client.calls[1], ("apply_nppes_refresh_batch", {"p_run_id": "run-1", "p_batch_size": 100}))
 
+
+
+class LeadSyncTests(unittest.TestCase):
+    """The second half of a refresh: claimed leads follow the release."""
+
+    def test_apply_syncs_claimed_leads_when_it_finishes(self) -> None:
+        from nppes_ingest.apply import run_apply
+
+        client = FakeApplyClient(
+            [{"processed": 1, "remaining": 0}],
+            lead_sync=[
+                {"processed": 2, "leads_updated": 2, "alerts": 1, "remaining": 1, "done": False},
+                {"processed": 1, "leads_updated": 1, "alerts": 0, "remaining": 0, "done": True},
+            ],
+        )
+        result = run_apply(client, "run-1", batch_size=10, log=quiet)
+        self.assertEqual(result.lead_sync, {"processed": 3, "leads_updated": 3, "alerts": 1})
+        # The sync runs only once npi_records is up to date.
+        self.assertEqual(client.calls[-3][0], "finish_nppes_apply")
+        self.assertEqual(client.calls[-1][0], "apply_provider_changes_to_leads")
+
+    def test_sync_can_be_skipped(self) -> None:
+        from nppes_ingest.apply import run_apply
+
+        client = FakeApplyClient([{"processed": 1, "remaining": 0}])
+        result = run_apply(client, "run-1", log=quiet, sync_leads=False)
+        self.assertIsNone(result.lead_sync)
+        self.assertNotIn("apply_provider_changes_to_leads", [call[0] for call in client.calls])
+
+    def test_an_uninstalled_sync_does_not_fail_the_apply(self) -> None:
+        from nppes_ingest.apply import run_apply
+
+        class NoSyncFunction(FakeApplyClient):
+            def rpc(self, function: str, params=None):
+                if function == "apply_provider_changes_to_leads":
+                    self.calls.append((function, params))
+                    raise RuntimeError(
+                        "PGRST202: Could not find the function public.apply_provider_changes_to_leads "
+                        "in the schema cache"
+                    )
+                return super().rpc(function, params)
+
+        messages: list[str] = []
+        client = NoSyncFunction([{"processed": 1, "remaining": 0}])
+        result = run_apply(client, "run-7", log=messages.append)
+        self.assertEqual(result.totals["processed"], 1)  # the apply itself still succeeded
+        self.assertIsNone(result.lead_sync)
+        self.assertTrue(any("sql/015" in m and "--apply-run run-7" in m for m in messages), messages)
+
+    def test_a_real_sync_failure_is_not_swallowed(self) -> None:
+        from nppes_ingest.apply import run_apply
+
+        class BrokenSync(FakeApplyClient):
+            def rpc(self, function: str, params=None):
+                if function == "apply_provider_changes_to_leads":
+                    raise RuntimeError("deadlock detected")
+                return super().rpc(function, params)
+
+        with self.assertRaises(RuntimeError):
+            run_apply(BrokenSync([{"processed": 1, "remaining": 0}]), "run-1", log=quiet)
+
+    def test_an_unexpected_sync_response_is_refused(self) -> None:
+        from nppes_ingest.apply import run_lead_sync
+
+        with self.assertRaises(RuntimeError):
+            run_lead_sync(FakeApplyClient([], lead_sync=[["not", "a", "dict"]]), "run-1", log=quiet)
 
 
 class CliApplyTests(unittest.TestCase):
@@ -507,6 +579,20 @@ class CliApplyTests(unittest.TestCase):
             code = cli.main(["--apply-run", "run-9", "--apply-batch-size", "250"])
         self.assertEqual(code, 0)
         self.assertEqual(fake.calls[0], ("apply_nppes_refresh_batch", {"p_run_id": "run-9", "p_batch_size": 250}))
+        self.assertIn("apply_provider_changes_to_leads", [call[0] for call in fake.calls])
+
+    def test_skip_lead_sync_leaves_claimed_leads_alone(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        fake = FakeApplyClient([{"processed": 1, "remaining": 0}])
+        with mock.patch.object(cli, "load_supabase_config", return_value=object()), \
+                mock.patch.object(cli, "SupabaseClient", return_value=fake), \
+                mock.patch("builtins.print"):
+            code = cli.main(["--apply-run", "run-9", "--skip-lead-sync"])
+        self.assertEqual(code, 0)
+        self.assertNotIn("apply_provider_changes_to_leads", [call[0] for call in fake.calls])
 
     def test_unreadable_source_is_a_clean_error(self) -> None:
         from unittest import mock
