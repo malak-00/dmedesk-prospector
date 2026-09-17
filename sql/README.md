@@ -18,6 +18,7 @@ Required manual sequence:
 010_group_aware_claim.sql
 011_claim_for_user.sql
 012_medicare_refresh.sql          (before the first Medicare load)
+013_release_claimed_leads.sql     (Return to Prospect)
 ```
 
 Run each file in the Supabase SQL Editor, save its read-only verification
@@ -43,6 +44,7 @@ in `003`); save their output with the run.
 | `009_identity_match_review.sql` | `identity_match_decisions`, `identity_review_queue` view, `resolve_identity_match()` for the admin Possible duplicates screen | Executed 2026-09-16 |
 | `010_group_aware_claim.sql` | Identity helpers, `owned_group_npis()` for search, `assign_lead_groups()`, `identity_claim_requests`, extended `identity_review_queue`, backfill of ungrouped leads (`claim_leads()` now lives in 011) | Executed 2026-09-16 (Worker deployed after) |
 | `011_claim_for_user.sql` | `app_users.can_claim_for_others`; `claim_leads()` redefined with an optional actor for claims on behalf of another user | Executed 2026-09-16 (Worker deployed after) |
+| `013_release_claimed_leads.sql` | `release_claimed_leads()`: "Return to Prospect" as a soft release with a `released` event | **Not yet run — urgent: Return to Prospect is broken until this is installed** |
 | `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | **Not yet run — before the first `python -m nppes_ingest.medicare --apply`** |
 
 ## Notes on individual files
@@ -120,6 +122,17 @@ when the NPI isn't there — `008` now uses the same fallback, so rerunning it
 keeps those groups. `010` backfills a group for every lead that has none.
 Run it **before** deploying the Worker: until it exists, claiming returns an
 "isn't installed yet" error instead of claiming without the check. Rerun-safe.
+
+**`013`** fixes "Return to Prospect". It used to DELETE the lead row, which
+now fails: every claim writes a `claimed` ownership event, and deleting the
+lead makes Postgres null that event's `lead_id`, which the append-only
+trigger rejects. `release_claimed_leads()` instead writes a `released` event
+and clears `claimed_by` / `claimed_at` / `reminder_at`, resetting status to
+`new`. The row and its history stay; ownership checks all test
+`claimed_by is not null`, so the NPI is claimable again — though its identity
+group stays protected while the same owner holds another NPI in it. Search
+was also updated to stop hiding released NPIs. Install this and redeploy the
+Worker together.
 
 **`012`** backs the Medicare loader (`python -m nppes_ingest.medicare`).
 `npi_cms_enrichment` in DME Desk exists but was empty (checked 2026-09-16), so
