@@ -20,6 +20,7 @@ Required manual sequence:
 012_medicare_refresh.sql          (before the first Medicare load)
 013_release_claimed_leads.sql     (Return to Prospect)
 014_claim_preflight.sql           (before "Send to Sheet" can refuse anything)
+015_provider_change_alerts.sql    (before the first NPPES apply; needs 007)
 ```
 
 Run each file in the Supabase SQL Editor, save its read-only verification
@@ -48,6 +49,7 @@ in `003`); save their output with the run.
 | `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | Executed 2026-09-17; re-run 2026-09-17 with the narrowed duplicate guard, so the 9,292 suppliers skipped on the first load can be picked up by the next `--apply` |
 | `013_release_claimed_leads.sql` | `release_claimed_leads()`: "Return to Prospect" as a soft release with a `released` event | Executed 2026-09-17 (Worker deployed after) |
 | `014_claim_preflight.sql` | `identity_group_lookup()` + `claim_leads(..., p_dry_run)`: the claim rules with nothing written, so "Send to Sheet" refuses what claiming would refuse | Executed 2026-09-17 (Worker deployed after) |
+| `015_provider_change_alerts.sql` | `apply_provider_changes_to_leads()`: refreshes claimed leads from an applied release and raises `provider_data_changed` alerts; `provider_change_queue` + `resolve_provider_change()` for the admin queue | **Not yet run — before the first NPPES apply, or claimed leads won't follow the release** |
 
 ## Notes on individual files
 
@@ -135,6 +137,25 @@ and clears `claimed_by` / `claimed_at` / `reminder_at`, resetting status to
 group stays protected while the same owner holds another NPI in it. Search
 was also updated to stop hiding released NPIs. Install this and redeploy the
 Worker together.
+
+**`015`** is the second half of a refresh. `007` updates `npi_records` and
+records every changed field in `provider_field_history`, and deliberately
+stops there. `apply_provider_changes_to_leads(run_id)` then refreshes the
+provider-owned snapshot on active leads (company name, phone, address,
+specialty, NPPES last-updated, and the contact only when `contact_source =
+'nppes'` — a scraped contact is the rep's own find) and raises one pending
+`provider_data_changed` alert per claimed lead whose provider changed in a
+way its rep has to know: phone, authorized official, organization name,
+city/state, status, deactivation. It never touches `claimed_by`, `status`,
+`notes`, `reminder_at` or `is_disconnected`, and it never moves a lead
+between groups — a change to the identity keys themselves is flagged
+`metadata.group_review` for an admin instead. Batched and resumable off a
+cursor on the run, so an interrupted sync continues and a finished one is a
+no-op; the alert for one lead in one run can only be raised once. Decisions
+live in `provider_change_decisions` rather than on the event, because
+`lead_ownership_events` is append-only. `python -m nppes_ingest --apply`
+runs it automatically once the apply finishes (`--skip-lead-sync` opts out;
+applying the same run again picks it up later). Rerun-safe.
 
 **`014`** makes "Send to Sheet" ask before it copies. It used to write a
 rep's search results into their `Claimed - <Name>` tab without asking the

@@ -318,8 +318,9 @@ All other field changes log silently to `provider_field_history`.
 **Remaining work:**
 - ✅ `nppes_refresh_staging` keyed by `(refresh_run_id, npi)` — `sql/004`, written, not yet run.
 - ✅ The NPPES ingestion CLI and its fixture tests.
-- ⬜ The transactional apply procedure: compare canonical values, insert `provider_field_history` before updating `npi_records`, update only provider-owned snapshot fields on affected active leads, raise review events, and mark the run `applied` — all in one transaction.
-- ⬜ `medicare_refresh_staging`, a canonical current-Medicare model, and Medicare ingestion.
+- ✅ The apply procedure: compare canonical values, insert `provider_field_history` before updating `npi_records`, mark the run `applied` (`sql/007`, batched rather than one transaction — each batch is one transaction and the run resumes).
+- ✅ Provider-owned snapshot fields on affected active leads, and the review events (`sql/015`, run by the CLI right after the apply).
+- ✅ `medicare_refresh_staging` and Medicare ingestion (`sql/012`, `python -m nppes_ingest.medicare`).
 - ⬜ Reconciliation/validation queries beyond the per-file checks already in `sql/004`.
 - ⬜ A first end-to-end rehearsal against a small real release before any full file is applied.
 

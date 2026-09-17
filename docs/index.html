@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=36">
+<link rel="stylesheet" href="style.css?v=37">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -352,6 +352,18 @@
 
         <div class="results-toolbar">
           <div class="results-meta">
+            <div class="results-count">Provider changes</div>
+            <div class="results-sub" id="providerChangesSummary">Checking…</div>
+          </div>
+        </div>
+        <div id="providerChangesPanel" class="conflicts-panel">
+          <div class="conflicts-empty" id="providerChangesEmpty">Checking…</div>
+          <div id="providerChangesList" class="match-reviews-list"></div>
+          <button type="button" class="btn btn-ghost match-reviews-more" id="providerChangesMoreBtn" hidden>Show more</button>
+        </div>
+
+        <div class="results-toolbar">
+          <div class="results-meta">
             <div class="results-count">User activity</div>
           </div>
           <div class="results-actions">
@@ -538,6 +550,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=35"></script>
+  <script src="app.js?v=36"></script>
 </body>
 </html>

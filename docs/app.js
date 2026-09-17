@@ -112,6 +112,8 @@ const state = {
   matchReviews: null,
   matchReviewsTier: "all",
   matchReviewsLimit: 25,
+  providerChanges: null,
+  providerChangesLimit: 25,
   matchReviewPending: null,
   claimedRefreshInterval: null,
   adminRefreshInterval: null,
@@ -283,6 +285,10 @@ const els = {
   claimResultHeld: document.getElementById("claimResultHeld"),
   claimResultHeldList: document.getElementById("claimResultHeldList"),
   claimResultCloseBtn: document.getElementById("claimResultCloseBtn"),
+  providerChangesSummary: document.getElementById("providerChangesSummary"),
+  providerChangesEmpty: document.getElementById("providerChangesEmpty"),
+  providerChangesList: document.getElementById("providerChangesList"),
+  providerChangesMoreBtn: document.getElementById("providerChangesMoreBtn"),
   matchReviewsSummary: document.getElementById("matchReviewsSummary"),
   matchReviewsTierFilter: document.getElementById("matchReviewsTierFilter"),
   matchReviewsEmpty: document.getElementById("matchReviewsEmpty"),
@@ -924,6 +930,136 @@ function renderMatchReviews() {
   els.matchReviewsMoreBtn.textContent = `Show ${Math.min(remaining, MATCH_REVIEWS_PAGE)} more (${remaining} left)`;
 }
 
+// What the last NPPES refresh changed about leads people own (sql/015).
+// The rep sees their own as a badge in Claimed leads; this is where an admin
+// works through all of them -- and where a change that moved a lead's
+// identity keys gets a decision, since groups are never re-cut on their own.
+const PROVIDER_CHANGE_FIELD_LABELS = {
+  name: "Organization name",
+  phone: "Phone",
+  authorizedofficial_firstname: "Authorized official (first name)",
+  authorizedofficial_lastname: "Authorized official (last name)",
+  authorizedofficial_title: "Authorized official (title)",
+  authorizedofficial_phone: "Authorized official phone",
+  address_city: "City",
+  address_state: "State",
+  status: "NPPES status",
+  deactivation_date: "Deactivation date",
+  replacement_npi: "Replacement NPI",
+};
+const PROVIDER_CHANGES_PAGE = 25;
+
+function providerChangeFieldLabel(field) {
+  return PROVIDER_CHANGE_FIELD_LABELS[field] || field;
+}
+
+function renderProviderChanges() {
+  const payload = state.providerChanges;
+  if (!payload) return;
+
+  if (payload.available === false) {
+    els.providerChangesSummary.textContent = "Not available";
+    els.providerChangesEmpty.hidden = false;
+    els.providerChangesEmpty.textContent = payload.reason || "Provider change alerts aren't installed yet.";
+    els.providerChangesList.innerHTML = "";
+    els.providerChangesMoreBtn.hidden = true;
+    return;
+  }
+
+  const all = payload.changes || [];
+  const needGroupLook = all.filter((change) => change.groupReview).length;
+  els.providerChangesSummary.textContent = all.length
+    ? `${all.length} change${all.length === 1 ? "" : "s"} to look at` +
+      (needGroupLook ? ` · ${needGroupLook} may affect grouping` : "")
+    : "Nothing to look at";
+
+  if (all.length === 0) {
+    els.providerChangesEmpty.hidden = false;
+    els.providerChangesEmpty.textContent = "No claimed lead changed in the last refresh.";
+    els.providerChangesList.innerHTML = "";
+    els.providerChangesMoreBtn.hidden = true;
+    return;
+  }
+
+  els.providerChangesEmpty.hidden = true;
+  const visible = all.slice(0, state.providerChangesLimit);
+  els.providerChangesList.innerHTML = visible
+    .map((change) => {
+      const where = [change.city, change.state].filter(Boolean).join(", ");
+      const rows = change.changes
+        .map(
+          (field) => `
+          <tr>
+            <th scope="row">${escapeHtml(providerChangeFieldLabel(field.field))}</th>
+            <td class="provider-change-old">${escapeHtml(field.oldValue || "—")}</td>
+            <td class="provider-change-new">${escapeHtml(field.newValue || "—")}</td>
+          </tr>`
+        )
+        .join("");
+      return `
+      <div class="conflict-card match-review-card">
+        <div class="conflict-card-header">
+          <div>
+            <div class="conflict-title">${escapeHtml(change.companyName || change.npi)}</div>
+            <div class="match-key-chips">
+              <span class="match-key-chip"><span class="mono">${escapeHtml(change.npi)}</span></span>
+              ${where ? `<span class="match-key-chip">${escapeHtml(where)}</span>` : ""}
+              <span class="match-key-chip">${escapeHtml(change.ownerName)}</span>
+              ${change.groupReview ? '<span class="match-key-chip match-request-chip">May affect grouping</span>' : ""}
+            </div>
+          </div>
+          <div class="match-review-actions">
+            <button type="button" class="btn btn-ghost" data-provider-change="dismissed" data-event-id="${escapeHtml(change.eventId)}">
+              No action needed
+            </button>
+            <button type="button" class="btn btn-primary" data-provider-change="approved" data-event-id="${escapeHtml(change.eventId)}">
+              Handled
+            </button>
+          </div>
+        </div>
+        <table class="match-review-table provider-change-table">
+          <thead><tr><th scope="col">Field</th><th scope="col">Was</th><th scope="col">Now</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    })
+    .join("");
+  els.providerChangesMoreBtn.hidden = all.length <= visible.length;
+}
+
+async function loadProviderChanges(silent = false) {
+  if (!silent) {
+    els.providerChangesSummary.textContent = "Checking…";
+    if (!state.providerChanges) {
+      els.providerChangesEmpty.hidden = false;
+      els.providerChangesEmpty.textContent = "Checking…";
+    }
+  }
+  try {
+    state.providerChanges = await apiGet("admin/provider-changes");
+    renderProviderChanges();
+  } catch (err) {
+    if (silent) {
+      console.log("[admin] provider change refresh failed: " + err.message);
+      return;
+    }
+    els.providerChangesSummary.textContent = "Failed to load";
+    els.providerChangesEmpty.hidden = false;
+    els.providerChangesEmpty.textContent = "Couldn't load provider changes: " + err.message;
+    els.providerChangesList.innerHTML = "";
+  }
+}
+
+async function resolveProviderChange(eventId, decision) {
+  try {
+    const result = await apiPost("admin/provider-changes/resolve", { eventId, decision });
+    showToast(result.alreadyDecided ? "Someone else already decided that one." : "Marked as handled.");
+    await loadProviderChanges();
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
 async function loadMatchReviews(silent = false) {
   if (!silent) {
     els.matchReviewsSummary.textContent = "Checking…";
@@ -1040,6 +1176,7 @@ async function loadAdminOverview(silent = false) {
   // background refresh skips it; it reloads on open, Refresh, and after
   // each decision. (A click handler passes the event object, not `true`.)
   const reviewsLoaded = silent === true ? Promise.resolve() : loadMatchReviews();
+  const providerChangesLoaded = loadProviderChanges(silent);
   try {
     const data = await apiGet("admin/overview");
     renderAdminStats(data.stats);
@@ -1055,7 +1192,7 @@ async function loadAdminOverview(silent = false) {
     els.adminUsersBody.innerHTML = `<tr class="empty-row"><td colspan="7">Failed to load.</td></tr>`;
     els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">Failed to load.</td></tr>`;
   } finally {
-    await Promise.all([conflictsLoaded, reviewsLoaded]);
+    await Promise.all([conflictsLoaded, reviewsLoaded, providerChangesLoaded]);
   }
 }
 
@@ -2460,6 +2597,34 @@ const BRANCH_OWNERSHIP_LABELS = {
   disconnected: "disconnected",
 };
 
+// The last NPPES refresh changed something about this provider that its rep
+// needs to know -- a new phone, a new authorized official, a deactivation.
+// It clears when an admin has decided on every open alert for the lead.
+function providerChangeBadge(change) {
+  if (!change) return "";
+  const fields = (change.fields || []).map((field) => providerChangeFieldLabel(field).toLowerCase());
+  const title = fields.length
+    ? `NPPES changed ${fields.join(", ")} since this was claimed`
+    : "NPPES data changed since this was claimed";
+  return ` <span class="provider-change-badge" title="${escapeHtml(title)}">Provider data changed</span>`;
+}
+
+function providerChangeDetailHtml(change) {
+  if (!change) return "";
+  const fields = (change.fields || []).map((field) => `<li>${escapeHtml(providerChangeFieldLabel(field))}</li>`).join("");
+  return `
+    <div class="detail-block">
+      <h4>NPPES changed this provider</h4>
+      <ul class="provider-change-fields">${fields}</ul>
+      <div class="claim-result-detail">
+        ${change.groupReview
+          ? "The name, phone or authorized official moved, so an admin is checking whether it still belongs with the same business."
+          : "An admin has this in their queue."}
+      </div>
+    </div>
+  `;
+}
+
 function claimedBranchesBadge(branches) {
   if (!branches || branches.length === 0) return "";
   const total = branches.length + 1;
@@ -2502,7 +2667,7 @@ function claimedLeadRowHtml(lead, index) {
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-claimed-index="${index}" tabindex="0" aria-expanded="false">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="claimed-row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
-        <div class="company-name">${escapeHtml(lead.name)}${claimedBranchesBadge(lead.branches)}</div>
+        <div class="company-name">${escapeHtml(lead.name)}${claimedBranchesBadge(lead.branches)}${providerChangeBadge(lead.providerChange)}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
       </td>
       <td class="mono">${escapeHtml(lead.city)}, ${escapeHtml(lead.state)}</td>
@@ -2757,6 +2922,7 @@ function claimedDetailRowHtml(lead, index) {
             ${Number(lead.additionalContacts) > 0 ? `<div style="font-size:12px; color:var(--muted); margin-top:8px;">+${escapeHtml(lead.additionalContacts)} other contact(s) found (see Sheet)</div>` : ""}
           </div>
           ${claimedBranchesHtml(lead.branches)}
+          ${providerChangeDetailHtml(lead.providerChange)}
         </div>
         <div class="detail-block notes-history-block">
           <h4>Call log</h4>
@@ -3290,6 +3456,15 @@ els.matchReviewsList.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-match-review]");
   if (!btn) return;
   openMatchReview(btn.dataset.reviewKey, btn.dataset.matchReview);
+});
+els.providerChangesList.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-provider-change]");
+  if (!btn) return;
+  resolveProviderChange(btn.dataset.eventId, btn.dataset.providerChange);
+});
+els.providerChangesMoreBtn.addEventListener("click", () => {
+  state.providerChangesLimit += PROVIDER_CHANGES_PAGE;
+  renderProviderChanges();
 });
 els.matchReviewsTierFilter.addEventListener("change", () => {
   state.matchReviewsTier = els.matchReviewsTierFilter.value;

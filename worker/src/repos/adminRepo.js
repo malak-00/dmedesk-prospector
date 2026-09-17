@@ -247,6 +247,86 @@ async function fetchInChunks(values, queryForChunk, errorContext) {
   return rows;
 }
 
+// What a monthly NPPES refresh changed about a lead someone owns
+// (sql/015). Each row is one claimed lead in one refresh run, with every
+// escalating field that moved. Reps see their own as a badge in Claimed
+// leads; an admin works through all of them here.
+const PROVIDER_CHANGE_COLUMNS =
+  "event_id, npi, created_at, reason, changes, group_review, lead_id, company_name, city, state, " +
+  "lead_status, owner_user_id, owner_display_name, refresh_run_id";
+
+export async function getProviderChanges(supabase, { ownerUserId } = {}) {
+  let rows;
+  try {
+    rows = await fetchAllRows(
+      () => {
+        const query = supabase.from("provider_change_queue").select(PROVIDER_CHANGE_COLUMNS).order("created_at", { ascending: false });
+        return ownerUserId ? query.eq("owner_user_id", ownerUserId) : query;
+      },
+      "provider changes"
+    );
+  } catch (err) {
+    if (isMissingRelation({ message: err.message }, "provider_change_queue")) {
+      return {
+        available: false,
+        changes: [],
+        reason: "Provider change alerts aren't installed yet. Run sql/015_provider_change_alerts.sql first.",
+      };
+    }
+    throw err;
+  }
+
+  return {
+    available: true,
+    changes: rows.map((row) => ({
+      eventId: row.event_id,
+      npi: String(row.npi),
+      companyName: row.company_name || "",
+      city: row.city || "",
+      state: row.state || "",
+      leadStatus: row.lead_status || "",
+      ownerUserId: row.owner_user_id || null,
+      ownerName: row.owner_display_name || "(unclaimed)",
+      groupReview: row.group_review === true,
+      refreshRunId: row.refresh_run_id || "",
+      changedAt: row.created_at || "",
+      changes: (row.changes || []).map((change) => ({
+        field: change.field,
+        oldValue: change.oldValue === null || change.oldValue === undefined ? "" : String(change.oldValue),
+        newValue: change.newValue === null || change.newValue === undefined ? "" : String(change.newValue),
+      })),
+    })),
+  };
+}
+
+export async function resolveProviderChange(supabase, { eventId, decision, reviewerId, note }) {
+  if (!eventId) throw httpError(400, "eventId is required");
+  if (decision !== "approved" && decision !== "dismissed") {
+    throw httpError(400, "decision must be approved or dismissed");
+  }
+
+  const { data, error } = await supabase.rpc("resolve_provider_change", {
+    p_event_id: eventId,
+    p_reviewer_id: reviewerId,
+    p_decision: decision,
+    p_note: note || null,
+  });
+  if (error) {
+    if (error.code === "PGRST202" || error.code === "42883" || /Could not find the function/i.test(error.message || "")) {
+      throw httpError(503, "Provider change alerts aren't installed yet. Run sql/015_provider_change_alerts.sql, then try again.");
+    }
+    if (/is not an admin/i.test(error.message || "")) throw httpError(403, "Only an admin can resolve a provider change.");
+    if (/does not exist/i.test(error.message || "")) throw httpError(404, "That provider change alert no longer exists.");
+    throw httpError(500, "Failed to resolve the provider change: " + error.message);
+  }
+  const result = data || {};
+  return {
+    eventId: result.eventId || eventId,
+    decision: result.decision || decision,
+    alreadyDecided: result.alreadyDecided === true,
+  };
+}
+
 function formatPhone(value) {
   const digits = String(value || "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
   return digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : String(value || "");

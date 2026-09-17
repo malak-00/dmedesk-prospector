@@ -144,6 +144,22 @@ are now in `npi_records` but weren't loaded before — so run it **after** the
 NPPES refresh each month, and suppliers for newly added providers get their
 Medicare data. Install `sql/012_medicare_refresh.sql` first.
 
+### What happens to claimed leads
+
+Applying a release updates `npi_records` and records every changed field in
+`provider_field_history`. Immediately after that, the same command runs
+`sql/015`'s `apply_provider_changes_to_leads`, which brings the provider
+snapshot on claimed leads up to date and raises one review alert per lead
+whose phone, authorized official, name, city/state or status changed. Reps
+see the alert as a "Provider data changed" badge in Claimed leads; admins
+work through them under Provider changes. Nothing the rep owns (status,
+notes, reminders, ownership) is touched, and no lead is moved between
+identity groups — a name or phone change is flagged for an admin instead.
+
+`--skip-lead-sync` leaves that step out; running the same run again with
+`--apply-run <id>` performs it later, which is also what to do if `sql/015`
+wasn't installed at the time (the apply says so and continues).
+
 ### Plumbing
 
 `--batch-size` (default 500) sets rows per staging insert;

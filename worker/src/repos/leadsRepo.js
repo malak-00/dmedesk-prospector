@@ -259,12 +259,40 @@ async function attachGroupBranches(supabase, rows, leads, ownerId) {
   return leads;
 }
 
+// What the last NPPES refresh changed about this rep's leads (sql/015):
+// one pending alert per lead, so the Claimed view can flag the ones whose
+// provider moved. Degrades to no flags when 015 isn't installed.
+async function attachProviderChanges(supabase, leads, ownerId) {
+  const { data, error } = await supabase
+    .from("provider_change_queue")
+    .select("npi, changes, group_review, created_at")
+    .eq("owner_user_id", ownerId);
+  if (error) {
+    console.log("[leadsRepo] Provider change lookup failed: " + error.message);
+    return leads;
+  }
+  if (!data || data.length === 0) return leads;
+
+  const byNpi = new Map(data.map((row) => [String(row.npi), row]));
+  leads.forEach((lead) => {
+    const row = byNpi.get(String(lead.npi));
+    if (!row) return;
+    lead.providerChange = {
+      changedAt: row.created_at || "",
+      groupReview: row.group_review === true,
+      fields: (row.changes || []).map((change) => change.field),
+    };
+  });
+  return leads;
+}
+
 // Always scoped to the caller's own leads -- same privacy boundary
 // Code.js's leads/list enforced (session.displayName, never a raw param).
 export async function listClaimedLeads(supabase, session) {
   const rows = await fetchAllClaimedRows(supabase, "claimed_by", session.id);
   const leads = rows.map((row) => toLeadDTO(row, session.displayName));
-  return attachGroupBranches(supabase, rows, leads, session.id);
+  await attachGroupBranches(supabase, rows, leads, session.id);
+  return attachProviderChanges(supabase, leads, session.id);
 }
 
 // Admin-only escape hatch from listClaimedLeads' own-session scoping --
