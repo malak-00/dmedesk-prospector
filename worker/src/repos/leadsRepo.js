@@ -18,6 +18,15 @@ function httpError(status, message) {
 
 // DB row -> the shape the frontend already expects (same field names
 // listClaimedLeads used to return from the Sheets version).
+// "That SQL file hasn't been run yet." PostgREST answers PGRST202 for a
+// function it can't find; Postgres itself answers 42883, which is what a
+// direct connection (and the local PGlite the SQL tests run on) reports.
+function isMissingFunction(error) {
+  if (!error) return false;
+  if (error.code === "PGRST202" || error.code === "42883") return true;
+  return /Could not find the function|^function [\w."]+\(.*\) does not exist/i.test(error.message || "");
+}
+
 function toLeadDTO(row, claimedByDisplayName) {
   const statusUpdatedAt = row.status_updated_at || "";
   const claimedAt = row.claimed_at || "";
@@ -181,11 +190,81 @@ async function fetchAllClaimedRows(supabase, matchColumn, matchValue) {
   return rows;
 }
 
+// A claimed lead is a single NPI, but one business can hold several: branch
+// locations of the same organization, or NPIs an admin merged in Possible
+// duplicates. sql/010 records that as the lead's identity group, so the
+// Claimed view can show a rep the other locations of the business they are
+// looking at. Claimed leads stay one row per NPI (unlike the Prospect view,
+// which merges branches into one search result) because each branch carries
+// its own status, notes and reminder.
+const BRANCH_COLUMNS = "npi,company_name,address_line1,city,state,postal_code,phone,status,claimed_by,is_disconnected,group_id";
+const GROUP_IDS_PER_REQUEST = 50; // keeps the ?group_id=in.(...) URL well short of any length limit
+
+function toBranchDTO(row, ownerId) {
+  const claimedBy = row.claimed_by || null;
+  return {
+    npi: String(row.npi),
+    name: row.company_name || "",
+    addressLine1: row.address_line1 || "",
+    city: row.city || "",
+    state: row.state || "",
+    postalCode: row.postal_code || "",
+    phone: row.phone || "",
+    status: row.status || "new",
+    // A released branch (sql/013) keeps its group membership, so a group can
+    // hold NPIs nobody currently claims -- and after an admin merge or a
+    // conflict resolution it can briefly hold one a teammate claims.
+    ownership: row.is_disconnected ? "disconnected" : !claimedBy ? "none" : claimedBy === ownerId ? "yours" : "teammate",
+  };
+}
+
+async function fetchGroupBranches(supabase, groupIds) {
+  const byGroup = new Map();
+  for (let i = 0; i < groupIds.length; i += GROUP_IDS_PER_REQUEST) {
+    const chunk = groupIds.slice(i, i + GROUP_IDS_PER_REQUEST);
+    const { data, error } = await supabase.from("leads").select(BRANCH_COLUMNS).in("group_id", chunk);
+    if (error) throw new Error(error.message);
+    (data || []).forEach((row) => {
+      const list = byGroup.get(row.group_id) || [];
+      list.push(row);
+      byGroup.set(row.group_id, list);
+    });
+  }
+  return byGroup;
+}
+
+// Degrades to plain ungrouped leads: before sql/010 there is no group_id to
+// read, and a failed branch lookup is not a reason to fail the whole
+// Claimed view -- the leads themselves are already in hand.
+async function attachGroupBranches(supabase, rows, leads, ownerId) {
+  const groupIds = [...new Set(rows.map((row) => row.group_id).filter(Boolean))];
+  if (groupIds.length === 0) return leads;
+  let byGroup;
+  try {
+    byGroup = await fetchGroupBranches(supabase, groupIds);
+  } catch (err) {
+    console.log("[leadsRepo] Branch lookup failed: " + err.message);
+    return leads;
+  }
+  leads.forEach((lead, index) => {
+    const groupId = rows[index].group_id;
+    if (!groupId) return;
+    const branches = (byGroup.get(groupId) || [])
+      .filter((row) => String(row.npi) !== String(lead.npi))
+      .map((row) => toBranchDTO(row, ownerId))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.npi.localeCompare(b.npi));
+    lead.groupId = groupId;
+    if (branches.length > 0) lead.branches = branches;
+  });
+  return leads;
+}
+
 // Always scoped to the caller's own leads -- same privacy boundary
 // Code.js's leads/list enforced (session.displayName, never a raw param).
 export async function listClaimedLeads(supabase, session) {
   const rows = await fetchAllClaimedRows(supabase, "claimed_by", session.id);
-  return rows.map((row) => toLeadDTO(row, session.displayName));
+  const leads = rows.map((row) => toLeadDTO(row, session.displayName));
+  return attachGroupBranches(supabase, rows, leads, session.id);
 }
 
 // Admin-only escape hatch from listClaimedLeads' own-session scoping --
@@ -194,7 +273,8 @@ export async function listClaimedLeads(supabase, session) {
 // unlike listClaimedLeads, there's no session to pull it from.
 export async function listClaimedLeadsForUser(supabase, userId, displayName) {
   const rows = await fetchAllClaimedRows(supabase, "claimed_by", userId);
-  return rows.map((row) => toLeadDTO(row, displayName));
+  const leads = rows.map((row) => toLeadDTO(row, displayName));
+  return attachGroupBranches(supabase, rows, leads, userId);
 }
 
 // Same shape/scoping as listClaimedLeads, just narrowed to a checked
@@ -235,7 +315,7 @@ function identityFromCompany(company, flat) {
 // is partial on purpose: allowed leads are claimed, the others are returned.
 // options.actorId: set when someone other than `session` performs the claim
 // (claimForUser below); recorded on the claimed event by sql/011.
-export async function exportCompaniesToLeads(supabase, companies, session, flattenCompany, options = {}) {
+function companiesToClaimItems(companies, session, flattenCompany) {
   companies = companies || [];
   if (!Array.isArray(companies) || companies.length === 0) throw httpError(400, "At least one company is required to export");
 
@@ -250,31 +330,15 @@ export async function exportCompaniesToLeads(supabase, companies, session, flatt
       };
     });
   if (items.length === 0) throw httpError(400, "At least one company with an NPI is required to claim");
+  return items;
+}
 
-  const args = { p_user_id: session.id, p_leads: items };
-  if (options.actorId) args.p_actor_id = options.actorId;
-  const { data, error } = await supabase.rpc("claim_leads", args);
-  if (error) {
-    if (error.code === "PGRST202" || /Could not find the function/i.test(error.message || "")) {
-      throw httpError(
-        503,
-        options.actorId
-          ? "Claiming on behalf of another user isn't installed yet. Run sql/011_claim_for_user.sql in Supabase, then try again."
-          : "Group-aware claiming isn't installed yet. Run sql/010_group_aware_claim.sql and sql/011_claim_for_user.sql in Supabase, then try again."
-      );
-    }
-    if (/not allowed to claim on behalf/i.test(error.message || "")) {
-      throw httpError(403, "This account isn't allowed to claim leads for other users.");
-    }
-    throw httpError(500, "Failed to claim leads: " + error.message);
-  }
-
+// claim_leads' verdict on each lead, in the shape the claim dialog reads.
+function fromClaimResult(data) {
   const result = data || {};
   const claimed = result.claimed || [];
   const skipped = result.skipped || [];
   return {
-    rowsAdded: claimed.length,
-    claimedBy: session.displayName,
     claimedNpis: claimed.map((c) => String(c.npi)),
     alreadyClaimedNpis: skipped.filter((s) => s.reason === "already_claimed_by_you").map((s) => String(s.npi)),
     blocked: (result.blocked || []).map((b) => ({
@@ -295,6 +359,108 @@ export async function exportCompaniesToLeads(supabase, companies, session, flatt
       })),
     })),
     invalid: skipped.filter((s) => s.reason !== "already_claimed_by_you").map((s) => ({ npi: String(s.npi || ""), reason: s.reason })),
+  };
+}
+
+export async function exportCompaniesToLeads(supabase, companies, session, flattenCompany, options = {}) {
+  const items = companiesToClaimItems(companies, session, flattenCompany);
+
+  const args = { p_user_id: session.id, p_leads: items };
+  if (options.actorId) args.p_actor_id = options.actorId;
+  const { data, error } = await supabase.rpc("claim_leads", args);
+  if (error) {
+    if (isMissingFunction(error)) {
+      throw httpError(
+        503,
+        options.actorId
+          ? "Claiming on behalf of another user isn't installed yet. Run sql/011_claim_for_user.sql in Supabase, then try again."
+          : "Group-aware claiming isn't installed yet. Run sql/010_group_aware_claim.sql and sql/011_claim_for_user.sql in Supabase, then try again."
+      );
+    }
+    if (/not allowed to claim on behalf/i.test(error.message || "")) {
+      throw httpError(403, "This account isn't allowed to claim leads for other users.");
+    }
+    throw httpError(500, "Failed to claim leads: " + error.message);
+  }
+
+  const verdict = fromClaimResult(data);
+  return Object.assign({ rowsAdded: verdict.claimedNpis.length, claimedBy: session.displayName }, verdict);
+}
+
+// "Send to Sheet" asks the same question claiming asks, and writes nothing:
+// a lead a teammate owns, or one waiting on a Tier 2/3 review, must not be
+// copied into a second rep's sheet tab while the app says it is someone
+// else's. Returns the same blocked/held detail the claim dialog shows, plus
+// the NPIs that are free to send (including leads the rep already owns).
+export async function preflightCompaniesForSheet(supabase, companies, session, flattenCompany) {
+  const items = companiesToClaimItems(companies, session, flattenCompany);
+  const { data, error } = await supabase.rpc("claim_leads", {
+    p_user_id: session.id,
+    p_leads: items,
+    p_dry_run: true,
+  });
+  if (error) {
+    if (isMissingFunction(error)) {
+      return coarsePreflight(supabase, items, session);
+    }
+    throw httpError(500, "Failed to check lead ownership: " + error.message);
+  }
+  const verdict = fromClaimResult(data);
+  return {
+    allowedNpis: verdict.claimedNpis.concat(verdict.alreadyClaimedNpis),
+    blocked: verdict.blocked,
+    heldForReview: verdict.heldForReview,
+    invalid: verdict.invalid,
+  };
+}
+
+// Before sql/014 there is no dry run to ask, so fall back to what 010 does
+// give us: NPIs someone actively claims, and NPIs whose group a teammate
+// owns. It can't see Tier 2/3 near-matches, so it holds nothing -- which is
+// why the answer is worth installing 014 for.
+async function coarsePreflight(supabase, items, session) {
+  const npis = items.map((item) => item.npi);
+  const { data, error } = await supabase
+    .from("leads")
+    .select("npi,company_name,claimed_by")
+    .eq("is_disconnected", false)
+    .not("claimed_by", "is", null)
+    .in("npi", npis);
+  if (error) throw httpError(500, "Failed to check lead ownership: " + error.message);
+
+  const blockedByNpi = new Map();
+  (data || []).forEach((row) => {
+    if (String(row.claimed_by) === String(session.id)) return; // the rep's own lead
+    blockedByNpi.set(String(row.npi), {
+      npi: String(row.npi),
+      companyName: row.company_name || "",
+      groupName: "",
+      owners: ["a teammate"],
+    });
+  });
+
+  const owned = await getOwnedGroupNpisAmong(
+    supabase,
+    session.id,
+    items.map((item) => ({ npi: item.npi, ...item.identity }))
+  ).catch(() => new Set());
+  owned.forEach((npi) => {
+    if (!blockedByNpi.has(String(npi))) {
+      const item = items.find((i) => i.npi === String(npi));
+      blockedByNpi.set(String(npi), {
+        npi: String(npi),
+        companyName: (item && item.identity && item.identity.name) || "",
+        groupName: "",
+        owners: ["a teammate"],
+      });
+    }
+  });
+
+  return {
+    allowedNpis: npis.filter((npi) => !blockedByNpi.has(npi)),
+    blocked: [...blockedByNpi.values()],
+    heldForReview: [],
+    invalid: [],
   };
 }
 
@@ -435,7 +601,7 @@ export async function returnClaimedLeadsToProspect(supabase, npis, session) {
 
   const { data, error } = await supabase.rpc("release_claimed_leads", { p_user_id: session.id, p_npis: npis });
   if (error) {
-    if (error.code === "PGRST202" || /Could not find the function/i.test(error.message || "")) {
+    if (isMissingFunction(error)) {
       throw httpError(503, "Returning leads to Prospect isn't installed yet. Run sql/013_release_claimed_leads.sql in Supabase, then try again.");
     }
     throw httpError(500, "Failed to return leads to Prospect: " + error.message);

@@ -19,6 +19,7 @@ Required manual sequence:
 011_claim_for_user.sql
 012_medicare_refresh.sql          (before the first Medicare load)
 013_release_claimed_leads.sql     (Return to Prospect)
+014_claim_preflight.sql           (before "Send to Sheet" can refuse anything)
 ```
 
 Run each file in the Supabase SQL Editor, save its read-only verification
@@ -46,6 +47,7 @@ in `003`); save their output with the run.
 | `011_claim_for_user.sql` | `app_users.can_claim_for_others`; `claim_leads()` redefined with an optional actor for claims on behalf of another user | Executed 2026-09-16 (Worker deployed after) |
 | `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | Executed 2026-09-17; re-run 2026-09-17 with the narrowed duplicate guard, so the 9,292 suppliers skipped on the first load can be picked up by the next `--apply` |
 | `013_release_claimed_leads.sql` | `release_claimed_leads()`: "Return to Prospect" as a soft release with a `released` event | Executed 2026-09-17 (Worker deployed after) |
+| `014_claim_preflight.sql` | `identity_group_lookup()` + `claim_leads(..., p_dry_run)`: the claim rules with nothing written, so "Send to Sheet" refuses what claiming would refuse | **Not yet run — until then Send to Sheet falls back to a coarser check and can't hold near-matches** |
 
 ## Notes on individual files
 
@@ -133,6 +135,20 @@ and clears `claimed_by` / `claimed_at` / `reminder_at`, resetting status to
 group stays protected while the same owner holds another NPI in it. Search
 was also updated to stop hiding released NPIs. Install this and redeploy the
 Worker together.
+
+**`014`** makes "Send to Sheet" ask before it copies. It used to write a
+rep's search results into their `Claimed - <Name>` tab without asking the
+database anything, so a lead a teammate already owned could be copied into a
+second rep's spreadsheet while the app said it was someone else's. Rather
+than repeat the claim rules in a second place, `claim_leads` gained a
+`p_dry_run` argument: it decides every lead exactly as a real claim would and
+writes nothing — no lead, no group or membership, no ownership event, no
+review request, and no advisory locks, so a preflight can never hold up a
+real claim. `identity_group_lookup()` is `ensure_identity_membership()` made
+read-only for it. The Worker falls back to the coarser 010 checks (claimed
+NPIs and teammate-owned groups, but no Tier 2/3 hold) until this is
+installed. The file redefines `claim_leads` rather than adding an overload,
+for the same reason `011` did. Rerun-safe.
 
 **`012`** backs the Medicare loader (`python -m nppes_ingest.medicare`).
 `npi_cms_enrichment` in DME Desk exists but was empty (checked 2026-09-16), so

@@ -469,12 +469,12 @@
       <p class="suggestion-hint" id="claimResultSummary"></p>
       <div id="claimResultBlocked" class="claim-result-section" hidden>
         <h4>Already owned by a teammate</h4>
-        <p class="suggestion-hint">These belong to a business someone else has claimed, so they weren't claimed. Ask an admin if ownership should change.</p>
+        <p class="suggestion-hint" id="claimResultBlockedHint">These belong to a business someone else has claimed, so they weren't claimed. Ask an admin if ownership should change.</p>
         <ul class="claim-result-list" id="claimResultBlockedList"></ul>
       </div>
       <div id="claimResultHeld" class="claim-result-section" hidden>
         <h4>Held for admin review</h4>
-        <p class="suggestion-hint">These may be the same business as a teammate's lead. An admin will decide under Possible duplicates; try claiming again after that.</p>
+        <p class="suggestion-hint" id="claimResultHeldHint">These may be the same business as a teammate's lead. An admin will decide under Possible duplicates; try claiming again after that.</p>
         <ul class="claim-result-list" id="claimResultHeldList"></ul>
       </div>
       <div class="suggestion-actions">
@@ -538,6 +538,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=34"></script>
+  <script src="app.js?v=35"></script>
 </body>
 </html>
