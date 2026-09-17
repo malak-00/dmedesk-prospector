@@ -275,6 +275,9 @@ const els = {
   conflictResolveSubmitBtn: document.getElementById("conflictResolveSubmitBtn"),
   claimResultOverlay: document.getElementById("claimResultOverlay"),
   claimResultSummary: document.getElementById("claimResultSummary"),
+  claimResultTitle: document.getElementById("claimResultTitle"),
+  claimResultBlockedHint: document.getElementById("claimResultBlockedHint"),
+  claimResultHeldHint: document.getElementById("claimResultHeldHint"),
   claimResultBlocked: document.getElementById("claimResultBlocked"),
   claimResultBlockedList: document.getElementById("claimResultBlockedList"),
   claimResultHeld: document.getElementById("claimResultHeld"),
@@ -1872,11 +1875,13 @@ async function exportSheets() {
   try {
     const data = await apiPost("export/sheets", { companies });
     state.claimedLoaded = false; // claimed view is now stale
-    // Only claimed (or already-yours) leads leave Prospect -- blocked and
-    // held-for-review ones stay so the rep can see them and retry later.
-    // An older Worker without claimedNpis claimed everything it was sent.
+    // Claimed (or already-yours) leads leave Prospect, and so do ones a
+    // teammate owns: the dialog names the owner, and there is nothing the rep
+    // can do with them. Leads held for review stay -- that one is still
+    // theirs to get. An older Worker without claimedNpis claimed everything
+    // it was sent.
     const done = data.claimedNpis
-      ? new Set([...data.claimedNpis, ...(data.alreadyClaimedNpis || [])])
+      ? new Set([...data.claimedNpis, ...(data.alreadyClaimedNpis || []), ...(data.blocked || []).map((b) => b.npi)])
       : new Set(companies.map((c) => String(c.npi)));
     removeCompaniesFromProspect(companies.filter((c) => done.has(String(c.npi))));
     showClaimResult(data);
@@ -1887,6 +1892,31 @@ async function exportSheets() {
   } finally {
     els.exportSheetsBtn.disabled = state.selected.size === 0;
   }
+}
+
+// Sending to the Sheet is refused for exactly what claiming would refuse
+// (sql/014 runs the claim rules without writing anything): a lead a teammate
+// owns can't be copied into this rep's tab, and one waiting on a Tier 2/3
+// review waits there too. Same dialog as claiming, different first line.
+function sheetExportCountText(data) {
+  const n = data.rowsAdded || 0;
+  if (n === 0) return "Nothing was sent to the Sheet.";
+  return `Added ${n} row${n === 1 ? "" : "s"} to "${data.tab}".`;
+}
+
+const SHEET_EXPORT_DIALOG = {
+  title: "Send to Sheet results",
+  blockedHint: "These belong to a business someone else has claimed, so they can't be claimed or sent to your Sheet. Ask an admin if ownership should change.",
+  heldHint: "These may be the same business as a teammate's lead. An admin will decide under Possible duplicates; they can be claimed or sent after that.",
+};
+
+function showSheetExportResult(data) {
+  const refused = (data.blocked || []).length + (data.heldForReview || []).length;
+  if (refused === 0) {
+    showToast(sheetExportCountText(data), false, data.sheetUrl);
+    return;
+  }
+  showClaimResult(data, sheetExportCountText(data), SHEET_EXPORT_DIALOG);
 }
 
 // Claiming is group-aware (sql/010): a lead whose business a teammate already
@@ -1900,16 +1930,27 @@ function claimedCountText(data) {
   return `Claimed ${n} lead${n === 1 ? "" : "s"} as ${data.claimedBy || "you"}.`;
 }
 
-function showClaimResult(data) {
+const CLAIM_DIALOG = {
+  title: "Claim results",
+  blockedHint: "These belong to a business someone else has claimed, so they weren't claimed. Ask an admin if ownership should change.",
+  heldHint: "These may be the same business as a teammate's lead. An admin will decide under Possible duplicates; try claiming again after that.",
+};
+
+function showClaimResult(data, summaryLead, wording) {
   const blocked = data.blocked || [];
   const held = data.heldForReview || [];
   if (blocked.length === 0 && held.length === 0) {
-    showToast(claimedCountText(data));
+    showToast(summaryLead || claimedCountText(data));
     return;
   }
 
-  const parts = [claimedCountText(data)];
-  if (blocked.length) parts.push(`${blocked.length} already owned by a teammate.`);
+  const words = wording || CLAIM_DIALOG;
+  els.claimResultTitle.textContent = words.title;
+  els.claimResultBlockedHint.textContent = words.blockedHint;
+  els.claimResultHeldHint.textContent = words.heldHint;
+
+  const parts = [summaryLead || claimedCountText(data)];
+  if (blocked.length) parts.push(`${blocked.length} already owned by a teammate — you can't claim or send ${blocked.length === 1 ? "it" : "them"}.`);
   if (held.length) parts.push(`${held.length} held for admin review.`);
   els.claimResultSummary.textContent = parts.join(" ");
 
@@ -1967,7 +2008,11 @@ async function exportToGoogleSheet() {
   setStatus("busy", "Exporting to Sheet…");
   try {
     const data = await apiPost("export/google-sheet", { companies });
-    showToast(`Added ${data.rowsAdded} row(s) to "${data.tab}"`, false, data.sheetUrl);
+    // Sent leads stay in Prospect (this isn't claiming, so they are still
+    // there to claim), but ones a teammate owns go -- same as claiming.
+    const blocked = new Set((data.blocked || []).map((b) => String(b.npi)));
+    if (blocked.size) removeCompaniesFromProspect(companies.filter((c) => blocked.has(String(c.npi))));
+    showSheetExportResult(data);
     setStatus("ready", "Ready");
   } catch (err) {
     showToast(err.message, true);
@@ -2217,7 +2262,13 @@ function applyClaimedSearchFilter(leads) {
       (lead.name || "").toLowerCase().includes(term) ||
       (lead.npi || "").toLowerCase().includes(term) ||
       (lead.city || "").toLowerCase().includes(term) ||
-      (lead.state || "").toLowerCase().includes(term)
+      (lead.state || "").toLowerCase().includes(term) ||
+      // Searching a branch NPI or city finds the lead it belongs to, so a
+      // rep looking up one location lands on the business they hold.
+      (lead.branches || []).some((branch) =>
+        (branch.npi || "").toLowerCase().includes(term) ||
+        (branch.city || "").toLowerCase().includes(term)
+      )
     );
   });
 }
@@ -2396,6 +2447,52 @@ function renderClaimedLeads(leads) {
   updateClaimedSelectionUI();
 }
 
+// A claimed lead is one NPI, but leadsRepo sends along the other NPIs in the
+// same identity group (sql/010) -- branch locations of the same business, or
+// NPIs an admin merged in Possible duplicates. The Prospect view folds
+// branches into one search result; here each branch keeps its own row, since
+// each has its own status, call log and reminder, so the link between them
+// is shown as a badge instead.
+const BRANCH_OWNERSHIP_LABELS = {
+  yours: "yours",
+  teammate: "claimed by a teammate",
+  none: "not claimed",
+  disconnected: "disconnected",
+};
+
+function claimedBranchesBadge(branches) {
+  if (!branches || branches.length === 0) return "";
+  const total = branches.length + 1;
+  const mine = branches.filter((b) => b.ownership === "yours").length + 1;
+  const title = mine === total
+    ? `Same business: you hold all ${total} locations`
+    : `Same business: ${total} locations, ${mine} of them yours`;
+  return ` <span class="locations-badge" title="${escapeHtml(title)}">${total} locations</span>`;
+}
+
+function claimedBranchesHtml(branches) {
+  if (!branches || branches.length === 0) return "";
+  return `
+    <div class="detail-block">
+      <h4>Other locations of this business (${branches.length})</h4>
+      ${branches.map((branch) => `
+        <div class="contact-item">
+          <div>
+            ${escapeHtml(branch.name || "—")}
+            <span class="contact-role">${escapeHtml(BRANCH_OWNERSHIP_LABELS[branch.ownership] || branch.ownership)}</span>
+          </div>
+          <div class="mono" style="font-size:13px; line-height:1.6;">
+            NPI: ${escapeHtml(branch.npi)}<br>
+            ${escapeHtml(branch.addressLine1 || "")}<br>
+            ${escapeHtml(branch.city || "")}, ${escapeHtml(branch.state || "")} ${escapeHtml(branch.postalCode || "")}<br>
+            ${escapeHtml(branch.phone || "—")}${branch.ownership === "yours" ? ` &middot; ${escapeHtml(branch.status)}` : ""}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
 function claimedLeadRowHtml(lead, index) {
   const contactLine = lead.contactName
     ? `${escapeHtml(lead.contactName)}${lead.contactTitle ? ` — ${escapeHtml(lead.contactTitle)}` : ""}`
@@ -2405,7 +2502,7 @@ function claimedLeadRowHtml(lead, index) {
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-claimed-index="${index}" tabindex="0" aria-expanded="false">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="claimed-row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
-        <div class="company-name">${escapeHtml(lead.name)}</div>
+        <div class="company-name">${escapeHtml(lead.name)}${claimedBranchesBadge(lead.branches)}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
       </td>
       <td class="mono">${escapeHtml(lead.city)}, ${escapeHtml(lead.state)}</td>
@@ -2659,6 +2756,7 @@ function claimedDetailRowHtml(lead, index) {
             ` : '<span style="color:var(--muted); font-size:13px;">None identified</span>'}
             ${Number(lead.additionalContacts) > 0 ? `<div style="font-size:12px; color:var(--muted); margin-top:8px;">+${escapeHtml(lead.additionalContacts)} other contact(s) found (see Sheet)</div>` : ""}
           </div>
+          ${claimedBranchesHtml(lead.branches)}
         </div>
         <div class="detail-block notes-history-block">
           <h4>Call log</h4>

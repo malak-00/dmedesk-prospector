@@ -219,13 +219,33 @@ app.post("/export/disconnected", async (c) => {
 });
 
 // Separate from claiming (POST /export/sheets, which writes to Supabase and
-// is what powers the app's own Claimed Leads view) -- this purely pastes a
-// copy of the selected leads into the caller's "Claimed - <Name>" tab in
-// the actual shared Google Sheet, for anyone who wants a spreadsheet view.
+// is what powers the app's own Claimed Leads view) -- this pastes a copy of
+// the selected leads into the caller's "Claimed - <Name>" tab in the actual
+// shared Google Sheet, for anyone who wants a spreadsheet view.
+//
+// It does not claim, but it does ask the same question claiming asks
+// (sql/014's dry run): a lead a teammate owns, or one waiting on a Tier 2/3
+// review, is refused rather than copied into a second rep's tab -- otherwise
+// the spreadsheet would quietly disagree with who the app says owns what.
 app.post("/export/google-sheet", async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const data = await GoogleSheets.exportCompaniesToSheet(c.get("config"), body.companies, c.get("session"));
-  return c.json(ok(data));
+  const session = c.get("session");
+  const companies = (body.companies || []).filter((company) => company && company.npi);
+  const preflight = await leadsRepo.preflightCompaniesForSheet(supabaseFor(c), companies, session, CsvExport.flattenCompany);
+
+  const allowed = new Set(preflight.allowedNpis.map(String));
+  const sendable = companies.filter((company) => allowed.has(String(company.npi)));
+  const refused = {
+    blocked: preflight.blocked,
+    heldForReview: preflight.heldForReview,
+    invalid: preflight.invalid,
+  };
+  if (sendable.length === 0) {
+    return c.json(ok(Object.assign({ rowsAdded: 0, sentNpis: [], claimedBy: session.displayName }, refused)));
+  }
+
+  const data = await GoogleSheets.exportCompaniesToSheet(c.get("config"), sendable, session);
+  return c.json(ok(Object.assign({}, data, { sentNpis: sendable.map((company) => String(company.npi)) }, refused)));
 });
 
 // Claimed leads view's own "Export to Sheet" -- takes NPIs (not a raw

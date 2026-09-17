@@ -118,6 +118,16 @@ The local Docker database successfully applied it. Verification showed:
 - local lint has no schema errors;
 - linked lint has no schema errors.
 
+### Branches in the Claimed view
+
+`GET /leads/list` attaches each claimed lead's identity group (`sql/010`): the
+other NPIs in the group come back as `branches`, each marked `yours`,
+`teammate`, `none` (released) or `disconnected`. The Claimed tab shows them as
+an "N locations" badge and an "Other locations of this business" panel in the
+expanded row, and a branch NPI typed into the search box finds the lead that
+holds it. Rows stay one per NPI, because each branch has its own status, call
+log and reminder. A failed branch lookup degrades to plain ungrouped leads.
+
 ### Partial application work
 
 The admin conflict queue can list groups whose active claims are split across
@@ -129,7 +139,8 @@ new claims.
 - Undoing a merge or dismissal from the UI (decisions are one-way today).
 - Automated intake/import from source files or provider refreshes.
 - Notifying a rep when their held claim is decided (they retry the claim).
-- Claiming every branch NPI of a merged "N locations" search row at once.
+- Claiming every branch NPI of a merged "N locations" search row at once
+  (the branches are exported and shown, but only the primary NPI is claimed).
 - Explicit reassign and release APIs.
 - Group and ownership-history API endpoints.
 - NPPES/Medicare compare-before-update application.

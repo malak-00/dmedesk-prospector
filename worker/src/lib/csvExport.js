@@ -26,6 +26,42 @@ export const CSV_COLUMNS = [
   { key: "nppesLastUpdated", label: "NPPES Last Updated" },
 ];
 
+// A search result can be several NPIs: companyService merges branches of the
+// same business into one row with a `locations` array, and the export used to
+// drop everything but the primary NPI. It rides in one trailing column rather
+// than one row per branch, so a company stays one row -- and it is appended
+// after the tracking columns in the Sheet, so tabs written before it keep
+// every column where it was.
+export const OTHER_LOCATIONS_COLUMN = { key: "otherLocations", label: "Other Locations" };
+
+export function otherLocationsCell(company) {
+  const locations = (company && company.locations) || [];
+  if (locations.length <= 1) return "";
+  return locations
+    .filter((loc) => loc && String(loc.npi) !== String(company.npi))
+    .map((loc) => {
+      const address = loc.address || {};
+      const where = [address.line1, [address.city, address.state].filter(Boolean).join(", "), address.postalCode]
+        .filter(Boolean)
+        .join(", ");
+      return [loc.npi, where, loc.phone].filter(Boolean).join(" | ");
+    })
+    .join(" ; ");
+}
+
+// Same column for the Claimed view's export, built from the identity group
+// leadsRepo attaches (sql/010) instead of an in-memory branch merge.
+export function claimedOtherLocationsCell(lead) {
+  return ((lead && lead.branches) || [])
+    .map((branch) => {
+      const where = [branch.addressLine1, [branch.city, branch.state].filter(Boolean).join(", "), branch.postalCode]
+        .filter(Boolean)
+        .join(", ");
+      return [branch.npi, where, branch.phone].filter(Boolean).join(" | ");
+    })
+    .join(" ; ");
+}
+
 function escapeCsvValue(value) {
   if (value === null || value === undefined) return "";
   const str = String(value);
@@ -81,10 +117,14 @@ export function companiesToCsv(companies) {
     throw error;
   }
 
-  const header = CSV_COLUMNS.map((c) => escapeCsvValue(c.label)).join(",");
+  const header = CSV_COLUMNS.map((c) => escapeCsvValue(c.label))
+    .concat(escapeCsvValue(OTHER_LOCATIONS_COLUMN.label))
+    .join(",");
   const rows = companies.map((company) => {
     const flat = flattenCompany(company);
-    return CSV_COLUMNS.map((c) => escapeCsvValue(flat[c.key])).join(",");
+    return CSV_COLUMNS.map((c) => escapeCsvValue(flat[c.key]))
+      .concat(escapeCsvValue(otherLocationsCell(company)))
+      .join(",");
   });
 
   return [header].concat(rows).join("\r\n");

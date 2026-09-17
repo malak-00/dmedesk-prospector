@@ -21,7 +21,7 @@
 // flow, e.g. via Google's OAuth 2.0 Playground). The refresh token itself
 // never expires (until revoked), so this is a one-time setup step, not
 // something that needs re-doing periodically.
-import { CSV_COLUMNS, flattenCompany } from "../lib/csvExport.js";
+import { CSV_COLUMNS, flattenCompany, OTHER_LOCATIONS_COLUMN, otherLocationsCell, claimedOtherLocationsCell } from "../lib/csvExport.js";
 
 export function GoogleSheetsNotConfiguredError() {
   const err = new Error("Google Sheets export is not configured (missing GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN, or GOOGLE_SHEET_ID)");
@@ -38,7 +38,12 @@ const TRACKING_COLUMNS = [
   { key: "notes", label: "Notes" },
   { key: "reminderAt", label: "Reminder At" },
 ];
-const HEADER = CSV_COLUMNS.map((c) => c.label).concat(TRACKING_COLUMNS.map((c) => c.label));
+// Other Locations sits after the tracking columns, not beside the other
+// company columns: every tab written before it keeps every column exactly
+// where it was, and the old rows simply have nothing in the new last column.
+const HEADER = CSV_COLUMNS.map((c) => c.label)
+  .concat(TRACKING_COLUMNS.map((c) => c.label))
+  .concat(OTHER_LOCATIONS_COLUMN.label);
 const CLAIMED_TAB_PREFIX = "Claimed - ";
 
 function assertConfigured(config) {
@@ -122,6 +127,30 @@ async function writeHeaderRow(token, spreadsheetId, tabName) {
   });
 }
 
+// A tab created before a column was added still has the old header, so new
+// rows would carry a value under no heading at all. Extend it -- but only
+// when what's there is exactly the start of the current header, so a tab
+// someone has relabelled by hand is left alone.
+async function ensureHeaderRow(token, spreadsheetId, tabName, created) {
+  if (created) {
+    await writeHeaderRow(token, spreadsheetId, tabName);
+    return;
+  }
+  let existing = [];
+  try {
+    const range = `${encodeURIComponent(quoteSheetName(tabName))}!1:1`;
+    const data = await sheetsApi(token, `${spreadsheetId}/values/${range}`);
+    existing = (data.values && data.values[0]) || [];
+  } catch (err) {
+    console.log("[googleSheets] Could not read the header row of " + tabName + ": " + err.message);
+    return;
+  }
+  const isOlderHeader = existing.length > 0
+    && existing.length < HEADER.length
+    && existing.every((label, i) => label === HEADER[i]);
+  if (existing.length === 0 || isOlderHeader) await writeHeaderRow(token, spreadsheetId, tabName);
+}
+
 async function appendRows(token, spreadsheetId, tabName, rows) {
   await sheetsApi(
     token,
@@ -161,7 +190,7 @@ export async function exportLeadsToSheet(config, leads, session) {
   const tabName = claimedTabName(session.displayName);
 
   const { sheetId, created } = await ensureUserTab(token, spreadsheetId, tabName);
-  if (created) await writeHeaderRow(token, spreadsheetId, tabName);
+  await ensureHeaderRow(token, spreadsheetId, tabName, created);
 
   const rows = leads.map((lead) => {
     const csvValues = flatLeadRow(lead);
@@ -174,7 +203,7 @@ export async function exportLeadsToSheet(config, leads, session) {
       lead.notes || "",
       lead.reminderAt || "",
     ];
-    return csvValues.concat(trackingValues);
+    return csvValues.concat(trackingValues).concat(claimedOtherLocationsCell(lead));
   });
 
   await appendRows(token, spreadsheetId, tabName, rows);
@@ -201,14 +230,14 @@ export async function exportCompaniesToSheet(config, companies, session) {
   const tabName = claimedTabName(session.displayName);
 
   const { sheetId, created } = await ensureUserTab(token, spreadsheetId, tabName);
-  if (created) await writeHeaderRow(token, spreadsheetId, tabName);
+  await ensureHeaderRow(token, spreadsheetId, tabName, created);
 
   const now = new Date().toISOString();
   const rows = companies.map((company) => {
     const flat = flattenCompany(company);
     const csvValues = CSV_COLUMNS.map((c) => (flat[c.key] != null ? flat[c.key] : ""));
     const trackingValues = [session.displayName || "", now, "new", "", "", "", ""];
-    return csvValues.concat(trackingValues);
+    return csvValues.concat(trackingValues).concat(otherLocationsCell(company));
   });
 
   await appendRows(token, spreadsheetId, tabName, rows);

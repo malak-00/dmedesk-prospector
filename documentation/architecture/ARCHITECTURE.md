@@ -283,6 +283,21 @@ copy of selected leads into a real shared Google Sheet. This is **not**
 claiming — claiming writes to Supabase and is what powers the Claimed Leads
 view; this is a convenience copy for people who want a spreadsheet.
 
+It is not a way around ownership, though. `/export/google-sheet` first runs
+`claim_leads(..., p_dry_run => true)` (`sql/014`), which applies every
+ownership and review rule of a real claim and writes nothing. A lead a
+teammate owns, and one held for a Tier 2/3 review, are refused and reported
+in the same dialog claiming uses; the rest are sent. Without `sql/014` the
+Worker falls back to the coarser 010 checks — actively claimed NPIs and
+teammate-owned groups — and holds nothing.
+
+Merged branch locations used to be dropped here: a search result that folded
+three branch NPIs into one row exported only the primary. Both routes now end
+each row with an `Other Locations` cell (branch NPI, address and phone, one
+per branch). It sits **after** the tracking columns so tabs written before it
+keep every column where it was; a tab whose header is the older one is
+extended on the next export, and a hand-edited header is left alone.
+
 It authenticates with an OAuth client + refresh token authorized as a real
 Google account, **not** a service-account key, because some Workspace orgs
 block service-account key creation outright
