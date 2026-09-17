@@ -1,4 +1,4 @@
-﻿"""Tests for the NPPES ingestion CLI.
+"""Tests for the NPPES ingestion CLI.
 
 Run from the repository root:
 
@@ -440,6 +440,33 @@ class ApplyRunTests(unittest.TestCase):
             run_apply(FakeApplyClient([{"processed": 1, "remaining": 5}] * 3), "run-1", log=quiet, max_batches=2)
         with self.assertRaises(ValueError):
             run_apply(FakeApplyClient([]), "run-1", batch_size=0, log=quiet)
+
+    def test_statement_timeout_reduces_batch_size_and_retries(self) -> None:
+        from nppes_ingest.apply import run_apply
+
+        class TimeoutClient(FakeApplyClient):
+            def __init__(self) -> None:
+                super().__init__([{"processed": 1, "remaining": 0}])
+                self.timed_out = False
+
+            def rpc(self, function: str, params=None):
+                self.calls.append((function, params))
+                if function == "apply_nppes_refresh_batch" and not self.timed_out:
+                    self.timed_out = True
+                    raise RuntimeError("canceling statement due to statement timeout (57014)")
+                if function == "apply_nppes_refresh_batch":
+                    return self.batches.pop(0)
+                if function == "finish_nppes_apply":
+                    return {"status": "applied"}
+                raise AssertionError(function)
+
+        client = TimeoutClient()
+        result = run_apply(client, "run-1", batch_size=200, log=quiet)
+        self.assertEqual(result.batches, 1)
+        # First call timed out with size 200; second call retried with size 100
+        self.assertEqual(client.calls[0], ("apply_nppes_refresh_batch", {"p_run_id": "run-1", "p_batch_size": 200}))
+        self.assertEqual(client.calls[1], ("apply_nppes_refresh_batch", {"p_run_id": "run-1", "p_batch_size": 100}))
+
 
 
 class CliApplyTests(unittest.TestCase):

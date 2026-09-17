@@ -1,4 +1,4 @@
-﻿"""Command-line interface.
+"""Command-line interface.
 
 Every input is an argument -- no hardcoded source paths, no hardcoded
 output directory, no credentials in the file. `--dry-run` needs no
@@ -108,6 +108,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Validate and report without creating a refresh run or writing staging (needs no credentials)",
     )
+    plumbing.add_argument(
+        "--skip-checksum",
+        action="store_true",
+        help="Skip SHA-256 checksumming of the source file (useful when reading over a slow network share)",
+    )
     return parser
 
 
@@ -209,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         limit=args.limit,
         organizations_only=not args.include_individuals,
+        skip_checksum=args.skip_checksum,
     )
 
     if args.apply and args.dry_run:

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterator, Sequence
@@ -26,6 +27,41 @@ from .validate import Rejection, RowValidator, check_expected_row_count
 
 REFRESH_RUNS_TABLE = "refresh_runs"
 STAGING_TABLE = "nppes_refresh_staging"
+
+
+def _format_time(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    if h > 0:
+        return f"{h}h{m:02d}m{s:02d}s"
+    return f"{m:02d}m{s:02d}s"
+
+
+def _print_progress(current: int, total: int | None, accepted: int, start_time: float) -> None:
+    """Write a dynamic single-line progress bar with rate and ETA to stderr."""
+    if not getattr(sys.stderr, "isatty", lambda: False)():
+        return
+    elapsed = max(time.time() - start_time, 0.001)
+    rate = current / elapsed
+    if total:
+        pct = min(current / total, 1.0)
+        filled = int(pct * 30)
+        bar = "=" * filled + "-" * (30 - filled)
+        remaining = max(total - current, 0)
+        eta_sec = remaining / rate if rate > 0 else 0
+        line = f"\r[{bar}] {pct:5.1%} | {current:,}/{total:,} rows | {rate:,.0f} r/s | acc: {accepted:,} | ETA: {_format_time(eta_sec)}"
+    else:
+        line = f"\r{current:,} rows | {rate:,.0f} r/s | acc: {accepted:,} | {_format_time(elapsed)}"
+    sys.stderr.write(line[:120].ljust(120))
+    sys.stderr.flush()
+
+
+def _clear_progress() -> None:
+    """Clear the single-line progress bar on stderr."""
+    if getattr(sys.stderr, "isatty", lambda: False)():
+        sys.stderr.write("\r" + " " * 120 + "\r")
+        sys.stderr.flush()
+
 
 RUN_TYPE_MONTHLY_FULL = "monthly-full"
 RUN_TYPE_WEEKLY_INCREMENTAL = "weekly-incremental"
@@ -58,6 +94,7 @@ class IngestOptions:
     limit: int | None = None
     # The CLI turns this on by default (--include-individuals turns it off).
     organizations_only: bool = False
+    skip_checksum: bool = False
 
 
 @dataclass
@@ -165,9 +202,15 @@ def run_ingest(
     if client is None and not options.dry_run:
         raise ValueError("A Supabase client is required unless --dry-run is set")
 
-    log(f"Checksumming {options.source_path.name} ({options.source_path.stat().st_size / 1024**3:,.1f} GB) ...")
-    checksum, line_count = file_checksum_and_lines(options.source_path, log=log)
-    log(f"Checksum done: {max(line_count - 1, 0):,} data rows. Reading rows ...")
+    if options.skip_checksum:
+        log("Skipping checksum (--skip-checksum)")
+        # Avoid reading the file at all -- use expect_rows (+1 for the header)
+        # as the line count so the truncated-file guard is still satisfied.
+        checksum = ""
+        line_count = (options.expect_rows + 1) if options.expect_rows is not None else 0
+    else:
+        log(f"Checksumming {options.source_path.name} ...")
+        checksum, line_count = file_checksum_and_lines(options.source_path)
     manifest = RunManifest(
         run_type=options.run_type,
         source_file=str(options.source_path),
@@ -235,13 +278,20 @@ def run_ingest(
         client.insert(STAGING_TABLE, [dict(row, refresh_run_id=refresh_run_id) for row in batch])
         staged += len(batch)
         batch.clear()
+        _clear_progress()
         log(f"  staged {staged:,}")
 
     try:
+        total_rows = options.expect_rows if options.expect_rows else None
+        start_time = time.time()
+        last_progress_time = 0.0
+        _print_progress(0, total_rows, 0, start_time)
         for source_row_number, row, index in read_source_rows(options.source_path):
             source_rows += 1
-            if source_rows % READ_PROGRESS_EVERY_ROWS == 0:
-                log(f"  read {source_rows:,} of ~{max(line_count - 1, 0):,} rows ({accepted_rows:,} accepted so far)")
+            now = time.time()
+            if source_rows % 5_000 == 0 or (now - last_progress_time >= 0.5):
+                _print_progress(source_rows, total_rows, accepted_rows, start_time)
+                last_progress_time = now
             provider = mapper(index, row, source_row_number)
             rejection = validator.check(provider)
             if rejection is not None:
@@ -256,6 +306,7 @@ def run_ingest(
             if options.limit is not None and accepted_rows >= options.limit:
                 log(f"Stopping early at --limit {options.limit}")
                 break
+        _clear_progress()
         rejects_path = rejects.close()
 
         manifest.source_rows = source_rows
