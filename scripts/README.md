@@ -176,6 +176,30 @@ select id, started_at, metadata->>'run_type' as run_type
  order by started_at;
 ```
 
+### When a run gets stuck
+
+A staged run that can't be applied (wrong dataset, a rollback that took its
+rows with it) can be applied later or closed out, without downloading
+anything again:
+
+```powershell
+python -m nppes_ingest.medicare --apply-run <run id>
+python -m nppes_ingest.medicare --abort-run <run id> --reason "why"
+python -m nppes_ingest --abort-run <run id> --reason "why"   # NPPES
+```
+
+An abort deletes whatever staging is left and marks the run failed with the
+reason on it. A run that is mid-apply or already applied is refused — those
+are never abortable. Needs `sql/016`. To find candidates:
+
+```sql
+select r.id, r.source, r.status, r.row_count,
+       case r.source when 'nppes'
+            then (select count(*) from public.nppes_refresh_staging s where s.refresh_run_id = r.id)
+            else (select count(*) from public.medicare_refresh_staging s where s.refresh_run_id = r.id) end as staged_now
+  from public.refresh_runs r where r.status = 'staged' order by r.started_at desc;
+```
+
 ### Plumbing
 
 `--batch-size` (default 500) sets rows per staging insert;

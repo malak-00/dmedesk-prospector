@@ -21,10 +21,11 @@ Required manual sequence:
 013_release_claimed_leads.sql     (Return to Prospect)
 014_claim_preflight.sql           (before "Send to Sheet" can refuse anything)
 015_provider_change_alerts.sql    (before the first NPPES apply; needs 007)
+016_refresh_run_recovery.sql      (abort a Medicare run; abort a 'complete' run)
 ```
 
-**Nothing is outstanding right now** except re-running `015` (see its row
-below). The bundle described next is kept for the same situation next time.
+**Outstanding: re-run `015`, and run `016`** (see their rows below). The
+bundle described next is kept for the same situation next time.
 
 **Everything still outstanding is also bundled into one file:**
 [`RUN_PENDING_004_007_015.sql`](./RUN_PENDING_004_007_015.sql) — `004`, `007`
@@ -63,6 +64,7 @@ in `003`); save their output with the run.
 | `013_release_claimed_leads.sql` | `release_claimed_leads()`: "Return to Prospect" as a soft release with a `released` event | Executed 2026-09-17 (Worker deployed after) |
 | `014_claim_preflight.sql` | `identity_group_lookup()` + `claim_leads(..., p_dry_run)`: the claim rules with nothing written, so "Send to Sheet" refuses what claiming would refuse | Executed 2026-09-17 (Worker deployed after) |
 | `015_provider_change_alerts.sql` | `apply_provider_changes_to_leads()`: refreshes claimed leads from an applied release and raises `provider_data_changed` alerts; `provider_change_queue` + `resolve_provider_change()` for the admin queue | Executed 2026-09-17 (in the bundle) — **re-run it**: the sync now only walks NPIs somebody holds a lead for |
+| `016_refresh_run_recovery.sql` | `abort_medicare_refresh()`, and `abort_nppes_refresh()` relaxed to accept a `complete` run: closing out a staged run whose staging is gone | **Not yet run — needed to close out the empty Medicare run** |
 
 ## Notes on individual files
 
@@ -169,6 +171,19 @@ live in `provider_change_decisions` rather than on the event, because
 `lead_ownership_events` is append-only. `python -m nppes_ingest --apply`
 runs it automatically once the apply finishes (`--skip-lead-sync` opts out;
 applying the same run again picks it up later). Rerun-safe.
+
+**`016`** closes out a run that can't go anywhere. A Medicare run was left
+at `staged` / `staging_state = complete` with `row_count` 60,060 while
+`medicare_refresh_staging` held none of its rows — the loader's rollback
+deleted the rows and then failed to mark the run failed. Applying it is
+correctly refused ("staging count changed (0 staged, 60060 recorded)"), but
+nothing could close it: Medicare had no abort, and `abort_nppes_refresh`
+refused any run whose `staging_state` was `complete`. Now there is an abort
+per source, and the rule that matters is the one enforced — a run that is
+mid-apply or applied is never abortable. The loader was fixed to mark a run
+failed *before* deleting its rows, so a half-finished rollback leaves a
+failed run with orphan rows (which every apply refuses) instead of a run
+that still looks applyable. Rerun-safe.
 
 **`014`** makes "Send to Sheet" ask before it copies. It used to write a
 rep's search results into their `Claimed - <Name>` tab without asking the

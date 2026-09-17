@@ -287,19 +287,37 @@ def run_medicare_refresh(
     except Exception as err:
         if run_id is not None:
             log(f"Staging failed ({err}); rolling back run {run_id}")
+            # The run is marked failed first, on purpose. If the delete below
+            # fails instead, what's left is a failed run with orphan staging
+            # rows -- which every apply refuses -- rather than a run that
+            # still looks staged and has nothing in it to apply.
             try:
-                client.delete(STAGING_TABLE, {"refresh_run_id": f"eq.{run_id}"})
                 client.update(REFRESH_RUNS_TABLE, {"id": f"eq.{run_id}"}, {
                     "status": "failed",
                     "metadata": {"run_type": RUN_TYPE, "dataset_id": dataset_id, "staging_state": "failed", "failure_reason": str(err)},
                 })
             except Exception as cleanup_err:  # pragma: no cover - best effort
-                log(f"Could not clean up run {run_id}: {cleanup_err}")
+                log(f"Could not mark run {run_id} failed: {cleanup_err}")
+            try:
+                client.delete(STAGING_TABLE, {"refresh_run_id": f"eq.{run_id}"})
+            except Exception as cleanup_err:  # pragma: no cover - best effort
+                log(f"Could not delete the staged rows of run {run_id}: {cleanup_err}")
         result.manifest_path = _write_manifest(options, result, "failed", str(err))
         raise
 
     if options.apply:
-        result.applied = client.rpc("apply_medicare_refresh", {"p_run_id": run_id})
+        try:
+            result.applied = client.rpc("apply_medicare_refresh", {"p_run_id": run_id})
+        except Exception as err:
+            # The release itself is staged and fine; only the apply was
+            # refused (most often: this content has already been applied).
+            log(
+                f"Staged run {run_id} could not be applied ({err}). The rows are staged, so retry with "
+                f"--apply-run {run_id} once the cause is dealt with, or close the run out with "
+                f"--abort-run {run_id} --reason \"...\"."
+            )
+            result.manifest_path = _write_manifest(options, result, "staged", str(err))
+            raise
         log(f"Applied: {result.applied}")
     result.manifest_path = _write_manifest(options, result, "applied" if options.apply else "staged")
     return result
@@ -324,6 +342,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dataset-id", help="Pin a CMS dataset version UUID instead of discovering the newest")
     parser.add_argument("--no-discover", action="store_true", help="Don't read the CMS catalog; use --dataset-id or the last known version")
     parser.add_argument("--apply", action="store_true", help="Apply the staged release to npi_cms_enrichment")
+    parser.add_argument("--apply-run", help="Apply an already staged run (by UUID) -- no download")
+    parser.add_argument("--abort-run", help="Close out a staged run (by UUID) that can't be applied; needs --reason")
+    parser.add_argument("--reason", help="Required reason for --abort-run")
     parser.add_argument("--dry-run", action="store_true", help="Read and validate only; write nothing (needs no credentials)")
     parser.add_argument("--page-size", type=int, default=DEFAULT_PAGE_SIZE)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
@@ -335,6 +356,25 @@ def main(argv: list[str] | None = None) -> int:
     if args.apply and args.dry_run:
         print("error: --apply can't be combined with --dry-run", flush=True)
         return 2
+
+    if args.apply_run or args.abort_run:
+        if args.apply_run and args.abort_run:
+            print("error: choose only one run command", flush=True)
+            return 2
+        if args.abort_run and not args.reason:
+            print("error: --abort-run requires --reason", flush=True)
+            return 2
+        try:
+            client = SupabaseClient(load_supabase_config(args.env_file))
+            if args.apply_run:
+                print(client.rpc("apply_medicare_refresh", {"p_run_id": args.apply_run}), flush=True)
+            else:
+                print(client.rpc("abort_medicare_refresh",
+                                 {"p_run_id": args.abort_run, "p_reason": args.reason}), flush=True)
+            return 0
+        except (ConfigError, RuntimeError, ValueError) as err:
+            print(f"error: {err}", flush=True)
+            return 1
     options = MedicareOptions(
         output_dir=args.output_dir, dataset_id=args.dataset_id, discover=not args.no_discover,
         page_size=args.page_size, batch_size=args.batch_size, dry_run=args.dry_run, apply=args.apply, label=args.label,

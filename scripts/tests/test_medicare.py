@@ -165,7 +165,44 @@ class MedicareRunTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 run_medicare_refresh(self._options(tmp), client, fetch_json=FakeCms(make_rows(), reported=50), log=quiet)
             self.assertEqual(client.deletes, [("medicare_refresh_staging", {"refresh_run_id": "eq.run-1"})])
-            self.assertEqual(client.updates[-1][1]["status"], "failed")
+            self.assertTrue(any(values.get("status") == "failed" for _f, values in client.updates))
+
+    def test_the_run_is_marked_failed_before_its_rows_are_deleted(self):
+        """A run left 'staged' with nothing staged looks applyable and isn't."""
+        with tempfile.TemporaryDirectory() as tmp:
+            order = []
+
+            class OrderedClient(FakeClient):
+                def update(self, table, filters, values):
+                    if values.get("status") == "failed":
+                        order.append("marked failed")
+                    return super().update(table, filters, values)
+
+                def delete(self, table, filters):
+                    order.append("deleted rows")
+                    return super().delete(table, filters)
+
+            with self.assertRaises(RuntimeError):
+                run_medicare_refresh(self._options(tmp), OrderedClient(), fetch_json=FakeCms(make_rows(), reported=50), log=quiet)
+            self.assertEqual(order, ["marked failed", "deleted rows"])
+
+    def test_a_refused_apply_keeps_the_staged_release_and_says_how_to_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            class RefusesApply(FakeClient):
+                def rpc(self, function, params=None):
+                    self.rpcs.append((function, params))
+                    raise RuntimeError("this release was already applied")
+
+            messages = []
+            client = RefusesApply()
+            with self.assertRaises(RuntimeError):
+                run_medicare_refresh(self._options(tmp, apply=True), client, fetch_json=FakeCms(make_rows()), log=messages.append)
+            # The rows stay staged -- only the apply was refused.
+            self.assertEqual(client.deletes, [])
+            self.assertTrue(any("--apply-run run-1" in m and "--abort-run run-1" in m for m in messages), messages)
+            self.assertEqual(json.loads(Path(tmp, "medicare-test.manifest.json").read_text())["status"], "staged")
+
+
 
     def test_dry_run_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -187,6 +224,37 @@ class MedicareRunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):
                 run_medicare_refresh(self._options(tmp, apply=True, dry_run=True), None, fetch_json=FakeCms(make_rows()), log=quiet)
+
+
+class MedicareRunCommandTests(unittest.TestCase):
+    """Applying or closing out a run that is already staged."""
+
+    def _run(self, argv, client):
+        from unittest import mock
+
+        from nppes_ingest import medicare
+
+        with mock.patch.object(medicare, "load_supabase_config", return_value=object()),                 mock.patch.object(medicare, "SupabaseClient", return_value=client),                 mock.patch("builtins.print"):
+            return medicare.main(argv)
+
+    def test_apply_run_applies_without_downloading(self):
+        client = FakeClient()
+        self.assertEqual(self._run(["--apply-run", "run-9"], client), 0)
+        self.assertEqual(client.rpcs, [("apply_medicare_refresh", {"p_run_id": "run-9"})])
+        self.assertEqual(client.staged, [])
+
+    def test_abort_run_needs_a_reason(self):
+        client = FakeClient()
+        self.assertEqual(self._run(["--abort-run", "run-9"], client), 2)
+        self.assertEqual(client.rpcs, [])
+
+    def test_abort_run_closes_the_run_out(self):
+        client = FakeClient()
+        self.assertEqual(self._run(["--abort-run", "run-9", "--reason", "staging was rolled back"], client), 0)
+        self.assertEqual(client.rpcs, [("abort_medicare_refresh", {"p_run_id": "run-9", "p_reason": "staging was rolled back"})])
+
+    def test_only_one_run_command_at_a_time(self):
+        self.assertEqual(self._run(["--apply-run", "a", "--abort-run", "b", "--reason", "x"], FakeClient()), 2)
 
 
 if __name__ == "__main__":
