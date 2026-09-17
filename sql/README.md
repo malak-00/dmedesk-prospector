@@ -27,15 +27,15 @@ Required manual sequence:
 **Outstanding: re-run `015`, and run `016`** (see their rows below). The
 bundle described next is kept for the same situation next time.
 
-**Everything still outstanding is also bundled into one file:**
-[`RUN_PENDING_004_007_015.sql`](./RUN_PENDING_004_007_015.sql) — `004`, `007`
-and `015`, unchanged apart from their own `begin`/`commit`, wrapped in a
-single transaction so a failure anywhere leaves the database untouched. Paste
-the whole file with nothing selected (a partial selection cuts a
-dollar-quoted function body in half), then run the verification queries at
-its bottom. Running the three files individually, in order, does exactly the
-same thing. It was tested by installing it on top of everything already run
-here and then driving a full refresh through it.
+**Everything still outstanding is bundled into one file:**
+[`RUN_PENDING.sql`](./RUN_PENDING.sql) — regenerated whenever the backlog
+changes, currently `015` (re-run) and `016`, unchanged apart from their own
+`begin`/`commit` and wrapped in a single transaction, so a failure anywhere
+leaves the database untouched. Paste the whole file with nothing selected (a
+partial selection cuts a dollar-quoted function body in half), then run the
+verification queries at its bottom — they also list any release that was
+applied without reaching claimed leads, and any run stuck in `staged` with no
+rows. Running the files individually, in order, does exactly the same thing.
 
 Run each file in the Supabase SQL Editor, save its read-only verification
 output, and stop if verification reports an error. No SQL is executed
