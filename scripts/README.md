@@ -111,6 +111,9 @@ Deactivation files carry no entity type and are never filtered this way.
 - `--expect-rows N` with `--row-count-tolerance PCT` (default 5%) refuses a
   release whose row count is outside the expected range. It is checked from a
   line count before anything is staged, and again against the parsed rows.
+  With `--skip-checksum` there is no line count, so only the second check
+  runs: a truncated file is staged and then rolled back rather than refused
+  up front.
 - Every NPI is checked against the **CMS check digit** (Luhn over the 80840
   issuer prefix).
 - Duplicate NPIs within one release are rejected after the first.
@@ -144,7 +147,17 @@ Medicare data. Install `sql/012_medicare_refresh.sql` first.
 ### Plumbing
 
 `--batch-size` (default 500) sets rows per staging insert;
-`--apply-batch-size` (default 1000) sets rows per apply transaction.
+`--apply-batch-size` (default 1000) sets rows per apply transaction. If a
+batch hits the database statement timeout, apply halves the batch size and
+retries, down to 50.
+
+`--skip-checksum` skips the SHA-256 pre-pass over the source file. That pass
+reads all 11 GB before any rows are staged, which is slow over the
+`\GGO-FILESERVER` share -- copy the file locally if you can, and use this
+flag if you can't. The run is then identified by
+`nohash:<file name>:<size>:<mtime>` instead of a content hash, so the
+"same file already applied" guard still works between runs, but it can't
+notice that two files with the same name and size differ in content.
 
 ## Output
 

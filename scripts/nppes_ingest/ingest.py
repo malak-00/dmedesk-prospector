@@ -203,14 +203,22 @@ def run_ingest(
         raise ValueError("A Supabase client is required unless --dry-run is set")
 
     if options.skip_checksum:
-        log("Skipping checksum (--skip-checksum)")
-        # Avoid reading the file at all -- use expect_rows (+1 for the header)
-        # as the line count so the truncated-file guard is still satisfied.
-        checksum = ""
-        line_count = (options.expect_rows + 1) if options.expect_rows is not None else 0
+        # Reading 11 GB over a network share twice is slow, so --skip-checksum
+        # avoids the pre-pass entirely. The apply step still needs something
+        # that identifies this file, or two different skipped releases would
+        # look identical to the "already applied" guard (and a genuinely new
+        # release could be refused), so record size+mtime+name instead of a
+        # content hash, clearly marked as not one.
+        stat = options.source_path.stat()
+        checksum = f"nohash:{options.source_path.name}:{stat.st_size}:{int(stat.st_mtime)}"
+        log(f"Skipping checksum (--skip-checksum); identifying the file as {checksum}")
+        # Without the pre-pass there is no line count, so the truncated-file
+        # guard can only run after the rows are read (it still does).
+        line_count = 0
     else:
-        log(f"Checksumming {options.source_path.name} ...")
-        checksum, line_count = file_checksum_and_lines(options.source_path)
+        log(f"Checksumming {options.source_path.name} ({options.source_path.stat().st_size / 1024**3:,.1f} GB) ...")
+        checksum, line_count = file_checksum_and_lines(options.source_path, log=log)
+        log(f"Checksum done: {max(line_count - 1, 0):,} data rows. Reading rows ...")
     manifest = RunManifest(
         run_type=options.run_type,
         source_file=str(options.source_path),
@@ -239,10 +247,13 @@ def run_ingest(
     # and taxonomy filters legitimately remove most of a national file. The
     # line count (minus the header) is checked before anything is staged;
     # the exact parsed row count is checked again once the file is read.
-    try:
-        check_expected_row_count(max(line_count - 1, 0), options.expect_rows, options.row_count_tolerance)
-    except Exception as err:
-        raise fail_before_staging(str(err)) from err
+    if not options.skip_checksum:
+        try:
+            check_expected_row_count(max(line_count - 1, 0), options.expect_rows, options.row_count_tolerance)
+        except Exception as err:
+            raise fail_before_staging(str(err)) from err
+    elif options.expect_rows is not None:
+        log("Note: with --skip-checksum the row count is only checked after reading, so a truncated file is staged and then rolled back")
 
     validator = RowValidator(
         states=options.states,
