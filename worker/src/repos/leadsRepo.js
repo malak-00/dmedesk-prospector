@@ -101,10 +101,18 @@ function companyToLeadRow(company, session, { status, isDisconnected }) {
 // SheetsStore.getClaimedNpis. Targeted at a candidate list (one NPPES page
 // at a time, <=200 NPIs) instead of scanning the whole `leads` table, which
 // used to be reloaded in full on every single search request.
+//
+// A released lead (returned to Prospect: the row stays with claimed_by null,
+// see sql/013) must NOT be filtered out -- that's the whole point of
+// returning it. Disconnected rows still are, claimed or not.
 export async function getClaimedNpisAmong(supabase, npis) {
   const candidates = [...new Set((npis || []).map(String).filter(Boolean))];
   if (candidates.length === 0) return new Set();
-  const { data, error } = await supabase.from("leads").select("npi").in("npi", candidates);
+  const { data, error } = await supabase
+    .from("leads")
+    .select("npi")
+    .or("claimed_by.not.is.null,is_disconnected.is.true")
+    .in("npi", candidates);
   if (error) throw httpError(500, "Failed to load claimed NPIs: " + error.message);
   return new Set((data || []).map((row) => String(row.npi)));
 }
@@ -415,19 +423,26 @@ export async function moveClaimedLeadsToDisconnected(supabase, npis, session) {
   return { movedCount: foundNpis.size, notFound };
 }
 
+// Releasing is a soft release in SQL (sql/013_release_claimed_leads.sql), not
+// a delete: the lead row keeps its ownership history, which a delete can't --
+// the foreign key would null lead_ownership_events.lead_id and the
+// append-only trigger rejects that. The row stays with claimed_by = null, so
+// the NPI (and its identity group, unless the owner still holds another NPI
+// in it) is free for anyone to claim again.
 export async function returnClaimedLeadsToProspect(supabase, npis, session) {
   npis = (npis || []).map(String).filter(Boolean);
   if (npis.length === 0) throw httpError(400, "At least one NPI is required");
 
-  const { data: existing, error: findErr } = await supabase.from("leads").select("npi").eq("claimed_by", session.id).in("npi", npis);
-  if (findErr) throw httpError(500, "Failed to look up leads: " + findErr.message);
-  const foundNpis = new Set((existing || []).map((r) => String(r.npi)));
-  const notFound = npis.filter((npi) => !foundNpis.has(npi));
+  const { data, error } = await supabase.rpc("release_claimed_leads", { p_user_id: session.id, p_npis: npis });
+  if (error) {
+    if (error.code === "PGRST202" || /Could not find the function/i.test(error.message || "")) {
+      throw httpError(503, "Returning leads to Prospect isn't installed yet. Run sql/013_release_claimed_leads.sql in Supabase, then try again.");
+    }
+    throw httpError(500, "Failed to return leads to Prospect: " + error.message);
+  }
 
-  const { error } = await supabase.from("leads").delete().eq("claimed_by", session.id).in("npi", npis);
-  if (error) throw httpError(500, "Failed to return leads to Prospect: " + error.message);
-
-  return { returnedCount: foundNpis.size, notFound };
+  const result = data || {};
+  return { returnedCount: result.released_count || 0, notFound: result.not_found || [] };
 }
 
 async function requireOwnLead(supabase, npi, session) {

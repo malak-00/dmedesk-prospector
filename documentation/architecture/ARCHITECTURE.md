@@ -182,6 +182,15 @@ Username lookups (login, `seed-user.mjs`, this endpoint) use
 
 Related lifecycle operations:
 
+- `POST /leads/return-to-prospect` — `release_claimed_leads()`
+  (`sql/013`): writes a `released` ownership event and clears `claimed_by`,
+  `claimed_at` and `reminder_at`, resetting status to `new`. It is a soft
+  release, not a delete: deleting the lead would make the foreign key null
+  `lead_ownership_events.lead_id`, which the append-only trigger rejects.
+  The released row stays in `leads` with `claimed_by = null`; every
+  ownership check tests `claimed_by is not null`, and
+  `getClaimedNpisAmong` only hides actively claimed or disconnected NPIs, so
+  a released lead is searchable and claimable again.
 - `POST /leads/disconnect` — `update` sets `is_disconnected = true`, scoped
   to the caller's own rows.
 - `POST /leads/return-to-prospect` — **deletes** the caller's rows, so the

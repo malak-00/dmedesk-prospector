@@ -376,6 +376,31 @@ class StreamingIngestTests(unittest.TestCase):
             cli.main([str(SAMPLE), "--run-type", RUN_TYPE_MONTHLY_FULL, "--taxonomy-codes", "332B00000X", "--dry-run", "--include-individuals"])
             self.assertFalse(captured["options"].organizations_only)
 
+    def test_skip_checksum_identifies_the_file_without_hashing_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FakeSupabaseClient()
+            result = run_ingest(self._options(tmp, skip_checksum=True), client, log=quiet)
+            checksum = result.manifest.source_checksum
+            self.assertTrue(checksum.startswith("nohash:nppes_sample.csv:"), checksum)
+            self.assertNotEqual(checksum, "")
+            self.assertEqual(result.manifest.staged_rows, 3)
+
+    def test_skip_checksum_still_refuses_a_truncated_file_after_reading(self) -> None:
+        """Without a pre-pass there is no line count, so the guard runs after reading.
+
+        Whatever was staged on the way is rolled back, so a truncated release
+        still never ends up looking like a complete one.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FakeSupabaseClient()
+            with self.assertRaises(RuntimeError):
+                run_ingest(self._options(tmp, skip_checksum=True, expect_rows=10000, batch_size=1), client, log=quiet)
+            self.assertEqual(client.deletes, [{"refresh_run_id": "eq.00000000-0000-4000-8000-000000000001"}])
+            self.assertTrue(any(values.get("status") == "failed" for _f, values in client.updates))
+            self.assertFalse(
+                any(values.get("metadata", {}).get("staging_state") == "complete" for _f, values in client.updates)
+            )
+
     def test_matching_expected_row_count_is_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = FakeSupabaseClient()
