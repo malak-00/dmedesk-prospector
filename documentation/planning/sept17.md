@@ -548,3 +548,40 @@ Incorporate `VACUUM` into the post-apply step:
 #### 5. Strict Taxonomy Pre-Filtering Before Staging
 Ensure `ingest.py` only stages providers that match targeted DMEPOS taxonomies (e.g. `332B00000X`, `333600000X`, `335E00000X`) and organization types (NPI Type 2). Never stage general/individual medical providers into Supabase Postgres.
 
+---
+
+### Current Status & Safe Headroom Actions (Post-Truncation)
+
+**Current Metric**: `0.488 GB / 0.5 GB (98%)` &mdash; **Quota Violation Cleared**
+
+> [!NOTE]
+> Supabase dashboard metrics can take up to **1 hour** to reflect newly reclaimed disk space. While the restriction is lifted, 98% is close to the margin (12 MB headroom). 
+
+#### Immediate Action to Expand Headroom to ~150 MB (30% Capacity)
+To reclaim physical disk blocks back to the OS and prevent creeping back over 500 MB during regular app use, run in the **Supabase SQL Editor**:
+
+```sql
+-- 1. Reclaim physical disk from truncated tables
+VACUUM FULL public.nppes_refresh_staging;
+VACUUM FULL public.medicare_refresh_staging;
+
+-- 2. Compact remaining large tables
+VACUUM FULL public.npi_records;
+VACUUM FULL public.provider_field_history;
+```
+
+---
+
+## Sept 17 Implementation Master Checklist
+
+- [x] **Database Quota Recovery**: Truncated staging tables; size dropped from 0.742 GB (148%) to 0.488 GB (98%).
+- [ ] **Physical Disk Compaction**: Run `VACUUM FULL` to drop size from 98% down to ~30–40% (~150 MB).
+- [ ] **SQL Immutability Fix**: Deploy `public.release_claimed_leads()` RPC to soft-release leads (`claimed_by = NULL`) and append audit event (`event_type = 'released'`) instead of hard deleting from `leads`.
+- [ ] **Search Query Sync**: Update `leadsRepo.getClaimedNpisAmong()` in worker to filter `WHERE claimed_by IS NOT NULL` so released leads resurface in Prospect.
+- [ ] **BD Meetings Sync Route**: Add `POST /admin/claim-for-user` in [`worker/src/index.js`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/worker/src/index.js) and deploy worker.
+- [ ] **BD Meetings Script Properties**: Configure worker URL + admin credentials in Apps Script properties and activate trigger.
+- [ ] **Claimed Tab Merges**: Join `lead_groups` in `listClaimedLeads()` and wire `locationsBadge` and branch locations into Claimed view.
+- [ ] **Send to Sheets Validation**: Add ownership preflight checks and unroll `company.locations` so branch NPIs are not dropped.
+- [ ] **NPPES Lifecycle Guard**: Update `sql/007`'s `finish_nppes_apply()` to auto-delete staging rows and remove `record_created` full-JSON snapshots.
+
+
