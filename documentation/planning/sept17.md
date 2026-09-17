@@ -211,3 +211,96 @@ Instead of hard-deleting the row from `leads`:
      .eq("is_disconnected", false)
      .in("npi", candidates);
    ```
+
+---
+
+The CLI (`scripts/nppes_ingest/`) handles provider updates through a **staged, compare-before-update pipeline** governed by a strict boundary: **the CLI updates registry records (`npi_records`), but never touches sales ownership (`leads.claimed_by`)**.
+
+Here is how the CLI handles updating information and tracking name, location, and ownership changes:
+
+---
+
+### 1. How the CLI Updates Info (The Ingest & Apply Loop)
+
+The process runs in two distinct stages:
+
+```
+Source CSV (NPPES / CMS)
+       │
+       ▼ [ingest.py]
+Stage into public.nppes_refresh_staging (under one refresh_run_id)
+       │
+       ▼ [apply.py -> SQL: apply_nppes_refresh_batch]
+Compare staged values vs public.npi_records (canonical normalization)
+       ├──> Write diffs to public.provider_field_history (Audit Trail)
+       └──> Update / Insert public.npi_records (Registry Source of Truth)
+```
+
+1. **Staging (`ingest.py`)**:
+   - Computes SHA-256 and line count up front (protecting against truncated/partial files).
+   - Validates NPIs, filters by enabled taxonomies, and normalizes headers.
+   - Bulk-inserts rows into `nppes_refresh_staging` attached to a `refresh_runs` record with status `'staged'`.
+2. **Batched Comparison & Apply (`apply.py` & [`sql/007_nppes_refresh_lifecycle.sql`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/sql/007_nppes_refresh_lifecycle.sql))**:
+   - Executes `apply_nppes_refresh_batch(run_id, batch_size=500)`.
+   - Normalizes text, whitespace, and phone formats via `nppes_canonical_value()`.
+   - **Field-by-field diff**: If an incoming value differs from the existing value in `npi_records`, it inserts an audit row into `public.provider_field_history` **before** updating `npi_records`.
+
+---
+
+### 2. How Location and Name Changes are Handled
+
+The CLI does not blindly overwrite records. Every change to a provider's location, name, or contacts is tracked as a distinct historical event:
+
+- **Location Changes**:
+  - Tracked columns: `address_line1`, `address_line2`, `address_city`, `address_state`, `address_postalcode`, `phone`.
+  - If a supplier relocates or changes phone, a record is added to `provider_field_history`:
+    ```json
+    {
+      "npi": "1234567890",
+      "field_name": "address_city",
+      "old_value": "Dallas",
+      "new_value": "Fort Worth",
+      "refresh_run_id": "...",
+      "source": "nppes"
+    }
+    ```
+- **Name & Contact Changes**:
+  - Tracked columns: `name`, `authorizedofficial_firstname`, `authorizedofficial_lastname`, `authorizedofficial_title`, `authorizedofficial_phone`.
+  - Stored identically in `provider_field_history`:
+    ```json
+    {
+      "npi": "1234567890",
+      "field_name": "name",
+      "old_value": "Acme Medical Supply LLC",
+      "new_value": "Acme Health Group Inc",
+      "refresh_run_id": "...",
+      "source": "nppes"
+    }
+    ```
+
+---
+
+### 3. How Ownership Changes and Alerts are Handled
+
+The CLI **intentionally does not alter lead ownership**:
+
+- `leads.claimed_by`, notes, status, and callback reminders belong to the sales reps. An external data import is never allowed to erase or reassign a rep's claim.
+- Instead of silently reassigning leads, the system creates **review alerts**:
+  - When high-signal changes occur on active claimed leads (organization name changes, official phone changes, deactivations, state moves, or Medicare claim volume drops > 50%), an event is logged to `lead_ownership_events`:
+    ```sql
+    event_type = 'provider_data_changed'
+    requires_review = true
+    review_status = 'pending'
+    metadata = {"changed_fields": ["name", "phone"], "old_values": {...}, "new_values": {...}}
+    ```
+
+---
+
+### 4. What is Displayed (CLI vs Database vs UI)
+
+| Surface              | What is Displayed             | Details                                                                                                                                                                                                                         |
+| -------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CLI Console**      | **Aggregate Batch Metrics**   | Shows stream progress per batch: <br>`batch 1: 500 rows (+14 new, 32 updated, 68 field changes) -- 3,500 remaining`<br>`Applied run: 120 new, 280 updated, 620 unchanged, 510 field changes recorded in provider_field_history` |
+| **CLI Output Files** | **Manifest & Rejection Logs** | Writes `scripts/out/<label>-manifest.json` (checksum, duration, counts) and rejects CSV (dropped rows + reasons: invalid NPI, individual provider, non-matching taxonomy).                                                      |
+| **Database Audit**   | **Full Granular Diffs**       | Full history queryable in `provider_field_history` (old vs new for each column) and `lead_ownership_events`.                                                                                                                    |
+| **Web App UI**       | **Admin Review Queues**       | Provider data alerts and identity group conflicts appear in the **Admin Tab** under _Ownership conflicts_ and _Identity match review_ for manual sign-off and merging.                                                          |
