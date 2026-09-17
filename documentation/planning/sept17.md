@@ -500,3 +500,51 @@ wrangler deploy
 | `PROSPECTOR_USER_Nora` | `nora` |
 
 Then run `setupProspectorSyncTrigger()` once from the Apps Script editor to activate the 30-min trigger.
+
+---
+
+## Database Storage Protection & Future Prevention Plan (Free Tier Safety)
+
+### Why the Database Exceeded Quota
+The database size reached **690 MB / 500 MB (138%)** due to two design flaws in the NPPES ingestion pipeline:
+1. **Permanent Staging Retention**: Staged rows in `nppes_refresh_staging` (~256 MB with indexes) were never automatically deleted after `--apply`.
+2. **Full-Row JSON Snapshots in History**: For every newly discovered NPI, `sql/007` inserted a full JSON snapshot (`field_name = 'record_created'`) into `provider_field_history`, bloating it to **~325 MB**.
+3. **PostgreSQL Dead-Tuple Bloat**: Bulk UPDATEs and INSERTs left dead space that was never reclaimed to the OS via `VACUUM`.
+
+Together, these two temporary/audit tables occupied **581 MB out of 690 MB (84% of the database)**, while the core sales pipeline (`leads`, `app_users`, `lead_groups`) took **< 10 MB**.
+
+---
+
+### Permanent Prevention Strategy (5 Rules to Never Exceed 500 MB)
+
+#### 1. Auto-Purge Staging in `finish_nppes_apply()`
+Staging tables must be strictly ephemeral. Once staged rows are applied to `npi_records`, they should be deleted immediately inside `finish_nppes_apply()` in [`sql/007_nppes_refresh_lifecycle.sql`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/sql/007_nppes_refresh_lifecycle.sql):
+
+```sql
+-- In finish_nppes_apply(p_run_id):
+delete from public.nppes_refresh_staging where refresh_run_id = p_run_id;
+```
+*The source CSV and `scripts/out/<label>-manifest.json` already provide durable audit records outside the database.*
+
+#### 2. Stop Inserting Full JSON `record_created` Snapshots
+New providers already exist in full in `public.npi_records`. Storing a duplicate JSON copy in `provider_field_history` for tens of thousands of providers causes massive bloat.
+
+- **Rule**: Only insert into `provider_field_history` when an **existing provider's field actually changes** (`name`, `phone`, `address`, `authorizedofficial`).
+- **Fix**: Remove the `insert into public.provider_field_history ... select s.npi, 'record_created' ...` block from `sql/007_nppes_refresh_lifecycle.sql:285-291`.
+
+#### 3. CLI Preflight Storage Guard (`scripts/nppes_ingest/`)
+Before `python -m nppes_ingest` begins staging, it should query current database storage:
+- If current DB size > **350 MB**, the CLI aborts before staging:
+  ```
+  ERROR: Database storage guard triggered (380 MB / 500 MB).
+  Refusing to stage new release. Purge old staging or vacuum before proceeding.
+  ```
+- This prevents a running script from blindly pushing Supabase into read-only mode mid-ingest.
+
+#### 4. Post-Ingest Automated Maintenance
+Incorporate `VACUUM` into the post-apply step:
+- After purging staging, running `VACUUM public.nppes_refresh_staging;` and `VACUUM public.npi_records;` returns reclaimed space back to PostgreSQL's free space map so subsequent runs reuse existing allocated disk without growing the physical database size.
+
+#### 5. Strict Taxonomy Pre-Filtering Before Staging
+Ensure `ingest.py` only stages providers that match targeted DMEPOS taxonomies (e.g. `332B00000X`, `333600000X`, `335E00000X`) and organization types (NPI Type 2). Never stage general/individual medical providers into Supabase Postgres.
+
