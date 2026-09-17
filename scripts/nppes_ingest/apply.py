@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-DEFAULT_APPLY_BATCH_SIZE = 1000
+DEFAULT_APPLY_BATCH_SIZE = 500
 COUNTERS = ("processed", "inserted", "updated", "unchanged", "skipped", "changed_fields")
 
 
@@ -38,10 +38,20 @@ def run_apply(
         raise ValueError("batch size must be at least 1")
 
     result = ApplyResult(run_id=run_id)
+    current_batch_size = batch_size
     while True:
         if max_batches is not None and result.batches >= max_batches:
             raise RuntimeError(f"Stopped after {max_batches} batches with rows still remaining")
-        batch = client.rpc("apply_nppes_refresh_batch", {"p_run_id": run_id, "p_batch_size": batch_size})
+        try:
+            batch = client.rpc("apply_nppes_refresh_batch", {"p_run_id": run_id, "p_batch_size": current_batch_size})
+        except Exception as err:
+            err_msg = str(err).lower()
+            if ("statement timeout" in err_msg or "57014" in err_msg) and current_batch_size > 50:
+                new_size = max(current_batch_size // 2, 50)
+                log(f"  statement timeout with batch size {current_batch_size}; reducing to {new_size} and retrying...")
+                current_batch_size = new_size
+                continue
+            raise
         if not isinstance(batch, dict):
             raise RuntimeError(f"Unexpected apply response: {batch!r}")
         result.batches += 1
