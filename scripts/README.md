@@ -156,9 +156,25 @@ work through them under Provider changes. Nothing the rep owns (status,
 notes, reminders, ownership) is touched, and no lead is moved between
 identity groups — a name or phone change is flagged for an admin instead.
 
-`--skip-lead-sync` leaves that step out; running the same run again with
-`--apply-run <id>` performs it later, which is also what to do if `sql/015`
-wasn't installed at the time (the apply says so and continues).
+`--skip-lead-sync` leaves that step out. To run it later — for a release
+applied before this step existed, or after installing `sql/015` — use:
+
+```powershell
+python -m nppes_ingest --sync-run <refresh run id>
+```
+
+`--apply-run <id>` on a run that is already applied does the same thing
+rather than failing, since there are no staged rows left to apply. The sync
+reads `provider_field_history`, not staging, so it works for any applied run.
+Find the runs that never had it:
+
+```sql
+select id, started_at, metadata->>'run_type' as run_type
+  from public.refresh_runs
+ where source = 'nppes' and metadata->>'apply_state' = 'applied'
+   and metadata->>'lead_sync_state' is null
+ order by started_at;
+```
 
 ### Plumbing
 

@@ -23,6 +23,9 @@ Required manual sequence:
 015_provider_change_alerts.sql    (before the first NPPES apply; needs 007)
 ```
 
+**Nothing is outstanding right now** except re-running `015` (see its row
+below). The bundle described next is kept for the same situation next time.
+
 **Everything still outstanding is also bundled into one file:**
 [`RUN_PENDING_004_007_015.sql`](./RUN_PENDING_004_007_015.sql) — `004`, `007`
 and `015`, unchanged apart from their own `begin`/`commit`, wrapped in a
@@ -48,10 +51,10 @@ in `003`); save their output with the run.
 | `002_identity_backfill.sql` | First draft of the backfill | **Superseded — do not run** |
 | `002_identity_backfill_safe.sql` | Safe identity + historical-claim backfill | Executed 2026-08-31 |
 | `003_identity_verification.sql` | Read-only validation queries | Executed 2026-08-31 |
-| `004_nppes_refresh_staging.sql` | Staging table written by `scripts/nppes_ingest` | **Not yet run** |
+| `004_nppes_refresh_staging.sql` | Staging table written by `scripts/nppes_ingest` | Executed 2026-09-17 (in the bundle) |
 | `005_ownership_conflict_resolution.sql` | `resolve_ownership_conflict()` + `ownership_conflicts` view | Executed 2026-09-16 |
 | `006_resolve_known_conflicts.sql` | Applies the two approved owner decisions | Executed 2026-09-16 (approver: Ben Arthur) |
-| `007_nppes_refresh_lifecycle.sql` | Recover/abort staging, `nppes_apply_column_map()`, batched schema-adaptive `apply_nppes_refresh_batch()` + `finish_nppes_apply()` | **Not yet run — after 004, before the first `--apply`** |
+| `007_nppes_refresh_lifecycle.sql` | Recover/abort staging, `nppes_apply_column_map()`, batched schema-adaptive `apply_nppes_refresh_batch()` + `finish_nppes_apply()` | Executed 2026-09-17 (in the bundle) |
 | `008_identity_match_tiers.sql` | Three-tier identity keys, regroup of existing leads, `conflict_detected` events, `identity_review_candidates` view | Executed 2026-09-16 |
 | `009_identity_match_review.sql` | `identity_match_decisions`, `identity_review_queue` view, `resolve_identity_match()` for the admin Possible duplicates screen | Executed 2026-09-16 |
 | `010_group_aware_claim.sql` | Identity helpers, `owned_group_npis()` for search, `assign_lead_groups()`, `identity_claim_requests`, extended `identity_review_queue`, backfill of ungrouped leads (`claim_leads()` now lives in 011) | Executed 2026-09-16 (Worker deployed after) |
@@ -59,7 +62,7 @@ in `003`); save their output with the run.
 | `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | Executed 2026-09-17; re-run 2026-09-17 with the narrowed duplicate guard, so the 9,292 suppliers skipped on the first load can be picked up by the next `--apply` |
 | `013_release_claimed_leads.sql` | `release_claimed_leads()`: "Return to Prospect" as a soft release with a `released` event | Executed 2026-09-17 (Worker deployed after) |
 | `014_claim_preflight.sql` | `identity_group_lookup()` + `claim_leads(..., p_dry_run)`: the claim rules with nothing written, so "Send to Sheet" refuses what claiming would refuse | Executed 2026-09-17 (Worker deployed after) |
-| `015_provider_change_alerts.sql` | `apply_provider_changes_to_leads()`: refreshes claimed leads from an applied release and raises `provider_data_changed` alerts; `provider_change_queue` + `resolve_provider_change()` for the admin queue | **Not yet run — before the first NPPES apply, or claimed leads won't follow the release** |
+| `015_provider_change_alerts.sql` | `apply_provider_changes_to_leads()`: refreshes claimed leads from an applied release and raises `provider_data_changed` alerts; `provider_change_queue` + `resolve_provider_change()` for the admin queue | Executed 2026-09-17 (in the bundle) — **re-run it**: the sync now only walks NPIs somebody holds a lead for |
 
 ## Notes on individual files
 
@@ -216,7 +219,8 @@ there is nothing left to reassign.
 
 The table above records the current execution state: 000, 001, safe 002, and
 003 were executed on 2026-08-31; 005, 006, 008, 009, 010, and 011 on 2026-09-16;
-012, 013 and 014 on 2026-09-17 (the Worker was deployed after 013 and again after 014)
+012, 013, 014 and then 004, 007 and 015 (as one bundle) on 2026-09-17 (the
+Worker was deployed after 013 and again after 014)
 (006 and 008 were first fixed for the Supabase SQL Editor in PR #31; the Worker
 with group-aware claiming was deployed after 010, and with claim-for-user after
 011). 004 and 007 are

@@ -12,9 +12,10 @@ Once npi_records is up to date, `apply_provider_changes_to_leads`
 provider-owned snapshot on claimed leads and raises a review alert for each
 lead whose provider changed in a way its rep needs to know about. It is
 batched and resumable in the same way. A release that has not had sql/015
-installed yet still applies -- the sync is reported as skipped, and running
-the apply again later picks it up, since nothing about it depends on the
-staging rows.
+installed yet still applies -- the sync is reported as skipped. It can be run
+later on its own (`--sync-run <id>`, or `--apply-run <id>` on a run that is
+already applied), because it works from provider_field_history rather than
+the staging rows.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ class ApplyResult:
     totals: dict[str, int] = field(default_factory=lambda: {key: 0 for key in COUNTERS})
     finish: dict[str, Any] | None = None
     lead_sync: dict[str, int] | None = None  # None when sql/015 isn't installed
+    already_applied: bool = False  # the run had already been applied before this call
 
 
 def _is_missing_function(err: Exception) -> bool:
@@ -87,6 +89,11 @@ def run_lead_sync(
     return totals
 
 
+def _already_applied(err: Exception) -> bool:
+    """sql/007 refuses a run it has already finished applying."""
+    return "must be a staged, complete NPPES run to apply" in str(err)
+
+
 def run_apply(
     client: Any,
     run_id: str,
@@ -108,6 +115,15 @@ def run_apply(
         try:
             batch = client.rpc("apply_nppes_refresh_batch", {"p_run_id": run_id, "p_batch_size": current_batch_size})
         except Exception as err:
+            # Re-running a finished apply is how an operator asks for the lead
+            # sync a release never got -- that step was added after the first
+            # release was applied -- so it lands there instead of failing.
+            if result.batches == 0 and _already_applied(err):
+                log(f"Run {run_id} is already applied; bringing claimed leads up to date instead.")
+                result.already_applied = True
+                if sync_leads:
+                    result.lead_sync = run_lead_sync(client, run_id, batch_size=batch_size, log=log)
+                return result
             err_msg = str(err).lower()
             if ("statement timeout" in err_msg or "57014" in err_msg) and current_batch_size > 50:
                 new_size = max(current_batch_size // 2, 50)
