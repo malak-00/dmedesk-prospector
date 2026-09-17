@@ -138,3 +138,35 @@ explicit owner decisions.
 ### Next implementation step
 
 Build the reusable grouping/preflight layer and dry-run intake report. After that, create a narrowly scoped migration only for any genuinely new schema required by the intake/claim workflow, test it locally, take a full production backup, and apply it through the reviewed deployment path.
+
+## 2026-09-17 — Database storage quota recovery, SQL immutability audit, and BD Meetings sync plan
+
+### Objective
+Diagnose and resolve the Supabase storage quota overage (742 MB / 500 MB), diagnose the return-to-prospect SQL immutability crash, audit "Send to Sheets" and Claimed tab merges against grouping rules, and plan the BD Meetings NPI sync.
+
+### Actions completed
+1. **Database Storage Quota Diagnosis & Truncation**:
+   - Identified that 84% of database storage was consumed by `provider_field_history` (294 MB data + 31 MB index) and `nppes_refresh_staging` (223 MB data + 33 MB index).
+   - User truncated temporary staging tables in the Supabase SQL Editor.
+   - Database size dropped from 0.742 GB (148%) to 0.488 GB (98%), clearing the immediate quota overage and lifting read-only restriction risks.
+   - Formulated a 5-step permanent prevention strategy in `documentation/planning/sept17.md` (auto-purge staging in `finish_nppes_apply`, eliminate bulky `record_created` JSON dumps, add CLI preflight storage guard at 350 MB, post-apply vacuuming, strict taxonomy pre-filtering).
+2. **SQL Immutability Error Diagnosis (`returnClaimedLeadsToProspect`)**:
+   - Identified root cause of `Failed to return leads to Prospect: append-only audit table: lead_ownership_events is immutable`:
+     - `leadsRepo.js` line 427 executed a hard `DELETE FROM leads`.
+     - `lead_ownership_events.lead_id` foreign key with `on delete set null` attempted an internal `UPDATE`, tripping `lead_ownership_events_append_only` trigger (`reject_audit_mutation()`).
+   - Designed atomic `release_claimed_leads()` SQL RPC to soft-release leads (`claimed_by = NULL`, `status = 'new'`) and append a `'released'` audit event instead of hard-deleting rows.
+   - Verified that soft-releasing aligns with `owned_group_npis` and existing group ownership checks (`WHERE not is_disconnected AND claimed_by IS NOT NULL`).
+3. **Audit of Claimed Tab Merges & Send to Sheets**:
+   - Audited `docs/app.js` and `worker/`: confirmed Claimed tab currently lacks multi-location grouping; designed join with `lead_groups` to display `locationsBadge` and branch accordions.
+   - Audited `POST /export/google-sheet`: documented that "Send to Sheet" currently bypasses Supabase claim checks and drops merged branch locations in `flattenCompany()`.
+4. **BD Meetings Auto-Claim Integration Plan**:
+   - Specified implementation of `POST /admin/claim-for-user` route in `worker/src/index.js` using `sql/011`'s `claim_leads` RPC.
+   - Outlined Script Properties and 30-minute sync trigger configuration for `BD MEETINGS 2026/src/code.js`.
+5. **Agent Operating Guidelines**:
+   - Documented markdown and worklog maintenance protocols in `agents.md`.
+
+### Safety status
+- Core sales pipeline (`leads`, `app_users`, `lead_groups`) was untouched during staging truncation.
+- Production schema was not altered during this session.
+- Staging table truncation removed only temporary ingest rows, not active provider registry records (`npi_records`).
+
