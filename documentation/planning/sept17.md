@@ -304,3 +304,117 @@ The CLI **intentionally does not alter lead ownership**:
 | **CLI Output Files** | **Manifest & Rejection Logs** | Writes `scripts/out/<label>-manifest.json` (checksum, duration, counts) and rejects CSV (dropped rows + reasons: invalid NPI, individual provider, non-matching taxonomy).                                                      |
 | **Database Audit**   | **Full Granular Diffs**       | Full history queryable in `provider_field_history` (old vs new for each column) and `lead_ownership_events`.                                                                                                                    |
 | **Web App UI**       | **Admin Review Queues**       | Provider data alerts and identity group conflicts appear in the **Admin Tab** under _Ownership conflicts_ and _Identity match review_ for manual sign-off and merging.                                                          |
+
+### Technical Audit: Releasing Leads vs General Grouping Rules
+
+The proposed "soft-release / return to Prospect" solution directly aligns with the identity and grouping architecture, provided four specific grouping rules are accounted for.
+
+---
+
+### Audit Verdict: **Compatible with Required Safeguards**
+
+| Grouping Dimension                        | Alignment             | Severity | Rule / Edge Case                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------- | --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Identity Immutability**              | **PASSED**            | &mdash;  | Group membership in `lead_group_members` represents real-world business entity structure. Releasing a lead does not dissolve or mutate the business group; the group identity remains intact.                                                                                                                                   |
+| **2. Group-Aware Search Exclusion**       | **PASSED (with fix)** | **P0**   | `public.owned_group_npis` already filters `WHERE not l.is_disconnected AND l.claimed_by IS NOT NULL`. But `leadsRepo.getClaimedNpisAmong` in JS currently queries `leads` without checking `claimed_by IS NOT NULL`. It must be updated so released leads resurface in search.                                                  |
+| **3. Partial vs Full Group Release**      | **CAUTION**           | **P1**   | If Rep A claims 2 branch NPIs in the same group and releases only 1: under [`sql/010`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/sql/010_group_aware_claim.sql#L360-L365), that group is **still owned by Rep A** (because Rep A still claims branch 2). Another rep attempting to claim branch 1 will be blocked. |
+| **4. Re-Claiming Lifecycle (Uniqueness)** | **PASSED**            | **P0**   | The unique index on `leads` is `idx_leads_npi_claimed_by on leads(npi, claimed_by)`. In PostgreSQL, `NULL` values are distinct in unique indexes. Setting `claimed_by = NULL` allows the same or another rep to claim that NPI later without constraint violations.                                                             |
+
+---
+
+### Key Grouping Rules & Behaviors
+
+#### Rule 1: Group Ownership Depends on `claimed_by IS NOT NULL`
+
+In [`sql/010_group_aware_claim.sql:360-365`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/sql/010_group_aware_claim.sql#L360-L365), `owned_group_npis` checks:
+
+```sql
+WHERE l.group_id = c.group_id
+  AND not l.is_disconnected
+  AND l.claimed_by IS NOT NULL
+  AND l.claimed_by <> p_user_id
+```
+
+- **If all leads in Group G are released (`claimed_by = NULL`)**:
+  `owned_group_npis` returns empty. The entire business group is completely unowned. Any salesperson can search and claim any branch in Group G.
+- **If only some leads in Group G are released**:
+  As long as Rep A still holds at least one active branch in Group G with `claimed_by = Rep A`, the entire group remains protected. Rep B cannot claim the released branch.
+
+#### Rule 2: Search Query Synchronization
+
+Currently, in [`worker/src/repos/leadsRepo.js:107`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/worker/src/repos/leadsRepo.js#L107):
+
+```javascript
+// BROKEN if row remains in table:
+const { data, error } = await supabase
+  .from("leads")
+  .select("npi")
+  .in("npi", candidates);
+```
+
+If a released lead remains in `public.leads` with `claimed_by = NULL`, the above query still matches it and excludes it from search results.
+**Must be updated to:**
+
+```javascript
+const { data, error } = await supabase
+  .from("leads")
+  .select("npi")
+  .not("claimed_by", "is", null)
+  .eq("is_disconnected", false)
+  .in("npi", candidates);
+```
+
+#### Rule 3: Atomic Release Transaction (SQL RPC)
+
+To prevent race conditions and ensure `lead_ownership_events` and `leads` are updated atomically, this should be executed as a single database function:
+
+```sql
+create or replace function public.release_claimed_leads(p_user_id uuid, p_npis text[])
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+  v_lead record;
+  v_released text[] := '{}';
+begin
+  for v_lead in
+    select id, npi, group_id, company_name
+      from public.leads
+     where claimed_by = p_user_id
+       and npi = any(p_npis)
+       and not is_disconnected
+     for update
+  loop
+    -- 1. Append immutable audit event
+    insert into public.lead_ownership_events (
+      lead_id, npi, group_id, event_type, from_user_id, to_user_id, reason, source
+    ) values (
+      v_lead.id, v_lead.npi, v_lead.group_id, 'released', p_user_id, null, 'returned_to_prospect', 'user_action'
+    );
+
+    -- 2. Soft-release active ownership
+    update public.leads
+       set claimed_by = null,
+           status = 'new',
+           claimed_at = null,
+           reminder_at = null
+     where id = v_lead.id;
+
+    v_released := array_append(v_released, v_lead.npi);
+  end loop;
+
+  return jsonb_build_object('released_npis', v_released, 'count', coalesce(array_length(v_released, 1), 0));
+end;
+$$;
+```
+
+---
+
+### Summary
+
+The soft-release pattern:
+
+1. **Preserves the audit contract**: Works with `lead_ownership_events` without violating the immutability trigger.
+2. **Maintains identity groups**: Retains real-world organization mapping in `lead_group_members`.
+3. **Respects group ownership**: Uses `claimed_by IS NOT NULL`, which matches existing conflict detection and claim locking.
