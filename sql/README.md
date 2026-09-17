@@ -44,8 +44,8 @@ in `003`); save their output with the run.
 | `009_identity_match_review.sql` | `identity_match_decisions`, `identity_review_queue` view, `resolve_identity_match()` for the admin Possible duplicates screen | Executed 2026-09-16 |
 | `010_group_aware_claim.sql` | Identity helpers, `owned_group_npis()` for search, `assign_lead_groups()`, `identity_claim_requests`, extended `identity_review_queue`, backfill of ungrouped leads (`claim_leads()` now lives in 011) | Executed 2026-09-16 (Worker deployed after) |
 | `011_claim_for_user.sql` | `app_users.can_claim_for_others`; `claim_leads()` redefined with an optional actor for claims on behalf of another user | Executed 2026-09-16 (Worker deployed after) |
+| `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | Executed 2026-09-17 (first load: 50,768 suppliers) — **re-run it**: the duplicate guard was narrowed afterwards so the 9,292 suppliers skipped that day can load |
 | `013_release_claimed_leads.sql` | `release_claimed_leads()`: "Return to Prospect" as a soft release with a `released` event | **Not yet run — urgent: Return to Prospect is broken until this is installed** |
-| `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | **Not yet run — before the first `python -m nppes_ingest.medicare --apply`** |
 
 ## Notes on individual files
 
@@ -168,7 +168,8 @@ is one transaction and is safe to re-run — once a group has a single owner
 there is nothing left to reassign.
 
 The table above records the current execution state: 000, 001, safe 002, and
-003 were executed on 2026-08-31; 005, 006, 008, 009, 010, and 011 on 2026-09-16
+003 were executed on 2026-08-31; 005, 006, 008, 009, 010, and 011 on 2026-09-16;
+012 on 2026-09-17
 (006 and 008 were first fixed for the Supabase SQL Editor in PR #31; the Worker
 with group-aware claiming was deployed after 010, and with claim-for-user after
 011). 004 and 007 are
