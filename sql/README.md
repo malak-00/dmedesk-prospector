@@ -47,7 +47,7 @@ in `003`); save their output with the run.
 | `011_claim_for_user.sql` | `app_users.can_claim_for_others`; `claim_leads()` redefined with an optional actor for claims on behalf of another user | Executed 2026-09-16 (Worker deployed after) |
 | `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | Executed 2026-09-17; re-run 2026-09-17 with the narrowed duplicate guard, so the 9,292 suppliers skipped on the first load can be picked up by the next `--apply` |
 | `013_release_claimed_leads.sql` | `release_claimed_leads()`: "Return to Prospect" as a soft release with a `released` event | Executed 2026-09-17 (Worker deployed after) |
-| `014_claim_preflight.sql` | `identity_group_lookup()` + `claim_leads(..., p_dry_run)`: the claim rules with nothing written, so "Send to Sheet" refuses what claiming would refuse | **Not yet run — until then Send to Sheet falls back to a coarser check and can't hold near-matches** |
+| `014_claim_preflight.sql` | `identity_group_lookup()` + `claim_leads(..., p_dry_run)`: the claim rules with nothing written, so "Send to Sheet" refuses what claiming would refuse | Executed 2026-09-17 (Worker deployed after) |
 
 ## Notes on individual files
 
@@ -185,7 +185,7 @@ there is nothing left to reassign.
 
 The table above records the current execution state: 000, 001, safe 002, and
 003 were executed on 2026-08-31; 005, 006, 008, 009, 010, and 011 on 2026-09-16;
-012 and 013 on 2026-09-17 (the Worker was deployed after 013)
+012, 013 and 014 on 2026-09-17 (the Worker was deployed after 013 and again after 014)
 (006 and 008 were first fixed for the Supabase SQL Editor in PR #31; the Worker
 with group-aware claiming was deployed after 010, and with claim-for-user after
 011). 004 and 007 are
