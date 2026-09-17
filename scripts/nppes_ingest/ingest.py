@@ -69,6 +69,7 @@ RUN_TYPE_DEACTIVATION = "deactivation"
 RUN_TYPES = (RUN_TYPE_MONTHLY_FULL, RUN_TYPE_WEEKLY_INCREMENTAL, RUN_TYPE_DEACTIVATION)
 
 DEFAULT_BATCH_SIZE = 500
+READ_PROGRESS_EVERY_ROWS = 500_000
 
 # NPPES rows are wide; the default field-size cap trips on the taxonomy tail.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))

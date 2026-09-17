@@ -383,6 +383,24 @@ class StreamingIngestTests(unittest.TestCase):
             self.assertEqual(result.manifest.status, "staged")
 
 
+class ChecksumProgressTests(unittest.TestCase):
+    def test_reports_progress_and_matches_plain_checksum(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import manifest
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "big.csv"
+            path.write_bytes(b"header\n" + b"row,1\n" * 50_000)
+            messages: list[str] = []
+            with mock.patch.object(manifest, "PROGRESS_EVERY_BYTES", 64 * 1024), \
+                    mock.patch.object(manifest, "CHECKSUM_CHUNK_BYTES", 32 * 1024):
+                checksum, lines = manifest.file_checksum_and_lines(path, log=messages.append)
+            self.assertEqual(lines, 50_001)
+            self.assertEqual(checksum, manifest.file_checksum(path))
+            self.assertTrue(messages and "checksummed" in messages[0] and "min left" in messages[0])
+
+
 class FakeApplyClient:
     def __init__(self, batches) -> None:
         self.batches = list(batches)
