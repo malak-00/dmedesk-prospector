@@ -27,6 +27,7 @@ import { createCompany } from "../lib/companyModel.js";
 import { scoreCompany } from "../lib/scoring.js";
 import * as leadsRepo from "../repos/leadsRepo.js";
 import * as searchProgressRepo from "../repos/searchProgressRepo.js";
+import * as ProviderSource from "./providerSource.js";
 import * as taxonomiesRepo from "../repos/taxonomiesRepo.js";
 
 const NPPES_PAGE_SIZE = 200;
@@ -306,7 +307,7 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
       const key = variantKey(variant);
       const skip = variantSkips[key] || 0;
       try {
-        const result = await Nppes.searchProviders(config, Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip }));
+        const result = await ProviderSource.searchProviders(config, supabase, Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip }));
         return { v, key, skip, ok: true, result };
       } catch (err) {
         return { v, key, skip, ok: false, err };

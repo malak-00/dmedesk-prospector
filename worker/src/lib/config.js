@@ -13,6 +13,12 @@ export function makeConfig(env) {
     // for nppes.js's provider search; FAKENPI_BASE_URL lets it be pointed
     // elsewhere (e.g. back at the real NPPES API) without a code change.
     fakeNpiBaseUrl: () => get("FAKENPI_BASE_URL", "https://zvthhjediuelpvzkkzvy.supabase.co/functions/v1/nppes-search/api/"),
+    // Which copy of NPPES search reads from: "mirror" (the fakeNPI project
+    // above, the default) or "dmedesk" (this project's own npi_records via
+    // sql/018 -- see services/providerSource.js). One variable so the
+    // cutover can be flipped or reverted from the dashboard without a
+    // deploy.
+    npiSource: () => get("NPI_SOURCE", "mirror"),
     foursquareApiKey: () => get("FOURSQUARE_SERVICE_API_KEY"),
     geminiApiKey: () => get("GEMINI_API_KEY"),
     geminiModel: () => get("GEMINI_MODEL", "gemini-2.5-flash"),

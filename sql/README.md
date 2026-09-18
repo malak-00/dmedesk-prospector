@@ -23,10 +23,11 @@ Required manual sequence:
 015_provider_change_alerts.sql    (before the first NPPES apply; needs 007)
 016_refresh_run_recovery.sql      (abort a Medicare run; abort a 'complete' run)
 017_lead_sync_restart.sql         (run a claimed-lead sync again from the start)
+018_provider_search.sql           (before search can read from this project)
 ```
 
-**Outstanding: `017`.** The bundle described next always holds whatever that
-is.
+**Outstanding: `017` and `018`.** The bundle described next always holds
+whatever that is.
 
 **Everything still outstanding is bundled into one file:**
 [`RUN_PENDING.sql`](./RUN_PENDING.sql) — regenerated whenever the backlog
@@ -67,6 +68,7 @@ in `003`); save their output with the run.
 | `015_provider_change_alerts.sql` | `apply_provider_changes_to_leads()`: refreshes claimed leads from an applied release and raises `provider_data_changed` alerts; `provider_change_queue` + `resolve_provider_change()` for the admin queue | Executed 2026-09-17, re-run the same day with the lead-scoped sync |
 | `016_refresh_run_recovery.sql` | `abort_medicare_refresh()`, and `abort_nppes_refresh()` relaxed to accept a `complete` run: closing out a staged run whose staging is gone | Executed 2026-09-17 (used to close out the empty Medicare run) |
 | `017_lead_sync_restart.sql` | `reset_lead_sync()`: clears the sync cursor so a run that has been synced can be synced again | **Not yet run — needed for `--sync-run --restart`** |
+| `018_provider_search.sql` | `search_providers()` + its indexes: provider search against this project's own `npi_records`, every filter in SQL | **Not yet run — needed before `NPI_SOURCE=dmedesk`** |
 
 ## Notes on individual files
 
@@ -173,6 +175,22 @@ live in `provider_change_decisions` rather than on the event, because
 `lead_ownership_events` is append-only. `python -m nppes_ingest --apply`
 runs it automatically once the apply finishes (`--skip-lead-sync` opts out;
 applying the same run again picks it up later). Rerun-safe.
+
+**`018`** lets search read from this project instead of the mirror. The app
+has always searched the fakeNPI project over HTTP, one page at a time, while
+this project holds the same providers in `npi_records` — 387k of them after
+the September refresh, covering 3,579 of the 3,611 leads people own.
+`search_providers(criteria, limit, skip)` does that search here: every filter
+runs in SQL, including the three the mirror can't do (name terms, excluded
+keywords, last-updated years) which the Worker used to apply *after* paging —
+which is why a page of 200 could come back with three usable rows. Deactivated
+providers and individuals are left out unless asked for, Medicare enrichment
+is joined in the same query, and the full match count rides on every row.
+Results are ordered by NPI because paging needs a stable order. A trigram
+index for name search is created where `pg_trgm` is available; without it
+search still works, just slower. The Worker picks a source with `NPI_SOURCE`
+(see `worker/README.md`), so the cutover is a variable, not a deploy.
+Read-only and rerun-safe.
 
 **`017`** makes a finished lead sync runnable again. The sync resumes from a
 cursor on the run, which means a run that has been synced once can never be
