@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .apply import DEFAULT_APPLY_BATCH_SIZE, run_apply
+from .apply import DEFAULT_APPLY_BATCH_SIZE, run_apply, run_lead_sync
 from .config import ConfigError, load_supabase_config
 from .ingest import (
     DEFAULT_BATCH_SIZE,
@@ -45,7 +45,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--apply-run",
-        help="Apply an already staged run (by UUID) to npi_records in batches; resumes an interrupted apply",
+        help="Apply an already staged run (by UUID) to npi_records in batches; resumes an interrupted apply. "
+        "On a run that is already applied it brings claimed leads up to date instead",
+    )
+    parser.add_argument(
+        "--sync-run",
+        help="Only refresh claimed leads from an already applied run (by UUID) and raise provider-change alerts "
+        "(sql/015) -- for a release that was applied before that step existed",
+    )
+    parser.add_argument(
+        "--restart",
+        action="store_true",
+        help="With --sync-run: start the sync over instead of resuming, for a run that has been synced before "
+        "(needs sql/017). Re-running raises no alert twice",
     )
     parser.add_argument(
         "--apply",
@@ -150,6 +162,23 @@ def resolve_taxonomy_codes(args: argparse.Namespace, client: SupabaseClient | No
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.restart and not args.sync_run:
+        print("error: --restart is only used with --sync-run", flush=True)
+        return 2
+
+    if args.sync_run:
+        if args.apply_run or args.recover_run or args.abort_run or args.source is not None:
+            print("error: --sync-run is used on its own (it syncs an already applied run)", flush=True)
+            return 2
+        try:
+            client = SupabaseClient(load_supabase_config(args.env_file))
+            if run_lead_sync(client, args.sync_run, batch_size=args.apply_batch_size, restart=args.restart) is None:
+                return 1
+            return 0
+        except (ConfigError, RuntimeError, ValueError) as err:
+            print(f"error: {err}", flush=True)
+            return 1
 
     if args.apply_run:
         if args.recover_run or args.abort_run or args.source is not None:

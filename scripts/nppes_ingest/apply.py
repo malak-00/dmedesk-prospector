@@ -12,9 +12,10 @@ Once npi_records is up to date, `apply_provider_changes_to_leads`
 provider-owned snapshot on claimed leads and raises a review alert for each
 lead whose provider changed in a way its rep needs to know about. It is
 batched and resumable in the same way. A release that has not had sql/015
-installed yet still applies -- the sync is reported as skipped, and running
-the apply again later picks it up, since nothing about it depends on the
-staging rows.
+installed yet still applies -- the sync is reported as skipped. It can be run
+later on its own (`--sync-run <id>`, or `--apply-run <id>` on a run that is
+already applied), because it works from provider_field_history rather than
+the staging rows.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ class ApplyResult:
     totals: dict[str, int] = field(default_factory=lambda: {key: 0 for key in COUNTERS})
     finish: dict[str, Any] | None = None
     lead_sync: dict[str, int] | None = None  # None when sql/015 isn't installed
+    already_applied: bool = False  # the run had already been applied before this call
 
 
 def _is_missing_function(err: Exception) -> bool:
@@ -49,11 +51,29 @@ def run_lead_sync(
     *,
     batch_size: int = DEFAULT_LEAD_SYNC_BATCH_SIZE,
     log: Callable[[str], None] = print,
+    restart: bool = False,
 ) -> dict[str, int] | None:
     """Refresh claimed leads from the applied release and raise change alerts.
 
+    The sync resumes from a cursor on the run, so a second call over a run
+    that already finished has nothing below the cursor and does nothing.
+    `restart` clears the cursor first, which is safe: the snapshot copy is
+    idempotent and an alert for one lead in one run can only exist once.
+
     Returns the totals, or None when sql/015 has not been installed.
     """
+    if restart:
+        try:
+            cleared = client.rpc("reset_lead_sync", {"p_run_id": run_id})
+            if isinstance(cleared, dict) and cleared.get("cleared_cursor"):
+                log(f"Starting again from the beginning (was stopped at NPI {cleared['cleared_cursor']}).")
+        except Exception as err:
+            if _is_missing_function(err):
+                raise RuntimeError(
+                    "--restart needs sql/017_lead_sync_restart.sql. Run it, then try again."
+                ) from err
+            raise
+
     totals = {key: 0 for key in LEAD_SYNC_COUNTERS}
     batches = 0
     while True:
@@ -80,11 +100,26 @@ def run_lead_sync(
             f"{int(batch.get('alerts') or 0):,} alerts -- {int(batch.get('remaining') or 0):,} remaining"
         )
 
+    if totals["processed"] == 0:
+        # Either nobody holds a lead for anything this release touched, or
+        # this run has been synced before -- the cursor can't tell them apart,
+        # so say both rather than implying there was nothing to do.
+        log(
+            "Nothing to sync for this run: no claimed lead is affected, or it has been synced already. "
+            f"To run it again from the start: --sync-run {run_id} --restart"
+        )
+        return totals
+
     log(
         f"Claimed leads: {totals['leads_updated']:,} refreshed from the release, "
         f"{totals['alerts']:,} change alert(s) raised for their owners"
     )
     return totals
+
+
+def _already_applied(err: Exception) -> bool:
+    """sql/007 refuses a run it has already finished applying."""
+    return "must be a staged, complete NPPES run to apply" in str(err)
 
 
 def run_apply(
@@ -108,6 +143,15 @@ def run_apply(
         try:
             batch = client.rpc("apply_nppes_refresh_batch", {"p_run_id": run_id, "p_batch_size": current_batch_size})
         except Exception as err:
+            # Re-running a finished apply is how an operator asks for the lead
+            # sync a release never got -- that step was added after the first
+            # release was applied -- so it lands there instead of failing.
+            if result.batches == 0 and _already_applied(err):
+                log(f"Run {run_id} is already applied; bringing claimed leads up to date instead.")
+                result.already_applied = True
+                if sync_leads:
+                    result.lead_sync = run_lead_sync(client, run_id, batch_size=batch_size, log=log)
+                return result
             err_msg = str(err).lower()
             if ("statement timeout" in err_msg or "57014" in err_msg) and current_batch_size > 50:
                 new_size = max(current_batch_size // 2, 50)

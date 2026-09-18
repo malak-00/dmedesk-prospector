@@ -21,17 +21,22 @@ Required manual sequence:
 013_release_claimed_leads.sql     (Return to Prospect)
 014_claim_preflight.sql           (before "Send to Sheet" can refuse anything)
 015_provider_change_alerts.sql    (before the first NPPES apply; needs 007)
+016_refresh_run_recovery.sql      (abort a Medicare run; abort a 'complete' run)
+017_lead_sync_restart.sql         (run a claimed-lead sync again from the start)
 ```
 
-**Everything still outstanding is also bundled into one file:**
-[`RUN_PENDING_004_007_015.sql`](./RUN_PENDING_004_007_015.sql) — `004`, `007`
-and `015`, unchanged apart from their own `begin`/`commit`, wrapped in a
-single transaction so a failure anywhere leaves the database untouched. Paste
-the whole file with nothing selected (a partial selection cuts a
-dollar-quoted function body in half), then run the verification queries at
-its bottom. Running the three files individually, in order, does exactly the
-same thing. It was tested by installing it on top of everything already run
-here and then driving a full refresh through it.
+**Outstanding: `017`.** The bundle described next always holds whatever that
+is.
+
+**Everything still outstanding is bundled into one file:**
+[`RUN_PENDING.sql`](./RUN_PENDING.sql) — regenerated whenever the backlog
+changes, currently `015` (re-run) and `016`, unchanged apart from their own
+`begin`/`commit` and wrapped in a single transaction, so a failure anywhere
+leaves the database untouched. Paste the whole file with nothing selected (a
+partial selection cuts a dollar-quoted function body in half), then run the
+verification queries at its bottom — they also list any release that was
+applied without reaching claimed leads, and any run stuck in `staged` with no
+rows. Running the files individually, in order, does exactly the same thing.
 
 Run each file in the Supabase SQL Editor, save its read-only verification
 output, and stop if verification reports an error. No SQL is executed
@@ -48,10 +53,10 @@ in `003`); save their output with the run.
 | `002_identity_backfill.sql` | First draft of the backfill | **Superseded — do not run** |
 | `002_identity_backfill_safe.sql` | Safe identity + historical-claim backfill | Executed 2026-08-31 |
 | `003_identity_verification.sql` | Read-only validation queries | Executed 2026-08-31 |
-| `004_nppes_refresh_staging.sql` | Staging table written by `scripts/nppes_ingest` | **Not yet run** |
+| `004_nppes_refresh_staging.sql` | Staging table written by `scripts/nppes_ingest` | Executed 2026-09-17 (in the bundle) |
 | `005_ownership_conflict_resolution.sql` | `resolve_ownership_conflict()` + `ownership_conflicts` view | Executed 2026-09-16 |
 | `006_resolve_known_conflicts.sql` | Applies the two approved owner decisions | Executed 2026-09-16 (approver: Ben Arthur) |
-| `007_nppes_refresh_lifecycle.sql` | Recover/abort staging, `nppes_apply_column_map()`, batched schema-adaptive `apply_nppes_refresh_batch()` + `finish_nppes_apply()` | **Not yet run — after 004, before the first `--apply`** |
+| `007_nppes_refresh_lifecycle.sql` | Recover/abort staging, `nppes_apply_column_map()`, batched schema-adaptive `apply_nppes_refresh_batch()` + `finish_nppes_apply()` | Executed 2026-09-17 (in the bundle) |
 | `008_identity_match_tiers.sql` | Three-tier identity keys, regroup of existing leads, `conflict_detected` events, `identity_review_candidates` view | Executed 2026-09-16 |
 | `009_identity_match_review.sql` | `identity_match_decisions`, `identity_review_queue` view, `resolve_identity_match()` for the admin Possible duplicates screen | Executed 2026-09-16 |
 | `010_group_aware_claim.sql` | Identity helpers, `owned_group_npis()` for search, `assign_lead_groups()`, `identity_claim_requests`, extended `identity_review_queue`, backfill of ungrouped leads (`claim_leads()` now lives in 011) | Executed 2026-09-16 (Worker deployed after) |
@@ -59,7 +64,9 @@ in `003`); save their output with the run.
 | `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | Executed 2026-09-17; re-run 2026-09-17 with the narrowed duplicate guard, so the 9,292 suppliers skipped on the first load can be picked up by the next `--apply` |
 | `013_release_claimed_leads.sql` | `release_claimed_leads()`: "Return to Prospect" as a soft release with a `released` event | Executed 2026-09-17 (Worker deployed after) |
 | `014_claim_preflight.sql` | `identity_group_lookup()` + `claim_leads(..., p_dry_run)`: the claim rules with nothing written, so "Send to Sheet" refuses what claiming would refuse | Executed 2026-09-17 (Worker deployed after) |
-| `015_provider_change_alerts.sql` | `apply_provider_changes_to_leads()`: refreshes claimed leads from an applied release and raises `provider_data_changed` alerts; `provider_change_queue` + `resolve_provider_change()` for the admin queue | **Not yet run — before the first NPPES apply, or claimed leads won't follow the release** |
+| `015_provider_change_alerts.sql` | `apply_provider_changes_to_leads()`: refreshes claimed leads from an applied release and raises `provider_data_changed` alerts; `provider_change_queue` + `resolve_provider_change()` for the admin queue | Executed 2026-09-17, re-run the same day with the lead-scoped sync |
+| `016_refresh_run_recovery.sql` | `abort_medicare_refresh()`, and `abort_nppes_refresh()` relaxed to accept a `complete` run: closing out a staged run whose staging is gone | Executed 2026-09-17 (used to close out the empty Medicare run) |
+| `017_lead_sync_restart.sql` | `reset_lead_sync()`: clears the sync cursor so a run that has been synced can be synced again | **Not yet run — needed for `--sync-run --restart`** |
 
 ## Notes on individual files
 
@@ -167,6 +174,29 @@ live in `provider_change_decisions` rather than on the event, because
 runs it automatically once the apply finishes (`--skip-lead-sync` opts out;
 applying the same run again picks it up later). Rerun-safe.
 
+**`017`** makes a finished lead sync runnable again. The sync resumes from a
+cursor on the run, which means a run that has been synced once can never be
+synced again: the cursor sits past the last NPI, the next call finds nothing
+below it and reports "nothing to do". That bit — a release synced once under
+the older, unscoped query left a cursor past the end, so the next run
+reported 0 refreshed while 3,558 claimed leads still showed pre-refresh data.
+`reset_lead_sync(run)` clears the cursor, and `--sync-run <id> --restart`
+calls it. Re-running a sync is safe by construction: the snapshot copy is
+idempotent, and an alert for one lead in one run can only exist once.
+
+**`016`** closes out a run that can't go anywhere. A Medicare run was left
+at `staged` / `staging_state = complete` with `row_count` 60,060 while
+`medicare_refresh_staging` held none of its rows — the loader's rollback
+deleted the rows and then failed to mark the run failed. Applying it is
+correctly refused ("staging count changed (0 staged, 60060 recorded)"), but
+nothing could close it: Medicare had no abort, and `abort_nppes_refresh`
+refused any run whose `staging_state` was `complete`. Now there is an abort
+per source, and the rule that matters is the one enforced — a run that is
+mid-apply or applied is never abortable. The loader was fixed to mark a run
+failed *before* deleting its rows, so a half-finished rollback leaves a
+failed run with orphan rows (which every apply refuses) instead of a run
+that still looks applyable. Rerun-safe.
+
 **`014`** makes "Send to Sheet" ask before it copies. It used to write a
 rep's search results into their `Claimed - <Name>` tab without asking the
 database anything, so a lead a teammate already owned could be copied into a
@@ -216,7 +246,8 @@ there is nothing left to reassign.
 
 The table above records the current execution state: 000, 001, safe 002, and
 003 were executed on 2026-08-31; 005, 006, 008, 009, 010, and 011 on 2026-09-16;
-012, 013 and 014 on 2026-09-17 (the Worker was deployed after 013 and again after 014)
+012, 013, 014 and then 004, 007 and 015 (as one bundle) on 2026-09-17 (the
+Worker was deployed after 013 and again after 014)
 (006 and 008 were first fixed for the Supabase SQL Editor in PR #31; the Worker
 with group-aware claiming was deployed after 010, and with claim-for-user after
 011). 004 and 007 are

@@ -24,6 +24,14 @@
 -- p_batch_size NPIs in NPI order and records how far it got on the run, so
 -- an interrupted sync continues where it stopped and a finished one is a
 -- no-op. Re-running it never raises the same alert twice.
+--
+-- It only ever looks at NPIs somebody holds a lead for -- a first load
+-- records a history row for every provider in the release, and there is
+-- nothing to do for the ones nobody has claimed.
+--
+-- It can be run long after the apply: an applied run whose lead_sync_state
+-- is null (a release applied before this file existed) is brought up to date
+-- by calling it, or by `python -m nppes_ingest --sync-run <run id>`.
 
 begin;
 
@@ -140,10 +148,16 @@ begin
 
   v_cursor := coalesce(v_run.metadata->>'lead_sync_last_npi', '');
 
+  -- Only NPIs somebody actually holds: a first load writes a
+  -- 'record_created' history row for every provider in the release, and
+  -- walking hundreds of thousands of them to touch nothing would take hours.
+  -- Nothing here can affect an NPI without an active lead.
   select array_agg(npi order by npi) into v_batch
-    from (select distinct npi from public.provider_field_history
-           where refresh_run_id = p_run_id and npi > v_cursor
-           order by npi limit p_batch_size) b;
+    from (select distinct h.npi from public.provider_field_history h
+           where h.refresh_run_id = p_run_id
+             and h.npi > v_cursor
+             and exists (select 1 from public.leads l where l.npi = h.npi and not l.is_disconnected)
+           order by h.npi limit p_batch_size) b;
 
   if v_batch is null then
     update public.refresh_runs
@@ -213,9 +227,11 @@ begin
   get diagnostics v_alerts = row_count;
 
   v_cursor := v_batch[array_length(v_batch, 1)];
-  select count(distinct npi) into v_remaining
-    from public.provider_field_history
-   where refresh_run_id = p_run_id and npi > v_cursor;
+  select count(distinct h.npi) into v_remaining
+    from public.provider_field_history h
+   where h.refresh_run_id = p_run_id
+     and h.npi > v_cursor
+     and exists (select 1 from public.leads l where l.npi = h.npi and not l.is_disconnected);
 
   update public.refresh_runs
      set metadata = metadata || jsonb_build_object(

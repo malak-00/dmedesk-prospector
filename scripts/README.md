@@ -156,9 +156,61 @@ work through them under Provider changes. Nothing the rep owns (status,
 notes, reminders, ownership) is touched, and no lead is moved between
 identity groups — a name or phone change is flagged for an admin instead.
 
-`--skip-lead-sync` leaves that step out; running the same run again with
-`--apply-run <id>` performs it later, which is also what to do if `sql/015`
-wasn't installed at the time (the apply says so and continues).
+`--skip-lead-sync` leaves that step out. To run it later — for a release
+applied before this step existed, or after installing `sql/015` — use:
+
+```powershell
+python -m nppes_ingest --sync-run <refresh run id>
+```
+
+`--apply-run <id>` on a run that is already applied does the same thing
+rather than failing, since there are no staged rows left to apply. The sync
+reads `provider_field_history`, not staging, so it works for any applied run.
+
+It resumes from a cursor on the run, so a run that has been synced before
+reports "nothing to sync" — that message and `--restart` (needs `sql/017`)
+are how to run it again from the beginning:
+
+```powershell
+python -m nppes_ingest --sync-run <refresh run id> --restart
+```
+
+Re-running is safe: the snapshot copy is idempotent, and an alert for one
+lead in one run can only be raised once.
+
+Find the runs that never had it:
+
+```sql
+select id, started_at, metadata->>'run_type' as run_type
+  from public.refresh_runs
+ where source = 'nppes' and metadata->>'apply_state' = 'applied'
+   and metadata->>'lead_sync_state' is null
+ order by started_at;
+```
+
+### When a run gets stuck
+
+A staged run that can't be applied (wrong dataset, a rollback that took its
+rows with it) can be applied later or closed out, without downloading
+anything again:
+
+```powershell
+python -m nppes_ingest.medicare --apply-run <run id>
+python -m nppes_ingest.medicare --abort-run <run id> --reason "why"
+python -m nppes_ingest --abort-run <run id> --reason "why"   # NPPES
+```
+
+An abort deletes whatever staging is left and marks the run failed with the
+reason on it. A run that is mid-apply or already applied is refused — those
+are never abortable. Needs `sql/016`. To find candidates:
+
+```sql
+select r.id, r.source, r.status, r.row_count,
+       case r.source when 'nppes'
+            then (select count(*) from public.nppes_refresh_staging s where s.refresh_run_id = r.id)
+            else (select count(*) from public.medicare_refresh_staging s where s.refresh_run_id = r.id) end as staged_now
+  from public.refresh_runs r where r.status = 'staged' order by r.started_at desc;
+```
 
 ### Plumbing
 
