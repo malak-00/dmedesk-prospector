@@ -296,9 +296,14 @@ Both return the same `{ count, rawCount, results }` with identically shaped
 providers, which is what lets `companyService` treat them alike. An
 unrecognised (or missing) value means the mirror — a typo must not take
 search down. `GET /admin/search-compare?state=VA&taxonomyDescription=...`
-runs one search against both and reports each side's count, timing and the
-NPIs one has and the other doesn't; the Admin page's **Search source** panel
-is that endpoint. Cutting over is setting the variable; reverting is unsetting
+runs one search against both and reports each side's count and timing, plus
+coverage: every provider the mirror returned, looked up by NPI in our own
+table and sorted into covered / deactivated since / individual / different
+state / different specialty / not held at all. Only the last is a gap. It
+deliberately does not intersect the two pages — the sources page in
+different orders, so two correct 50-row pages of the same 8,000 matches can
+share nothing at all. The Admin page's **Search source** panel is that
+endpoint. Cutting over is setting the variable; reverting is unsetting
 it, no deploy either way.
 
 ## Export to Sheet (separate from claiming)

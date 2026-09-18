@@ -944,6 +944,42 @@ function renderMatchReviews() {
 // does.
 const SOURCE_LABELS = { mirror: "the mirror project (fakeNPI)", dmedesk: "DME Desk's own npi_records" };
 
+// Each bucket is a different answer to "why isn't this provider in our
+// results?", and only one of them is a problem.
+const COVERAGE_LABELS = {
+  covered: "in DME Desk, and this search returns them",
+  deactivated: "we have them; NPPES has since deactivated them",
+  individual: "we have them; they are a person, not an organization",
+  differentState: "we have them in a different state",
+  differentSpecialty: "we have them under a different specialty",
+  missing: "not in DME Desk at all",
+};
+
+function coverageHtml(coverage) {
+  if (!coverage || !coverage.checked) return "";
+  if (coverage.error) return `<div class="claim-result-detail">Couldn't check coverage: ${escapeHtml(coverage.error)}</div>`;
+
+  const rows = Object.keys(COVERAGE_LABELS)
+    .filter((bucket) => (coverage.counts[bucket] || 0) > 0)
+    .map((bucket) => {
+      const samples = (coverage.samples[bucket] || [])
+        .map((s) => `<div class="claim-result-detail"><span class="mono">${escapeHtml(s.npi)}</span> ${escapeHtml(s.name)}${s.ours ? ` — mirror says ${escapeHtml(s.mirror || "?")}, we hold ${escapeHtml(s.ours)}` : ""}</div>`)
+        .join("");
+      return `
+        <tr class="${bucket === "missing" ? "is-match" : ""}">
+          <th scope="row">${coverage.counts[bucket]}</th>
+          <td>${escapeHtml(COVERAGE_LABELS[bucket])}${samples}</td>
+        </tr>`;
+    })
+    .join("");
+
+  return `
+    <table class="match-review-table">
+      <thead><tr><th scope="col">Of ${coverage.checked}</th><th scope="col">Where the mirror's results are in DME Desk</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 function renderSearchCompare(data) {
   const row = (label, side) => `
     <tr>
@@ -953,23 +989,14 @@ function renderSearchCompare(data) {
       <td class="mono">${side.ms} ms</td>
     </tr>`;
 
-  const gap = (title, list) => {
-    if (!list.length) return "";
-    return `
-      <div class="detail-block">
-        <h4>${escapeHtml(title)} (${list.length}${list.length === 25 ? "+" : ""})</h4>
-        <div class="mono" style="font-size:13px; line-height:1.7;">
-          ${list.map((item) => `${escapeHtml(item.npi)} ${escapeHtml(item.name || "")}`).join("<br>")}
-        </div>
-      </div>`;
-  };
-
   els.searchCompareEmpty.hidden = true;
   els.searchCompareResult.innerHTML = `
     <div class="conflict-card match-review-card">
       <div class="conflict-card-header">
         <div>
-          <div class="conflict-title">${data.agreement === null ? "Nothing to compare" : `${data.agreement}% of the mirror's results are in DME Desk`}</div>
+          <div class="conflict-title">${data.coverage && data.coverage.coveredPercent !== null
+            ? `${data.coverage.coveredPercent}% of the mirror's results are in DME Desk and returned by this search`
+            : "Nothing to compare"}</div>
           <div class="match-key-chips">
             ${Object.entries(data.criteria).filter(([, v]) => v).map(([k, v]) => `<span class="match-key-chip">${escapeHtml(k)}: ${escapeHtml(String(v))}</span>`).join("")}
           </div>
@@ -982,9 +1009,11 @@ function renderSearchCompare(data) {
           ${row("DME Desk", data.dmedesk)}
         </tbody>
       </table>
-      <div class="detail-grid">
-        ${gap("In the mirror, missing from DME Desk", data.missingFromDmeDesk)}
-        ${gap("Only in DME Desk", data.onlyInDmeDesk)}
+      ${coverageHtml(data.coverage)}
+      <div class="claim-result-detail">
+        The two sources page in different orders, so the 50 rows above aren't
+        the same 50 providers. What matters is the table: only "not in DME
+        Desk at all" is a gap.
       </div>
     </div>`;
 }

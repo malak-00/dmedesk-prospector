@@ -19,6 +19,7 @@ import * as adminRepo from "./repos/adminRepo.js";
 import * as Nppes from "./services/nppes.js";
 import * as ProviderSearch from "./services/providerSearch.js";
 import * as ProviderSource from "./services/providerSource.js";
+import * as SearchCompare from "./services/searchCompare.js";
 import * as Cms from "./services/cms.js";
 import * as Foursquare from "./services/foursquare.js";
 import * as Scraper from "./services/scraper.js";
@@ -174,10 +175,12 @@ app.get("/search/nppes", async (c) => {
 // The cutover check: run one search against both copies of NPPES and show
 // what each returned. Nothing is written, and neither source is changed --
 // it exists so the switch is flipped on evidence rather than on hope.
-// `agreement` is what matters: the share of the mirror's NPIs that DME Desk
-// also returned for the same criteria. A gap is usually a provider the last
-// monthly refresh hasn't loaded yet, which is worth knowing before a rep
-// finds it.
+//
+// What it reports is coverage, not page overlap: every provider the mirror
+// returned is looked up by NPI in our own table (services/searchCompare.js).
+// Intersecting the two pages would measure ordering instead -- the sources
+// page differently, so two correct 50-row pages of the same 8,000 matches
+// can share nothing at all.
 app.get("/admin/search-compare", async (c) => {
   requireAdmin(c.get("session"));
   // A state alone is too broad for a rep's search but is exactly what an
@@ -207,11 +210,7 @@ app.get("/admin/search-compare", async (c) => {
     timed(() => ProviderSearch.searchProviders(supabase, criteria)),
   ]);
 
-  const mirrorNpis = new Set(mirror.results.map((r) => String(r.npi)));
-  const dmeNpis = new Set(dmedesk.results.map((r) => String(r.npi)));
-  const missing = [...mirrorNpis].filter((npi) => !dmeNpis.has(npi));
-  const extra = [...dmeNpis].filter((npi) => !mirrorNpis.has(npi));
-  const nameByNpi = new Map(mirror.results.concat(dmedesk.results).map((r) => [String(r.npi), r.name || ""]));
+  const coverage = await SearchCompare.compareCoverage(supabase, mirror.results, criteria);
 
   return c.json(ok({
     activeSource: ProviderSource.resolveSource(config),
@@ -220,9 +219,7 @@ app.get("/admin/search-compare", async (c) => {
                 limit: criteria.limit, skip: criteria.skip },
     mirror: { ok: mirror.ok, error: mirror.error || null, ms: mirror.ms, count: mirror.count, returned: mirror.results.length },
     dmedesk: { ok: dmedesk.ok, error: dmedesk.error || null, ms: dmedesk.ms, count: dmedesk.count, returned: dmedesk.results.length },
-    agreement: mirrorNpis.size ? Math.round(((mirrorNpis.size - missing.length) / mirrorNpis.size) * 100) : null,
-    missingFromDmeDesk: missing.slice(0, 25).map((npi) => ({ npi, name: nameByNpi.get(npi) || "" })),
-    onlyInDmeDesk: extra.slice(0, 25).map((npi) => ({ npi, name: nameByNpi.get(npi) || "" })),
+    coverage,
   }));
 });
 
