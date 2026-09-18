@@ -307,7 +307,11 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
       const key = variantKey(variant);
       const skip = variantSkips[key] || 0;
       try {
-        const result = await ProviderSource.searchProviders(config, supabase, Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip }));
+        // This loop reads rows, never the match count -- the view reports how
+        // many leads came back, not how many providers matched -- and it runs
+        // dozens of these per search, so it asks not to be counted for.
+        const result = await ProviderSource.searchProviders(
+          config, supabase, Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip, includeCount: false }));
         return { v, key, skip, ok: true, result };
       } catch (err) {
         return { v, key, skip, ok: false, err };

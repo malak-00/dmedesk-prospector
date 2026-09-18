@@ -100,6 +100,9 @@ function toCriteria(criteria = {}) {
     taxonomyCode: criteria.taxonomyCode || undefined,
     taxonomyDescription: criteria.taxonomyCode ? undefined : criteria.taxonomyDescription || undefined,
     organizationName: criteria.organizationName || undefined,
+    // Counting is the expensive half of a search and most callers never read
+    // the number, so they say so and skip it.
+    includeCount: criteria.includeCount === false ? false : undefined,
     nameContains: terms(criteria.nameContainsTerms, criteria.nameContains),
     excludeKeywords: terms(criteria.excludeKeywords),
     lastUpdatedYears: terms(criteria.lastUpdatedYears, criteria.lastUpdatedYear),
@@ -130,8 +133,9 @@ export async function searchProviders(supabase, criteria = {}) {
     // Every row carries the same match count; with no rows there is nothing
     // to carry, and nothing matched. Counting stops at sql/018's cap, so a
     // very broad search reports "this many or more" -- countCapped says so,
-    // and paging past it is unaffected.
-    count: rows.length ? Number(rows[0].total_count) : 0,
+    // and paging past it is unaffected. A caller that asked not to count
+    // gets the size of the page it was given, which is all it reads anyway.
+    count: rows.length ? (rows[0].total_count == null ? results.length : Number(rows[0].total_count)) : 0,
     countCapped: rows.length ? rows[0].count_capped === true : false,
     // The mirror returns a page and then loses rows to filters the Worker
     // applies afterwards; here the two are always the same number. Kept so

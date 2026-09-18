@@ -151,6 +151,11 @@ drop function if exists public.search_providers(jsonb, integer, integer);
 --   lastUpdatedYears     array of 'YYYY'
 --   includeInactive      true keeps deactivated providers (default false)
 --   includeIndividuals   true keeps NPI-1 providers (default false)
+--   includeCount         false skips the match count entirely (default true).
+--                        A rep's search fans out into dozens of these and
+--                        reads none of the counts -- it shows how many leads
+--                        came back, not how many providers matched -- so the
+--                        caller that doesn't need it shouldn't pay for it.
 create or replace function public.search_providers(
   p_criteria jsonb default '{}'::jsonb,
   p_limit integer default 20,
@@ -284,9 +289,11 @@ begin
     with counted as (
       -- Stops after the cap: the planner pushes the limit into the scan, so
       -- a search over a 24,000-provider state reads 5,001 index entries.
-      select count(*) as n from (
-        select 1 from public.npi_records r where %1$s limit %4$s
-      ) capped
+      -- Skipped entirely when the caller said it doesn't need the number,
+      -- which leaves a search as a fifty-row index scan and nothing else.
+      select case when %5$L then (
+        select count(*) from (select 1 from public.npi_records r where %1$s limit %4$s) capped
+      ) end as n
     ), matched as (
       select r.npi
         from public.npi_records r
@@ -323,13 +330,14 @@ begin
            e.medicare_payment,
            e.medicare_allowed,
            c.n,
-           c.n >= %4$s
+           coalesce(c.n >= %4$s, false)
       from matched m
       join public.npi_records r on r.npi = m.npi
       cross join counted c
       left join public.npi_cms_enrichment e on e.npi = r.npi
      order by r.npi
-  $q$, coalesce(nullif(array_to_string(v_where, ' and '), ''), 'true'), v_lim, v_skip, v_count_cap);
+  $q$, coalesce(nullif(array_to_string(v_where, ' and '), ''), 'true'), v_lim, v_skip, v_count_cap,
+       coalesce((v_j->>'includeCount')::boolean, true));
 end
 $fn$;
 

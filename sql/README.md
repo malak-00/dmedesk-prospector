@@ -202,9 +202,11 @@ The expensive half of a search is the match count: it has to account for
 every matching provider, not just the fifty on the page — 24,078 for a single
 state — and that cost grows with how popular the search is. Counting now
 stops at 5,000 and the row says `count_capped`, so the work any search can do
-is bounded whatever the table looks like that day. Reps never see it: the
-Prospect view counts the leads it got back, not the providers that matched.
-Paging past the cap is unaffected.
+is bounded whatever the table looks like that day; and `includeCount: false`
+skips it altogether, which is what a rep's search does — it fans out into
+dozens of these queries per request and reads none of the counts, since the
+Prospect view reports how many leads came back, not how many providers
+matched. Paging past the cap is unaffected.
 
 Two partial indexes also carry the active-organization test in the index
 predicate and the NPI in the index itself, so what counting remains can be
