@@ -17,6 +17,8 @@ import * as taxonomiesRepo from "./repos/taxonomiesRepo.js";
 import * as suggestionsRepo from "./repos/suggestionsRepo.js";
 import * as adminRepo from "./repos/adminRepo.js";
 import * as Nppes from "./services/nppes.js";
+import * as ProviderSearch from "./services/providerSearch.js";
+import * as ProviderSource from "./services/providerSource.js";
 import * as Cms from "./services/cms.js";
 import * as Foursquare from "./services/foursquare.js";
 import * as Scraper from "./services/scraper.js";
@@ -165,8 +167,63 @@ app.get("/search/nppes", async (c) => {
     return c.json({ success: false, status: 400, error: "At least one of NPI, organization name, city, or specialty is required -- a state alone isn't specific enough for NPPES" }, 400);
   }
   criteria = await attachTaxonomyCodes(supabaseFor(c), criteria);
-  const data = await Nppes.searchProviders(c.get("config"), criteria);
-  return c.json(ok(data));
+  const data = await ProviderSource.searchProviders(c.get("config"), supabaseFor(c), criteria);
+  return c.json(ok(Object.assign({ source: ProviderSource.resolveSource(c.get("config")) }, data)));
+});
+
+// The cutover check: run one search against both copies of NPPES and show
+// what each returned. Nothing is written, and neither source is changed --
+// it exists so the switch is flipped on evidence rather than on hope.
+// `agreement` is what matters: the share of the mirror's NPIs that DME Desk
+// also returned for the same criteria. A gap is usually a provider the last
+// monthly refresh hasn't loaded yet, which is worth knowing before a rep
+// finds it.
+app.get("/admin/search-compare", async (c) => {
+  requireAdmin(c.get("session"));
+  // A state alone is too broad for a rep's search but is exactly what an
+  // admin wants to compare -- "does DME Desk have Virginia?" -- and the
+  // comparison only ever reads one page.
+  let criteria = readSearchCriteria(c);
+  if (!hasAnySearchCriteria(criteria) && !criteria.state) {
+    return c.json({ success: false, status: 400, error: "Give a search to compare: a state, NPI, company name, city or specialty" }, 400);
+  }
+  criteria = await attachTaxonomyCodes(supabaseFor(c), criteria);
+  criteria = Object.assign({}, criteria, { limit: Number(c.req.query("limit")) || 50, skip: Number(c.req.query("skip")) || 0 });
+
+  const config = c.get("config");
+  const supabase = supabaseFor(c);
+  const timed = async (run) => {
+    const startedAt = Date.now();
+    try {
+      const result = await run();
+      return { ok: true, ms: Date.now() - startedAt, count: result.count, results: result.results };
+    } catch (err) {
+      return { ok: false, ms: Date.now() - startedAt, error: err.message, count: 0, results: [] };
+    }
+  };
+
+  const [mirror, dmedesk] = await Promise.all([
+    timed(() => Nppes.searchProviders(config, criteria)),
+    timed(() => ProviderSearch.searchProviders(supabase, criteria)),
+  ]);
+
+  const mirrorNpis = new Set(mirror.results.map((r) => String(r.npi)));
+  const dmeNpis = new Set(dmedesk.results.map((r) => String(r.npi)));
+  const missing = [...mirrorNpis].filter((npi) => !dmeNpis.has(npi));
+  const extra = [...dmeNpis].filter((npi) => !mirrorNpis.has(npi));
+  const nameByNpi = new Map(mirror.results.concat(dmedesk.results).map((r) => [String(r.npi), r.name || ""]));
+
+  return c.json(ok({
+    activeSource: ProviderSource.resolveSource(config),
+    criteria: { state: criteria.state || null, city: criteria.city || null, taxonomyCode: criteria.taxonomyCode || null,
+                organizationName: criteria.organizationName || null, npi: criteria.npi || null,
+                limit: criteria.limit, skip: criteria.skip },
+    mirror: { ok: mirror.ok, error: mirror.error || null, ms: mirror.ms, count: mirror.count, returned: mirror.results.length },
+    dmedesk: { ok: dmedesk.ok, error: dmedesk.error || null, ms: dmedesk.ms, count: dmedesk.count, returned: dmedesk.results.length },
+    agreement: mirrorNpis.size ? Math.round(((mirrorNpis.size - missing.length) / mirrorNpis.size) * 100) : null,
+    missingFromDmeDesk: missing.slice(0, 25).map((npi) => ({ npi, name: nameByNpi.get(npi) || "" })),
+    onlyInDmeDesk: extra.slice(0, 25).map((npi) => ({ npi, name: nameByNpi.get(npi) || "" })),
+  }));
 });
 
 app.get("/search/companies", async (c) => {

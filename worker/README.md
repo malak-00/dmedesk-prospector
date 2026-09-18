@@ -106,6 +106,26 @@ scripts/
      node scripts/seed-user.mjs --username caro --password "a-real-password" --displayName "Caroline Richards"
    ```
 
+## NPI_SOURCE -- which copy of NPPES search reads
+
+| value | meaning |
+|---|---|
+| `mirror` (the default, and anything unrecognised) | the fakeNPI project over HTTP, at `FAKENPI_BASE_URL` |
+| `dmedesk` | this project's own `npi_records`, through `sql/018`'s `search_providers()` |
+
+`dmedesk` needs `sql/018_provider_search.sql` installed; until then a search
+against it returns a 503 naming the file, and `mirror` keeps working.
+
+Before switching, compare them on real searches: Admin -> **Search source** ->
+Compare sources (the same thing as `GET /admin/search-compare?state=VA`). It
+runs one search against both and shows each side's count, timing, and any NPI
+one has that the other doesn't -- a gap is usually a provider the last
+monthly refresh hasn't loaded yet.
+
+Set it as a plain variable in the Cloudflare dashboard (it isn't a secret),
+or in `wrangler.toml`. Reverting is setting it back to `mirror`; neither
+direction needs a deploy.
+
 ## Deploy
 
 ```bash

@@ -285,6 +285,12 @@ const els = {
   claimResultHeld: document.getElementById("claimResultHeld"),
   claimResultHeldList: document.getElementById("claimResultHeldList"),
   claimResultCloseBtn: document.getElementById("claimResultCloseBtn"),
+  searchSourceSummary: document.getElementById("searchSourceSummary"),
+  compareState: document.getElementById("compareState"),
+  compareSpecialty: document.getElementById("compareSpecialty"),
+  compareSourcesBtn: document.getElementById("compareSourcesBtn"),
+  searchCompareEmpty: document.getElementById("searchCompareEmpty"),
+  searchCompareResult: document.getElementById("searchCompareResult"),
   providerChangesSummary: document.getElementById("providerChangesSummary"),
   providerChangesEmpty: document.getElementById("providerChangesEmpty"),
   providerChangesList: document.getElementById("providerChangesList"),
@@ -928,6 +934,83 @@ function renderMatchReviews() {
   const remaining = reviews.length - visible.length;
   els.matchReviewsMoreBtn.hidden = remaining <= 0;
   els.matchReviewsMoreBtn.textContent = `Show ${Math.min(remaining, MATCH_REVIEWS_PAGE)} more (${remaining} left)`;
+}
+
+// Provider search reads either from the mirror project over HTTP or from
+// this project's own npi_records (sql/018), and NPI_SOURCE decides which.
+// This runs one search against both and shows what each returned, so the
+// switch gets flipped on evidence: a gap is almost always a provider the
+// last monthly refresh hasn't loaded, which is worth seeing before a rep
+// does.
+const SOURCE_LABELS = { mirror: "the mirror project (fakeNPI)", dmedesk: "DME Desk's own npi_records" };
+
+function renderSearchCompare(data) {
+  const row = (label, side) => `
+    <tr>
+      <th scope="row">${escapeHtml(label)}</th>
+      <td>${side.ok ? `${Number(side.count).toLocaleString()} match${side.count === 1 ? "" : "es"}` : `<span class="provider-change-old">${escapeHtml(side.error || "failed")}</span>`}</td>
+      <td class="mono">${side.ok ? `${side.returned} returned` : "—"}</td>
+      <td class="mono">${side.ms} ms</td>
+    </tr>`;
+
+  const gap = (title, list) => {
+    if (!list.length) return "";
+    return `
+      <div class="detail-block">
+        <h4>${escapeHtml(title)} (${list.length}${list.length === 25 ? "+" : ""})</h4>
+        <div class="mono" style="font-size:13px; line-height:1.7;">
+          ${list.map((item) => `${escapeHtml(item.npi)} ${escapeHtml(item.name || "")}`).join("<br>")}
+        </div>
+      </div>`;
+  };
+
+  els.searchCompareEmpty.hidden = true;
+  els.searchCompareResult.innerHTML = `
+    <div class="conflict-card match-review-card">
+      <div class="conflict-card-header">
+        <div>
+          <div class="conflict-title">${data.agreement === null ? "Nothing to compare" : `${data.agreement}% of the mirror's results are in DME Desk`}</div>
+          <div class="match-key-chips">
+            ${Object.entries(data.criteria).filter(([, v]) => v).map(([k, v]) => `<span class="match-key-chip">${escapeHtml(k)}: ${escapeHtml(String(v))}</span>`).join("")}
+          </div>
+        </div>
+      </div>
+      <table class="match-review-table">
+        <thead><tr><th scope="col">Source</th><th scope="col">Total</th><th scope="col">This page</th><th scope="col">Time</th></tr></thead>
+        <tbody>
+          ${row("Mirror (fakeNPI)", data.mirror)}
+          ${row("DME Desk", data.dmedesk)}
+        </tbody>
+      </table>
+      <div class="detail-grid">
+        ${gap("In the mirror, missing from DME Desk", data.missingFromDmeDesk)}
+        ${gap("Only in DME Desk", data.onlyInDmeDesk)}
+      </div>
+    </div>`;
+}
+
+async function compareSearchSources() {
+  const params = new URLSearchParams();
+  if (els.compareState.value.trim()) params.set("state", els.compareState.value.trim());
+  if (els.compareSpecialty.value.trim()) params.set("taxonomyDescription", els.compareSpecialty.value.trim());
+  if (![...params.keys()].length) {
+    showToast("Give a state or a specialty to compare", true);
+    return;
+  }
+  els.compareSourcesBtn.disabled = true;
+  els.searchCompareEmpty.hidden = false;
+  els.searchCompareEmpty.textContent = "Running the same search against both…";
+  els.searchCompareResult.innerHTML = "";
+  try {
+    const data = await apiGet(`admin/search-compare?${params.toString()}`);
+    els.searchSourceSummary.textContent = `Searches currently read from ${SOURCE_LABELS[data.activeSource] || data.activeSource}`;
+    renderSearchCompare(data);
+  } catch (err) {
+    els.searchCompareEmpty.hidden = false;
+    els.searchCompareEmpty.textContent = "Couldn't compare: " + err.message;
+  } finally {
+    els.compareSourcesBtn.disabled = false;
+  }
 }
 
 // What the last NPPES refresh changed about leads people own (sql/015).
@@ -3457,6 +3540,7 @@ els.matchReviewsList.addEventListener("click", (e) => {
   if (!btn) return;
   openMatchReview(btn.dataset.reviewKey, btn.dataset.matchReview);
 });
+els.compareSourcesBtn.addEventListener("click", compareSearchSources);
 els.providerChangesList.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-provider-change]");
   if (!btn) return;

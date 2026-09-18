@@ -276,6 +276,31 @@ existing service-role client and drop the cross-project Edge Function hop.
 Pointing `FAKENPI_BASE_URL` back at the real NPPES API also works without a
 code change, at the cost of the `skip` cap.
 
+## Where provider search reads from
+
+`NPI_SOURCE` picks between two copies of NPPES, and
+`services/providerSource.js` is the only place that knows which:
+
+- **`mirror`** (the default): the fakeNPI project over HTTP
+  (`services/nppes.js`, `FAKENPI_BASE_URL`). State, city, taxonomy code and
+  organization name are filtered upstream; name terms, excluded keywords and
+  last-updated years are filtered in the Worker afterwards, so a page of 200
+  can yield a handful of usable rows and the paging loop keeps fetching.
+- **`dmedesk`**: this project's own `npi_records` through `sql/018`'s
+  `search_providers()` (`services/providerSearch.js`). Every filter runs in
+  SQL, so a page is all usable rows; Medicare enrichment is joined in the
+  same query; and there is no HTTP hop to a Nano-tier instance that 500s
+  when several searches land together.
+
+Both return the same `{ count, rawCount, results }` with identically shaped
+providers, which is what lets `companyService` treat them alike. An
+unrecognised (or missing) value means the mirror — a typo must not take
+search down. `GET /admin/search-compare?state=VA&taxonomyDescription=...`
+runs one search against both and reports each side's count, timing and the
+NPIs one has and the other doesn't; the Admin page's **Search source** panel
+is that endpoint. Cutting over is setting the variable; reverting is unsetting
+it, no deploy either way.
+
 ## Export to Sheet (separate from claiming)
 
 `POST /export/google-sheet` and `POST /export/google-sheet/claimed` paste a

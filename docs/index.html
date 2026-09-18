@@ -352,6 +352,26 @@
 
         <div class="results-toolbar">
           <div class="results-meta">
+            <div class="results-count">Search source</div>
+            <div class="results-sub" id="searchSourceSummary">Checking…</div>
+          </div>
+          <div class="results-actions">
+            <label class="inline-field"><span>State</span>
+              <input type="text" id="compareState" maxlength="2" placeholder="VA" style="width:64px">
+            </label>
+            <label class="inline-field"><span>Specialty</span>
+              <input type="text" id="compareSpecialty" placeholder="Durable Medical Equipment">
+            </label>
+            <button type="button" class="btn btn-ghost btn-small" id="compareSourcesBtn">Compare sources</button>
+          </div>
+        </div>
+        <div id="searchComparePanel" class="conflicts-panel">
+          <div class="conflicts-empty" id="searchCompareEmpty">Run a comparison to see what each copy of NPPES returns for the same search.</div>
+          <div id="searchCompareResult"></div>
+        </div>
+
+        <div class="results-toolbar">
+          <div class="results-meta">
             <div class="results-count">Provider changes</div>
             <div class="results-sub" id="providerChangesSummary">Checking…</div>
           </div>
@@ -550,6 +570,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=36"></script>
+  <script src="app.js?v=37"></script>
 </body>
 </html>
