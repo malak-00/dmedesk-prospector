@@ -32,17 +32,37 @@
 
 begin;
 
--- Name search is `ilike '%term%'`, which no b-tree can help with. A trigram
--- index can, so create one where the extension is available (Supabase has
--- it; a local Postgres build may not). Everything still works without it --
--- it is slower, nothing more.
+-- Name search is `ilike '%term%'`, which no b-tree can help with: without a
+-- trigram index it reads every provider, which at this size is seconds.
+--
+-- The operator class has to be schema-qualified. Supabase installs pg_trgm
+-- into its own `extensions` schema, and an unqualified `gin_trgm_ops`
+-- resolves against search_path -- so the index creation fails there, which
+-- is exactly how a name search ends up scanning 394k rows while everything
+-- looks installed. Where the extension isn't available at all, search still
+-- works; it is only slower.
 do $$
+declare
+  v_schema text;
 begin
-  if exists (select 1 from pg_available_extensions where name = 'pg_trgm') then
+  select n.nspname into v_schema
+    from pg_extension e join pg_namespace n on n.oid = e.extnamespace
+   where e.extname = 'pg_trgm';
+
+  if v_schema is null and exists (select 1 from pg_available_extensions where name = 'pg_trgm') then
     execute 'create extension if not exists pg_trgm';
-    execute 'create index if not exists idx_npi_records_name_trgm on public.npi_records using gin (name gin_trgm_ops)';
+    select n.nspname into v_schema
+      from pg_extension e join pg_namespace n on n.oid = e.extnamespace
+     where e.extname = 'pg_trgm';
+  end if;
+
+  if v_schema is null then
+    raise notice 'pg_trgm is not available here; name search will work without its index, slowly';
   else
-    raise notice 'pg_trgm is not available here; name search will work without its index';
+    execute format(
+      'create index if not exists idx_npi_records_name_trgm on public.npi_records using gin (name %I.gin_trgm_ops)',
+      v_schema);
+    raise notice 'name search index built with pg_trgm from schema %', v_schema;
   end if;
 end
 $$;
