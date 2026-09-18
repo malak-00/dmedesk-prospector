@@ -24,6 +24,10 @@
 -- uses is built in the Worker (services/providerSearch.js) from these
 -- columns, so the two sources can't drift apart in two languages.
 --
+-- Only the filters a search actually carries reach the query, so each one
+-- is a plain comparison the planner can answer from an index rather than
+-- something it has to look at every row to evaluate.
+--
 -- Rerun-safe. Read-only: it writes nothing.
 
 begin;
@@ -43,16 +47,23 @@ begin
 end
 $$;
 
--- The filters searches actually combine: state and taxonomy first, since
--- every variant of every search carries them. State and city are matched
--- case-insensitively and trimmed, so the indexes are on that same
--- expression -- a plain column index would never be used.
+-- Every index here is on the exact expression the search uses. State and
+-- city are matched trimmed and upper-cased, so a plain column index on them
+-- could never be used; taxonomy needs one of its own because a search by
+-- specialty alone carries no state, and as the second column of a composite
+-- index it would be unreachable.
 create index if not exists idx_npi_records_state_taxonomy
   on public.npi_records (upper(btrim(address_state)), taxonomy_code);
+create index if not exists idx_npi_records_taxonomy_code
+  on public.npi_records (taxonomy_code);
 create index if not exists idx_npi_records_city
   on public.npi_records (upper(btrim(address_city)));
 create index if not exists idx_npi_records_lastupdated
   on public.npi_records (lastupdated);
+
+-- Fresh statistics, so the planner uses the indexes above from the first
+-- search rather than after autovacuum gets round to the table.
+analyze public.npi_records;
 
 -- What a taxonomy code is called. npi_records only ever stored the code, so
 -- without this a result has no specialty to show and a specialty filter
@@ -116,89 +127,144 @@ returns table (
   medicare_payment numeric,
   medicare_allowed numeric,
   total_count bigint)
-language sql
+language plpgsql
 stable
 security definer
 set search_path = public, pg_temp
-as $$
-  with c as (
-    select coalesce(p_criteria, '{}'::jsonb) as j,
-           least(greatest(coalesce(p_limit, 20), 1), 200) as lim,
-           greatest(coalesce(p_skip, 0), 0) as skp
-  ), matched as (
-    select r.npi, count(*) over () as total_count
-      from public.npi_records r, c
-     where case
-       when nullif(btrim(coalesce(c.j->>'npi', '')), '') is not null
-         then r.npi = btrim(c.j->>'npi')
-       else
-            (coalesce((c.j->>'includeIndividuals')::boolean, false)
-             or coalesce(r.isorganization, r.enumerationtype = 'NPI-2', true))
-        and (coalesce((c.j->>'includeInactive')::boolean, false)
-             or (r.deactivation_date is null
-                 and upper(coalesce(r.status, 'A')) in ('A', 'ACTIVE')))
-        and (c.j->>'state' is null or upper(btrim(r.address_state)) = upper(btrim(c.j->>'state')))
-        and (c.j->>'city' is null or upper(btrim(r.address_city)) = upper(btrim(c.j->>'city')))
-        and (c.j->>'taxonomyCode' is null or btrim(r.taxonomy_code) = btrim(c.j->>'taxonomyCode'))
-        -- npi_records carries the taxonomy CODE; the description lives in
-        -- public.taxonomies (the column has never been populated -- see
-        -- repos/taxonomiesRepo.js), so filtering on the column alone matched
-        -- nothing at all. The reference table wins where it knows the code:
-        -- it is the one place a code's name is maintained, and what little
-        -- ever landed in the column is an abbreviation from another era.
-        and (c.j->>'taxonomyDescription' is null
-             or coalesce(public.taxonomy_description_for(r.taxonomy_code), r.taxonomy_description)
-                ilike '%' || (c.j->>'taxonomyDescription') || '%')
-        and (c.j->>'organizationName' is null
-             or r.name ilike replace(c.j->>'organizationName', '*', '%') || '%')
-        and (c.j->'nameContains' is null
-             or exists (select 1 from jsonb_array_elements_text(c.j->'nameContains') t(term)
-                         where btrim(t.term) <> '' and r.name ilike '%' || t.term || '%'))
-        and (c.j->'excludeKeywords' is null
-             or not exists (select 1 from jsonb_array_elements_text(c.j->'excludeKeywords') t(term)
-                             where btrim(t.term) <> '' and r.name ilike '%' || t.term || '%'))
-        and (c.j->'lastUpdatedYears' is null
-             or to_char(r.lastupdated, 'YYYY') in
-                (select t.term from jsonb_array_elements_text(c.j->'lastUpdatedYears') t(term)))
-     end
-     -- NPI order is the only stable one here, and paging needs a stable one:
-     -- the app walks a search with skip, and a row that moves between pages
-     -- is a lead seen twice or never.
+as $fn$
+declare
+  v_j jsonb := coalesce(p_criteria, '{}'::jsonb);
+  v_lim integer := least(greatest(coalesce(p_limit, 20), 1), 200);
+  v_skip integer := greatest(coalesce(p_skip, 0), 0);
+  v_npi text := nullif(btrim(coalesce(v_j->>'npi', '')), '');
+  v_where text[] := '{}';
+  v_terms text[];
+begin
+  -- The predicates are built as text rather than written as one static
+  -- query with "(:param is null or column = :param)" for each filter,
+  -- because that idiom hides the comparison from the planner: against
+  -- 394k providers it means a sequential scan every time, and a search by
+  -- specialty alone timed out at 8s. Built this way, each filter that is
+  -- actually present becomes a plain comparison the planner can answer
+  -- from an index. Every value goes through quote_literal (%L) -- nothing
+  -- from the caller is ever interpolated raw.
+  if v_npi is not null then
+    -- An exact NPI lookup ignores every other filter, as the mirror's does.
+    v_where := array_append(v_where, format('r.npi = %L', v_npi));
+  else
+    if not coalesce((v_j->>'includeIndividuals')::boolean, false) then
+      v_where := array_append(v_where, 'coalesce(r.isorganization, r.enumerationtype = ''NPI-2'', true)');
+    end if;
+
+    if not coalesce((v_j->>'includeInactive')::boolean, false) then
+      v_where := array_append(v_where, 'r.deactivation_date is null');
+      v_where := array_append(v_where, 'upper(coalesce(r.status, ''A'')) in (''A'', ''ACTIVE'')');
+    end if;
+
+    if nullif(btrim(coalesce(v_j->>'state', '')), '') is not null then
+      v_where := array_append(v_where, format('upper(btrim(r.address_state)) = %L', upper(btrim(v_j->>'state'))));
+    end if;
+
+    if nullif(btrim(coalesce(v_j->>'city', '')), '') is not null then
+      v_where := array_append(v_where, format('upper(btrim(r.address_city)) = %L', upper(btrim(v_j->>'city'))));
+    end if;
+
+    if nullif(btrim(coalesce(v_j->>'taxonomyCode', '')), '') is not null then
+      v_where := array_append(v_where, format('r.taxonomy_code = %L', btrim(v_j->>'taxonomyCode')));
+    end if;
+
+    -- npi_records carries the taxonomy CODE; the description lives in
+    -- public.taxonomies (the column has never been populated -- see
+    -- repos/taxonomiesRepo.js), so filtering on the column alone matched
+    -- nothing at all. Resolving the text to codes first keeps this an
+    -- indexed comparison instead of a function call per row.
+    if nullif(btrim(coalesce(v_j->>'taxonomyDescription', '')), '') is not null then
+      select array_agg(distinct btrim(t.code))
+        into v_terms
+        from public.taxonomies t
+       where nullif(btrim(t.code), '') is not null
+         and coalesce(t.description, t.facility_type) ilike '%' || btrim(v_j->>'taxonomyDescription') || '%';
+      if v_terms is null or cardinality(v_terms) = 0 then
+        v_where := array_append(v_where, 'false');
+      else
+        v_where := array_append(v_where, format('r.taxonomy_code = any (%L::text[])', v_terms));
+      end if;
+    end if;
+
+    if nullif(btrim(coalesce(v_j->>'organizationName', '')), '') is not null then
+      v_where := array_append(v_where,
+        format('r.name ilike %L', replace(btrim(v_j->>'organizationName'), '*', '%') || '%'));
+    end if;
+
+    select array_agg('%' || btrim(t.term) || '%')
+      into v_terms
+      from jsonb_array_elements_text(coalesce(v_j->'nameContains', '[]'::jsonb)) t(term)
+     where btrim(t.term) <> '';
+    if v_terms is not null and cardinality(v_terms) > 0 then
+      v_where := array_append(v_where, format('r.name ilike any (%L::text[])', v_terms));
+    end if;
+
+    select array_agg('%' || btrim(t.term) || '%')
+      into v_terms
+      from jsonb_array_elements_text(coalesce(v_j->'excludeKeywords', '[]'::jsonb)) t(term)
+     where btrim(t.term) <> '';
+    if v_terms is not null and cardinality(v_terms) > 0 then
+      v_where := array_append(v_where, format('not (r.name ilike any (%L::text[]))', v_terms));
+    end if;
+
+    select array_agg(btrim(t.term))
+      into v_terms
+      from jsonb_array_elements_text(coalesce(v_j->'lastUpdatedYears', '[]'::jsonb)) t(term)
+     where btrim(t.term) <> '';
+    if v_terms is not null and cardinality(v_terms) > 0 then
+      v_where := array_append(v_where, format('to_char(r.lastupdated, ''YYYY'') = any (%L::text[])', v_terms));
+    end if;
+  end if;
+
+  return query execute format($q$
+    with matched as (
+      select r.npi, count(*) over () as total_count
+        from public.npi_records r
+       where %s
+       -- NPI order is the only stable one here, and paging needs a stable
+       -- one: a row that moves between pages is a lead seen twice or never.
+       order by r.npi
+       limit %s offset %s
+    )
+    select r.npi::text,
+           r.name::text,
+           coalesce(r.enumerationtype, case when r.isorganization then 'NPI-2' else 'NPI-1' end)::text,
+           r.status::text,
+           coalesce(r.isorganization, r.enumerationtype = 'NPI-2', true),
+           r.address_line1::text,
+           r.address_line2::text,
+           r.address_city::text,
+           r.address_state::text,
+           r.address_postalcode::text,
+           r.address_countrycode::text,
+           r.phone::text,
+           r.taxonomy_code::text,
+           coalesce(public.taxonomy_description_for(r.taxonomy_code), r.taxonomy_description)::text,
+           r.authorizedofficial_firstname::text,
+           r.authorizedofficial_lastname::text,
+           null::text,
+           r.authorizedofficial_title::text,
+           r.authorizedofficial_phone::text,
+           to_char(r.lastupdated, 'YYYY-MM-DD')::text,
+           to_char(r.deactivation_date, 'YYYY-MM-DD')::text,
+           e.total_claims,
+           e.total_services,
+           e.total_beneficiaries,
+           e.medicare_payment,
+           e.medicare_allowed,
+           m.total_count
+      from matched m
+      join public.npi_records r on r.npi = m.npi
+      left join public.npi_cms_enrichment e on e.npi = r.npi
      order by r.npi
-     limit (select lim from c) offset (select skp from c)
-  )
-  select r.npi::text,
-         r.name::text,
-         coalesce(r.enumerationtype, case when r.isorganization then 'NPI-2' else 'NPI-1' end)::text,
-         r.status::text,
-         coalesce(r.isorganization, r.enumerationtype = 'NPI-2', true),
-         r.address_line1::text,
-         r.address_line2::text,
-         r.address_city::text,
-         r.address_state::text,
-         r.address_postalcode::text,
-         r.address_countrycode::text,
-         r.phone::text,
-         r.taxonomy_code::text,
-         coalesce(public.taxonomy_description_for(r.taxonomy_code), r.taxonomy_description)::text,
-         r.authorizedofficial_firstname::text,
-         r.authorizedofficial_lastname::text,
-         null::text,
-         r.authorizedofficial_title::text,
-         r.authorizedofficial_phone::text,
-         to_char(r.lastupdated, 'YYYY-MM-DD')::text,
-         to_char(r.deactivation_date, 'YYYY-MM-DD')::text,
-         e.total_claims,
-         e.total_services,
-         e.total_beneficiaries,
-         e.medicare_payment,
-         e.medicare_allowed,
-         m.total_count
-    from matched m
-    join public.npi_records r on r.npi = m.npi
-    left join public.npi_cms_enrichment e on e.npi = r.npi
-   order by r.npi
-$$;
+  $q$, coalesce(nullif(array_to_string(v_where, ' and '), ''), 'true'), v_lim, v_skip);
+end
+$fn$;
 
 revoke all on function public.search_providers(jsonb, integer, integer) from public, anon, authenticated;
 grant execute on function public.search_providers(jsonb, integer, integer) to service_role;

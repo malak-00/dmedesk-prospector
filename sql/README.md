@@ -189,7 +189,16 @@ is) — against the column alone a specialty search matched nothing at all —
 which is why a page of 200 could come back with three usable rows. Deactivated
 providers and individuals are left out unless asked for, Medicare enrichment
 is joined in the same query, and the full match count rides on every row.
-Results are ordered by NPI because paging needs a stable order. A trigram
+Results are ordered by NPI because paging needs a stable order.
+
+Only the filters a search actually carries reach the query. Written the
+obvious way — one static query with `(:param is null or column = :param)`
+per filter — the planner can't see any of the comparisons and scans all
+394k rows every time: a search by specialty alone took over 8s and was
+cancelled by Supabase's statement timeout. Built per search, each filter is
+a plain comparison answered from an index (238ms for the same search at full
+size, measured on 394,755 generated rows). Every value goes through
+`quote_literal`; nothing from the caller is interpolated raw. A trigram
 index for name search is created where `pg_trgm` is available; without it
 search still works, just slower. The Worker picks a source with `NPI_SOURCE`
 (see `worker/README.md`), so the cutover is a variable, not a deploy.
