@@ -187,6 +187,29 @@ create index if not exists idx_npi_records_city
 create index if not exists idx_npi_records_lastupdated
   on public.npi_records (lastupdated);
 
+-- Almost every search is "active organizations in this state / with this
+-- specialty", and the expensive half of answering one is the exact match
+-- count: it has to account for every matching provider, not just the fifty
+-- on the page. These two carry the active-organization test in the index
+-- predicate and the NPI in the index itself, so that count can be answered
+-- from the index alone -- no heap visit per matching row, which is what
+-- made a 24,000-match state search time out.
+--
+-- The predicates are written exactly as search_providers emits them; a
+-- partial index is only usable when the planner can see that the query's
+-- conditions imply the index's.
+create index if not exists idx_npi_records_active_state
+  on public.npi_records (upper(btrim(address_state)), npi)
+  where deactivation_date is null
+    and upper(coalesce(status, 'A')) in ('A', 'ACTIVE')
+    and coalesce(isorganization, enumerationtype = 'NPI-2', true);
+
+create index if not exists idx_npi_records_active_taxonomy
+  on public.npi_records (taxonomy_code, npi)
+  where deactivation_date is null
+    and upper(coalesce(status, 'A')) in ('A', 'ACTIVE')
+    and coalesce(isorganization, enumerationtype = 'NPI-2', true);
+
 -- Fresh statistics, so the planner uses the indexes above from the first
 -- search rather than after autovacuum gets round to the table.
 analyze public.npi_records;
@@ -415,6 +438,12 @@ grant execute on function public.taxonomy_description_for(text) to service_role;
 -- the code -- this must not be null for a code that is on file:
 -- select taxonomy_code, public.taxonomy_description_for(taxonomy_code)
 --   from public.npi_records where taxonomy_code is not null limit 5;
+--
+-- An index-only count needs the visibility map, which a bulk load leaves
+-- unset. VACUUM cannot run inside a transaction, so run this once, on its
+-- own, after the file above -- searches are markedly faster with it, and it
+-- is worth repeating after each monthly refresh:
+-- vacuum (analyze) public.npi_records;
 --
 -- Did the name index get built?
 -- select indexname from pg_indexes where tablename = 'npi_records' order by indexname;

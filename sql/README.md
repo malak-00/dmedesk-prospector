@@ -196,8 +196,18 @@ obvious way — one static query with `(:param is null or column = :param)`
 per filter — the planner can't see any of the comparisons and scans all
 394k rows every time: a search by specialty alone took over 8s and was
 cancelled by Supabase's statement timeout. Built per search, each filter is
-a plain comparison answered from an index (238ms for the same search at full
-size, measured on 394,755 generated rows). Every value goes through
+a plain comparison answered from an index.
+
+The expensive half of a search is the exact match count — it has to account
+for every matching provider, not just the fifty on the page — which is why a
+24,000-match state search still timed out once the filters were fixed. Two
+partial indexes carry the active-organization test in the index predicate and
+the NPI in the index itself, so the count is answered from the index alone.
+Measured on 394,755 generated providers: a 37,759-match state search takes
+69ms, a 112,787-match specialty search 165ms. **Run `vacuum (analyze)
+public.npi_records;` once after this file** (it can't run inside its
+transaction): an index-only count needs the visibility map, which a bulk load
+leaves unset. Worth repeating after each monthly refresh. Every value goes through
 `quote_literal`; nothing from the caller is interpolated raw. A trigram
 index for name search is created where `pg_trgm` is available; without it
 search still works, just slower. The Worker picks a source with `NPI_SOURCE`
