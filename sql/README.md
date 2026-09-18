@@ -183,6 +183,9 @@ the September refresh, covering 3,579 of the 3,611 leads people own.
 `search_providers(criteria, limit, skip)` does that search here: every filter
 runs in SQL, including the three the mirror can't do (name terms, excluded
 keywords, last-updated years) which the Worker used to apply *after* paging —
+and the specialty filter resolves through `public.taxonomies`, because
+`npi_records.taxonomy_description` has never been populated (only the code
+is) — against the column alone a specialty search matched nothing at all —
 which is why a page of 200 could come back with three usable rows. Deactivated
 providers and individuals are left out unless asked for, Medicare enrichment
 is joined in the same query, and the full match count rides on every row.

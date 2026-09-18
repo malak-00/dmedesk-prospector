@@ -150,13 +150,34 @@ end
 $$;
 
 -- The filters searches actually combine: state and taxonomy first, since
--- every variant of every search carries them.
+-- every variant of every search carries them. State and city are matched
+-- case-insensitively and trimmed, so the indexes are on that same
+-- expression -- a plain column index would never be used.
 create index if not exists idx_npi_records_state_taxonomy
-  on public.npi_records (address_state, taxonomy_code);
+  on public.npi_records (upper(btrim(address_state)), taxonomy_code);
 create index if not exists idx_npi_records_city
-  on public.npi_records (address_city);
+  on public.npi_records (upper(btrim(address_city)));
 create index if not exists idx_npi_records_lastupdated
   on public.npi_records (lastupdated);
+
+-- What a taxonomy code is called. npi_records only ever stored the code, so
+-- without this a result has no specialty to show and a specialty filter
+-- matches nothing. public.taxonomies holds duplicate and blank-coded rows,
+-- hence btrim and the single-row pick.
+create or replace function public.taxonomy_description_for(p_code text)
+returns text
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce(nullif(btrim(t.description), ''), nullif(btrim(t.facility_type), ''))
+    from public.taxonomies t
+   where btrim(t.code) = btrim(p_code)
+     and coalesce(nullif(btrim(t.description), ''), nullif(btrim(t.facility_type), '')) is not null
+   order by t.description
+   limit 1
+$$;
 
 -- p_criteria keys, all optional:
 --   npi                  exact NPI; when present every other filter is ignored
@@ -222,11 +243,18 @@ as $$
         and (coalesce((c.j->>'includeInactive')::boolean, false)
              or (r.deactivation_date is null
                  and upper(coalesce(r.status, 'A')) in ('A', 'ACTIVE')))
-        and (c.j->>'state' is null or upper(r.address_state) = upper(c.j->>'state'))
-        and (c.j->>'city' is null or upper(r.address_city) = upper(c.j->>'city'))
-        and (c.j->>'taxonomyCode' is null or r.taxonomy_code = c.j->>'taxonomyCode')
+        and (c.j->>'state' is null or upper(btrim(r.address_state)) = upper(btrim(c.j->>'state')))
+        and (c.j->>'city' is null or upper(btrim(r.address_city)) = upper(btrim(c.j->>'city')))
+        and (c.j->>'taxonomyCode' is null or btrim(r.taxonomy_code) = btrim(c.j->>'taxonomyCode'))
+        -- npi_records carries the taxonomy CODE; the description lives in
+        -- public.taxonomies (the column has never been populated -- see
+        -- repos/taxonomiesRepo.js), so filtering on the column alone matched
+        -- nothing at all. The reference table wins where it knows the code:
+        -- it is the one place a code's name is maintained, and what little
+        -- ever landed in the column is an abbreviation from another era.
         and (c.j->>'taxonomyDescription' is null
-             or r.taxonomy_description ilike '%' || (c.j->>'taxonomyDescription') || '%')
+             or coalesce(public.taxonomy_description_for(r.taxonomy_code), r.taxonomy_description)
+                ilike '%' || (c.j->>'taxonomyDescription') || '%')
         and (c.j->>'organizationName' is null
              or r.name ilike replace(c.j->>'organizationName', '*', '%') || '%')
         and (c.j->'nameContains' is null
@@ -258,7 +286,7 @@ as $$
          r.address_countrycode::text,
          r.phone::text,
          r.taxonomy_code::text,
-         r.taxonomy_description::text,
+         coalesce(public.taxonomy_description_for(r.taxonomy_code), r.taxonomy_description)::text,
          r.authorizedofficial_firstname::text,
          r.authorizedofficial_lastname::text,
          null::text,
@@ -280,6 +308,8 @@ $$;
 
 revoke all on function public.search_providers(jsonb, integer, integer) from public, anon, authenticated;
 grant execute on function public.search_providers(jsonb, integer, integer) to service_role;
+revoke all on function public.taxonomy_description_for(text) from public, anon, authenticated;
+grant execute on function public.taxonomy_description_for(text) to service_role;
 
 
 -- Verification (read-only):
@@ -294,6 +324,11 @@ grant execute on function public.search_providers(jsonb, integer, integer) to se
 -- intersect
 -- select npi from public.search_providers('{"state":"VA"}'::jsonb, 5, 5);
 --   -> 0 rows.
+--
+-- Specialties resolve from the taxonomies table, since npi_records only has
+-- the code -- this must not be null for a code that is on file:
+-- select taxonomy_code, public.taxonomy_description_for(taxonomy_code)
+--   from public.npi_records where taxonomy_code is not null limit 5;
 --
 -- Did the name index get built?
 -- select indexname from pg_indexes where tablename = 'npi_records' order by indexname;
