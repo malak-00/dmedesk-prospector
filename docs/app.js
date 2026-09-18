@@ -984,7 +984,7 @@ function renderSearchCompare(data) {
   const row = (label, side) => `
     <tr>
       <th scope="row">${escapeHtml(label)}</th>
-      <td>${side.ok ? `${Number(side.count).toLocaleString()} match${side.count === 1 ? "" : "es"}` : `<span class="provider-change-old">${escapeHtml(side.error || "failed")}</span>`}</td>
+      <td>${side.ok ? `${Number(side.count).toLocaleString()}${side.countCapped ? "+" : ""} match${side.count === 1 ? "" : "es"}` : `<span class="provider-change-old">${escapeHtml(side.error || "failed")}</span>`}</td>
       <td class="mono">${side.ok ? `${side.returned} returned` : "—"}</td>
       <td class="mono">${side.ms} ms</td>
     </tr>`;

@@ -127,9 +127,12 @@ export async function searchProviders(supabase, criteria = {}) {
   const rows = data || [];
   const results = rows.map(toProvider);
   return {
-    // Every row carries the same full match count; with no rows there is
-    // nothing to carry, and nothing matched.
+    // Every row carries the same match count; with no rows there is nothing
+    // to carry, and nothing matched. Counting stops at sql/018's cap, so a
+    // very broad search reports "this many or more" -- countCapped says so,
+    // and paging past it is unaffected.
     count: rows.length ? Number(rows[0].total_count) : 0,
+    countCapped: rows.length ? rows[0].count_capped === true : false,
     // The mirror returns a page and then loses rows to filters the Worker
     // applies afterwards; here the two are always the same number. Kept so
     // callers (companyService's paging loop) can treat both sources alike.

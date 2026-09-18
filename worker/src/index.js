@@ -199,7 +199,7 @@ app.get("/admin/search-compare", async (c) => {
     const startedAt = Date.now();
     try {
       const result = await run();
-      return { ok: true, ms: Date.now() - startedAt, count: result.count, results: result.results };
+      return { ok: true, ms: Date.now() - startedAt, count: result.count, countCapped: result.countCapped === true, results: result.results };
     } catch (err) {
       return { ok: false, ms: Date.now() - startedAt, error: err.message, count: 0, results: [] };
     }
@@ -217,8 +217,8 @@ app.get("/admin/search-compare", async (c) => {
     criteria: { state: criteria.state || null, city: criteria.city || null, taxonomyCode: criteria.taxonomyCode || null,
                 organizationName: criteria.organizationName || null, npi: criteria.npi || null,
                 limit: criteria.limit, skip: criteria.skip },
-    mirror: { ok: mirror.ok, error: mirror.error || null, ms: mirror.ms, count: mirror.count, returned: mirror.results.length },
-    dmedesk: { ok: dmedesk.ok, error: dmedesk.error || null, ms: dmedesk.ms, count: dmedesk.count, returned: dmedesk.results.length },
+    mirror: { ok: mirror.ok, error: mirror.error || null, ms: mirror.ms, count: mirror.count, countCapped: mirror.countCapped === true, returned: mirror.results.length },
+    dmedesk: { ok: dmedesk.ok, error: dmedesk.error || null, ms: dmedesk.ms, count: dmedesk.count, countCapped: dmedesk.countCapped === true, returned: dmedesk.results.length },
     coverage,
   }));
 });

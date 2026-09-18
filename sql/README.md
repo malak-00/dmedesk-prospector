@@ -198,16 +198,22 @@ per filter — the planner can't see any of the comparisons and scans all
 cancelled by Supabase's statement timeout. Built per search, each filter is
 a plain comparison answered from an index.
 
-The expensive half of a search is the exact match count — it has to account
-for every matching provider, not just the fifty on the page — which is why a
-24,000-match state search still timed out once the filters were fixed. Two
-partial indexes carry the active-organization test in the index predicate and
-the NPI in the index itself, so the count is answered from the index alone.
-Measured on 394,755 generated providers: a 37,759-match state search takes
-69ms, a 112,787-match specialty search 165ms. **Run `vacuum (analyze)
-public.npi_records;` once after this file** (it can't run inside its
-transaction): an index-only count needs the visibility map, which a bulk load
-leaves unset. Worth repeating after each monthly refresh. Every value goes through
+The expensive half of a search is the match count: it has to account for
+every matching provider, not just the fifty on the page — 24,078 for a single
+state — and that cost grows with how popular the search is. Counting now
+stops at 5,000 and the row says `count_capped`, so the work any search can do
+is bounded whatever the table looks like that day. Reps never see it: the
+Prospect view counts the leads it got back, not the providers that matched.
+Paging past the cap is unaffected.
+
+Two partial indexes also carry the active-organization test in the index
+predicate and the NPI in the index itself, so what counting remains can be
+answered from the index alone. Measured on 394,755 generated providers, every
+search shape lands between 4ms and 90ms. **Run `vacuum (analyze)
+public.npi_records;` once after this file**, as the only statement in the
+editor (it can't run inside a transaction): an index-only scan needs the
+visibility map, which a bulk load leaves unset, and each refresh updates
+~200k rows. Worth repeating after every refresh. Every value goes through
 `quote_literal`; nothing from the caller is interpolated raw. A trigram
 index for name search is created where `pg_trgm` is available; without it
 search still works, just slower. The Worker picks a source with `NPI_SOURCE`

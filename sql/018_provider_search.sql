@@ -127,6 +127,19 @@ as $$
    limit 1
 $$;
 
+-- An exact total means accounting for every matching provider, not just the
+-- fifty on the page -- 24,078 of them for a single state. That is the whole
+-- cost of a search, it grows with the popularity of the search, and it is
+-- the part a rep never actually reads: "24,078 matches" and "5,000+ matches"
+-- lead to the same next action. Counting stops at the cap, so the work a
+-- search can do is bounded no matter how big the table gets or how slow the
+-- database is that day, and count_capped says when that happened.
+--
+-- The page itself is never capped: paging past 5,000 works exactly as before.
+
+-- The result columns change below, which a create-or-replace can't do.
+drop function if exists public.search_providers(jsonb, integer, integer);
+
 -- p_criteria keys, all optional:
 --   npi                  exact NPI; when present every other filter is ignored
 --   state, city          exact, case-insensitive
@@ -169,7 +182,8 @@ returns table (
   medicare_total_beneficiaries numeric,
   medicare_payment numeric,
   medicare_allowed numeric,
-  total_count bigint)
+  total_count bigint,
+  count_capped boolean)
 language plpgsql
 stable
 security definer
@@ -182,6 +196,8 @@ declare
   v_npi text := nullif(btrim(coalesce(v_j->>'npi', '')), '');
   v_where text[] := '{}';
   v_terms text[];
+  -- Above this many matches the total is reported as "this many or more".
+  v_count_cap constant integer := 5000;
 begin
   -- The predicates are built as text rather than written as one static
   -- query with "(:param is null or column = :param)" for each filter,
@@ -265,14 +281,20 @@ begin
   end if;
 
   return query execute format($q$
-    with matched as (
-      select r.npi, count(*) over () as total_count
+    with counted as (
+      -- Stops after the cap: the planner pushes the limit into the scan, so
+      -- a search over a 24,000-provider state reads 5,001 index entries.
+      select count(*) as n from (
+        select 1 from public.npi_records r where %1$s limit %4$s
+      ) capped
+    ), matched as (
+      select r.npi
         from public.npi_records r
-       where %s
+       where %1$s
        -- NPI order is the only stable one here, and paging needs a stable
        -- one: a row that moves between pages is a lead seen twice or never.
        order by r.npi
-       limit %s offset %s
+       limit %2$s offset %3$s
     )
     select r.npi::text,
            r.name::text,
@@ -300,12 +322,14 @@ begin
            e.total_beneficiaries,
            e.medicare_payment,
            e.medicare_allowed,
-           m.total_count
+           c.n,
+           c.n >= %4$s
       from matched m
       join public.npi_records r on r.npi = m.npi
+      cross join counted c
       left join public.npi_cms_enrichment e on e.npi = r.npi
      order by r.npi
-  $q$, coalesce(nullif(array_to_string(v_where, ' and '), ''), 'true'), v_lim, v_skip);
+  $q$, coalesce(nullif(array_to_string(v_where, ' and '), ''), 'true'), v_lim, v_skip, v_count_cap);
 end
 $fn$;
 
@@ -319,6 +343,7 @@ commit;
 -- Verification (read-only):
 -- select count(*) from public.search_providers('{"state":"VA"}'::jsonb, 5, 0);
 --   -> 5 rows (or fewer if VA has fewer), each with the same total_count.
+--      total_count stops at 5,000; count_capped is true when it did.
 --
 -- select npi, name, city, state, total_count
 --   from public.search_providers('{"state":"VA","nameContains":["medical"]}'::jsonb, 5, 0);
