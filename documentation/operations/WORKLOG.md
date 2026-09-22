@@ -316,6 +316,27 @@ No database, spreadsheet row data, or calendar events changed.
 
 The Prospector connection column is no longer blocked by the new validation. No destructive commands or production SQL were executed.
 
+## 2026-09-22 — Restrict rescheduled leads to Cancelled
+
+### Objective
+
+Keep rescheduled leads in `New Meetings` while making `Cancelled` their only permitted next movement.
+
+### Actions Completed
+
+- Added `Cancelled` to the BD Meetings active-sheet allowlist and built-in destination map.
+- Applied a single-option data-validation rule to the movement cell when a `Rescheduled` lead is in `New Meetings`.
+- Added the same restriction to queued and batch movement paths.
+- Ran the Apps Script syntax check and pushed the updated Apps Script with clasp.
+
+### Database / System Result
+
+No database, spreadsheet row data, or calendar events changed during deployment. The user still needs to create the `Cancelled` tab before moving rows there.
+
+### Safety Status
+
+Rescheduled rows remain in `New Meetings`; only their next movement choice is restricted. No destructive commands or production SQL were executed.
+
 ## 2026-09-22 — BD meeting validation, booking, and agent-instruction plan
 
 ### Objective
