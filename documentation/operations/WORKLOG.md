@@ -255,6 +255,27 @@ No database schema or production data changed. No Supabase SQL was executed. App
 
 No destructive commands were run. No spreadsheet rows or calendar events were created by this deployment; booking remains an explicit user action and requires the Worker Google Calendar secrets to be configured.
 
+## 2026-09-22 — Immediate NPI warning on schedule checkbox
+
+### Objective
+
+Warn users immediately when they check the scheduling checkbox without a valid NPI.
+
+### Actions Completed
+
+- Updated `BD MEETINGS 2026/src/code.js` to validate column S when the column Q checkbox is checked.
+- Added a warning and automatically reset the checkbox when the NPI is missing or not 10 digits.
+- Ran a Node syntax check and `git diff --check`.
+- Pushed the updated Apps Script with clasp; clasp reported `Pushed 4 files`.
+
+### Database / System Result
+
+No database, spreadsheet row data, or calendar events were changed by the deployment.
+
+### Safety Status
+
+The invalid checkbox action is rejected before scheduling. No destructive commands or production SQL were executed.
+
 ## 2026-09-22 — BD meeting validation, booking, and agent-instruction plan
 
 ### Objective
