@@ -231,6 +231,30 @@ Diagnose and resolve the Supabase storage quota overage (742 MB / 500 MB), diagn
 - Production schema was not altered during this session.
 - Staging table truncation removed only temporary ingest rows, not active provider registry records (`npi_records`).
 
+## 2026-09-22 — Meeting safeguards, booking action, and Apps Script push
+
+### Objective
+
+Implement the requested BD meeting warnings, correct the spreadsheet NPI/sync columns, standardize calendar hyperlinks, add immediate booking from Prospector claimed leads, and push the Apps Script changes.
+
+### Actions Completed
+
+- Updated `BD MEETINGS 2026/src/code.js` with a confirmation warning for `Rescheduled → NI` and cancellation when not confirmed.
+- Added scheduling validation for the checkbox, valid 10-digit NPI, and meeting time; corrected Prospector sync to NPI column S and sync column T.
+- Changed spreadsheet calendar labels to `EEE h:mm a` and modern `/calendar/u/0/r/eventedit/...` links.
+- Added the Claimed Leads **Book meeting** action in `dmedesk-prospector/docs/app.js`.
+- Documented Google Calendar secrets/scopes in `worker/README.md` and `worker/wrangler.toml`.
+- Ran Node syntax checks on the changed Apps Script, Worker, repository, calendar service, and frontend files.
+- Ran absolute-path clasp status and push; clasp reported `Pushed 4 files` to the configured script ID.
+
+### Database / System Result
+
+No database schema or production data changed. No Supabase SQL was executed. Apps Script deployment uploaded four files: `src/appsscript.json`, `src/code.js`, `src/sasa.js`, and `src/sss.js`.
+
+### Safety Status
+
+No destructive commands were run. No spreadsheet rows or calendar events were created by this deployment; booking remains an explicit user action and requires the Worker Google Calendar secrets to be configured.
+
 ## 2026-09-22 — BD meeting validation, booking, and agent-instruction plan
 
 ### Objective

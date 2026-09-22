@@ -3033,6 +3033,13 @@ function claimedDetailRowHtml(lead, index) {
             ` : '<span style="color:var(--muted); font-size:13px;">None identified</span>'}
             ${Number(lead.additionalContacts) > 0 ? `<div style="font-size:12px; color:var(--muted); margin-top:8px;">+${escapeHtml(lead.additionalContacts)} other contact(s) found (see Sheet)</div>` : ""}
           </div>
+          <div class="detail-block">
+            <h4>Meeting</h4>
+            ${lead.email
+              ? `<button type="button" class="btn btn-ghost btn-small" data-book-meeting-index="${index}">Book meeting</button>
+                 <div id="booking-result-${index}" style="margin-top:8px; font-size:13px;"></div>`
+              : '<span style="color:var(--muted); font-size:13px;">No lead email available for booking</span>'}
+          </div>
           ${claimedBranchesHtml(lead.branches)}
           ${providerChangeDetailHtml(lead.providerChange)}
         </div>
@@ -3054,6 +3061,42 @@ function claimedDetailRowHtml(lead, index) {
       </td>
     </tr>
   `;
+}
+
+async function bookClaimedMeeting(index) {
+  const lead = state.claimedLeads[index];
+  if (!lead) return;
+
+  const entered = (prompt("Meeting start time (local), e.g. 2026-09-23T21:30:") || "").trim();
+  if (!entered) return;
+  const start = new Date(entered);
+  if (Number.isNaN(start.getTime())) {
+    showToast("Enter a valid date and time", true);
+    return;
+  }
+
+  const button = document.querySelector(`[data-book-meeting-index="${index}"]`);
+  const result = document.getElementById(`booking-result-${index}`);
+  if (button) button.disabled = true;
+  if (result) result.textContent = "Booking…";
+
+  try {
+    const data = await apiPost("leads/book-meeting", {
+      npi: lead.npi,
+      startTime: start.toISOString(),
+      durationMinutes: 30,
+    });
+    const label = data.displayText || "Meeting booked";
+    if (result) {
+      result.innerHTML = `<a href="${escapeHtml(data.eventUrl)}" target="_blank" rel="noopener"><strong>${escapeHtml(label)}</strong></a>${data.alreadyBooked ? " <span>(already booked)</span>" : ""}`;
+    }
+    showToast(data.alreadyBooked ? "Existing meeting found" : "Meeting booked");
+  } catch (err) {
+    if (result) result.textContent = err.message;
+    showToast(err.message, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 async function generateClaimedBrief(index) {
@@ -3108,6 +3151,10 @@ function toggleClaimedRowDetail(idx) {
   document.querySelector(`[data-reminder-index="${idx}"]`)?.addEventListener("click", (e) => {
     e.stopPropagation();
     openReminderModal(idx);
+  });
+  document.querySelector(`[data-book-meeting-index="${idx}"]`)?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    bookClaimedMeeting(idx);
   });
   wireNotesHistoryHandlers(idx);
 }

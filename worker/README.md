@@ -59,6 +59,9 @@ scripts/
    npx wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET
    npx wrangler secret put GOOGLE_OAUTH_REFRESH_TOKEN
    npx wrangler secret put GOOGLE_SHEET_ID
+   npx wrangler secret put GOOGLE_CALENDAR_ID
+   npx wrangler secret put GOOGLE_CALENDAR_INTERNAL_GUESTS
+   npx wrangler secret put GOOGLE_CALENDAR_TIME_ZONE
    ```
 
    **Setting up "Export to Sheet"** (writes claimed leads into a real,
@@ -70,23 +73,24 @@ scripts/
    service-account key.
 
    1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials),
-      make sure the **Google Sheets API** is enabled for your project
-      (APIs & Services -> Library -> search "Google Sheets API" -> Enable).
+      enable both the **Google Sheets API** and **Google Calendar API** for your
+      project (APIs & Services -> Library).
    2. Still in Credentials, click **Create Credentials -> OAuth client ID**.
       - If prompted, configure the OAuth consent screen first (External or
         Internal, doesn't matter for this -- User Type "Internal" is simplest
         if your Google account is on a Workspace org; add the
-        `.../auth/spreadsheets` scope if asked).
+      `.../auth/spreadsheets` and `.../auth/calendar.events` scopes if asked).
       - Application type: **Desktop app**. Give it any name.
       - This gives you a **Client ID** and **Client Secret** -- save both.
    3. Get a refresh token via [Google's OAuth 2.0 Playground](https://developers.google.com/oauthplayground):
       - Click the gear icon (top right) -> check **"Use your own OAuth
         credentials"** -> paste in the Client ID and Client Secret from
         step 2.
-      - In the left panel (Step 1), find **Google Sheets API v4**, expand
-        it, check `https://www.googleapis.com/auth/spreadsheets`, click
+      - In the left panel (Step 1), check
+        `https://www.googleapis.com/auth/spreadsheets` and
+        `https://www.googleapis.com/auth/calendar.events`, click
         **Authorize APIs**, and sign in with the Google account that owns
-        (or has edit access to) the target spreadsheet.
+        (or has edit access to) the target spreadsheet and calendar.
       - Click **Exchange authorization code for tokens** (Step 2) -- copy
         the **Refresh token** shown. That's `GOOGLE_OAUTH_REFRESH_TOKEN`.
         It doesn't expire on its own (only if revoked), so this is a
@@ -97,6 +101,13 @@ scripts/
 
    Leave all four unset and the button will show a clear "not configured"
    error instead of failing silently.
+
+   **Immediate meeting booking** uses the same OAuth credentials. Set
+   `GOOGLE_CALENDAR_ID` to the calendar ID, `GOOGLE_CALENDAR_INTERNAL_GUESTS`
+   to a comma-separated list of internal attendees, and
+   `GOOGLE_CALENDAR_TIME_ZONE` to the calendar's IANA timezone (default:
+   `Africa/Cairo`). The Claimed Leads detail view then offers a 30-minute
+   **Book meeting** action for leads with a valid email.
 
 4. **Create teammate accounts** -- there's no sign-up flow; run this once per
    person (locally, with the same Supabase env vars as above in your shell):

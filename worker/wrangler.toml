@@ -16,6 +16,9 @@ compatibility_flags = ["nodejs_compat"]
 #   GOOGLE_OAUTH_CLIENT_SECRET   (optional -- same)
 #   GOOGLE_OAUTH_REFRESH_TOKEN   (optional -- same)
 #   GOOGLE_SHEET_ID              (optional -- same, the target spreadsheet's ID)
+#   GOOGLE_CALENDAR_ID           (optional -- enables immediate meeting booking)
+#   GOOGLE_CALENDAR_INTERNAL_GUESTS (optional -- comma-separated internal attendees)
+#   GOOGLE_CALENDAR_TIME_ZONE     (optional -- defaults to Africa/Cairo)
 
 [observability]
 enabled = true
