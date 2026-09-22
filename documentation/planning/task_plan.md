@@ -82,6 +82,27 @@ Phase 1 — Baseline and contract definition
 | Separate strict grouping from fuzzy review | A fuzzy name match alone must never auto-group. |
 | Prefer one atomic server-side operation for claim conflicts | A client-side pre-check can race with another claim and silently violate the ownership rule. |
 
+## New audit item: Search more repetitions
+
+- [ ] Verify the live Worker `NPI_SOURCE` value and compare `mirror` versus
+  `dmedesk` results for the same filters.
+- [ ] Reproduce repeated results across consecutive **Search more** clicks and
+  classify them as exact-NPI repeats or the same business represented by
+  multiple NPIs.
+- [ ] Audit internal `npi_records` identity-field completeness, especially
+  authorized official name/phone fields used by
+  `worker/src/services/companyService.js` branch merging.
+- [ ] Add server-side uniqueness protection for Search more responses so
+  duplicate NPIs cannot reach the frontend even when client pagination state
+  or provider ordering is stale.
+- [ ] Add regression tests covering consecutive Search more clicks,
+  multi-state/specialty variants, merged branch NPIs, reload/new-tab behavior,
+  and both provider sources.
+- [ ] Manually verify the deployed frontend after the fix; do not claim the
+  issue resolved until repeated searches show no exact-NPI or unintended
+  same-business repetitions.
+- **Status:** audit complete; implementation pending
+
 ## Errors encountered
 
 | Error | Attempt | Resolution |
