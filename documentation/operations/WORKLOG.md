@@ -317,6 +317,27 @@ No database, spreadsheet row data, or calendar events changed during deployment.
 
 The lead remains in `New Meetings`; only the movement cell is cleared/restricted. No destructive commands or production SQL were executed.
 
+## 2026-09-22 — Restore prematurely cleared Rescheduled statuses
+
+### Objective
+
+Repair rows whose `Rescheduled` status was cleared by the earlier immediate restriction, while retaining the intended expired-meeting restriction.
+
+### Actions Completed
+
+- Added a recovery scan to the fresh BD Meetings version.
+- Restored the normal Status dropdown and `Rescheduled` value only for blank `Cancelled`-only cells whose meeting time is future or blank.
+- Left rows with a passed meeting time empty and `Cancelled`-only.
+- Ran the Apps Script syntax check and pushed the repair with clasp.
+
+### Database / System Result
+
+No database or calendar data changed during deployment. The existing time-driven movement trigger performs the spreadsheet repair after deployment.
+
+### Safety Status
+
+The repair targets only cells carrying the one-option `Cancelled` validation introduced by the prior rule. No destructive commands or production SQL were executed.
+
 ## 2026-09-22 — Exclude Prospector connection column from NPI warning
 
 ### Objective
