@@ -296,6 +296,27 @@ No database, spreadsheet row data, or calendar events changed during deployment.
 
 Qualification selection is rejected before downstream scheduling/sync actions when the NPI is invalid. No destructive commands or production SQL were executed.
 
+## 2026-09-22 — Expired rescheduled meeting notice
+
+### Objective
+
+Keep a rescheduled lead's movement cell empty with only `Cancelled` available after its meeting time passes, and notify the opener by email.
+
+### Actions Completed
+
+- Updated the fresh BD Meetings comparison version to email the configured opener when an expired `Rescheduled` row is restricted.
+- Added a Script Properties idempotency key so the time-driven scan does not repeatedly email the same expired meeting.
+- Preserved the prior BD Meetings folder for comparison.
+- Ran the Apps Script syntax check and pushed the updated Apps Script with clasp.
+
+### Database / System Result
+
+No database, spreadsheet row data, or calendar events changed during deployment. Email delivery depends on the existing `OPENER_EMAILS` Script Property mapping and installed movement trigger.
+
+### Safety Status
+
+The lead remains in `New Meetings`; only the movement cell is cleared/restricted. No destructive commands or production SQL were executed.
+
 ## 2026-09-22 — Exclude Prospector connection column from NPI warning
 
 ### Objective
