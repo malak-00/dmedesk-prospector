@@ -1,5 +1,37 @@
 # DME Desk Prospector Worklog
 
+## 2026-09-22 — Documentation structure and freshness audit
+
+### Objective
+
+Make the documentation tree unambiguous and distinguish current guidance from
+historical planning notes, especially between `plans/` and `planning/`.
+
+### Actions Completed
+
+- Added `documentation/README.md` as the documentation index and status guide.
+- Clarified that `plans/` holds stable specifications while `planning/` holds
+  active or historical working notes.
+- Updated the master plan, active checklist, and provider-refresh plan status
+  dates and current search-cutover wording.
+- Marked older findings, progress, and dated planning notes as historical.
+- Corrected several relative links that incorrectly repeated
+  `documentation/` or pointed from the wrong directory.
+- Updated the repository README so the live Worker/Supabase architecture is
+  no longer described as a migration in progress.
+
+### Database / System Result
+
+- No database, Worker, frontend, or SQL behavior changed.
+- No production configuration or data was changed.
+
+### Safety Status
+
+- Documentation-only changes.
+- Historical documents were retained rather than deleted.
+- Remaining machine-specific links are confined to older historical notes and
+  are tracked for a later link-cleanup pass.
+
 ## 2026-09-22 — Internal provider-search cutover handoff
 
 ### Objective

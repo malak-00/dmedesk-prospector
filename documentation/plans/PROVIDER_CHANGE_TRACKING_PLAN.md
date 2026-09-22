@@ -1,5 +1,9 @@
 # Provider Name and Information Change Tracking Plan
 
+**Status:** Current design; production refresh execution and verification are
+still pending.
+**Last reviewed:** 2026-09-22
+
 ## Current status
 
 The database foundation is installed:

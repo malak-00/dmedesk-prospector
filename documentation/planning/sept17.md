@@ -1,5 +1,9 @@
 # Grouping Updates and fixing
 
+**Status:** Historical working notes; verify all implementation claims against
+the architecture and worklog before relying on them.
+**Original planning date:** 2026-09-17
+
 Here is a technical audit of how merges and "Send to Sheets" currently work in the codebase, the exact gaps, and what needs to change.
 
 ---

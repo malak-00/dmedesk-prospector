@@ -439,6 +439,6 @@ safe until the new behavior is proven locally.
 - `../planning/task_plan.md` — implementation checklist.
 - `documentation/reviews/IMPLEMENTATION_REVIEW.md` — compatibility and safety
   review.
-- `documentation/plans/PROVIDER_CHANGE_TRACKING_PLAN.md` — refresh design.
+- `PROVIDER_CHANGE_TRACKING_PLAN.md` — refresh design.
 - `supabase/migrations/20260909151917_remote_schema.sql` — pulled schema
   migration used for local verification.

@@ -1,8 +1,12 @@
 # Migrating to Vercel + Supabase
 
+**Document class:** Historical migration reference; the implemented hosting
+path is Cloudflare Workers + Supabase. Do not use this as the current
+deployment guide.
+
 > **Status: implemented, on Cloudflare instead of Vercel.** The team chose
 > to keep using Cloudflare rather than adopt Vercel -- see
-> [`worker/`](./worker) for the actual implementation (a Cloudflare Worker
+> [`worker/`](../../worker) for the actual implementation (a Cloudflare Worker
 > using the same Supabase schema and the same custom bcrypt+JWT auth this
 > doc describes below). The plan below is kept as-written for its data
 > model / service-by-service reasoning, which the Worker follows closely;

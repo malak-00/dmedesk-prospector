@@ -1,6 +1,7 @@
 # DME Desk Prospector Master Plan
 
-**Last updated: 2026-09-02**
+**Status:** Current roadmap
+**Last reviewed:** 2026-09-22
 
 ---
 
@@ -77,12 +78,10 @@ in the root as the active manual-resolution file.
 **Completed 2026-08-25:** moved audit SQL files, `BD_MEETINGS_AUDIT.md`,
 `findings.md`, `progress.md` to `temp/`.
 
-**Extended 2026-09-02:** project Markdown reorganized per
-`MARKDOWN_ORGANIZATION_PLAN.md` — feature plans to `documentation/plans/`,
-reviews to `documentation/reviews/`, operational logs to
-`documentation/operations/`, historical notes to `temp/archive/`, audits to
-`temp/audits/`. Canonical entry points and the active planning files
-(`task_plan.md`, `findings.md`, `progress.md`) stay at the root.
+**Extended 2026-09-22:** documentation now has a canonical index at
+`documentation/README.md`. Stable feature plans remain in `plans/`, active
+working notes remain in `planning/`, and dated evidence remains in
+`operations/`. Older working notes are retained and labelled historical.
 
 ### Phase 2 — BD Meetings reconciliation ✅ DONE
 
@@ -90,7 +89,7 @@ Resolve duplicate workbook rows and owner conflicts using the meeting
 owner. 319 source rows reconciled: 191 resolved, 86 unresolved, 42
 ignored. Remaining cases documented in `PIS_TO_RESOLVE.csv`.
 
-### Phase 3 — NPI data consolidation 🟡 DATA DONE, CUTOVER PENDING
+### Phase 3 — NPI data consolidation 🟡 DATA DONE, CUTOVER AND SEARCH REGRESSION VERIFICATION PENDING
 
 Migrate `npi_records` from the fakeNPI project into the dmedesk-prospector
 Supabase project so all data lives in one place.
@@ -101,10 +100,11 @@ identity columns the grouping work depends on were verified present: `npi`,
 `name`, `address_state`, `authorizedofficial_firstname`,
 `authorizedofficial_lastname`, `phone`, `authorizedofficial_phone`.
 
-**Not done — the production application cutover.** The Worker now has an
-internal provider-search path in `worker/src/services/providerSearch.js` and
-selects it through `NPI_SOURCE=dmedesk`, but production still defaults to the
-fakeNPI Edge Function because `NPI_SOURCE` has not been switched.
+**Not done — the production application cutover and verification.** The Worker
+has an internal provider-search path in
+`worker/src/services/providerSearch.js` and selects it through
+`NPI_SOURCE=dmedesk`. The Search more repetition audit is also open before
+either source is treated as fully verified.
 
 Remaining work:
 
@@ -263,7 +263,7 @@ release, checksums the source, writes a manifest and a rejects report, and
 stages rows under one `refresh_runs` row — rolling the run back and marking
 it `failed` if staging breaks partway. Its staging table is
 `sql/004_nppes_refresh_staging.sql`. 24 tests cover it. See
-[`scripts/README.md`](./scripts/README.md).
+[`scripts/README.md`](../../scripts/README.md).
 
 The CLI writes **only** `refresh_runs` and `nppes_refresh_staging`. It never
 writes `npi_records` and never writes `leads` — that boundary is the whole
@@ -322,7 +322,7 @@ All other field changes log silently to `provider_field_history`.
 - ⬜ Reconciliation/validation queries beyond the per-file checks already in `sql/004`.
 - ⬜ A first end-to-end rehearsal against a small real release before any full file is applied.
 
-Full design: [`documentation/plans/PROVIDER_CHANGE_TRACKING_PLAN.md`](./documentation/plans/PROVIDER_CHANGE_TRACKING_PLAN.md).
+Full design: [`PROVIDER_CHANGE_TRACKING_PLAN.md`](./PROVIDER_CHANGE_TRACKING_PLAN.md).
 
 ### Phase 7 — Preflight & import ⬜ NOT STARTED
 
@@ -421,16 +421,16 @@ Ticked items are verified; the rest are open.
 | Document | Contents |
 |---|---|
 | [`ARCHITECTURE.md`](../architecture/ARCHITECTURE.md) | How the live system works today — Worker + Supabase + `docs/`, and what's built but not yet connected |
-| [`documentation/plans/PROVIDER_CHANGE_TRACKING_PLAN.md`](./documentation/plans/PROVIDER_CHANGE_TRACKING_PLAN.md) | Full NPPES/Medicare refresh design: staging, comparison, history-before-update, review alerts, safety gates |
-| [`documentation/plans/MASTER_PLAN_NAME_HISTORY_ADDENDUM.md`](./documentation/plans/MASTER_PLAN_NAME_HISTORY_ADDENDUM.md) | Name alias, successor link, and ownership event design principles |
-| [`documentation/plans/NAME_CHANGE_OWNERSHIP_PLAN_DRAFT.md`](./documentation/plans/NAME_CHANGE_OWNERSHIP_PLAN_DRAFT.md) | Earlier draft of the rename/successor model, including the open questions still worth answering |
-| [`documentation/reviews/IMPLEMENTATION_REVIEW.md`](./documentation/reviews/IMPLEMENTATION_REVIEW.md) | Backward-compatibility review and the SQL/application guardrails for the rest of this work |
-| [`documentation/reviews/EDIT_OVERVIEW.md`](./documentation/reviews/EDIT_OVERVIEW.md) | What was added/changed, and what was deliberately left alone |
-| [`documentation/operations/WORKLOG.md`](./documentation/operations/WORKLOG.md) | Chronological record of work performed and database results |
-| [`documentation/operations/CHAT_HISTORY_2026-09-02.md`](./documentation/operations/CHAT_HISTORY_2026-09-02.md) | Durable handoff: decisions, verification output, and the intended unified architecture |
-| [`sql/README.md`](./sql/README.md) | SQL execution order and manual-run notes |
-| [`scripts/README.md`](./scripts/README.md) | NPPES ingestion CLI: usage, run types, safety guards, and the boundary it will not cross |
-| [`MIGRATION_TO_VERCEL_SUPABASE.md`](../reference/MIGRATION_TO_VERCEL_SUPABASE.md) | Original Supabase schema and migration plan |
+| [`PROVIDER_CHANGE_TRACKING_PLAN.md`](./PROVIDER_CHANGE_TRACKING_PLAN.md) | Full NPPES/Medicare refresh design: staging, comparison, history-before-update, review alerts, safety gates |
+| [`MASTER_PLAN_NAME_HISTORY_ADDENDUM.md`](./MASTER_PLAN_NAME_HISTORY_ADDENDUM.md) | Name alias, successor link, and ownership event design principles |
+| [`NAME_CHANGE_OWNERSHIP_PLAN_DRAFT.md`](./NAME_CHANGE_OWNERSHIP_PLAN_DRAFT.md) | Earlier draft of the rename/successor model, including the open questions still worth answering |
+| [`../reviews/IMPLEMENTATION_REVIEW.md`](../reviews/IMPLEMENTATION_REVIEW.md) | Backward-compatibility review and the SQL/application guardrails for the rest of this work |
+| [`../reviews/EDIT_OVERVIEW.md`](../reviews/EDIT_OVERVIEW.md) | What was added/changed, and what was deliberately left alone |
+| [`../operations/WORKLOG.md`](../operations/WORKLOG.md) | Chronological record of work performed and database results |
+| [`../operations/CHAT_HISTORY_2026-09-02.md`](../operations/CHAT_HISTORY_2026-09-02.md) | Durable handoff: decisions, verification output, and the intended unified architecture |
+| [`sql/README.md`](../../sql/README.md) | SQL execution order and manual-run notes |
+| [`scripts/README.md`](../../scripts/README.md) | NPPES ingestion CLI: usage, run types, safety guards, and the boundary it will not cross |
+| [`../reference/MIGRATION_TO_VERCEL_SUPABASE.md`](../reference/MIGRATION_TO_VERCEL_SUPABASE.md) | Original Supabase schema and migration plan |
 | [`SUPABASE_CHANGELOG.md`](../operations/SUPABASE_CHANGELOG.md) | All Supabase changes to date |
 | [`MARKDOWN_ORGANIZATION_PLAN.md`](../planning/MARKDOWN_ORGANIZATION_PLAN.md) | Where each document lives and why |
 

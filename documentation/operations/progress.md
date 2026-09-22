@@ -1,5 +1,9 @@
 # Progress Log
 
+**Status:** Historical session log; superseded by `WORKLOG.md` and the current
+master plan.
+**Last reviewed:** 2026-09-22
+
 ## Session: 2026-08-31
 
 ### Phase 1: Baseline and contract definition

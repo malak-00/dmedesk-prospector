@@ -2,6 +2,9 @@
 
 Date: 2026-09-22
 
+**Status:** Working plan; several implementation items are now present, but
+manual verification and rollout checks remain. See `operations/WORKLOG.md`.
+
 ## Objective
 
 Make the BD Meetings workflow prevent invalid lead movements, allow a prospector user to book a meeting immediately from a claimed lead, and standardize meeting hyperlinks to a compact weekday/time label such as:

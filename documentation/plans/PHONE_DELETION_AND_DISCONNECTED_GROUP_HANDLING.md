@@ -29,7 +29,7 @@ This document defines the rules, schema changes, and application logic for two c
   - Placeholder strings (`"N/A"`, `"NONE"`, `"DISCONNECTED"`, `"UNKNOWN"`, `"NO PHONE"`).
 
 ### 2.2 Current Gap
-In [`sql/015_provider_change_alerts.sql`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/sql/015_provider_change_alerts.sql#L176-L183), `apply_provider_changes_to_leads` blindly updates the snapshot:
+In [`sql/015_provider_change_alerts.sql`](../../sql/015_provider_change_alerts.sql#L176), `apply_provider_changes_to_leads` blindly updates the snapshot:
 ```sql
 update public.leads l set phone = r.phone ...
 ```
@@ -110,7 +110,7 @@ update public.leads l
 ### 3.1 Part A: Moving the Grouped Lead When a Number is Disconnected
 
 #### Current Behavior
-[`leadsRepo.moveClaimedLeadsToDisconnected`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/worker/src/repos/leadsRepo.js#L595-L618) only updates the single row matching the exact `npis` passed in the request. Sibling branches in the same `group_id` remain active (`is_disconnected = false`).
+[`leadsRepo.moveClaimedLeadsToDisconnected`](../../worker/src/repos/leadsRepo.js#L595) only updates the single row matching the exact `npis` passed in the request. Sibling branches in the same `group_id` remain active (`is_disconnected = false`).
 
 #### Required Behavior
 When any lead in a group is disconnected, all associated leads in that group (or sharing that disconnected number) must also be moved to disconnected:

@@ -1,5 +1,9 @@
 # Finalize NPPES CLI and Lead Grouping System
 
+**Status:** Historical proposal; superseded by
+[`../plans/MASTER_PLAN.md`](../plans/MASTER_PLAN.md) and the dated worklog.
+**Original planning date:** 2026-09-08
+
 Summary
 Complete the NPPES staging CLI and lead-grouping system while preserving the current app flow until each new layer is verified. npi_records remains in the DME Desk Supabase project; fakeNPI is retired only after equivalent same-project search and Medicare enrichment are ready.
 CLI and refresh pipeline

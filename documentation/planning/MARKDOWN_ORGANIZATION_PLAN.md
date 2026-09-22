@@ -1,144 +1,94 @@
 # Markdown Organization Plan
 
+**Status:** Current documentation policy
+**Last reviewed:** 2026-09-22
+
 ## Goal
 
-Make the project documentation easy to navigate without breaking relative
-links, agent instructions, SQL execution guidance, or the active application.
+Keep active plans, working notes, operational evidence, architecture, and
+historical references separate enough that an old proposal cannot be mistaken
+for the current application behavior.
 
-## Principles
+## Folder policy
 
-- Keep the canonical project entry points visible at the repository root.
-- Keep `task_plan.md`, `findings.md`, and `progress.md` at the root because the
-  planning workflow expects them there.
-- Keep `README.md` at the root.
-- Keep `worker/README.md` beside the Worker package.
-- Keep `sql/README.md` beside the manual SQL bundle.
-- Keep `agents.md` at the root because it is environment guidance, even though
-  it is currently empty.
-- Do not place project Markdown inside `docs/`; that directory is the static
-  frontend and its assets.
-- Move documents with link-aware commands, then repair relative links and
-  verify every Markdown reference.
+- `documentation/plans/` contains stable roadmaps, feature specifications,
+  and design decisions.
+- `documentation/planning/` contains active working checklists, findings,
+  investigations, and temporary drafts. These may be superseded.
+- `documentation/operations/` contains dated worklogs, deployment handoffs,
+  and database-change history. It is the evidence of what was done.
+- `documentation/architecture/` contains the current live-system boundary.
+- `documentation/reference/` contains historical migration and design
+  references.
+- `documentation/reviews/` contains completed reviews and compatibility
+  assessments.
+- `docs/` remains the deployed frontend; project documentation must not be
+  placed there.
 
-## Proposed structure
+The canonical entry point is [documentation/README.md](../README.md).
+
+## Current homes
 
 ```text
-README.md                         # project entry point
-MASTER_PLAN.md                    # canonical roadmap
-ARCHITECTURE.md                  # canonical system architecture
-MIGRATION_TO_VERCEL_SUPABASE.md  # migration/reference architecture
-SUPABASE_CHANGELOG.md             # chronological database history
-agents.md                         # local environment instructions
-task_plan.md                      # active planning memory
-findings.md                       # active discovery notes
-progress.md                       # active session log
-
 documentation/
+  README.md
   plans/
+    MASTER_PLAN.md
+    LEAD_INTAKE_AND_GROUPING_GUIDE.md
     MASTER_PLAN_NAME_HISTORY_ADDENDUM.md
     NAME_CHANGE_OWNERSHIP_PLAN_DRAFT.md
+    PHONE_DELETION_AND_DISCONNECTED_GROUP_HANDLING.md
     PROVIDER_CHANGE_TRACKING_PLAN.md
+  planning/
+    task_plan.md
+    findings.md
+    MARKDOWN_ORGANIZATION_PLAN.md
+    feature plans and dated working notes
+  architecture/
+    ARCHITECTURE.md
+  operations/
+    WORKLOG.md
+    SUPABASE_CHANGELOG.md
+    deployment handoffs and historical logs
+  reference/
+    MIGRATION_TO_VERCEL_SUPABASE.md
   reviews/
     IMPLEMENTATION_REVIEW.md
     EDIT_OVERVIEW.md
-  operations/
-    WORKLOG.md
-
-temp/
-  audits/
-    BD_MEETINGS_AUDIT.md
-  archive/
-    findings.md
-    progress.md
-
-sql/
-  README.md
-  000_schema_checkpoint.sql
-  ...
-
-worker/
-  README.md
 ```
 
-## File classification
+Outside this folder, keep `README.md` as the repository entry point,
+`agents.md`/`AGENTS.md` as environment instructions, `worker/README.md` as
+Worker operations, and `sql/README.md` as the manual SQL guide.
 
-### Keep at root
+## Status requirements
 
-- `README.md`
-- `MASTER_PLAN.md`
-- `ARCHITECTURE.md`
-- `MIGRATION_TO_VERCEL_SUPABASE.md`
-- `SUPABASE_CHANGELOG.md`
-- `agents.md`
-- `task_plan.md`
-- `findings.md`
-- `progress.md`
+Every document that can become stale should state its status and review date.
+Use these labels:
 
-These are the first files a contributor or agent needs to find.
+- **Current** — safe starting point.
+- **Working** — active notes that may change.
+- **Historical** — retained for context only.
+- **Superseded** — retained, but another document is authoritative.
 
-### Move to `documentation/plans/`
+The following files are intentionally historical working notes and should not
+be used as the current roadmap: `planning/progress.md`,
+`planning/plan-sept-8.md`, and `planning/sept17.md`.
 
-- `MASTER_PLAN_NAME_HISTORY_ADDENDUM.md`
-- `NAME_CHANGE_OWNERSHIP_PLAN_DRAFT.md`
-- `PROVIDER_CHANGE_TRACKING_PLAN.md`
+## Link rules
 
-These are feature and design plans supporting the canonical master plan.
+- Use repository-relative Markdown links.
+- Do not use machine-specific `file:///C:/Users/...` links for files in this
+  repository.
+- From a file under `documentation/plans/`, link to another plan as
+  `./OTHER_PLAN.md`.
+- From a file under `documentation/planning/`, link to a plan as
+  `../plans/OTHER_PLAN.md`.
+- Link to external sister repositories only by clearly labelled path or
+  operational handoff; do not pretend those files are inside this repository.
 
-### Move to `documentation/reviews/`
+## Completion state
 
-- `IMPLEMENTATION_REVIEW.md`
-- `EDIT_OVERVIEW.md`
-
-These describe decisions and changes made during implementation rather than
-the target architecture itself.
-
-### Move to `documentation/operations/`
-
-- `WORKLOG.md`
-
-This is an operational history and should not compete with the active
-`progress.md` file.
-
-### Move within `temp/`
-
-- `temp/BD_MEETINGS_AUDIT.md` → `temp/audits/BD_MEETINGS_AUDIT.md`
-- `temp/findings.md` → `temp/archive/findings.md`
-- `temp/progress.md` → `temp/archive/progress.md`
-
-These are historical artifacts, not active project guidance.
-
-## Execution sequence
-
-1. Inventory all Markdown links with `rg -n "\\]\([^)]*\\.md|file:///"`.
-2. Create the destination directories.
-3. Move files with `git mv` so Git preserves history.
-4. Update links in `README.md`, `MASTER_PLAN.md`, and any moved documents.
-5. Replace obsolete `file:///` links with repository-relative links where the
-   target exists in this repository.
-6. Run the link/reference scan again.
-7. Check that frontend files under `docs/`, SQL files under `sql/`, and Worker
-   files under `worker/` are unchanged.
-8. Review the final tree and commit the documentation-only change separately
-   from application/database work.
-
-## Risks and safeguards
-
-- Do not move the active planning files out of the root.
-- Do not rename `agents.md` casually on Windows; casing/filename changes can
-  affect environment tooling.
-- Do not move `README.md` or `MASTER_PLAN.md` without updating links from the
-  repository README and contributor workflows.
-- Do not combine this documentation cleanup with Worker or Supabase changes in
-  the same commit.
-- Do not delete duplicate historical files; archive them so their context is
-  recoverable.
-
-## Completion criteria
-
-- Every Markdown file has one intentional home.
-- Root contains only canonical entry points and active planning memory.
-- Feature plans, reviews, and worklogs are grouped by purpose.
-- Historical temp notes are clearly marked as archived/audit material.
-- No broken Markdown links remain.
-- No application, SQL, or frontend behavior changes.
-
+This organization policy is applied in stages. The index and status vocabulary
+are current. Remaining cleanup is to add status/review headers to older
+documents and repair remaining machine-specific links.

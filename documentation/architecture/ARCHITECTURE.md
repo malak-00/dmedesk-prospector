@@ -402,7 +402,7 @@ Worth knowing when reading it:
   search form uses, so there's no second list to keep in sync.
 
 Setup, usage, run types and the test suite are in
-[`scripts/README.md`](./scripts/README.md).
+[`scripts/README.md`](../../scripts/README.md).
 
 ## Ownership conflicts in the Admin tab
 

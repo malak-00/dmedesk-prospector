@@ -1,10 +1,14 @@
 # Task Plan: Lead Identity, Ownership Audit, and Provider Refresh Tracking
 
+**Status:** Working checklist; the canonical roadmap is
+[`../plans/MASTER_PLAN.md`](../plans/MASTER_PLAN.md).
+**Last reviewed:** 2026-09-22
+
 ## Goal
 
 Implement the remaining `MASTER_PLAN.md` phases in the Cloudflare Worker and provide all Supabase schema, backfill, security, and refresh SQL as manually runnable files for the user to apply.
 
-## Current Phase
+## Historical phase context
 
 Phase 1 — Baseline and contract definition
 

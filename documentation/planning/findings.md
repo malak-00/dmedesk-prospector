@@ -1,5 +1,9 @@
 # Findings & Decisions
 
+**Status:** Historical baseline; superseded by the current architecture and
+master plan.
+**Last reviewed:** 2026-09-22
+
 ## Requirements
 
 - Implement `MASTER_PLAN.md` from the current state, starting with Phase 3 completion and Phases 4–7.

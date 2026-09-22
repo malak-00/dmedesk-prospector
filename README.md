@@ -1,30 +1,27 @@
 # dmedesk-prospector
 
-AI-powered lead intelligence platform for DME Desk. Searches the public NPPES
-NPI Registry for DMEPOS suppliers, enriches results with Foursquare Places
-data, a free OpenStreetMap (Nominatim) lookup as a website fallback, and
-website scraping, scores each lead, generates AI call briefs, and
-exports to CSV or a shared Google Sheet (which also doubles as the
-cross-team dedup log, so two people don't chase the same lead).
+AI-powered lead intelligence platform for DME Desk. The live application is
+the Cloudflare Worker API in `worker/` plus the deployed static frontend in
+`docs/`, backed by Supabase. It searches NPPES provider data, applies DME
+taxonomy filters, enriches results with Medicare data, scores leads, and
+supports claimed-lead workflows, notes, reminders, and exports.
 
-On the Apps Script deployment path, teammates sign in with a username and
-password (managed in a Users tab of the sheet), exports record who claimed
-each lead, and a Claimed leads view tracks call outcomes back into the
-sheet. Leads are also enriched with Medicare DMEPOS claim volumes from
-CMS's free public data API. There's no database — everything is stateless
-per-request, and the Google Sheet is the only persistent store.
+`appscript/` and `backend/` are retained as historical/reference
+implementations. They are not the live path and should not be used as the
+source of current behavior.
 
 ## Project status
 
-**The app is migrating off Apps Script + Google Sheets onto [`worker/`](./worker)
-(a Cloudflare Worker) + Supabase (Postgres).** `docs/` (the GitHub Pages
+**The live app runs on [`worker/`](./worker) (a Cloudflare Worker) + Supabase
+(Postgres).** `docs/` (the GitHub Pages
 frontend) now talks to `worker/`'s API instead of the old Apps Script Web
 App -- see [`worker/README.md`](./worker/README.md) for deployment.
 `appscript/` is kept around as reference for anyone still running the old
 deployment, and `backend/` (Node/Express, described below) is an earlier,
 frozen implementation that predates sign-in/claimed-leads/taxonomies/
 search-resume entirely -- neither is being kept in sync going forward. If
-you're picking this repo up, read **[`ARCHITECTURE.md`](./documentation/architecture/ARCHITECTURE.md)**
+you're picking this repo up, read the **[documentation index](./documentation/README.md)**,
+then **[`ARCHITECTURE.md`](./documentation/architecture/ARCHITECTURE.md)**
 for how the app works end to end today (and how the Apps Script era still
 shows through), **[`MASTER_PLAN.md`](./documentation/plans/MASTER_PLAN.md)** for the current
 roadmap, and
