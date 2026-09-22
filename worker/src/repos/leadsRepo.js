@@ -646,6 +646,20 @@ async function requireOwnLead(supabase, npi, session) {
   return data;
 }
 
+export async function getOwnedLeadForBooking(supabase, npi, session) {
+  if (!npi) throw httpError(400, "npi is required");
+  const { data, error } = await supabase
+    .from("leads")
+    .select("*")
+    .eq("claimed_by", session.id)
+    .eq("npi", String(npi))
+    .eq("is_disconnected", false)
+    .maybeSingle();
+  if (error) throw httpError(500, "Failed to look up lead: " + error.message);
+  if (!data) throw httpError(404, "No lead with NPI " + npi + " found in your claimed leads");
+  return toLeadDTO(data, session.displayName);
+}
+
 export async function updateLeadStatus(supabase, npi, status, session) {
   if (!npi) throw httpError(400, "npi is required");
   const trimmedStatus = String(status || "").trim();

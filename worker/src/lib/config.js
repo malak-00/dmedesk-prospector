@@ -33,5 +33,8 @@ export function makeConfig(env) {
     googleOauthClientSecret: () => get("GOOGLE_OAUTH_CLIENT_SECRET"),
     googleOauthRefreshToken: () => get("GOOGLE_OAUTH_REFRESH_TOKEN"),
     googleSheetId: () => get("GOOGLE_SHEET_ID"),
+    googleCalendarId: () => get("GOOGLE_CALENDAR_ID"),
+    googleCalendarInternalGuests: () => get("GOOGLE_CALENDAR_INTERNAL_GUESTS", ""),
+    googleCalendarTimeZone: () => get("GOOGLE_CALENDAR_TIME_ZONE", "Africa/Cairo"),
   };
 }

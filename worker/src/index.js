@@ -27,6 +27,7 @@ import * as AiBrief from "./services/aiBrief.js";
 import * as CompanyService from "./services/companyService.js";
 import * as CsvExport from "./lib/csvExport.js";
 import * as GoogleSheets from "./services/googleSheets.js";
+import * as GoogleCalendar from "./services/googleCalendar.js";
 
 const app = new Hono();
 
@@ -58,7 +59,7 @@ app.use("*", async (c, next) => {
 // Central error handler -- mirrors Code.js's catch block, including the
 // "*NotConfiguredError" -> 503 special case.
 app.onError((err, c) => {
-  if (["FoursquareNotConfiguredError", "GeminiNotConfiguredError", "SheetsNotConfiguredError", "AuthNotConfiguredError", "GoogleSheetsNotConfiguredError"].includes(err.name)) {
+  if (["FoursquareNotConfiguredError", "GeminiNotConfiguredError", "SheetsNotConfiguredError", "AuthNotConfiguredError", "GoogleSheetsNotConfiguredError", "GoogleCalendarNotConfiguredError"].includes(err.name)) {
     return c.json({ success: false, status: 503, error: err.message }, 503);
   }
   console.log(`[worker] Error on ${c.req.method} ${c.req.path}: ${err.message}`);
@@ -356,6 +357,17 @@ app.post("/leads/reminder", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const data = await leadsRepo.setLeadReminder(supabaseFor(c), body.npi, body.reminderAt, c.get("session"));
   return c.json(ok(data));
+});
+
+app.post("/leads/book-meeting", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const session = c.get("session");
+  const lead = await leadsRepo.getOwnedLeadForBooking(supabaseFor(c), body.npi, session);
+  const booking = await GoogleCalendar.bookMeeting(c.get("config"), lead, {
+    startTime: body.startTime,
+    durationMinutes: body.durationMinutes,
+  });
+  return c.json(ok({ npi: String(body.npi), ...booking }));
 });
 
 // ---- suggestions / taxonomies ---------------------------------------------
