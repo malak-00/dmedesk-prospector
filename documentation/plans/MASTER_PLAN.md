@@ -101,22 +101,20 @@ identity columns the grouping work depends on were verified present: `npi`,
 `name`, `address_state`, `authorizedofficial_firstname`,
 `authorizedofficial_lastname`, `phone`, `authorizedofficial_phone`.
 
-**Not done — the application cutover.** `worker/src/services/nppes.js`
-still queries the fakeNPI Edge Function on the *separate* fakeNPI project
-via `FAKENPI_BASE_URL`. Until that changes, the app's data and the app's
-provider search live in two different Supabase projects.
+**Not done — the production application cutover.** The Worker now has an
+internal provider-search path in `worker/src/services/providerSearch.js` and
+selects it through `NPI_SOURCE=dmedesk`, but production still defaults to the
+fakeNPI Edge Function because `NPI_SOURCE` has not been switched.
 
 Remaining work:
 
-- Add a Worker repository that queries same-project `npi_records` directly
-  through the existing service-role client.
-- Preserve the current normalized provider/search response shape so
-  `docs/app.js` needs no rewrite.
-- Account for what fakeNPI's Edge Function currently does for us — notably
-  joining `npi_cms_enrichment` into every result, which is why
-  `services/cms.js` is no longer a live lookup.
-- Retire the cross-project dependency once search is proven against the
-  local table.
+- Confirm `sql/018_provider_search.sql` is installed in the production DME
+  Desk Supabase project.
+- Compare mirror and internal results using Admin → Search source before
+  switching.
+- Set the Cloudflare Worker variable `NPI_SOURCE=dmedesk`.
+- Retire the cross-project dependency only after search coverage, taxonomy
+  behavior, Medicare fields, and rollback have been verified.
 
 The one-off loader referenced during this phase
 (`scripts/migrate_npi_records.py`) is gitignored and not part of the

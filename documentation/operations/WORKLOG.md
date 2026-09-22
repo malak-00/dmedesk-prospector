@@ -1,5 +1,37 @@
 # DME Desk Prospector Worklog
 
+## 2026-09-22 — Internal provider-search cutover handoff
+
+### Objective
+
+Document the remaining work needed to switch production search from the
+fakeNPI HTTP mirror to the internal DME Desk provider-search implementation.
+
+### Actions completed
+
+- Added `documentation/operations/INTERNAL_PROVIDER_SEARCH_CUTOVER_HANDOFF.md`
+  with the database, taxonomy, comparison, configuration, and rollback steps.
+- Updated the Phase 3 section of `documentation/plans/MASTER_PLAN.md` to
+  reflect that the internal Worker path is built and only production cutover
+  remains.
+- Updated `sql/README.md` so `018_provider_search.sql` is marked as awaiting
+  production verification rather than describing the repository implementation
+  as missing.
+
+### Database / System Result
+
+- No Docker commands were run.
+- No SQL was executed.
+- No Cloudflare variables were changed.
+- Production remains on the mirror source until the laptop handoff steps are
+  completed.
+
+### Safety Status
+
+- No data was deleted or modified.
+- No production search behavior was changed.
+- Rollback remains available through `NPI_SOURCE=mirror`.
+
 ## 2026-09-22 — Fix legacy taxonomy code resolution
 
 ### Objective

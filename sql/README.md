@@ -68,7 +68,7 @@ in `003`); save their output with the run.
 | `015_provider_change_alerts.sql` | `apply_provider_changes_to_leads()`: refreshes claimed leads from an applied release and raises `provider_data_changed` alerts; `provider_change_queue` + `resolve_provider_change()` for the admin queue | Executed 2026-09-17, re-run the same day with the lead-scoped sync |
 | `016_refresh_run_recovery.sql` | `abort_medicare_refresh()`, and `abort_nppes_refresh()` relaxed to accept a `complete` run: closing out a staged run whose staging is gone | Executed 2026-09-17 (used to close out the empty Medicare run) |
 | `017_lead_sync_restart.sql` | `reset_lead_sync()`: clears the sync cursor so a run that has been synced can be synced again | **Not yet run — needed for `--sync-run --restart`** |
-| `018_provider_search.sql` | `search_providers()` + its indexes: provider search against this project's own `npi_records`, every filter in SQL | **Not yet run — needed before `NPI_SOURCE=dmedesk`** |
+| `018_provider_search.sql` | `search_providers()` + its indexes: provider search against this project's own `npi_records`, every filter in SQL | **Production verification pending — required before `NPI_SOURCE=dmedesk`** |
 
 ## Notes on individual files
 
