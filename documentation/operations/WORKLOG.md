@@ -296,6 +296,26 @@ No database, spreadsheet row data, or calendar events changed during deployment.
 
 Qualification selection is rejected before downstream scheduling/sync actions when the NPI is invalid. No destructive commands or production SQL were executed.
 
+## 2026-09-22 — Exclude Prospector connection column from NPI warning
+
+### Objective
+
+Keep column Q reserved for the Sheet ↔ Prospector connection and exclude it from the qualification-checkbox warning.
+
+### Actions Completed
+
+- Updated `BD MEETINGS 2026/src/code.js` so only MEDB/PPO/SUB columns A-C trigger the immediate NPI warning.
+- Left column Q behavior unchanged apart from documenting its connection purpose.
+- Ran the Apps Script syntax check and pushed the correction with clasp.
+
+### Database / System Result
+
+No database, spreadsheet row data, or calendar events changed.
+
+### Safety Status
+
+The Prospector connection column is no longer blocked by the new validation. No destructive commands or production SQL were executed.
+
 ## 2026-09-22 — BD meeting validation, booking, and agent-instruction plan
 
 ### Objective
