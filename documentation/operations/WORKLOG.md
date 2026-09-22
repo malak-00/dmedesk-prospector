@@ -276,6 +276,26 @@ No database, spreadsheet row data, or calendar events were changed by the deploy
 
 The invalid checkbox action is rejected before scheduling. No destructive commands or production SQL were executed.
 
+## 2026-09-22 — Qualification checkbox NPI validation
+
+### Objective
+
+Apply the immediate NPI warning to the MEDB, PPO, and SUB qualification checkboxes, not only the scheduling checkbox.
+
+### Actions Completed
+
+- Updated `BD MEETINGS 2026/src/code.js` to validate NPI column S when columns A-C are checked.
+- Added a warning and automatically reset the selected qualification checkbox when the NPI is missing or invalid.
+- Ran the Apps Script syntax check and pushed the updated Apps Script with clasp.
+
+### Database / System Result
+
+No database, spreadsheet row data, or calendar events changed during deployment.
+
+### Safety Status
+
+Qualification selection is rejected before downstream scheduling/sync actions when the NPI is invalid. No destructive commands or production SQL were executed.
+
 ## 2026-09-22 — BD meeting validation, booking, and agent-instruction plan
 
 ### Objective
