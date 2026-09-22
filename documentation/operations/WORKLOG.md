@@ -1,5 +1,34 @@
 # DME Desk Prospector Worklog
 
+## 2026-09-22 — Fix legacy taxonomy code resolution
+
+### Objective
+
+Prevent enabled taxonomy options shown by the frontend from being sent to
+NPPES as rejected `taxonomy_description` values when their database row has a
+blank Description column.
+
+### Actions completed
+
+- Updated `worker/src/repos/taxonomiesRepo.js` so description-to-code lookup
+  falls back to `facility_type`, matching the frontend's `description ||
+  facility_type` behavior.
+- Kept code-based searching as the preferred path, including for legacy rows.
+- Added a separate fallback lookup for unresolved facility-type labels without
+  changing taxonomy data or executing SQL.
+
+### Database / System Result
+
+- No database records or schema were changed.
+- Legacy rows with a valid code can now resolve to exact code searches instead
+  of falling through to NPPES `taxonomy_description` validation.
+
+### Safety Status
+
+- No data was deleted or overwritten.
+- The change is limited to taxonomy lookup behavior; existing non-legacy
+  description lookups remain unchanged.
+
 ## 2026-08-31 — Identity grouping foundation
 
 ### Objective

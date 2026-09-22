@@ -49,12 +49,30 @@ export async function getCodesByDescriptions(supabase, descriptions) {
   const wanted = [...new Set((descriptions || []).filter(Boolean))];
   if (wanted.length === 0) return codeByDescription;
 
-  const { data, error } = await supabase.from("taxonomies").select("description, code").in("description", wanted);
+  const { data, error } = await supabase.from("taxonomies").select("description, facility_type, code").in("description", wanted);
   if (error) throw httpError(500, "Failed to resolve taxonomy codes: " + error.message);
 
-  (data || []).forEach((row) => {
-    if (row.description && row.code) codeByDescription.set(row.description, row.code);
-  });
+  const addRows = (rows) => {
+    (rows || []).forEach((row) => {
+      // listEnabled() exposes description || facility_type to the browser;
+      // resolve against that same effective value so legacy rows with a
+      // blank Description still become exact taxonomy-code searches.
+      const key = row.description || row.facility_type;
+      if (key && row.code && wanted.includes(key)) codeByDescription.set(key, row.code);
+    });
+  };
+
+  addRows(data);
+
+  const unresolved = wanted.filter((description) => !codeByDescription.has(description));
+  if (unresolved.length > 0) {
+    const fallback = await supabase
+      .from("taxonomies")
+      .select("description, facility_type, code")
+      .in("facility_type", unresolved);
+    if (fallback.error) throw httpError(500, "Failed to resolve legacy taxonomy codes: " + fallback.error.message);
+    addRows(fallback.data);
+  }
   return codeByDescription;
 }
 
