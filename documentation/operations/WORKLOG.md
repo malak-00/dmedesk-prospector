@@ -231,3 +231,24 @@ Diagnose and resolve the Supabase storage quota overage (742 MB / 500 MB), diagn
 - Production schema was not altered during this session.
 - Staging table truncation removed only temporary ingest rows, not active provider registry records (`npi_records`).
 
+## 2026-09-22 — BD meeting validation, booking, and agent-instruction plan
+
+### Objective
+
+Plan the cross-repository changes for protected BD meeting status transitions, required schedule/NPI validation, immediate Google Calendar booking from Prospector, and compact meeting hyperlink labels. Correct copied agent instructions in both repositories.
+
+### Actions Completed
+
+- Inspected `BD MEETINGS 2026/src/code.js` for movement queues, scheduling, calendar matching, rich-text links, and NPI sync.
+- Inspected `dmedesk-prospector/worker/`, `docs/`, and existing Google integration/configuration to identify the live API/frontend boundary.
+- Added `documentation/planning/bd-meeting-validation-and-booking-plan.md` with implementation phases, assumptions, verification cases, and out-of-scope items.
+- Replaced the copied instructions in `BD MEETINGS 2026/agents.md` and `dmedesk-prospector/agents.md` with repository-specific guidance.
+
+### Database / System Result
+
+No application code, database schema, production data, calendar events, or deployed secrets were changed. This milestone produced one planning document and updated two instruction files.
+
+### Safety Status
+
+No destructive commands or production SQL were executed. No spreadsheet rows, Supabase records, claims, or calendar events were modified.
+

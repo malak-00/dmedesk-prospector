@@ -1,55 +1,39 @@
-# Agent Instructions & Operating Guidelines
+# Agent Instructions — dmedesk-prospector
 
-Guidelines and protocols for AI agents working in the `dmedesk-prospector` repository.
+This repository contains the DME Desk Prospector application. The live path is a Cloudflare Worker API in `worker/` with the deployed static frontend in `docs/`, backed by Supabase. `backend/` and `appscript/` are legacy/supporting implementations; do not treat them as the live path without confirming the request.
 
----
+## Documentation and planning
 
-## 1. Documentation & Markdown Maintenance Protocol
+- Keep plans, operational notes, architecture notes, and worklogs under `documentation/` (`plans/`, `planning/`, `operations/`, `reference/`, or `reviews/`).
+- Never place project documentation in `docs/`; `docs/` is the deployed browser frontend and its assets.
+- Significant fixes, schema changes, migrations, and architectural work must add a dated section to `documentation/operations/WORKLOG.md` with Objective, Actions Completed, Database / System Result, and Safety Status.
+- Keep active planning documents synchronized as implementation decisions are made. Use relative links and verify new links resolve.
 
-### Mandatory Worklog Updates (`documentation/operations/WORKLOG.md`)
-Every significant task, schema change, data migration, bug fix, or architectural change **must** be logged in [`documentation/operations/WORKLOG.md`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/documentation/operations/WORKLOG.md).
+## Safety and implementation rules
 
-When completing a milestone or session:
-1. **Add a Dated Section**: Format as `## YYYY-MM-DD — <Short Title>`.
-2. **Include Standard Subsections**:
-   - **Objective**: What problem was being solved or what was the goal.
-   - **Actions Completed**: Bulleted list of exact files changed, tools run, or SQL executed.
-   - **Database / System Result**: Numbers, counts, or outcome metrics (e.g. rows processed, table size changes, schema diffs).
-   - **Safety Status**: Explicit confirmation that no unintended data was deleted, claims weren't dropped, or production tables altered unexpectedly.
+- State assumptions before coding and make surgical changes only in files relevant to the request.
+- Never run `DROP`, `TRUNCATE`, broad `DELETE`, bucket destruction, or production mutations without explicit user consent and a verified target.
+- Preserve append-only audit behavior and existing claim/ownership rules. Prefer reviewed SQL migrations and local verification before any production schema change.
+- Do not use automated browser testing. Provide the user with the relevant URL and ask them to test manually in their browser.
+- Keep secrets out of source, logs, plans, and worklogs. Do not modify `.env`, deployed secrets, or production data unless explicitly requested.
 
-### Keeping Planning & Reference Docs Synchronized
-- **Active Plans**: When working on features or fixes documented in planning files (e.g. [`documentation/planning/sept17.md`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/documentation/planning/sept17.md)), update the checklists, status logs, and technical specifications as decisions are finalized or implemented.
-- **Directory Boundaries**:
-  - All documentation belongs in `documentation/` (`plans/`, `planning/`, `operations/`, `reference/`, `reviews/`).
-  - **Never place documentation in `docs/`** &mdash; `docs/` is strictly the deployed static browser frontend and its assets.
-- **Maintain Link Integrity**: When moving or adding markdown files, use standard relative links or file paths and verify they resolve properly.
+## Repository boundaries
 
----
+- Live API and authentication: `worker/`.
+- Live frontend: `docs/`.
+- Database migrations and schema references: `sql/` and `supabase/`.
+- Legacy/supporting paths: `backend/` and `appscript/`.
+- Related spreadsheet workflow: `C:\Users\ben.arthur\Desktop\BD MEETINGS 2026`; coordinate cross-repository changes explicitly.
 
-## 2. Core Execution & Safety Rules
+## Environment and tooling
 
-- **Think Before Coding**: State assumptions explicitly. Surface tradeoffs before implementing changes.
-- **Simplicity & Surgical Edits**: Minimum code to solve the problem. Touch only what must be touched; do not refactor or "clean up" unrelated lines.
-- **No Automatic Browser Testing**: Do not invoke automated browser testing tools. Always provide links and ask the user to test in their browser.
-- **Accidental Data Loss Prevention**: Never execute `DROP`, `TRUNCATE`, broad `DELETE`, or bucket destruction without explicit user consent. Always verify before running mutating SQL on production tables.
+- Use PowerShell only. Do not use `cmd`, `cmd /c`, or Unix shell commands.
+- The system PATH is not configured. Use absolute executable paths.
+- No administrator privileges are available; never request elevation.
+- Use the repository's pinned Node/npm tooling where available and run checks from the relevant subproject directory.
 
----
+## Verification handoff
 
-## 3. Environment & Tooling Constraints
-
-- **Shell**: PowerShell ONLY. Do not use `cmd` or `cmd /c`.
-- **System PATH**: Unconfigured. Always use absolute paths for executables.
-- **Privileges**: No Admin/Sudo access. Never attempt commands that require elevation.
-- **Node / Clasp Execution**:
-  ```powershell
-  & "C:\Users\ben.arthur\node-v24.14.1-win-x64\node.exe" `
-    "C:\Users\ben.arthur\node-v24.14.1-win-x64\node_modules\@google\clasp\build\src\index.js" `
-    [command] [args]
-  ```
-  *(Always include `--no-localhost` for clasp login)*
-- **OpenAI Codex CLI**:
-  ```powershell
-  & "C:\Users\ben.arthur\node-v24.14.1-win-x64\node.exe" `
-    "C:\Users\ben.arthur\node-v24.14.1-win-x64\node_modules\@openai\codex\bin\codex.js" `
-    [command] [args]
-  ```
+- Use `rg` first for code searches.
+- Run safe, relevant static checks and unit tests; do not claim deployment or production verification unless it actually occurred.
+- Summarize changed files, checks run, database impact, and any manual deployment/browser steps still required.
