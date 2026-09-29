@@ -480,6 +480,100 @@ export async function resolveMatchReview(supabase, { leftNpi, rightNpi, decision
   return data || {};
 }
 
+function canonicalReviewPair(leftNpi, rightNpi) {
+  const left = String(leftNpi || "").trim();
+  const right = String(rightNpi || "").trim();
+  return [left, right].sort((a, b) => a.localeCompare(b));
+}
+
+// Bulk merging is deliberately stricter than the manual merge action. A
+// client-side checkbox is only a request; the Worker re-reads the pending
+// queue and current owners before every decision.
+export function getBulkMergeEligibility(review) {
+  const leftOwners = Array.isArray(review?.left?.owners) ? review.left.owners : [];
+  const rightOwners = Array.isArray(review?.right?.owners) ? review.right.owners : [];
+  const ownerById = new Map();
+  [...leftOwners, ...rightOwners].forEach((owner) => {
+    if (owner?.userId) ownerById.set(String(owner.userId), owner.displayName || "(unknown agent)");
+  });
+  const ownerIds = [...ownerById.keys()];
+
+  if (ownerIds.length > 1) {
+    return { eligible: false, reason: "Different agents own these leads; review manually." };
+  }
+
+  if (ownerIds.length === 0) {
+    return { eligible: true, reason: "Bulk merge: both leads are unclaimed." };
+  }
+
+  const ownerName = ownerById.get(ownerIds[0]);
+  const leftClaimed = leftOwners.length > 0;
+  const rightClaimed = rightOwners.length > 0;
+  if (leftClaimed && rightClaimed) {
+    return { eligible: true, reason: `Bulk merge: both leads are owned by ${ownerName}; ownership is consistent.` };
+  }
+  return { eligible: true, reason: `Bulk merge: one lead is unclaimed and the other is owned by ${ownerName}.` };
+}
+
+export async function bulkMergeEligibleMatchReviews(supabase, { pairs, decidedBy }) {
+  if (!Array.isArray(pairs) || pairs.length === 0) throw httpError(400, "At least one pair is required");
+  if (pairs.length > 500) throw httpError(400, "A maximum of 500 pairs can be merged at once");
+
+  const requested = [];
+  const seen = new Set();
+  for (const pair of pairs) {
+    const [leftNpi, rightNpi] = canonicalReviewPair(pair?.leftNpi, pair?.rightNpi);
+    if (!leftNpi || !rightNpi || leftNpi === rightNpi) continue;
+    const key = `${leftNpi}:${rightNpi}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    requested.push({ leftNpi, rightNpi, key });
+  }
+  if (requested.length === 0) throw httpError(400, "At least one valid pair is required");
+
+  const queue = await getMatchReviews(supabase);
+  if (queue.available === false) throw httpError(503, queue.reason || "The review queue isn't available");
+  const reviewByKey = new Map((queue.reviews || []).map((review) => [
+    `${canonicalReviewPair(review.leftNpi, review.rightNpi)[0]}:${canonicalReviewPair(review.leftNpi, review.rightNpi)[1]}`,
+    review,
+  ]));
+
+  const merged = [];
+  const skipped = [];
+  const failed = [];
+  // Stable ordering prevents two admins processing overlapping pairs from
+  // acquiring group locks in different orders.
+  requested.sort((a, b) => a.key.localeCompare(b.key));
+  for (const pair of requested) {
+    const review = reviewByKey.get(pair.key);
+    if (!review) {
+      skipped.push({ ...pair, reason: "This pair is no longer pending." });
+      continue;
+    }
+    const eligibility = getBulkMergeEligibility(review);
+    if (!eligibility.eligible) {
+      skipped.push({ ...pair, reason: eligibility.reason });
+      continue;
+    }
+    try {
+      const result = await resolveMatchReview(supabase, {
+        leftNpi: review.leftNpi,
+        rightNpi: review.rightNpi,
+        decision: "merged",
+        decidedBy,
+        reason: eligibility.reason,
+        tier: review.tier,
+        matchedKeys: review.matchedKeys,
+      });
+      merged.push({ ...pair, result });
+    } catch (error) {
+      failed.push({ ...pair, reason: error.message || "Failed to merge this pair." });
+    }
+  }
+
+  return { requested: requested.length, merged, skipped, failed };
+}
+
 // Hands the whole decision to one SQL function. Deliberately NOT a
 // read-then-write here: PostgREST gives the Worker no transaction, so a
 // resolve built out of separate REST calls could interleave with a

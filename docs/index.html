@@ -334,6 +334,12 @@
             <div class="results-sub" id="matchReviewsSummary">Checking…</div>
           </div>
           <div class="results-actions">
+            <label class="checkbox admin-bulk-select-all">
+              <input type="checkbox" id="matchReviewsSelectAll" disabled>
+              <span>Select all eligible</span>
+            </label>
+            <span class="bulk-selection-summary" id="matchReviewsBulkSummary"></span>
+            <button type="button" class="btn btn-primary btn-small" id="matchReviewsBulkMergeBtn" disabled>Merge selected</button>
             <label class="inline-field">
               <span>Show</span>
               <select id="matchReviewsTierFilter">

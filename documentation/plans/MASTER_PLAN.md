@@ -156,7 +156,7 @@ suffixes stripped), state, authorized official (middle names ignored), phone
 A fuzzy name (`token_sort_ratio ≥ 88` on stripped names) can only ever flag.
 Ownership conflicts created by auto-grouping show in the admin conflicts
 panel. Tier 2/3 flags are merged or dismissed in the Admin tab's Possible
-duplicates panel (`sql/009_identity_match_review.sql`, **not yet run**).
+duplicates panel (`sql/009_identity_match_review.sql`, executed 2026-09-16).
 
 **One-time migration steps — ✅ steps 1–5 done via `sql/002_identity_backfill_safe.sql`:**
 
@@ -165,8 +165,8 @@ duplicates panel (`sql/009_identity_match_review.sql`, **not yet run**).
 3. ✅ Populate `lead_group_members` — link each `leads.npi` to its group.
 4. ✅ Backfill `leads.group_id`.
 5. ✅ Backfill `lead_ownership_events` — one `claimed` event per existing claimed `leads` row.
-6. ⬜ Run `sql/008_identity_match_tiers.sql`: regroup under the three-tier keys, flag new ownership conflicts, and create the Tier 2/3 review view.
-7. ⬜ Run `sql/009_identity_match_review.sql`, then work the Possible duplicates queue in the Admin tab.
+6. ✅ Run `sql/008_identity_match_tiers.sql`: regroup under the three-tier keys, flag new ownership conflicts, and create the Tier 2/3 review view (executed 2026-09-16).
+7. ✅ Run `sql/009_identity_match_review.sql`, then work the Possible duplicates queue in the Admin tab (executed 2026-09-16).
 
 The backfill is rerun-safe: it uses `ON CONFLICT (npi) DO NOTHING` so a
 reviewed membership decision is never overwritten. The earlier draft,
@@ -182,7 +182,7 @@ reviewed membership decision is never overwritten. The earlier draft,
   (see *Current known state*).
 - Only after verification holds: consider making `leads.group_id` NOT NULL.
 
-### Phase 5 — Claim flow hardening 🟡 CONFLICT REVIEW BUILT, CLAIM PATH NOT STARTED
+### Phase 5 — Claim flow hardening 🟡 REVIEW AND GROUP-AWARE CLAIMING BUILT, OWNERSHIP APIs REMAIN
 
 Update the Worker so every claim, reassign, and release writes auditable
 events and respects group-level conflict checks.
@@ -204,7 +204,9 @@ ownership conflicts now surface in the Admin tab and can be resolved there:
   `claimed_by` changes, and every move writes a `reassigned` event carrying
   the approver and the reason.
 
-**Still not started — the claim path itself.**
+**Remaining — explicit reassign/release and group-history APIs.** Group-aware
+claiming is implemented in `sql/010_group_aware_claim.sql` and the Worker;
+the migration was executed 2026-09-16.
 
 **Prerequisite — an atomic database-side operation.** Claiming today is a
 read-then-insert in `worker/src/repos/leadsRepo.js`
@@ -341,7 +343,7 @@ changes, and save the import/reassignment logs in `temp/`.
 2. 🟡 Staging SQL written (`sql/004`); the transactional apply step is next, tested against a small fixture (Phase 6).
 3. ⬜ Worker queries same-project `npi_records` directly, preserving response shapes (Phase 3 cutover).
 4. ⬜ Refresh verification reports and provider-change review events (Phase 6).
-5. 🟡 The two ownership conflicts are resolved (`sql/006`, executed 2026-09-16). Group-aware atomic claiming is built (`sql/010` + Worker): blocks claims on groups a teammate owns and holds Tier 2/3 matches for admin review — `sql/010` not yet run.
+5. ✅ The two ownership conflicts are resolved (`sql/006`, executed 2026-09-16). Group-aware atomic claiming is built and migrated (`sql/010` + Worker): it blocks claims on groups a teammate owns and holds Tier 2/3 matches for admin review.
 6. 🟡 Admin conflict review queue is live; reassign/release and group/history endpoints remain (Phase 5).
 7. ⬜ Medicare staging and monthly change tracking (Phase 6).
 8. ⬜ Preflight and the approved imports from `PIS_TO_RESOLVE.csv` (Phase 7).
@@ -376,10 +378,10 @@ sharing an NPI; each NPI has exactly one membership. (An earlier
 exploratory pass reported 11,684 flagged rows in 4,695 groups — that was a
 pre-backfill estimate and is superseded by the figures above.)
 
-**Ownership conflicts — decided 2026-09-02, not yet applied.** The backfill
-did not create or change these; it exposed them. Both now have an explicit
-approved owner decision, written as SQL in
-`sql/006_resolve_known_conflicts.sql` and awaiting manual execution.
+**Ownership conflicts — decided 2026-09-02 and applied 2026-09-16.** The
+backfill did not create or change these; it exposed them. Both received
+explicit approved owner decisions through
+`sql/006_resolve_known_conflicts.sql`.
 
 | Group | NPIs | Was | Decision |
 |---|---|---|---|
@@ -411,7 +413,7 @@ Ticked items are verified; the rest are open.
 - [ ] High-signal changes (phone, official, name, deactivation, territory, claims cliff) surface in the admin review queue.
 - [ ] Accepted NPIs have passed Supabase duplicate/owner preflight.
 - [x] No unapproved claim is deleted, reassigned, or overwritten. *(Holds to date and must keep holding.)*
-- [x] The two known group-level ownership conflicts have explicit approved decisions. *(Decided 2026-09-02; `sql/006` written, execution pending.)*
+- [x] The two known group-level ownership conflicts have explicit approved decisions. *(Decided 2026-09-02; `sql/006` executed 2026-09-16.)*
 - [ ] Final import and reassignment logs are saved in `temp/`.
 
 ---

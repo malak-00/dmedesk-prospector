@@ -1,5 +1,41 @@
 # DME Desk Prospector Worklog
 
+## 2026-09-29 — Ownership-safe bulk merge for possible duplicates
+
+### Objective
+
+Allow admins to bulk-merge only possible-duplicate pairs whose current
+ownership is unambiguous, while preserving an audit reason for every merge.
+
+### Actions Completed
+
+- Added Admin → Possible duplicates selection checkboxes and “Select all
+  eligible” behavior across the full filtered queue, not only the visible page.
+- Excluded cross-agent pairs from bulk selection while leaving the existing
+  manual review action available.
+- Added an admin-only Worker bulk-merge route that revalidates ownership on
+  the server and processes pairs sequentially through the existing atomic
+  `resolve_identity_match()` RPC.
+- Generated automatic audit reasons for both-unclaimed, unclaimed/agent, and
+  same-agent pairs; no ownership is changed by the merge.
+- Added Worker unit coverage for the ownership eligibility and reason rules.
+- Reconciled `MASTER_PLAN.md` with `sql/README.md`: migrations 005, 006, 008,
+  009, and 010 are recorded as executed on 2026-09-16. Provider-refresh apply,
+  Medicare follow-up, preflight/import, and remaining ownership APIs remain
+  open work.
+
+### Database / System Result
+
+- No SQL migration or production data was changed.
+- Each bulk pair still uses the existing append-only identity decision table
+  and atomic merge function.
+
+### Safety Status
+
+- Server-side admin authorization and ownership revalidation are enforced.
+- Cross-agent pairs are not eligible for bulk processing.
+- Deployment and browser verification remain manual handoff steps.
+
 ## 2026-09-22 — Documentation structure and freshness audit
 
 ### Objective

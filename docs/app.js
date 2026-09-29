@@ -112,6 +112,7 @@ const state = {
   matchReviews: null,
   matchReviewsTier: "all",
   matchReviewsLimit: 25,
+  matchReviewSelected: new Set(),
   providerChanges: null,
   providerChangesLimit: 25,
   matchReviewPending: null,
@@ -300,6 +301,9 @@ const els = {
   matchReviewsEmpty: document.getElementById("matchReviewsEmpty"),
   matchReviewsList: document.getElementById("matchReviewsList"),
   matchReviewsMoreBtn: document.getElementById("matchReviewsMoreBtn"),
+  matchReviewsSelectAll: document.getElementById("matchReviewsSelectAll"),
+  matchReviewsBulkSummary: document.getElementById("matchReviewsBulkSummary"),
+  matchReviewsBulkMergeBtn: document.getElementById("matchReviewsBulkMergeBtn"),
   matchReviewOverlay: document.getElementById("matchReviewOverlay"),
   matchReviewForm: document.getElementById("matchReviewForm"),
   matchReviewTitle: document.getElementById("matchReviewTitle"),
@@ -816,6 +820,26 @@ function matchReviewKey(review) {
   return `${review.leftNpi}:${review.rightNpi}`;
 }
 
+function matchReviewBulkEligibility(review) {
+  const owners = [...(review.left?.owners || []), ...(review.right?.owners || [])];
+  const ownersById = new Map();
+  owners.forEach((owner) => {
+    if (owner?.userId) ownersById.set(String(owner.userId), owner.displayName || "(unknown agent)");
+  });
+  const ownerIds = [...ownersById.keys()];
+  if (ownerIds.length > 1) return { eligible: false, reason: "Different agents own these leads; review manually." };
+  if (ownerIds.length === 0) return { eligible: true, reason: "Both leads are unclaimed." };
+  const ownerName = ownersById.get(ownerIds[0]);
+  const leftClaimed = (review.left?.owners || []).length > 0;
+  const rightClaimed = (review.right?.owners || []).length > 0;
+  return {
+    eligible: true,
+    reason: leftClaimed && rightClaimed
+      ? `Both leads are owned by ${ownerName}; ownership is consistent.`
+      : `One lead is unclaimed and the other is owned by ${ownerName}.`,
+  };
+}
+
 function filteredMatchReviews() {
   const reviews = (state.matchReviews && state.matchReviews.reviews) || [];
   if (state.matchReviewsTier === "all") return reviews;
@@ -851,6 +875,8 @@ function renderMatchReviews() {
   if (!payload) return;
 
   if (payload.available === false) {
+    state.matchReviewSelected.clear();
+    renderMatchReviewBulkControls([]);
     els.matchReviewsSummary.textContent = "Not available";
     els.matchReviewsEmpty.hidden = false;
     els.matchReviewsEmpty.textContent = payload.reason || "The review queue isn't installed yet.";
@@ -867,6 +893,7 @@ function renderMatchReviews() {
     : "Nothing to review";
 
   const reviews = filteredMatchReviews();
+  renderMatchReviewBulkControls(reviews);
   if (reviews.length === 0) {
     els.matchReviewsEmpty.hidden = false;
     els.matchReviewsEmpty.textContent = all.length
@@ -881,6 +908,8 @@ function renderMatchReviews() {
   const visible = reviews.slice(0, state.matchReviewsLimit);
   els.matchReviewsList.innerHTML = visible
     .map((review) => {
+      const bulkEligibility = matchReviewBulkEligibility(review);
+      const reviewKey = matchReviewKey(review);
       const requestedBy = review.source === "claim_request" ? review.requestedBy : null;
       const left = renderMatchReviewSide(review.left, requestedBy && review.requestedNpi === review.left.npi ? requestedBy : null);
       const right = renderMatchReviewSide(review.right, requestedBy && review.requestedNpi === review.right.npi ? requestedBy : null);
@@ -900,9 +929,13 @@ function renderMatchReviews() {
           </tr>`;
       };
       return `
-      <div class="conflict-card match-review-card match-review-tier-${review.tier}">
+      <div class="conflict-card match-review-card match-review-tier-${review.tier}${bulkEligibility.eligible ? "" : " match-review-ineligible"}">
         <div class="conflict-card-header">
           <div>
+            <label class="checkbox match-review-select">
+              <input type="checkbox" data-match-review-select data-review-key="${escapeHtml(reviewKey)}" ${state.matchReviewSelected.has(reviewKey) ? "checked" : ""} ${bulkEligibility.eligible ? "" : "disabled"}>
+              <span>${bulkEligibility.eligible ? "Select for bulk merge" : escapeHtml(bulkEligibility.reason)}</span>
+            </label>
             <div class="conflict-title">Tier ${review.tier} match</div>
             <div class="match-key-chips">${keyChips}</div>
           </div>
@@ -1193,6 +1226,8 @@ async function loadMatchReviews(silent = false) {
     els.matchReviewsEmpty.textContent = "Couldn't load possible duplicates: " + err.message;
     els.matchReviewsList.innerHTML = "";
     els.matchReviewsMoreBtn.hidden = true;
+    state.matchReviewSelected.clear();
+    renderMatchReviewBulkControls([]);
   }
 }
 
@@ -3063,6 +3098,53 @@ function claimedDetailRowHtml(lead, index) {
   `;
 }
 
+function renderMatchReviewBulkControls(reviews) {
+  const eligible = reviews.filter((review) => matchReviewBulkEligibility(review).eligible);
+  const excluded = reviews.length - eligible.length;
+  const eligibleKeys = new Set(eligible.map(matchReviewKey));
+  for (const key of state.matchReviewSelected) {
+    if (!eligibleKeys.has(key)) state.matchReviewSelected.delete(key);
+  }
+  const selectedCount = state.matchReviewSelected.size;
+  const allSelected = eligible.length > 0 && eligible.every((review) => state.matchReviewSelected.has(matchReviewKey(review)));
+  els.matchReviewsSelectAll.disabled = eligible.length === 0;
+  els.matchReviewsSelectAll.checked = allSelected;
+  els.matchReviewsSelectAll.indeterminate = selectedCount > 0 && !allSelected;
+  els.matchReviewsBulkMergeBtn.disabled = selectedCount === 0;
+  els.matchReviewsBulkMergeBtn.textContent = selectedCount ? `Merge selected (${selectedCount})` : "Merge selected";
+  els.matchReviewsBulkSummary.textContent = reviews.length
+    ? `Eligible ${eligible.length} · selected ${selectedCount} · excluded ${excluded}`
+    : "";
+}
+
+async function bulkMergeSelectedMatchReviews() {
+  const reviews = filteredMatchReviews().filter((review) => state.matchReviewSelected.has(matchReviewKey(review)));
+  if (reviews.length === 0) return;
+  const eligible = reviews.filter((review) => matchReviewBulkEligibility(review).eligible);
+  const allReviews = filteredMatchReviews();
+  const excluded = allReviews.filter((review) => !matchReviewBulkEligibility(review).eligible).length;
+  const message = `Merge ${eligible.length} selected eligible pair${eligible.length === 1 ? "" : "s"}?` +
+    (excluded ? ` ${excluded} pair${excluded === 1 ? " is" : "s are"} excluded from bulk selection because different agents own them.` : "") +
+    " Each merge will be recorded with an automatic ownership-consistency reason.";
+  if (!confirm(message)) return;
+
+  els.matchReviewsBulkMergeBtn.disabled = true;
+  els.matchReviewsBulkMergeBtn.textContent = "Merging…";
+  try {
+    const result = await apiPost("admin/match-reviews/bulk-merge", {
+      pairs: eligible.map((review) => ({ leftNpi: review.leftNpi, rightNpi: review.rightNpi })),
+    });
+    state.matchReviewSelected.clear();
+    const merged = result.merged?.length || 0;
+    const skipped = (result.skipped?.length || 0) + (result.failed?.length || 0);
+    showToast(`Merged ${merged} pair${merged === 1 ? "" : "s"}.` + (skipped ? ` ${skipped} skipped or failed; refresh to review them.` : ""));
+    await Promise.all([loadMatchReviews(true), loadConflicts(true)]);
+  } catch (err) {
+    showToast(err.message, true);
+    renderMatchReviewBulkControls(filteredMatchReviews());
+  }
+}
+
 async function bookClaimedMeeting(index) {
   const lead = state.claimedLeads[index];
   if (!lead) return;
@@ -3616,6 +3698,24 @@ els.matchReviewsList.addEventListener("click", (e) => {
   if (!btn) return;
   openMatchReview(btn.dataset.reviewKey, btn.dataset.matchReview);
 });
+els.matchReviewsList.addEventListener("change", (e) => {
+  const box = e.target.closest("[data-match-review-select]");
+  if (!box || box.disabled) return;
+  if (box.checked) state.matchReviewSelected.add(box.dataset.reviewKey);
+  else state.matchReviewSelected.delete(box.dataset.reviewKey);
+  renderMatchReviewBulkControls(filteredMatchReviews());
+});
+els.matchReviewsSelectAll.addEventListener("change", (e) => {
+  const reviews = filteredMatchReviews();
+  reviews.forEach((review) => {
+    const key = matchReviewKey(review);
+    if (!matchReviewBulkEligibility(review).eligible) return;
+    if (e.target.checked) state.matchReviewSelected.add(key);
+    else state.matchReviewSelected.delete(key);
+  });
+  renderMatchReviews();
+});
+els.matchReviewsBulkMergeBtn.addEventListener("click", bulkMergeSelectedMatchReviews);
 els.compareSourcesBtn.addEventListener("click", compareSearchSources);
 els.providerChangesList.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-provider-change]");
