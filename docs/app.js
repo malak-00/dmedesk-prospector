@@ -3117,6 +3117,8 @@ function renderMatchReviewBulkControls(reviews) {
     : "";
 }
 
+const BULK_MERGE_BATCH_SIZE = 20;
+
 async function bulkMergeSelectedMatchReviews() {
   const reviews = filteredMatchReviews().filter((review) => state.matchReviewSelected.has(matchReviewKey(review)));
   if (reviews.length === 0) return;
@@ -3129,15 +3131,30 @@ async function bulkMergeSelectedMatchReviews() {
   if (!confirm(message)) return;
 
   els.matchReviewsBulkMergeBtn.disabled = true;
-  els.matchReviewsBulkMergeBtn.textContent = "Merging…";
+  els.matchReviewsBulkMergeBtn.textContent = `Merging 0/${eligible.length}…`;
+  let merged = 0;
+  let skipped = 0;
+  let failedBatches = 0;
   try {
-    const result = await apiPost("admin/match-reviews/bulk-merge", {
-      pairs: eligible.map((review) => ({ leftNpi: review.leftNpi, rightNpi: review.rightNpi })),
-    });
+    for (let offset = 0; offset < eligible.length; offset += BULK_MERGE_BATCH_SIZE) {
+      const batch = eligible.slice(offset, offset + BULK_MERGE_BATCH_SIZE);
+      try {
+        const result = await apiPost("admin/match-reviews/bulk-merge", {
+          pairs: batch.map((review) => ({ leftNpi: review.leftNpi, rightNpi: review.rightNpi })),
+        });
+        merged += result.merged?.length || 0;
+        skipped += (result.skipped?.length || 0) + (result.failed?.length || 0);
+      } catch (err) {
+        // A retry is safe: pairs completed before a timeout are no longer in
+        // the pending queue and the Worker reports them as skipped.
+        failedBatches += 1;
+      }
+      els.matchReviewsBulkMergeBtn.textContent = `Merging ${Math.min(offset + batch.length, eligible.length)}/${eligible.length}…`;
+    }
     state.matchReviewSelected.clear();
-    const merged = result.merged?.length || 0;
-    const skipped = (result.skipped?.length || 0) + (result.failed?.length || 0);
-    showToast(`Merged ${merged} pair${merged === 1 ? "" : "s"}.` + (skipped ? ` ${skipped} skipped or failed; refresh to review them.` : ""));
+    showToast(`Merged ${merged} pair${merged === 1 ? "" : "s"}.` +
+      (skipped ? ` ${skipped} skipped or failed; refresh to review them.` : "") +
+      (failedBatches ? ` ${failedBatches} batch${failedBatches === 1 ? "" : "es"} timed out or failed.` : ""));
     await Promise.all([loadMatchReviews(true), loadConflicts(true)]);
   } catch (err) {
     showToast(err.message, true);
