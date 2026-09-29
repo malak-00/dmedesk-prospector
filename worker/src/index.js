@@ -512,6 +512,19 @@ app.post("/admin/match-reviews/resolve", async (c) => {
   return c.json(ok(data));
 });
 
+// Bulk merge is limited to ownership-safe pairs. The repo revalidates every
+// pair and generates the audit reason from current database-backed owners.
+app.post("/admin/match-reviews/bulk-merge", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  const data = await adminRepo.bulkMergeEligibleMatchReviews(supabaseFor(c), {
+    pairs: body.pairs,
+    decidedBy: session.id,
+  });
+  return c.json(ok(data));
+});
+
 app.get("/admin/leads", async (c) => {
   const session = c.get("session");
   requireAdmin(session);
