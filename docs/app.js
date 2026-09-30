@@ -109,6 +109,7 @@ const state = {
   adminLoaded: false,
   conflicts: [],
   conflictResolveGroupId: null,
+  conflictResolveSelectedNpis: new Set(),
   matchReviews: null,
   matchReviewsTier: "all",
   matchReviewsLimit: 25,
@@ -272,7 +273,10 @@ const els = {
   conflictResolveOverlay: document.getElementById("conflictResolveOverlay"),
   conflictResolveForm: document.getElementById("conflictResolveForm"),
   conflictResolveGroup: document.getElementById("conflictResolveGroup"),
+  conflictLeadOptions: document.getElementById("conflictLeadOptions"),
   conflictOwnerOptions: document.getElementById("conflictOwnerOptions"),
+  conflictSelectedSummary: document.getElementById("conflictSelectedSummary"),
+  conflictUnclaimBtn: document.getElementById("conflictUnclaimBtn"),
   conflictReason: document.getElementById("conflictReason"),
   conflictResolveCancelBtn: document.getElementById("conflictResolveCancelBtn"),
   conflictResolveSubmitBtn: document.getElementById("conflictResolveSubmitBtn"),
@@ -692,6 +696,7 @@ function renderConflicts(payload) {
             </td>
             <td>${escapeHtml(location || "—")}</td>
             <td>${escapeHtml(lead.claimedByName || "")}</td>
+            <td>${lead.status ? `<span class="status-badge status-${escapeHtml(String(lead.status).replace(/\s+/g, "-"))}">${escapeHtml(lead.status)}</span>` : "—"}</td>
             <td class="mono">${escapeHtml((lead.claimedAt || "").slice(0, 10))}</td>
           </tr>`;
         })
@@ -715,7 +720,7 @@ function renderConflicts(payload) {
         </div>
         <table class="conflict-leads">
           <thead>
-            <tr><th>Company</th><th>Location</th><th>Claimed by</th><th>Claimed</th></tr>
+            <tr><th>Company</th><th>Location</th><th>Claimed by</th><th>Status</th><th>Claimed</th></tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
@@ -748,7 +753,17 @@ function openConflictResolve(groupId) {
   const conflict = state.conflicts.find((c) => c.groupId === groupId);
   if (!conflict) return;
   state.conflictResolveGroupId = groupId;
+  state.conflictResolveSelectedNpis = new Set();
   els.conflictResolveGroup.textContent = `${conflict.groupName} — ${conflict.leads.length} active claims across ${conflict.owners.length} owners.`;
+  els.conflictLeadOptions.innerHTML = conflict.leads.map((lead) => `
+    <label class="conflict-lead-option">
+      <input type="checkbox" data-conflict-lead-select data-npi="${escapeHtml(lead.npi)}">
+      <span>
+        <strong>${escapeHtml(lead.companyName || lead.npi)}</strong>
+        <span class="mono">${escapeHtml(lead.npi)}</span>
+        <span>${escapeHtml(lead.claimedByName || "Unknown owner")} · ${escapeHtml(lead.status || "new")}</span>
+      </span>
+    </label>`).join("");
   // No owner is pre-selected: picking one is the decision being made here,
   // and a default would quietly become the answer.
   els.conflictOwnerOptions.innerHTML = conflict.owners
@@ -762,6 +777,8 @@ function openConflictResolve(groupId) {
     )
     .join("");
   els.conflictReason.value = "";
+  els.conflictSelectedSummary.textContent = "No leads selected for unclaiming.";
+  els.conflictUnclaimBtn.disabled = true;
   els.conflictResolveSubmitBtn.disabled = false;
   els.conflictResolveSubmitBtn.textContent = "Assign owner";
   els.conflictResolveOverlay.hidden = false;
@@ -770,6 +787,42 @@ function openConflictResolve(groupId) {
 function closeConflictResolve() {
   els.conflictResolveOverlay.hidden = true;
   state.conflictResolveGroupId = null;
+  state.conflictResolveSelectedNpis.clear();
+}
+
+function updateConflictUnclaimSelection() {
+  const count = state.conflictResolveSelectedNpis.size;
+  els.conflictSelectedSummary.textContent = count
+    ? `${count} lead${count === 1 ? "" : "s"} selected for unclaiming.`
+    : "No leads selected for unclaiming.";
+  els.conflictUnclaimBtn.disabled = count === 0;
+}
+
+async function unclaimSelectedConflictLeads() {
+  const groupId = state.conflictResolveGroupId;
+  const npis = [...state.conflictResolveSelectedNpis];
+  if (!groupId || npis.length === 0) return;
+  const reason = els.conflictReason.value.trim();
+  if (!reason) {
+    showToast("A reason is required — it's recorded with the decision.", true);
+    els.conflictReason.focus();
+    return;
+  }
+  if (!confirm(`Unclaim ${npis.length} selected lead${npis.length === 1 ? "" : "s"}? They will return to Prospect.`)) return;
+
+  els.conflictUnclaimBtn.disabled = true;
+  els.conflictUnclaimBtn.textContent = "Unclaiming…";
+  try {
+    const result = await apiPost("admin/conflicts/unclaim", { groupId, npis, reason });
+    closeConflictResolve();
+    showToast(`Unclaimed ${result.released_count || 0} lead${result.released_count === 1 ? "" : "s"}.`);
+    await loadConflicts(true);
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    els.conflictUnclaimBtn.textContent = "Unclaim selected";
+    updateConflictUnclaimSelection();
+  }
 }
 
 async function handleConflictResolve(event) {
@@ -827,7 +880,7 @@ function matchReviewBulkEligibility(review) {
     if (owner?.userId) ownersById.set(String(owner.userId), owner.displayName || "(unknown agent)");
   });
   const ownerIds = [...ownersById.keys()];
-  if (ownerIds.length > 1) return { eligible: false, reason: "Different agents own these leads; review manually." };
+  if (ownerIds.length > 1) return { eligible: true, reason: "Bulk merge: different agents own these leads; resolve the resulting ownership conflict." };
   if (ownerIds.length === 0) return { eligible: true, reason: "Both leads are unclaimed." };
   const ownerName = ownersById.get(ownerIds[0]);
   const leftClaimed = (review.left?.owners || []).length > 0;
@@ -867,6 +920,7 @@ function renderMatchReviewSide(record, requestedBy) {
       : "—",
     group: record.groupSize > 1 ? `${record.groupSize} NPIs` : "Only this NPI",
     owners,
+    status: record.status ? escapeHtml(record.status) : "—",
   };
 }
 
@@ -957,6 +1011,7 @@ function renderMatchReviews() {
               ${row("Phone", "phone", "phone")}
               ${row("Group", "group", null)}
               ${row("Claimed by", "owners", null)}
+              ${row("Closer status", "status", null)}
             </tbody>
           </table>
         </div>
@@ -2143,6 +2198,17 @@ function removeCompaniesFromProspect(companies) {
   renderResults();
 }
 
+const CLAIM_REQUEST_BATCH_SIZE = 10;
+
+function mergeClaimResults(total, part) {
+  total.rowsAdded += part.rowsAdded || 0;
+  total.claimedBy = part.claimedBy || total.claimedBy;
+  ["claimedNpis", "alreadyClaimedNpis", "blocked", "heldForReview", "invalid"].forEach((key) => {
+    total[key].push(...(part[key] || []));
+  });
+  return total;
+}
+
 async function exportSheets() {
   const companies = getSelectedProspectCompanies();
   if (companies.length === 0) {
@@ -2157,7 +2223,12 @@ async function exportSheets() {
   els.exportSheetsBtn.disabled = true; // prevents a double-click from double-claiming
   setStatus("busy", "Claiming…");
   try {
-    const data = await apiPost("export/sheets", { companies });
+    const data = { rowsAdded: 0, claimedNpis: [], alreadyClaimedNpis: [], blocked: [], heldForReview: [], invalid: [] };
+    for (let offset = 0; offset < companies.length; offset += CLAIM_REQUEST_BATCH_SIZE) {
+      const batch = companies.slice(offset, offset + CLAIM_REQUEST_BATCH_SIZE);
+      setStatus("busy", `Claiming ${Math.min(offset + batch.length, companies.length)}/${companies.length}…`);
+      mergeClaimResults(data, await apiPost("export/sheets", { companies: batch }));
+    }
     state.claimedLoaded = false; // claimed view is now stale
     // Claimed (or already-yours) leads leave Prospect, and so do ones a
     // teammate owns: the dialog names the owner, and there is nothing the rep
@@ -3126,7 +3197,7 @@ async function bulkMergeSelectedMatchReviews() {
   const allReviews = filteredMatchReviews();
   const excluded = allReviews.filter((review) => !matchReviewBulkEligibility(review).eligible).length;
   const message = `Merge ${eligible.length} selected eligible pair${eligible.length === 1 ? "" : "s"}?` +
-    (excluded ? ` ${excluded} pair${excluded === 1 ? " is" : "s are"} excluded from bulk selection because different agents own them.` : "") +
+    (excluded ? ` ${excluded} pair${excluded === 1 ? " is" : "s are"} unavailable because the review changed.` : "") +
     " Each merge will be recorded with an automatic ownership-consistency reason.";
   if (!confirm(message)) return;
 
@@ -3701,8 +3772,16 @@ els.conflictsList.addEventListener("click", (e) => {
   if (!btn) return;
   openConflictResolve(btn.dataset.groupId);
 });
+els.conflictResolveOverlay.addEventListener("change", (e) => {
+  const box = e.target.closest("[data-conflict-lead-select]");
+  if (!box) return;
+  if (box.checked) state.conflictResolveSelectedNpis.add(box.dataset.npi);
+  else state.conflictResolveSelectedNpis.delete(box.dataset.npi);
+  updateConflictUnclaimSelection();
+});
 els.conflictResolveForm.addEventListener("submit", handleConflictResolve);
 els.conflictResolveCancelBtn.addEventListener("click", closeConflictResolve);
+els.conflictUnclaimBtn.addEventListener("click", unclaimSelectedConflictLeads);
 els.conflictResolveOverlay.addEventListener("click", (e) => {
   if (e.target === els.conflictResolveOverlay) closeConflictResolve();
 });

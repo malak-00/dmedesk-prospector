@@ -24,9 +24,10 @@ Required manual sequence:
 016_refresh_run_recovery.sql      (abort a Medicare run; abort a 'complete' run)
 017_lead_sync_restart.sql         (run a claimed-lead sync again from the start)
 018_provider_search.sql           (before search can read from this project)
+019_conflict_unclaim.sql           (before Admin Resolve can unclaim selected leads)
 ```
 
-**Outstanding: `017` and `018`.** The bundle described next always holds
+**Outstanding: `017`, `018`, and `019`.** The bundle described next always holds
 whatever that is.
 
 **Everything still outstanding is bundled into one file:**
@@ -69,6 +70,7 @@ in `003`); save their output with the run.
 | `016_refresh_run_recovery.sql` | `abort_medicare_refresh()`, and `abort_nppes_refresh()` relaxed to accept a `complete` run: closing out a staged run whose staging is gone | Executed 2026-09-17 (used to close out the empty Medicare run) |
 | `017_lead_sync_restart.sql` | `reset_lead_sync()`: clears the sync cursor so a run that has been synced can be synced again | **Not yet run — needed for `--sync-run --restart`** |
 | `018_provider_search.sql` | `search_providers()` + its indexes: provider search against this project's own `npi_records`, every filter in SQL | **Production verification pending — required before `NPI_SOURCE=dmedesk`** |
+| `019_conflict_unclaim.sql` | `unclaim_conflict_leads()` plus active-claim indexes used by the claim RPC | **Not yet run — required for selective conflict unclaiming and claim performance** |
 
 ## Notes on individual files
 

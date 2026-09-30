@@ -482,6 +482,10 @@
       <h3>Assign this group to one owner</h3>
       <p class="suggestion-hint" id="conflictResolveGroup"></p>
       <div class="field">
+        <span>Conflicted leads</span>
+        <div class="conflict-lead-options" id="conflictLeadOptions"></div>
+      </div>
+      <div class="field">
         <span>Who keeps this group?</span>
         <div class="conflict-owner-options" id="conflictOwnerOptions"></div>
       </div>
@@ -491,9 +495,13 @@
           placeholder="e.g. Confirmed with both reps — Rick worked the account first."></textarea>
       </label>
       <p class="suggestion-hint">
-        Every claim that moves is logged with who approved it and why. Statuses, notes,
-        reminders and original claim dates are left untouched.
+        Every ownership change is logged with who approved it and why. Assigning an
+        owner leaves the lead's status, notes, reminders and original claim date untouched.
       </p>
+      <div class="conflict-unclaim-controls">
+        <span class="suggestion-hint" id="conflictSelectedSummary">No leads selected for unclaiming.</span>
+        <button type="button" class="btn btn-ghost" id="conflictUnclaimBtn" disabled>Unclaim selected</button>
+      </div>
       <div class="suggestion-actions">
         <button type="button" class="btn btn-ghost" id="conflictResolveCancelBtn">Cancel</button>
         <button type="submit" class="btn btn-primary" id="conflictResolveSubmitBtn">Assign owner</button>

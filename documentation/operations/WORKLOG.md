@@ -1,5 +1,37 @@
 # DME Desk Prospector Worklog
 
+## 2026-09-29 — Admin merge status, selective unclaim, and claim reliability
+
+### Objective
+
+Let admins choose duplicate-group owners using closer-written statuses, bulk-merge
+cross-owner duplicate pairs, selectively release conflicted leads, and reliably
+claim the 50-lead Prospect page.
+
+### Actions Completed
+
+- Added current lead status to Admin → Possible duplicates rows.
+- Removed the cross-owner exclusion from bulk merge eligibility; merged groups
+  still flow into Ownership conflicts without changing ownership.
+- Added selected-lead checkboxes and an admin-only selective unclaim action in
+  the Resolve dialog, backed by `sql/019_conflict_unclaim.sql`.
+- Added active-claim indexes and split Prospect claims into ten-lead requests
+  while retaining the 50-lead page limit and combined result reporting.
+- Added Worker tests for cross-owner bulk merge eligibility and the 50-lead
+  claim limit.
+
+### Database / System Result
+
+- No production database or deployment was changed.
+- SQL migration `019_conflict_unclaim.sql` must be reviewed and run manually
+  before the new Resolve action is available.
+
+### Safety Status
+
+- Admin authorization, group/NPI validation, row locking, and append-only
+  `released` ownership events are enforced server-side.
+- Browser verification and Worker deployment remain manual handoff steps.
+
 ## 2026-09-29 — Ownership-safe bulk merge for possible duplicates
 
 ### Objective

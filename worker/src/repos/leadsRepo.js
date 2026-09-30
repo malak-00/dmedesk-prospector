@@ -9,6 +9,7 @@ import { findUserByUsernameExact } from "../lib/users.js";
 
 const DEFAULT_STATUSES = ["new", "called", "voicemail", "interested", "not interested", "do not call"];
 const MAX_STATUS_LENGTH = 40;
+export const MAX_CLAIM_COMPANIES = 50;
 
 function httpError(status, message) {
   const err = new Error(message);
@@ -391,6 +392,10 @@ function fromClaimResult(data) {
 }
 
 export async function exportCompaniesToLeads(supabase, companies, session, flattenCompany, options = {}) {
+  if (!Array.isArray(companies) || companies.length === 0) throw httpError(400, "At least one company with an NPI is required to claim");
+  if (companies.length > MAX_CLAIM_COMPANIES) {
+    throw httpError(400, `At most ${MAX_CLAIM_COMPANIES} companies can be claimed at once`);
+  }
   const items = companiesToClaimItems(companies, session, flattenCompany);
 
   const args = { p_user_id: session.id, p_leads: items };

@@ -443,6 +443,19 @@ app.post("/admin/conflicts/resolve", async (c) => {
   return c.json(ok(data));
 });
 
+app.post("/admin/conflicts/unclaim", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  const data = await adminRepo.unclaimOwnershipConflictLeads(supabaseFor(c), {
+    groupId: body.groupId,
+    npis: body.npis,
+    approvedBy: session.id,
+    reason: body.reason,
+  });
+  return c.json(ok(data));
+});
+
 // Claim leads on behalf of a named teammate, for integrations like BD
 // MEETINGS that sign in with their own account. Deliberately NOT
 // requireAdmin: the integration account shouldn't be an admin. The
@@ -512,8 +525,9 @@ app.post("/admin/match-reviews/resolve", async (c) => {
   return c.json(ok(data));
 });
 
-// Bulk merge is limited to ownership-safe pairs. The repo revalidates every
-// pair and generates the audit reason from current database-backed owners.
+// Bulk merge revalidates every pending pair and generates the audit reason from
+// current database-backed owners. Cross-owner merges are allowed and surface
+// any resulting ownership conflict for the next admin decision.
 app.post("/admin/match-reviews/bulk-merge", async (c) => {
   const session = c.get("session");
   requireAdmin(session);

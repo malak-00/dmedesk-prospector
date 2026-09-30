@@ -380,7 +380,7 @@ export async function getMatchReviews(supabase) {
     ),
     fetchInChunks(
       npis,
-      (chunk) => supabase.from("leads").select("npi, company_name, city, state, claimed_by, is_disconnected").in("npi", chunk),
+      (chunk) => supabase.from("leads").select("npi, company_name, city, state, status, claimed_by, is_disconnected").in("npi", chunk),
       "leads"
     ),
     fetchInChunks(groupIds, (chunk) => supabase.from("lead_group_members").select("group_id").in("group_id", chunk), "group members"),
@@ -419,6 +419,7 @@ export async function getMatchReviews(supabase) {
       groupId: groupId || null,
       groupSize: groupId ? groupSize.get(groupId) || 1 : 1,
       owners: owners.map((id) => ({ userId: id, displayName: userNameById.get(id) || "(unknown user)" })),
+      status: lead.status || "new",
     };
   };
 
@@ -486,9 +487,9 @@ function canonicalReviewPair(leftNpi, rightNpi) {
   return [left, right].sort((a, b) => a.localeCompare(b));
 }
 
-// Bulk merging is deliberately stricter than the manual merge action. A
-// client-side checkbox is only a request; the Worker re-reads the pending
-// queue and current owners before every decision.
+// A client-side checkbox is only a request; the Worker re-reads the pending
+// queue and current owners before every decision. Cross-owner merges are
+// allowed because the atomic merge RPC flags the resulting ownership conflict.
 export function getBulkMergeEligibility(review) {
   const leftOwners = Array.isArray(review?.left?.owners) ? review.left.owners : [];
   const rightOwners = Array.isArray(review?.right?.owners) ? review.right.owners : [];
@@ -498,9 +499,7 @@ export function getBulkMergeEligibility(review) {
   });
   const ownerIds = [...ownerById.keys()];
 
-  if (ownerIds.length > 1) {
-    return { eligible: false, reason: "Different agents own these leads; review manually." };
-  }
+  if (ownerIds.length > 1) return { eligible: true, reason: "Bulk merge: different agents own these leads; resolve the resulting ownership conflict." };
 
   if (ownerIds.length === 0) {
     return { eligible: true, reason: "Bulk merge: both leads are unclaimed." };
@@ -551,10 +550,6 @@ export async function bulkMergeEligibleMatchReviews(supabase, { pairs, decidedBy
       continue;
     }
     const eligibility = getBulkMergeEligibility(review);
-    if (!eligibility.eligible) {
-      skipped.push({ ...pair, reason: eligibility.reason });
-      continue;
-    }
     try {
       const result = await resolveMatchReview(supabase, {
         leftNpi: review.leftNpi,
@@ -605,5 +600,28 @@ export async function resolveOwnershipConflict(supabase, { groupId, toUserId, ap
     throw httpError(500, "Failed to resolve the conflict: " + error.message);
   }
 
+  return data || {};
+}
+
+export async function unclaimOwnershipConflictLeads(supabase, { groupId, npis, approvedBy, reason }) {
+  if (!groupId) throw httpError(400, "groupId is required");
+  if (!Array.isArray(npis) || npis.length === 0) throw httpError(400, "At least one NPI is required");
+  if (npis.length > 50) throw httpError(400, "At most 50 leads can be unclaimed at once");
+  if (!reason || !String(reason).trim()) {
+    throw httpError(400, "A reason is required -- ownership changes have to record why they were approved");
+  }
+
+  const { data, error } = await supabase.rpc("unclaim_conflict_leads", {
+    p_group_id: groupId,
+    p_npis: [...new Set(npis.map(String).filter(Boolean))],
+    p_approved_by: approvedBy,
+    p_reason: String(reason).trim(),
+  });
+  if (error) {
+    if (error.code === "PGRST202" || /Could not find the function/i.test(error.message || "")) {
+      throw httpError(503, "Selective conflict unclaiming isn't installed yet. Run sql/019_conflict_unclaim.sql in Supabase, then try again.");
+    }
+    throw httpError(500, "Failed to unclaim the selected leads: " + error.message);
+  }
   return data || {};
 }
