@@ -37,3 +37,14 @@ This repository contains the DME Desk Prospector application. The live path is a
 - Use `rg` first for code searches.
 - Run safe, relevant static checks and unit tests; do not claim deployment or production verification unless it actually occurred.
 - Summarize changed files, checks run, database impact, and any manual deployment/browser steps still required.
+
+## Supabase SQL checklist
+
+- Use [`sql/checklist.md`](sql/checklist.md) as the manual checklist for the
+  fakeNPI-to-DME Desk provider-search cutover, current SQL dependencies, and
+  storage inspection/cleanup.
+- Do not mark a SQL checkbox complete from repository state alone; record it
+  only after running and verifying it in the Supabase SQL Editor.
+- Treat the storage cleanup section as destructive: require an explicit
+  cutoff, verified refresh-run state, and preservation/export of audit history
+  before deleting anything.
