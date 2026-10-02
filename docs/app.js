@@ -134,6 +134,7 @@ const state = {
   claimedSelected: new Set(),
   claimedExpandedIndex: null,
   claimedLoadedAt: null,
+  claimedDueOnly: false,
   claimedSortKey: null,
   claimedSortDir: 1,
   statuses: [],
@@ -334,8 +335,6 @@ const els = {
   nameContainsInput: document.getElementById("nameContainsInput"),
   nameContainsChipList: document.getElementById("nameContainsChipList"),
   nameContainsEntry: document.getElementById("nameContainsEntry"),
-  devNotice: document.getElementById("devNotice"),
-  devNoticeClose: document.getElementById("devNoticeClose"),
   suggestBtn: document.getElementById("suggestBtn"),
   suggestionOverlay: document.getElementById("suggestionOverlay"),
   suggestionForm: document.getElementById("suggestionForm"),
@@ -358,7 +357,6 @@ function showLogin() {
   els.userChip.hidden = true;
   els.suggestBtn.hidden = true;
   els.adminTab.hidden = true;
-  els.devNotice.hidden = true;
   // Covers both an explicit sign-out and an auto-triggered one (a 401 from
   // any API call routes here too, via unwrap()) -- either way, background
   // polling against a session that's no longer valid should stop.
@@ -375,7 +373,6 @@ function hideLogin() {
     els.userChip.hidden = false;
     els.suggestBtn.hidden = false;
     els.adminTab.hidden = !session.isAdmin;
-    els.devNotice.hidden = false; // shown fresh on every sign-in/page open, not persisted
     applyExcludeKeywordsDefaultIfBlank();
   }
 }
@@ -1459,6 +1456,7 @@ function switchView(view) {
   els.viewSearch.hidden = view !== "search";
   els.viewClaimed.hidden = view !== "claimed";
   els.viewAdmin.hidden = view !== "admin";
+  updateSelectionBar();
 
   stopClaimedAutoRefresh();
   stopAdminAutoRefresh();
@@ -1737,6 +1735,13 @@ function setSearchFormDisabled(disabled) {
   els.form.querySelectorAll("input, button, select, textarea").forEach((el) => {
     el.disabled = disabled;
   });
+  // Shimmering placeholder cards while a search is in flight.
+  const kpiStrip = document.getElementById("kpiSearch");
+  if (kpiStrip) {
+    kpiStrip.classList.toggle("is-loading", disabled);
+    if (disabled) kpiStrip.hidden = false;
+    else updateProspectKpis();
+  }
 }
 
 async function executeSearch(params, { isMore = false } = {}) {
@@ -1892,7 +1897,7 @@ function renderResults(excludedAsClaimed) {
   els.selectAll.checked = companies.length > 0 && state.selected.size === companies.length;
 
   if (companies.length === 0) {
-    els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">No leads matched that search.</td></tr>`;
+    els.resultsBody.innerHTML = emptyRowHtml(7, "search", "No leads matched that search", "Try a wider area, fewer specialties, or remove a filter chip above.");
     updateSelectionUI();
     return;
   }
@@ -1923,6 +1928,8 @@ function updateSelectionUI() {
   els.exportGoogleSheetLabel.textContent = count > 0 ? `Send ${count} to Sheet` : "Export to Sheet";
   els.sendDisconnectedBtn.disabled = count === 0;
   els.sendDisconnectedLabel.textContent = count > 0 ? `Send ${count} to Disconnected` : "Send to Disconnected";
+  updateProspectKpis();
+  updateSelectionBar();
 }
 
 // Small badges showing which enrichment sources actually contributed data
@@ -1948,7 +1955,7 @@ function leadRowHtml(company, index) {
   const primaryContact = company.decisionMakers?.[0];
   const isSelected = state.selected.has(index);
   return `
-    <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}" tabindex="0" aria-expanded="false">
+    <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}" tabindex="0" aria-expanded="false" style="--i:${Math.min(index, 12)}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
         <div class="score-ring-wrap" tabindex="0">
@@ -1960,6 +1967,11 @@ function leadRowHtml(company, index) {
         <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}</div>
         <div class="company-taxonomy">${escapeHtml(company.taxonomy?.description || "")}</div>
         ${sourceBadges(company.sources)}
+        ${leadSignalsHtml({
+          phone: primaryContact?.phone || company.phone,
+          website: company.website,
+          hasContact: Boolean(company.decisionMakers?.length),
+        })}
       </td>
       <td class="mono">${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")}</td>
       <td>${primaryContact ? escapeHtml(primaryContact.name) : '<span style="color:var(--muted)">—</span>'}</td>
@@ -2000,44 +2012,161 @@ function detailRowHtml(company, index) {
   const sourcesList = company.sources
     ? Object.keys(company.sources).filter((k) => company.sources[k]).map((k) => k.toUpperCase()).join(", ")
     : "";
+  const headPhone = (company.decisionMakers?.[0]?.phone || company.phone || "").trim();
+  const subline = [company.taxonomy?.description, [company.address?.city, company.address?.state].filter(Boolean).join(", ")]
+    .filter(Boolean).join(" · ");
   return `
     <tr class="detail-row">
       <td colspan="7">
-        <div class="detail-grid">
-          <div class="detail-block">
-            <h4>Details</h4>
-            <div class="mono" style="font-size:13px; line-height:1.8;">
-              NPI: ${escapeHtml(company.npi || "—")}<br>
-              ${escapeHtml(company.address?.line1 || "")}<br>
-              ${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")} ${escapeHtml(company.address?.postalCode || "")}<br>
-              Company phone: ${escapeHtml(company.phone || "—")}<br>
-              Website: ${company.website ? `<a href="${escapeHtml(company.website)}" target="_blank">${escapeHtml(company.website)}</a>` : "—"}<br>
-              NPPES last updated: ${escapeHtml(company.lastUpdated || "—")}<br>
-              Medicare (CMS): ${escapeHtml(medicareSummary(company.medicare))}<br>
-              Data sources: ${escapeHtml(sourcesList || "NPPES only")}
+        <div class="lead-card">
+          <div class="lead-card-head">
+            <div class="lead-avatar" aria-hidden="true">${escapeHtml(leadInitials(company.name))}</div>
+            <div class="lead-card-title">
+              <div class="lead-card-name">${escapeHtml(company.name)}</div>
+              <div class="lead-card-sub">${escapeHtml(subline)}</div>
+            </div>
+            <div class="lead-card-actions">
+              ${headPhone ? `<a class="btn btn-ghost btn-small" href="tel:${escapeHtml(headPhone)}">Call ${escapeHtml(headPhone)}</a>` : ""}
+              ${company.website ? `<a class="btn btn-ghost btn-small" href="${escapeHtml(company.website)}" target="_blank" rel="noopener">Website</a>` : ""}
+              <button class="btn btn-primary btn-small" data-brief-index="${index}">Generate call brief</button>
             </div>
           </div>
-          ${branchLocationsHtml(company.locations)}
-          <div class="detail-block">
-            <h4>Decision makers (${company.decisionMakers?.length || 0})</h4>
-            ${(company.decisionMakers || []).map((dm) => `
-              <div class="contact-item">
-                <div>
-                  ${escapeHtml(dm.name)}${dm.title ? ` — ${escapeHtml(dm.title)}` : ""}
-                  <span class="contact-role">${escapeHtml(dm.roleCategory)}</span>
+          <div class="detail-grid">
+            <div class="detail-block">
+              <h4>Score breakdown</h4>
+              ${scoreBreakdownHtml(company.score)}
+            </div>
+            <div class="detail-block">
+              <h4>Details</h4>
+              ${factsHtml([
+                ["NPI", `<span class="mono">${escapeHtml(company.npi || "—")}</span>`],
+                ["Address", `${escapeHtml(company.address?.line1 || "")}<br>${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")} ${escapeHtml(company.address?.postalCode || "")}`],
+                ["Company phone", escapeHtml(company.phone || "—")],
+                ["Website", websiteLink(company.website)],
+                ["NPPES updated", escapeHtml(company.lastUpdated || "—")],
+                ["Medicare (CMS)", escapeHtml(medicareSummary(company.medicare))],
+                ["Data sources", escapeHtml(sourcesList || "NPPES only")],
+              ])}
+            </div>
+            <div class="detail-block">
+              <h4>Decision makers (${company.decisionMakers?.length || 0})</h4>
+              ${(company.decisionMakers || []).map((dm) => `
+                <div class="contact-item contact-card">
+                  <div class="lead-avatar lead-avatar-sm" aria-hidden="true">${escapeHtml(leadInitials(dm.name))}</div>
+                  <div class="contact-card-body">
+                    <div>${escapeHtml(dm.name)}${dm.roleCategory ? `<span class="contact-role">${escapeHtml(dm.roleCategory)}</span>` : ""}</div>
+                    ${dm.title ? `<div class="contact-phone">${escapeHtml(dm.title)}</div>` : ""}
+                    ${dm.phone ? `<div class="mono contact-phone"><a href="tel:${escapeHtml(dm.phone)}">${escapeHtml(dm.phone)}</a></div>` : ""}
+                  </div>
                 </div>
-                ${dm.phone ? `<div class="mono contact-phone">${escapeHtml(dm.phone)}</div>` : ""}
-              </div>
-            `).join("") || '<span style="color:var(--muted); font-size:13px;">None identified</span>'}
+              `).join("") || '<span class="muted-note">None identified</span>'}
+            </div>
+            ${branchLocationsHtml(company.locations)}
           </div>
-        </div>
-        <div class="brief-box">
-          <button class="btn btn-ghost btn-small" data-brief-index="${index}">Generate call brief</button>
-          <div class="brief-output" id="brief-${index}"></div>
+          <div class="brief-box">
+            <div class="brief-output" id="brief-${index}"></div>
+          </div>
         </div>
       </td>
     </tr>
   `;
+}
+
+/* ---------- Empty states ---------- */
+
+const EMPTY_ICONS = {
+  search: '<circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  bookmark: '<path d="M6 3h12v18l-6-4.5L6 21Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  filter: '<path d="M3 5h18l-7 8v6l-4-2v-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+};
+
+function emptyRowHtml(colspan, icon, title, body, action) {
+  return `<tr class="empty-row"><td colspan="${colspan}">
+    <div class="empty-state">
+      <div class="empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${EMPTY_ICONS[icon]}</svg></div>
+      <div class="empty-title">${escapeHtml(title)}</div>
+      <p class="empty-body">${escapeHtml(body)}</p>
+      ${action ? `<button type="button" class="btn btn-primary" data-empty-action="${action.action}">${escapeHtml(action.label)}</button>` : ""}
+    </div>
+  </td></tr>`;
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-empty-action]");
+  if (!btn) return;
+  if (btn.dataset.emptyAction === "go-prospect") switchView("search");
+  else if (btn.dataset.emptyAction === "focus-search") {
+    setFiltersCollapsed(false);
+    document.getElementById("searchPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    els.form.elements.npi.focus({ preventScroll: true });
+  }
+});
+
+/* ---------- Row signal icons and hover quick actions ---------- */
+
+const SIGNAL_ICONS = {
+  phone: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2h2.2l1 3-1.4 1c.7 1.5 1.9 2.7 3.4 3.4l1-1.4 3 1v2.2c0 .8-.7 1.5-1.5 1.5C6.9 12.7 3.3 9.1 3.3 4.2 3.3 3 3.5 2 3.5 2Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
+  web: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 8h11M8 2.5c1.6 1.7 2.3 3.5 2.3 5.5S9.6 11.8 8 13.5C6.4 11.8 5.7 10 5.7 8S6.4 4.2 8 2.5Z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+  person: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3 13.5c.5-2.5 2.5-3.8 5-3.8s4.5 1.3 5 3.8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
+  copy: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M10.5 3.5v-.5A1 1 0 0 0 9.5 2h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+};
+
+// Tiny at-a-glance indicators (dimmed when missing) plus hover-only quick
+// actions. Wrapped in a stopPropagation so using them never toggles the row.
+function leadSignalsHtml({ phone, website, hasContact }) {
+  const cleanPhone = (phone || "").trim();
+  const signals = `
+    <span class="signal ${cleanPhone ? "on" : ""}" title="${cleanPhone ? "Phone number on file" : "No phone number"}">${SIGNAL_ICONS.phone}</span>
+    <span class="signal ${website ? "on" : ""}" title="${website ? "Has a website" : "No website"}">${SIGNAL_ICONS.web}</span>
+    <span class="signal ${hasContact ? "on" : ""}" title="${hasContact ? "Decision maker identified" : "No decision maker yet"}">${SIGNAL_ICONS.person}</span>`;
+  const actions = `
+    ${cleanPhone ? `<button type="button" class="quick-btn" data-copy-phone="${escapeHtml(cleanPhone)}" title="Copy phone number">${SIGNAL_ICONS.copy}<span>Copy</span></button>` : ""}
+    ${website ? `<a class="quick-btn" href="${escapeHtml(website)}" target="_blank" rel="noopener" title="Open website">${SIGNAL_ICONS.web}<span>Site</span></a>` : ""}`;
+  return `<div class="row-meta" onclick="event.stopPropagation()"><span class="signals">${signals}</span><span class="row-quick">${actions}</span></div>`;
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-copy-phone]");
+  if (!btn) return;
+  e.stopPropagation(); // capture phase: runs before the row's own click handler
+  const phone = btn.dataset.copyPhone;
+  const done = () => showToast(`Copied ${phone}`);
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(phone).then(done, () => showToast("Couldn't copy — select the number manually", true));
+  else showToast("Couldn't copy — select the number manually", true);
+}, true);
+
+/* ---------- Lead detail card helpers ---------- */
+
+function leadInitials(name) {
+  const words = String(name || "").replace(/[^A-Za-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+  const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0] || "?").slice(0, 2);
+  return letters.toUpperCase();
+}
+
+// rows: [label, already-escaped HTML value] pairs.
+function factsHtml(rows) {
+  return `<dl class="facts">${rows.map(([label, value]) =>
+    `<div class="fact"><dt>${escapeHtml(label)}</dt><dd>${value}</dd></div>`).join("")}</dl>`;
+}
+
+function websiteLink(url) {
+  return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>` : "—";
+}
+
+function scoreBreakdownHtml(score) {
+  if (!score) return '<span class="muted-note">No score available</span>';
+  const pct = Math.max(0, Math.min(100, score.percentage ?? 0));
+  const rows = Object.entries(score.breakdown || {}).map(([key, points]) => {
+    const earned = points > 0;
+    return `<li class="${earned ? "earned" : ""}"><span class="factor-mark">${earned ? "✓" : "✗"}</span>${escapeHtml(SCORE_FACTOR_LABELS[key] || key)}</li>`;
+  }).join("");
+  return `
+    <div class="score-meter">
+      <span class="score-meter-pct">${pct}%</span>
+      <span class="muted-note">${escapeHtml(String(score.value ?? 0))}/${escapeHtml(String(score.maxPossible ?? "?"))} points</span>
+    </div>
+    <div class="meter"><div class="meter-fill tier-${scoreTier(pct)}" style="width:${pct}%"></div></div>
+    ${rows ? `<ul class="factor-list">${rows}</ul>` : ""}`;
 }
 
 function attachRowHandlers() {
@@ -2558,7 +2687,10 @@ function applyClaimedSearchFilter(leads) {
 }
 
 function applyClaimedFilters(leads) {
-  return applyClaimedSearchFilter(applyStatusFilter(leads));
+  const dueFiltered = state.claimedDueOnly
+    ? leads.filter((lead) => reminderUrgency(lead.reminderAt) === "overdue")
+    : leads;
+  return applyClaimedSearchFilter(applyStatusFilter(dueFiltered));
 }
 
 function clearClaimedSelection() {
@@ -2579,6 +2711,7 @@ function updateClaimedSelectionUI() {
   els.claimedSendDisconnectedBtn.disabled = count === 0;
   els.claimedReturnToProspectBtn.disabled = count === 0;
   els.claimedExportGoogleSheetBtn.disabled = count === 0;
+  updateClaimedKpis();
 }
 
 // Returns whichever leads a "Send to Disconnected" or "Return to Prospect"
@@ -2686,7 +2819,9 @@ async function loadClaimedLeads(silent = false) {
   if (!silent) {
     els.claimedBody.innerHTML = skeletonRows(5, 10);
     els.staleNudge.hidden = true;
+    document.getElementById("kpiClaimed")?.classList.add("is-loading");
   }
+  els.refreshClaimedBtn.classList.add("is-spinning");
   try {
     // Always scoped server-side to the signed-in user's own claimed leads --
     // no params needed, there's no team-wide view to opt into anymore.
@@ -2700,7 +2835,11 @@ async function loadClaimedLeads(silent = false) {
     updateSortIndicators(els.claimedTable, null, 1);
     state.claimedLeadsAll = data.leads || [];
     renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
+    els.refreshClaimedBtn.classList.remove("is-spinning");
+    updateClaimedUpdatedLabel();
   } catch (err) {
+    els.refreshClaimedBtn.classList.remove("is-spinning");
+    document.getElementById("kpiClaimed")?.classList.remove("is-loading");
     if (silent) {
       console.log("[claimed] background refresh failed: " + err.message);
       return;
@@ -2721,7 +2860,10 @@ function renderClaimedLeads(leads) {
   checkDueReminders();
 
   if (leads.length === 0) {
-    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="10">Nothing claimed yet — export some leads to Sheets first.</td></tr>`;
+    const filtered = state.claimedLeadsAll.length > 0;
+    els.claimedBody.innerHTML = filtered
+      ? emptyRowHtml(10, "filter", "No claimed leads match", "Clear the search box, status filter or overdue filter to see everything.")
+      : emptyRowHtml(10, "bookmark", "No claimed leads yet", "Search in Prospect, check the leads you want, and claim them. They'll show up here.", { action: "go-prospect", label: "Go to Prospect" });
     updateClaimedSelectionUI();
     return;
   }
@@ -2811,11 +2953,16 @@ function claimedLeadRowHtml(lead, index) {
     : "";
   const isSelected = state.claimedSelected.has(index);
   return `
-    <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-claimed-index="${index}" tabindex="0" aria-expanded="false">
+    <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-claimed-index="${index}" tabindex="0" aria-expanded="false" style="--i:${Math.min(index, 12)}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="claimed-row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
         <div class="company-name">${escapeHtml(lead.name)}${claimedBranchesBadge(lead.branches)}${providerChangeBadge(lead.providerChange)}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
+        ${leadSignalsHtml({
+          phone: lead.contactPhone || lead.companyPhone,
+          website: lead.website,
+          hasContact: Boolean(lead.contactName),
+        })}
       </td>
       <td class="mono">${escapeHtml(lead.city)}, ${escapeHtml(lead.state)}</td>
       <td class="mono">${phoneCell(lead.contactPhone, lead.companyPhone)}</td>
@@ -3036,62 +3183,77 @@ function claimedDetailRowHtml(lead, index) {
       (lead.medicarePayment !== "" ? `, $${Math.round(Number(lead.medicarePayment)).toLocaleString()} paid` : "")
     : "No CMS claims data found";
 
+  const headPhone = (lead.contactPhone || lead.companyPhone || "").trim();
+  const subline = [lead.taxonomy, [lead.city, lead.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
   return `
     <tr class="detail-row">
       <td colspan="10">
-        <div class="detail-grid">
-          <div class="detail-block">
-            <h4>Details</h4>
-            <div class="mono" style="font-size:13px; line-height:1.8;">
-              NPI: ${escapeHtml(lead.npi || "—")}<br>
-              ${escapeHtml(lead.addressLine1 || "")}<br>
-              ${escapeHtml(lead.city || "")}, ${escapeHtml(lead.state || "")} ${escapeHtml(lead.postalCode || "")}<br>
-              Company phone: ${escapeHtml(lead.companyPhone || "—")}<br>
-              Website: ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank">${escapeHtml(lead.website)}</a>` : "—"}<br>
-              Specialty: ${escapeHtml(lead.taxonomy || "—")}<br>
-              Score: ${escapeHtml(scoreLine)}<br>
-              Medicare (CMS): ${escapeHtml(medicareLine)}<br>
-              NPPES last updated: ${escapeHtml(lead.nppesLastUpdated || "—")}<br>
-              Data sources: ${escapeHtml(sourcesList || "NPPES only")}
+        <div class="lead-card">
+          <div class="lead-card-head">
+            <div class="lead-avatar" aria-hidden="true">${escapeHtml(leadInitials(lead.name))}</div>
+            <div class="lead-card-title">
+              <div class="lead-card-name">${escapeHtml(lead.name)}</div>
+              <div class="lead-card-sub">${escapeHtml(subline)}</div>
+            </div>
+            <div class="lead-card-actions">
+              ${headPhone ? `<a class="btn btn-ghost btn-small" href="tel:${escapeHtml(headPhone)}">Call ${escapeHtml(headPhone)}</a>` : ""}
+              ${lead.website ? `<a class="btn btn-ghost btn-small" href="${escapeHtml(lead.website)}" target="_blank" rel="noopener">Website</a>` : ""}
+              <button class="btn btn-primary btn-small" data-claimed-brief-index="${index}">Generate call brief</button>
             </div>
           </div>
-          <div class="detail-block">
-            <h4>Contact</h4>
-            ${lead.contactName ? `
-              <div class="contact-item">
-                <div>
-                  ${escapeHtml(lead.contactName)}${lead.contactTitle ? ` — ${escapeHtml(lead.contactTitle)}` : ""}
-                  ${lead.contactRole ? `<span class="contact-role">${escapeHtml(lead.contactRole)}</span>` : ""}
+          <div class="detail-grid">
+            <div class="detail-block">
+              <h4>Details</h4>
+              ${factsHtml([
+                ["NPI", `<span class="mono">${escapeHtml(lead.npi || "—")}</span>`],
+                ["Address", `${escapeHtml(lead.addressLine1 || "")}<br>${escapeHtml(lead.city || "")}, ${escapeHtml(lead.state || "")} ${escapeHtml(lead.postalCode || "")}`],
+                ["Company phone", escapeHtml(lead.companyPhone || "—")],
+                ["Website", websiteLink(lead.website)],
+                ["Specialty", escapeHtml(lead.taxonomy || "—")],
+                ["Score", escapeHtml(scoreLine)],
+                ["Medicare (CMS)", escapeHtml(medicareLine)],
+                ["NPPES updated", escapeHtml(lead.nppesLastUpdated || "—")],
+                ["Data sources", escapeHtml(sourcesList || "NPPES only")],
+              ])}
+            </div>
+            <div class="detail-block">
+              <h4>Contact</h4>
+              ${lead.contactName ? `
+                <div class="contact-item contact-card">
+                  <div class="lead-avatar lead-avatar-sm" aria-hidden="true">${escapeHtml(leadInitials(lead.contactName))}</div>
+                  <div class="contact-card-body">
+                    <div>${escapeHtml(lead.contactName)}${lead.contactRole ? `<span class="contact-role">${escapeHtml(lead.contactRole)}</span>` : ""}</div>
+                    ${lead.contactTitle ? `<div class="contact-phone">${escapeHtml(lead.contactTitle)}</div>` : ""}
+                    ${lead.contactPhone ? `<div class="mono contact-phone"><a href="tel:${escapeHtml(lead.contactPhone)}">${escapeHtml(lead.contactPhone)}</a></div>` : ""}
+                  </div>
                 </div>
-                ${lead.contactPhone ? `<div class="mono contact-phone">${escapeHtml(lead.contactPhone)}</div>` : ""}
-              </div>
-            ` : '<span style="color:var(--muted); font-size:13px;">None identified</span>'}
-            ${Number(lead.additionalContacts) > 0 ? `<div style="font-size:12px; color:var(--muted); margin-top:8px;">+${escapeHtml(lead.additionalContacts)} other contact(s) found (see Sheet)</div>` : ""}
+              ` : '<span class="muted-note">None identified</span>'}
+              ${Number(lead.additionalContacts) > 0 ? `<div class="muted-note" style="margin-top:8px;">+${escapeHtml(lead.additionalContacts)} other contact(s) found (see Sheet)</div>` : ""}
+            </div>
+            <div class="detail-block reminder-block">
+              <h4>Callback reminder</h4>
+              ${lead.reminderAt
+                ? `<div class="reminder-current reminder-${reminderUrgency(lead.reminderAt)}">🔔 ${escapeHtml(formatReminder(lead.reminderAt))}</div>`
+                : '<span class="muted-note">No reminder set</span>'}
+              <button type="button" class="btn btn-ghost btn-small" data-reminder-index="${index}">${lead.reminderAt ? "Edit reminder" : "Set reminder"}</button>
+            </div>
+            <div class="detail-block">
+              <h4>Meeting</h4>
+              ${lead.email
+                ? `<button type="button" class="btn btn-ghost btn-small" data-book-meeting-index="${index}">Book meeting</button>
+                   <div id="booking-result-${index}" style="margin-top:8px; font-size:13px;"></div>`
+                : '<span class="muted-note">No lead email available for booking</span>'}
+            </div>
+            ${claimedBranchesHtml(lead.branches)}
+            ${providerChangeDetailHtml(lead.providerChange)}
+            <div class="detail-block notes-history-block detail-block-wide">
+              <h4>Call log</h4>
+              ${notesHistoryHtml(lead.notes, index)}
+            </div>
           </div>
-          <div class="detail-block">
-            <h4>Meeting</h4>
-            ${lead.email
-              ? `<button type="button" class="btn btn-ghost btn-small" data-book-meeting-index="${index}">Book meeting</button>
-                 <div id="booking-result-${index}" style="margin-top:8px; font-size:13px;"></div>`
-              : '<span style="color:var(--muted); font-size:13px;">No lead email available for booking</span>'}
+          <div class="brief-box">
+            <div class="brief-output" id="claimed-brief-${index}"></div>
           </div>
-          ${claimedBranchesHtml(lead.branches)}
-          ${providerChangeDetailHtml(lead.providerChange)}
-        </div>
-        <div class="detail-block notes-history-block">
-          <h4>Call log</h4>
-          ${notesHistoryHtml(lead.notes, index)}
-        </div>
-        <div class="detail-block reminder-block">
-          <h4>Callback reminder</h4>
-          ${lead.reminderAt
-            ? `<div class="reminder-current reminder-${reminderUrgency(lead.reminderAt)}">🔔 ${escapeHtml(formatReminder(lead.reminderAt))}</div>`
-            : '<span style="color:var(--muted); font-size:13px;">No reminder set</span>'}
-          <button type="button" class="btn btn-ghost btn-small" data-reminder-index="${index}">${lead.reminderAt ? "Edit reminder" : "Set reminder"}</button>
-        </div>
-        <div class="brief-box">
-          <button class="btn btn-ghost btn-small" data-claimed-brief-index="${index}">Generate call brief</button>
-          <div class="brief-output" id="claimed-brief-${index}"></div>
         </div>
       </td>
     </tr>
@@ -3414,6 +3576,7 @@ function updateMultiselectSummary(containerEl, checkboxSelector, emptyLabel, che
   if (checked.length === 0) toggle.textContent = emptyLabel;
   else if (checked.length === 1) toggle.textContent = checked[0].nextElementSibling.textContent;
   else toggle.textContent = `${checked.length} ${checkedNoun} selected`;
+  renderFilterChips();
 }
 
 /* State multi-select */
@@ -3766,7 +3929,6 @@ els.reminderForm.addEventListener("submit", handleReminderSubmit);
 els.reminderCancelBtn.addEventListener("click", closeReminderModal);
 els.reminderClearBtn.addEventListener("click", handleReminderClear);
 els.reminderOverlay.addEventListener("click", (e) => { if (e.target === els.reminderOverlay) closeReminderModal(); });
-els.devNoticeClose.addEventListener("click", () => { els.devNotice.hidden = true; });
 // Two toggle buttons exist (header + login card, so theme can be changed
 // even before signing in) -- both share the .theme-toggle class.
 document.querySelectorAll(".theme-toggle").forEach((btn) => btn.addEventListener("click", toggleTheme));
@@ -3842,6 +4004,478 @@ window.debugFoursquare = async function () {
     return { error: err.message };
   }
 };
+
+/* ---------- UI shell: KPIs, filter chips, selection bar, quick actions ---------- */
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function updateProspectKpis() {
+  const strip = document.getElementById("kpiSearch");
+  if (!strip) return;
+  const list = state.companies || [];
+  strip.hidden = state.resultPages.length === 0 && !strip.classList.contains("is-loading");
+  const pcts = list.map((c) => c.score?.percentage ?? 0);
+  const high = pcts.filter((p) => p >= 65).length;
+  const avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : 0;
+  setKpi("kpiFound", list.length);
+  setText("kpiFoundSub", state.resultPages.length > 1
+    ? `page ${state.currentPage + 1} of ${state.resultPages.length}`
+    : (state.excludedAsClaimed > 0 ? `${state.excludedAsClaimed} already claimed, hidden` : "this search"));
+  setKpi("kpiHigh", high);
+  setText("kpiHighSub", list.length ? `${Math.round((high / list.length) * 100)}% of results` : " ");
+  setKpi("kpiAvg", avg);
+  setKpi("kpiSelected", state.selected.size);
+}
+
+// Counts up from whatever the card currently shows, so a refresh feels alive
+// instead of snapping. Skipped for reduced-motion users and big jumps are
+// capped at ~0.5s.
+function setKpi(id, target) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const from = Number(el.dataset.value ?? 0);
+  el.dataset.value = String(target);
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduce || from === target || el.offsetParent === null) {
+    el.textContent = target.toLocaleString();
+    return;
+  }
+  cancelAnimationFrame(Number(el.dataset.raf || 0));
+  const start = performance.now();
+  const duration = 480;
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = Math.round(from + (target - from) * eased).toLocaleString();
+    if (t < 1) el.dataset.raf = String(requestAnimationFrame(step));
+  };
+  el.dataset.raf = String(requestAnimationFrame(step));
+}
+
+function updateClaimedKpis() {
+  const all = state.claimedLeadsAll || [];
+  const due = all.filter((l) => ["overdue", "today"].includes(reminderUrgency(l.reminderAt))).length;
+  const withReminder = all.filter((l) => reminderUrgency(l.reminderAt)).length;
+  document.getElementById("kpiClaimed")?.classList.remove("is-loading");
+  setKpi("kpiClaimedTotal", all.length);
+  setKpi("kpiClaimedDue", due);
+  setKpi("kpiClaimedReminders", withReminder);
+  setKpi("kpiClaimedSelected", state.claimedSelected.size);
+  updateReminderStrip();
+  const badge = document.getElementById("claimedTabBadge");
+  if (badge) {
+    badge.hidden = !state.claimedLoaded || all.length === 0;
+    badge.textContent = all.length;
+  }
+}
+
+function updateSelectionBar() {
+  const bar = document.getElementById("selectionBar");
+  if (!bar) return;
+  const count = state.selected.size;
+  bar.hidden = !(count > 0 && state.view === "search");
+  const pcts = [...state.selected].map((i) => state.companies[i]?.score?.percentage).filter((p) => typeof p === "number");
+  const avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
+  setText("selectionBarCount", avg === null ? `${count} selected` : `${count} selected · avg score ${avg}`);
+}
+
+/* Overdue-callback strip (Claimed view) */
+
+function updateReminderStrip() {
+  const strip = document.getElementById("reminderStrip");
+  if (!strip) return;
+  const overdue = (state.claimedLeadsAll || []).filter((l) => reminderUrgency(l.reminderAt) === "overdue").length;
+  strip.hidden = overdue === 0 && !state.claimedDueOnly;
+  setText("reminderStripText", overdue === 0
+    ? "No overdue callbacks."
+    : `${overdue} callback${overdue === 1 ? " is" : "s are"} overdue.`);
+  setText("reminderStripBtn", state.claimedDueOnly ? "Show all leads" : "Show only these");
+}
+
+document.getElementById("reminderStripBtn").addEventListener("click", () => {
+  state.claimedDueOnly = !state.claimedDueOnly;
+  state.claimedSortKey = null;
+  state.claimedSortDir = 1;
+  updateSortIndicators(els.claimedTable, null, 1);
+  renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
+});
+
+document.getElementById("selectionBarClaim").addEventListener("click", () => els.exportSheetsBtn.click());
+document.getElementById("selectionBarClear").addEventListener("click", clearSelection);
+
+// Summarises the current search form as removable chips, so the filters
+// stay visible when the form itself is collapsed. Reads the DOM directly
+// (not module-level consts) because updateMultiselectSummary() calls this
+// while the page is still wiring up.
+function renderFilterChips() {
+  const host = document.getElementById("filterChips");
+  const form = document.getElementById("searchForm");
+  if (!host || !form) return;
+  const value = (name) => (form.elements[name]?.value || "").trim();
+  const checked = (name) => [...form.querySelectorAll(`input[name="${name}"]:checked`)];
+  const summarize = (items, noun) => (items.length <= 3 ? items.join(", ") : `${items.length} ${noun}`);
+  const chips = [];
+
+  if (value("npi")) chips.push({ key: "npi", label: `NPI ${value("npi")}` });
+  const states = checked("states").map((cb) => cb.value);
+  if (states.length) chips.push({ key: "states", label: `State: ${summarize(states, "states")}` });
+  if (value("city")) chips.push({ key: "city", label: `City: ${value("city")}` });
+  const specialties = checked("taxonomyDescriptions").map((cb) => cb.nextElementSibling?.textContent || cb.value);
+  if (specialties.length) chips.push({ key: "taxonomy", label: `Specialty: ${summarize(specialties, "specialties")}` });
+  const years = checked("lastUpdatedYears").map((cb) => cb.value);
+  if (years.length) chips.push({ key: "years", label: `Updated: ${summarize(years, "years")}` });
+  if (value("minMedicareClaims")) chips.push({ key: "minMedicareClaims", label: `Medicare claims ≥ ${value("minMedicareClaims")}` });
+  const nameTerms = value("nameContainsTerms").split(",").map((t) => t.trim()).filter(Boolean);
+  if (nameTerms.length) chips.push({ key: "nameContains", label: `Name has: ${summarize(nameTerms, "terms")}` });
+
+  host.innerHTML = chips.length
+    ? chips.map((c) => `<span class="filter-chip">${escapeHtml(c.label)}<button type="button" class="filter-chip-x" data-chip="${c.key}" aria-label="Remove filter: ${escapeHtml(c.label)}">×</button></span>`).join("")
+    : '<span class="muted-note">No filters applied</span>';
+}
+
+function removeFilterChip(key) {
+  const form = els.form;
+  if (["npi", "city", "minMedicareClaims"].includes(key)) form.elements[key].value = "";
+  else if (key === "states") document.getElementById("stateClearBtn").click();
+  else if (key === "taxonomy") document.getElementById("taxonomyClearBtn").click();
+  else if (key === "years") document.getElementById("yearClearBtn").click();
+  else if (key === "nameContains") nameContainsChipInput.setAll([]);
+  renderFilterChips();
+  showToast("Filter removed — search again to apply it");
+}
+
+document.getElementById("filterChips").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-chip]");
+  if (btn) removeFilterChip(btn.dataset.chip);
+});
+["input", "change", "keyup", "focusout"].forEach((evt) => els.form.addEventListener(evt, renderFilterChips));
+renderFilterChips();
+
+const FILTERS_COLLAPSED_KEY = "dmeProspectorFiltersCollapsed";
+function setFiltersCollapsed(collapsed) {
+  document.getElementById("searchPanel").classList.toggle("is-collapsed", collapsed);
+  const toggle = document.getElementById("filtersToggle");
+  toggle.setAttribute("aria-expanded", String(!collapsed));
+  setText("filtersToggleLabel", collapsed ? "Show filters" : "Hide filters");
+  try { localStorage.setItem(FILTERS_COLLAPSED_KEY, collapsed ? "1" : "0"); } catch { /* storage can be blocked; the toggle still works for this page view */ }
+}
+document.getElementById("filtersToggle").addEventListener("click", () => {
+  setFiltersCollapsed(!document.getElementById("searchPanel").classList.contains("is-collapsed"));
+});
+try { if (localStorage.getItem(FILTERS_COLLAPSED_KEY) === "1") setFiltersCollapsed(true); } catch { /* ignore */ }
+
+/* Collapsible sidebar */
+
+const NAV_PREF_KEY = "dmeProspectorNav"; // "collapsed" | "expanded" | unset (follow window width)
+
+function readNavPref() {
+  try { return localStorage.getItem(NAV_PREF_KEY); } catch { return null; }
+}
+
+function applyNavRail() {
+  const pref = readNavPref();
+  const rail = pref === "collapsed" || (pref !== "expanded" && window.innerWidth < 1280);
+  document.documentElement.classList.toggle("nav-rail", rail);
+  const btn = document.getElementById("navCollapse");
+  btn.setAttribute("aria-expanded", String(!rail));
+  btn.title = rail ? "Expand sidebar" : "Collapse sidebar";
+}
+
+document.getElementById("navCollapse").addEventListener("click", () => {
+  const wasRail = document.documentElement.classList.contains("nav-rail");
+  try { localStorage.setItem(NAV_PREF_KEY, wasRail ? "expanded" : "collapsed"); } catch { /* storage blocked: toggle only lasts until reload */ }
+  document.documentElement.classList.toggle("nav-rail", !wasRail);
+  const btn = document.getElementById("navCollapse");
+  btn.setAttribute("aria-expanded", String(wasRail));
+  btn.title = wasRail ? "Collapse sidebar" : "Expand sidebar";
+});
+window.addEventListener("resize", applyNavRail);
+applyNavRail();
+
+/* Dropdown menus (saved searches, column chooser) */
+
+function setupMenu(btn, panel) {
+  const close = () => { panel.hidden = true; btn.setAttribute("aria-expanded", "false"); };
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const opening = panel.hidden;
+    document.querySelectorAll(".menu-panel").forEach((p) => { p.hidden = true; });
+    panel.hidden = !opening;
+    btn.setAttribute("aria-expanded", String(opening));
+  });
+  document.addEventListener("click", (e) => { if (!panel.contains(e.target)) close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  return close;
+}
+
+/* Row density */
+
+const DENSITY_KEY = "dmeProspectorDensity"; // "compact" | unset (comfortable)
+
+function applyDensity(compact) {
+  document.documentElement.classList.toggle("density-compact", compact);
+  const btn = document.getElementById("densityToggle");
+  btn.setAttribute("aria-pressed", String(compact));
+  btn.title = compact ? "Switch to comfortable rows" : "Switch to compact rows";
+}
+
+function toggleDensity() {
+  const compact = !document.documentElement.classList.contains("density-compact");
+  try { localStorage.setItem(DENSITY_KEY, compact ? "compact" : "comfortable"); } catch { /* storage blocked: lasts until reload */ }
+  applyDensity(compact);
+}
+document.getElementById("densityToggle").addEventListener("click", toggleDensity);
+applyDensity(document.documentElement.classList.contains("density-compact"));
+
+/* Claimed table column chooser */
+
+const CLAIMED_COLS_KEY = "dmeProspectorClaimedHiddenCols";
+const columnsPanel = document.getElementById("columnsPanel");
+
+function applyHiddenColumns(hidden) {
+  els.claimedTable.className = els.claimedTable.className.replace(/\bhide-c\d+\b/g, "").trim();
+  hidden.forEach((n) => els.claimedTable.classList.add(`hide-c${n}`));
+  columnsPanel.querySelectorAll("input[data-col]").forEach((box) => { box.checked = !hidden.includes(Number(box.dataset.col)); });
+}
+
+function readHiddenColumns() {
+  try {
+    const list = JSON.parse(localStorage.getItem(CLAIMED_COLS_KEY) || "[]");
+    return Array.isArray(list) ? list.filter((n) => [3, 4, 5, 6, 8, 9].includes(n)) : [];
+  } catch { return []; }
+}
+
+setupMenu(document.getElementById("columnsBtn"), columnsPanel);
+columnsPanel.addEventListener("change", () => {
+  const hidden = [...columnsPanel.querySelectorAll("input[data-col]")].filter((b) => !b.checked).map((b) => Number(b.dataset.col));
+  try { localStorage.setItem(CLAIMED_COLS_KEY, JSON.stringify(hidden)); } catch { /* storage blocked: lasts until reload */ }
+  applyHiddenColumns(hidden);
+});
+applyHiddenColumns(readHiddenColumns());
+
+/* "Updated 2 min ago" label next to Refresh */
+
+function updateClaimedUpdatedLabel() {
+  const el = document.getElementById("claimedUpdated");
+  if (!el) return;
+  if (!state.claimedLoadedAt) { el.textContent = ""; return; }
+  const mins = Math.floor((Date.now() - state.claimedLoadedAt) / 60000);
+  el.textContent = mins < 1 ? "Updated just now" : `Updated ${mins} min ago`;
+}
+setInterval(updateClaimedUpdatedLabel, 20000);
+
+/* Saved searches (this browser only) */
+
+const SAVED_SEARCHES_KEY = "dmeProspectorSavedSearches";
+const MAX_SAVED_SEARCHES = 12;
+
+function readSavedSearches() {
+  try {
+    const list = JSON.parse(localStorage.getItem(SAVED_SEARCHES_KEY) || "[]");
+    return Array.isArray(list) ? list.filter((s) => s && typeof s.name === "string" && s.values && typeof s.values === "object") : [];
+  } catch { return []; }
+}
+
+function writeSavedSearches(list) {
+  try { localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(list)); return true; }
+  catch { showToast("Couldn't save — this browser is blocking storage", true); return false; }
+}
+
+// Same shape saveSearchFormState() keeps in the session, minus the fields that
+// shouldn't ride along in a preset: the per-account exclude-keywords default
+// and the one-shot "start over" switch.
+function currentFilterValues() {
+  const formData = new FormData(els.form);
+  const values = {};
+  for (const el of els.form.elements) {
+    if (!el.name || MULTI_VALUE_FIELDS.includes(el.name)) continue;
+    values[el.name] = el.type === "checkbox" ? el.checked : formData.get(el.name) || "";
+  }
+  for (const key of MULTI_VALUE_FIELDS) values[key] = formData.getAll(key);
+  delete values.excludeKeywords;
+  delete values.resetProgress;
+  return values;
+}
+
+function savedSearchSummary(values) {
+  const parts = [];
+  if (values.states?.length) parts.push(values.states.slice(0, 3).join(", ") + (values.states.length > 3 ? "…" : ""));
+  if (values.taxonomyDescriptions?.length) parts.push(`${values.taxonomyDescriptions.length} specialt${values.taxonomyDescriptions.length === 1 ? "y" : "ies"}`);
+  if (values.city) parts.push(values.city);
+  if (values.minMedicareClaims) parts.push(`≥${values.minMedicareClaims} claims`);
+  return parts.join(" · ") || "All leads";
+}
+
+function applySavedSearch(search) {
+  sessionStorage.setItem(SEARCH_FILTERS_KEY, JSON.stringify(search.values));
+  restoreSearchFormState();
+  renderFilterChips();
+  setFiltersCollapsed(false);
+  showToast(`Applied "${search.name}" — press Search to run it`);
+}
+
+function renderSavedSearches() {
+  const list = readSavedSearches();
+  document.getElementById("savedList").innerHTML = list.length
+    ? list.map((s, i) => `
+        <div class="saved-item">
+          <button type="button" class="saved-apply" data-saved-apply="${i}">
+            <span class="saved-name">${escapeHtml(s.name)}</span>
+            <span class="saved-sub">${escapeHtml(savedSearchSummary(s.values))}</span>
+          </button>
+          <button type="button" class="saved-del" data-saved-del="${i}" aria-label="Delete saved search ${escapeHtml(s.name)}">×</button>
+        </div>`).join("")
+    : '<div class="saved-empty">No saved searches yet. Set your filters, name them below, and save.</div>';
+
+  const chips = document.getElementById("emptySavedSearches");
+  if (chips) {
+    chips.innerHTML = list.length
+      ? `<span class="muted-note">Saved searches</span>${list.slice(0, 6).map((s, i) => `<button type="button" class="filter-chip saved-chip" data-saved-apply="${i}">${escapeHtml(s.name)}</button>`).join("")}`
+      : "";
+  }
+}
+
+const closeSavedMenu = setupMenu(document.getElementById("savedSearchesBtn"), document.getElementById("savedPanel"));
+document.getElementById("savedForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = document.getElementById("savedName");
+  const name = input.value.trim();
+  if (!name) { input.focus(); showToast("Give the search a name first", true); return; }
+  const list = readSavedSearches().filter((s) => s.name.toLowerCase() !== name.toLowerCase());
+  list.unshift({ name, values: currentFilterValues() });
+  if (!writeSavedSearches(list.slice(0, MAX_SAVED_SEARCHES))) return;
+  input.value = "";
+  renderSavedSearches();
+  showToast(`Saved "${name}"`);
+});
+document.addEventListener("click", (e) => {
+  const apply = e.target.closest("[data-saved-apply]");
+  const del = e.target.closest("[data-saved-del]");
+  if (!apply && !del) return;
+  const list = readSavedSearches();
+  if (apply) {
+    const search = list[Number(apply.dataset.savedApply)];
+    if (search) { applySavedSearch(search); closeSavedMenu(); }
+  } else {
+    list.splice(Number(del.dataset.savedDel), 1);
+    writeSavedSearches(list);
+    renderSavedSearches();
+  }
+});
+renderSavedSearches();
+
+/* Quick actions (Ctrl/Cmd+K) */
+
+const palette = {
+  overlay: document.getElementById("paletteOverlay"),
+  input: document.getElementById("paletteInput"),
+  list: document.getElementById("paletteList"),
+  items: [],
+  index: 0,
+};
+
+function paletteCommands() {
+  const cmds = [
+    { label: "Go to Prospect", hint: "View", run: () => switchView("search") },
+    { label: "Go to Claimed leads", hint: "View", run: () => switchView("claimed") },
+  ];
+  if (!els.adminTab.hidden) cmds.push({ label: "Go to Admin", hint: "View", run: () => switchView("admin") });
+  cmds.push(
+    { label: "Run search with current filters", hint: "Prospect", run: () => { switchView("search"); els.form.requestSubmit(); } },
+    { label: "Look up an NPI", hint: "Prospect", run: () => { switchView("search"); setFiltersCollapsed(false); els.form.elements.npi.focus(); } },
+    { label: document.getElementById("searchPanel").classList.contains("is-collapsed") ? "Show filters" : "Hide filters", hint: "Prospect", run: () => document.getElementById("filtersToggle").click() },
+    { label: "Switch light/dark theme", hint: "Appearance", run: toggleTheme },
+    { label: document.documentElement.classList.contains("density-compact") ? "Use comfortable rows" : "Use compact rows", hint: "Appearance", run: toggleDensity },
+    ...readSavedSearches().slice(0, 6).map((s) => ({
+      label: `Apply saved search: ${s.name}`,
+      hint: "Prospect",
+      run: () => { switchView("search"); applySavedSearch(s); },
+    })),
+  );
+  if (!els.suggestBtn.hidden) cmds.push({ label: "Send a suggestion", hint: "Help", run: openSuggestionBox });
+  if (!els.userChip.hidden) cmds.push({ label: "Sign out", hint: "Account", run: handleSignOut });
+  return cmds;
+}
+
+function paletteMatches(query) {
+  const q = query.trim().toLowerCase();
+  const items = paletteCommands().filter((c) => !q || c.label.toLowerCase().includes(q));
+  if (q.length >= 2 && state.claimedLoaded) {
+    state.claimedLeadsAll
+      .filter((l) => [l.name, l.npi, l.city].some((v) => String(v || "").toLowerCase().includes(q)))
+      .slice(0, 6)
+      .forEach((lead) => items.push({
+        label: lead.name,
+        hint: `Claimed · ${[lead.city, lead.state].filter(Boolean).join(", ")}`,
+        run: () => {
+          switchView("claimed");
+          els.claimedSearchInput.value = lead.name;
+          els.claimedSearchInput.dispatchEvent(new Event("input", { bubbles: true }));
+        },
+      }));
+  }
+  return items;
+}
+
+function renderPalette() {
+  palette.items = paletteMatches(palette.input.value);
+  palette.index = Math.min(palette.index, Math.max(0, palette.items.length - 1));
+  palette.list.innerHTML = palette.items.length
+    ? palette.items.map((item, i) => `<button type="button" role="option" aria-selected="${i === palette.index}" class="palette-item ${i === palette.index ? "active" : ""}" data-palette-index="${i}"><span>${escapeHtml(item.label)}</span><span class="palette-hint">${escapeHtml(item.hint)}</span></button>`).join("")
+    : '<div class="palette-empty">Nothing matches that.</div>';
+}
+
+function openPalette() {
+  if (!els.loginOverlay.hidden) return; // nothing to navigate before sign-in
+  palette.input.value = "";
+  palette.index = 0;
+  palette.overlay.hidden = false;
+  renderPalette();
+  palette.input.focus();
+}
+
+function closePalette() {
+  palette.overlay.hidden = true;
+}
+
+function runPaletteItem(i) {
+  const item = palette.items[i];
+  if (!item) return;
+  closePalette();
+  item.run();
+}
+
+document.getElementById("paletteBtn").addEventListener("click", openPalette);
+palette.input.addEventListener("input", () => { palette.index = 0; renderPalette(); });
+palette.list.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-palette-index]");
+  if (btn) runPaletteItem(Number(btn.dataset.paletteIndex));
+});
+palette.overlay.addEventListener("click", (e) => { if (e.target === palette.overlay) closePalette(); });
+palette.input.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const n = palette.items.length;
+    if (!n) return;
+    palette.index = (palette.index + (e.key === "ArrowDown" ? 1 : -1) + n) % n;
+    renderPalette();
+    palette.list.querySelector(".active")?.scrollIntoView({ block: "nearest" });
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    runPaletteItem(palette.index);
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    if (palette.overlay.hidden) openPalette(); else closePalette();
+  } else if (e.key === "Escape" && !palette.overlay.hidden) {
+    closePalette();
+  }
+});
 
 // Keeps the sticky search-panel/toolbar/thead stack (see the CSS comments on
 // .search-panel/.results-toolbar/.results-table thead th) correctly offset

@@ -1,5 +1,44 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-02 — Frontend UI refresh (sidebar dashboard + expanding lead cards)
+
+### Objective
+
+Modernize the browser UI: sidebar navigation with a dashboard feel (option B)
+and card-style lead details that expand directly below the lead row (option C).
+
+### Actions Completed
+
+- `docs/index.html`: tabs became an icon sidebar with a Claimed count badge;
+  added KPI strips (Prospect and Claimed), a collapsible filter bar with
+  removable filter chips, a floating selection bar, and a Ctrl/Cmd+K quick
+  actions palette. Cache-bust versions bumped (style v38, app v40).
+- `docs/app.js`: lead detail rows now render as cards (header with avatar,
+  call/website/brief actions; score breakdown, details, contacts, branches;
+  Claimed adds reminder, meeting, call log). Existing data hooks and element
+  ids (`data-brief-index`, `data-reminder-index`, `data-book-meeting-index`,
+  notes handlers) are unchanged.
+- `docs/style.css`: new rules appended at the end of the file; existing rules
+  were left in place and layered over.
+- Follow-up passes the same day: Inter + Plus Jakarta Sans typography, a
+  rebuilt dark theme, cropped logo, removal of the "still being developed"
+  banner, collapsible sidebar (remembered per browser), empty states, colored
+  status pills, row signal icons and hover quick actions (copy phone, open
+  site), saved searches and a Claimed column chooser (both stored in browser
+  localStorage only), overdue-callback strip, comfortable/compact density,
+  KPI skeletons and count-up, and a "last refreshed" label.
+
+### Database / System Result
+
+- No API, SQL, migration, or production data change. Frontend files only.
+- Not deployed. Manual browser verification is still pending.
+
+### Safety Status
+
+- Claim/ownership logic, append-only audit behavior, and secrets untouched.
+- Selection-bar and palette actions call the existing handlers; they add no
+  new write paths.
+
 ## 2026-09-29 — Ownership-safe bulk merge for possible duplicates
 
 ### Objective
