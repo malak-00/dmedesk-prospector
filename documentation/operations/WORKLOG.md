@@ -2,6 +2,21 @@
 
 ## 2026-10-05 — Smarter Prospect search (counts, quality filters, sorting, lookups) — live for admins (trial)
 
+### Update 4 (same day): lean stored scores, light-theme contrast, specialty
+
+- Free-plan size concern: the first `provider_scores` design measured 125 MB on a
+  real Postgres with 380,000 realistic rows. Redesigned to ~47 MB (two small
+  `(key, score)` indexes plus an exact two-step page lookup) and added
+  `sql/023_provider_scores_uninstall.sql`. 023 is still **not run**. SQL tests:
+  175 checks (including exact equality with the live search over ~100 filter and
+  page combinations, edge pages, and the uninstall path); earlier suites still pass.
+- Light theme rebuilt for contrast: tinted page/sidebar/table headers, white
+  cards with visible borders and shadows, and colored text darkened until every
+  pair clears the 4.5:1 readability minimum (the green status text was 3.0:1 on
+  its own tint and white on the bright teal button 3.8:1). Checked numerically.
+- Specialty: its own sortable column in Prospect and a visible tag in Claimed.
+- No data changed; no deploy of the Worker needed (unchanged this round).
+
 ### Update 3 (same day): stored fit scores
 
 - Measured the sorted search on the live database: 4.3 s cold, 0.18 s warm, on a

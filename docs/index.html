@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Plus+Jakarta+Sans:wght@600..800&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=49">
+<link rel="stylesheet" href="style.css?v=51">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -327,6 +327,7 @@
                 <th class="col-check"><input type="checkbox" id="selectAll"></th>
                 <th class="col-score sortable" data-sort-key="score">Score<span class="sort-arrow"></span></th>
                 <th class="sortable" data-sort-key="company">Company<span class="sort-arrow"></span></th>
+                <th class="col-specialty sortable" data-sort-key="specialty">Specialty<span class="sort-arrow"></span></th>
                 <th class="sortable" data-sort-key="location">Location<span class="sort-arrow"></span></th>
                 <th>Contact</th>
                 <th>Contact phone</th>
@@ -334,7 +335,7 @@
               </tr>
             </thead>
             <tbody id="resultsBody">
-              <tr class="empty-row"><td colspan="7">
+              <tr class="empty-row"><td colspan="8">
                 <div class="empty-state">
                   <div class="empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
                   <div class="empty-title">Start your first search</div>
@@ -803,6 +804,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=50"></script>
+  <script src="app.js?v=51"></script>
 </body>
 </html>

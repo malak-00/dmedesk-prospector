@@ -198,10 +198,11 @@ function wireSortableHeaders(table, defaultDirs, onSort) {
 const PROSPECT_SORT_COMPARATORS = {
   score: (a, b) => (a.score?.value ?? -1) - (b.score?.value ?? -1),
   company: (a, b) => (a.name || "").localeCompare(b.name || ""),
+  specialty: (a, b) => (a.taxonomy?.description || "").localeCompare(b.taxonomy?.description || ""),
   location: (a, b) =>
     `${a.address?.state || ""}|${a.address?.city || ""}`.localeCompare(`${b.address?.state || ""}|${b.address?.city || ""}`),
 };
-const PROSPECT_DEFAULT_SORT_DIR = { score: -1, company: 1, location: 1 };
+const PROSPECT_DEFAULT_SORT_DIR = { score: -1, company: 1, specialty: 1, location: 1 };
 
 function sortProspectResults(key, defaultDir) {
   state.sortDir = state.sortKey === key ? state.sortDir * -1 : defaultDir;
@@ -1843,7 +1844,7 @@ async function executeSearch(params, { isMore = false } = {}) {
   els.searchMoreBtn.disabled = true;
   setStatus("busy", isMore ? "Searching more…" : "Searching…");
   if (!isMore) {
-    els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7"><div class="loading-row"><span class="spinner"></span> <span id="searchStatusMsg">Searching NPPES registry…</span></div></td></tr>`;
+    els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="8"><div class="loading-row"><span class="spinner"></span> <span id="searchStatusMsg">Searching NPPES registry…</span></div></td></tr>`;
   }
 
   const phaseTimers = [
@@ -1912,7 +1913,7 @@ async function executeSearch(params, { isMore = false } = {}) {
     const message = err instanceof TypeError
       ? "Lost connection or the search took too long — try narrowing your filters (fewer specialties/states) or click Search more again."
       : err.message;
-    if (!isMore) els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(message)}</td></tr>`;
+    if (!isMore) els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(message)}</td></tr>`;
     setStatus("error", "Error");
     showToast(message, true);
     // A failed click always leaves it re-clickable -- reaching here means it
@@ -1991,7 +1992,7 @@ function renderResults(excludedAsClaimed) {
   els.selectAll.checked = companies.length > 0 && state.selected.size === companies.length;
 
   if (companies.length === 0) {
-    els.resultsBody.innerHTML = emptyRowHtml(7, "search", "No leads matched that search", "Try a wider area, fewer specialties, or remove a filter chip above.");
+    els.resultsBody.innerHTML = emptyRowHtml(8, "search", "No leads matched that search", "Try a wider area, fewer specialties, or remove a filter chip above.");
     updateSelectionUI();
     return;
   }
@@ -2045,6 +2046,14 @@ function sourceBadges(sources) {
   return `<div class="source-badges">${labels.map((l) => `<span class="source-badge">${l}</span>`).join("")}</div>`;
 }
 
+// The provider's specialty as a readable tag (full text on hover), or a dash.
+function specialtyPillHtml(text) {
+  const label = String(text || "").trim();
+  return label
+    ? `<span class="specialty-pill" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`
+    : '<span class="specialty-none" title="No specialty on file">\u2014</span>';
+}
+
 function leadRowHtml(company, index) {
   const primaryContact = company.decisionMakers?.[0];
   const isSelected = state.selected.has(index);
@@ -2059,7 +2068,6 @@ function leadRowHtml(company, index) {
       </td>
       <td>
         <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}</div>
-        <div class="company-taxonomy">${escapeHtml(company.taxonomy?.description || "")}</div>
         ${sourceBadges(company.sources)}
         ${leadSignalsHtml({
           phone: primaryContact?.phone || company.phone,
@@ -2067,6 +2075,7 @@ function leadRowHtml(company, index) {
           hasContact: Boolean(company.decisionMakers?.length),
         })}
       </td>
+      <td class="specialty-cell">${specialtyPillHtml(company.taxonomy?.description)}</td>
       <td class="mono">${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")}</td>
       <td>${primaryContact ? escapeHtml(primaryContact.name) : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="mono">${phoneCell(primaryContact?.phone, company.phone)}</td>
@@ -2137,7 +2146,7 @@ function detailRowHtml(company, index) {
 
   return `
     <tr class="detail-row">
-      <td colspan="7">
+      <td colspan="8">
         <div class="lead-card">
           <div class="lead-card-head">
             <div class="lead-avatar" aria-hidden="true">${escapeHtml(leadInitials(company.name))}</div>
@@ -3389,6 +3398,7 @@ function claimedLeadRowHtml(lead, index) {
       <td>
         <div class="company-name">${escapeHtml(lead.name)}${claimedBranchesBadge(lead.branches)}${providerChangeBadge(lead.providerChange)}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
+        ${lead.taxonomy ? specialtyPillHtml(lead.taxonomy) : ""}
         ${leadSignalsHtml({
           phone: lead.contactPhone || lead.companyPhone,
           website: lead.website,

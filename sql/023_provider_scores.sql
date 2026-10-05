@@ -18,6 +18,21 @@
 -- score itself. An index ordered by score turns "top 200 in Virginia" into
 -- reading about 200 index entries.
 --
+-- HOW BIG. About 47 MB for ~380,000 providers (table ~31 MB, primary key ~11 MB,
+-- two ordering indexes ~2.4 MB each; measured on a real Postgres with realistic
+-- rows). Postgres stores repeated index keys once, which is why indexing only
+-- (state, score) and (specialty, score) is so small. To see headroom first:
+--   select pg_size_pretty(pg_database_size(current_database()));
+-- To switch the fast path off at once without dropping anything:
+--   update public.provider_scores_state set stale = true;
+-- To remove it entirely and get the space back, run sql/023_provider_scores_uninstall.sql.
+--
+-- HOW A PAGE IS FOUND EXACTLY. The small indexes order rows by score only. To
+-- return exactly the same page as the live search (score, then Medicare claims,
+-- then NPI), the search first reads the score of the last row it needs from the
+-- index, then fetches only the rows scoring at least that and sorts them
+-- exactly. Rows tied at that score are all included, so the result is identical.
+--
 -- IT NEVER SERVES A STALE ANSWER. The stored rows are used only when ALL of
 -- these hold, and otherwise the search runs exactly as before (sql/021/022):
 --   * the table is marked fresh (a statement-level trigger on npi_records and
@@ -56,12 +71,11 @@ create table if not exists public.provider_scores (
   score         smallint not null default 0
 );
 
-create index if not exists idx_provider_scores_state_tax_score
-  on public.provider_scores (state_u, taxonomy_code, score desc, claims_n desc, npi);
+-- Deliberately small: score is the only ordering column. See HOW A PAGE IS FOUND.
 create index if not exists idx_provider_scores_state_score
-  on public.provider_scores (state_u, score desc, claims_n desc, npi);
+  on public.provider_scores (state_u, score desc);
 create index if not exists idx_provider_scores_tax_score
-  on public.provider_scores (taxonomy_code, score desc, claims_n desc, npi);
+  on public.provider_scores (taxonomy_code, score desc);
 
 create table if not exists public.provider_scores_state (
   id          integer primary key check (id = 1),
@@ -94,9 +108,13 @@ begin
   -- Stamped at most once a second, so a bulk load does not hammer one row, yet
   -- a change that lands while a rebuild is running is still seen (the rebuild
   -- only marks itself fresh if nothing changed since it started).
-  update public.provider_scores_state
-     set stale = true, stale_since = now()
-   where id = 1 and (not stale or stale_since is null or stale_since < now() - interval '1 second');
+  begin
+    update public.provider_scores_state
+       set stale = true, stale_since = now()
+     where id = 1 and (not stale or stale_since is null or stale_since < now() - interval '1 second');
+  exception when undefined_table then
+    null;  -- the stored scores were uninstalled: a data load must never fail because of them
+  end;
   return null;
 end $$;
 
@@ -323,32 +341,48 @@ end
 $fn$;
 
 -- May this search be answered from the stored scores?
+-- Written as plpgsql with early returns so that it is safe to call after the
+-- stored scores have been uninstalled: it answers false without ever touching
+-- a table that is not there.
 create or replace function public.provider_scores_usable(p_criteria jsonb)
 returns boolean
-language sql
+language plpgsql
 stable
 security definer
 set search_path = public, pg_temp
 as $$
-  select lower(coalesce(p_criteria->>'sortBy', '')) = 'score'
-     and not coalesce((p_criteria->>'forceLive')::boolean, false)
-     and coalesce((select not st.stale and st.weights = public.provider_score_weights(p_criteria)
-                     from public.provider_scores_state st where st.id = 1), false)
-     and public.provider_scores_filter_sql(p_criteria) is not null
-$$;
+declare
+  v_ok boolean;
+begin
+  if lower(coalesce(p_criteria->>'sortBy', '')) <> 'score' then return false; end if;
+  if coalesce((p_criteria->>'forceLive')::boolean, false) then return false; end if;
+  if to_regclass('public.provider_scores') is null or to_regclass('public.provider_scores_state') is null then return false; end if;
+  select not st.stale and st.weights = public.provider_score_weights(p_criteria)
+    into v_ok
+    from public.provider_scores_state st where st.id = 1;
+  if not coalesce(v_ok, false) then return false; end if;
+  return public.provider_scores_filter_sql(p_criteria) is not null;
+end $$;
 
 -- For the app: is the stored score fresh, and when was it built?
 create or replace function public.search_score_index_status()
 returns jsonb
-language sql
+language plpgsql
 stable
 security definer
 set search_path = public, pg_temp
 as $$
-  select coalesce((select jsonb_build_object('fresh', not st.stale, 'builtAt', st.built_at, 'staleSince', st.stale_since, 'rows', st.row_count)
-                     from public.provider_scores_state st where st.id = 1),
-                  jsonb_build_object('fresh', false))
-$$;
+declare
+  v_out jsonb;
+begin
+  if to_regclass('public.provider_scores_state') is null then
+    return jsonb_build_object('fresh', false, 'installed', false);
+  end if;
+  select jsonb_build_object('fresh', not st.stale, 'installed', true, 'builtAt', st.built_at, 'staleSince', st.stale_since, 'rows', st.row_count)
+    into v_out
+    from public.provider_scores_state st where st.id = 1;
+  return coalesce(v_out, jsonb_build_object('fresh', false, 'installed', true));
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- search_providers_v2(): sql/022's, plus the stored-score path for a sorted
@@ -407,19 +441,25 @@ declare
   v_k2 text := '0';
   v_kt text := 'null::text';
   v_narrow text;
+  v_thr integer;
 begin
   if public.provider_scores_usable(v_j) then
-    -- The stored scores answer this exactly: top-N straight from the narrow
-    -- table's score-ordered index, then the full rows for just those N.
+    -- The stored scores answer this exactly, and only touch the narrow table
+    -- plus the full rows of the (at most 200) providers on the page.
     v_narrow := public.provider_scores_filter_sql(v_j);
+    -- Step 1: the score of the last row this page needs, from the small index.
+    -- With fewer matches than that, every match is needed (-1 keeps them all).
+    execute format('select s.score from public.provider_scores s where %1$s order by s.score desc offset %2$s limit 1',
+                   v_narrow, v_skip + v_lim - 1) into v_thr;
+    v_thr := coalesce(v_thr, -1);
     v_counted := format($c$select case when %1$L then (
         select count(*) from (select 1 from public.provider_scores s where %2$s limit %3$s) capped) end as n$c$,
       v_count, v_narrow, v_count_cap);
     v_matched := format($m$select s.npi, s.score::numeric as k1, s.claims_n as k2, null::text as kt
         from public.provider_scores s
-       where %1$s
+       where %1$s and s.score >= %4$s
        order by s.score desc, s.claims_n desc, s.npi
-       limit %2$s offset %3$s$m$, v_narrow, v_lim, v_skip);
+       limit %2$s offset %3$s$m$, v_narrow, v_lim, v_skip, v_thr);
   else
     v_where := public.provider_filter_sql(v_j);
     v_score := public.provider_score_sql(v_j);

@@ -182,29 +182,58 @@ check("a partial rebuild leaves it stale", (await status()).fresh, false);
 await db.exec("select public.refresh_provider_scores()");
 check("a full rebuild makes it fresh again", (await status()).fresh, true);
 
-// 7. The score-ordered index can serve the sorted query without sorting everything.
+// 7. The small score index finds the last row a page needs without sorting everything.
 //    The SQL under test is what the search really generates, not a hand-written copy.
 await db.exec("set enable_seqscan = off");
 await db.exec("set enable_bitmapscan = off");
-const planFor = async (criteria) => {
+const planFor = async (criteria, offset = 199) => {
   const where = (await one("select public.provider_scores_filter_sql($1::jsonb) as w", [JSON.stringify(criteria)]))[0].w;
-  const rowsOut = await one(`explain select s.npi from public.provider_scores s where ${where} order by s.score desc, s.claims_n desc, s.npi limit 200`);
+  const rowsOut = await one(`explain select s.score from public.provider_scores s where ${where} order by s.score desc offset ${offset} limit 1`);
   return { where, plan: rowsOut.map((r) => r["QUERY PLAN"]).join("\n") };
 };
 const both = await planFor({ ...base, states: ["VA"], taxonomyCodes: ["332B00000X"] });
 check("one state and one specialty are written as plain equality", /state_u = 'VA'/.test(both.where) && /taxonomy_code = '332B00000X'/.test(both.where) && !/any/.test(both.where), true);
-check("state + specialty: score index, no sort node", /idx_provider_scores_state_tax_score/.test(both.plan) && !/Sort/.test(both.plan), true);
+check("state + specialty: reads a score index in order, no sort node", /idx_provider_scores_(state|tax)_score/.test(both.plan) && !/Sort/.test(both.plan), true);
 const stateOnly = await planFor({ ...base, states: ["VA"] });
-check("state only: score index, no sort node", /idx_provider_scores_state_score/.test(stateOnly.plan) && !/Sort/.test(stateOnly.plan), true);
+check("state only: reads the state/score index in order, no sort node", /idx_provider_scores_state_score/.test(stateOnly.plan) && !/Sort/.test(stateOnly.plan), true);
 const taxOnly = await planFor({ ...base, taxonomyCodes: ["332B00000X"] });
-check("specialty only: score index, no sort node", /idx_provider_scores_tax_score/.test(taxOnly.plan) && !/Sort/.test(taxOnly.plan), true);
+check("specialty only: reads the specialty/score index in order, no sort node", /idx_provider_scores_tax_score/.test(taxOnly.plan) && !/Sort/.test(taxOnly.plan), true);
 const several = await planFor({ ...base, states: ["VA", "NY"] });
 check("several states still use the array form (and stay correct)", /any \(/.test(several.where), true);
 await db.exec("reset enable_seqscan");
 await db.exec("reset enable_bitmapscan");
 
+// Only the two small indexes plus the primary key exist.
+check("only the lean indexes exist", (await one("select indexname from pg_indexes where tablename = 'provider_scores' order by 1")).map((r) => r.indexname),
+  ["idx_provider_scores_state_score", "idx_provider_scores_tax_score", "provider_scores_pkey"]);
+
+// Pages that run past the end, and tiny result sets, still match the live search exactly.
+for (const criteria of [{ states: ["VA"], taxonomyCodes: ["332B00000X"], minScore: 100 }, { states: ["OH"], hasPhone: true, hasDecisionMaker: true, activeMedicare: true }, { states: ["ZZ"] }]) {
+  for (const [limit, skip] of [[25, 0], [25, 5], [50, 40], [200, 0], [25, 2000]]) {
+    const request = { ...base, ...criteria };
+    check(`edge page ${limit}/${skip} ${JSON.stringify(criteria)}`, await page(request, limit, skip), await page({ ...request, forceLive: true }, limit, skip));
+  }
+}
+
 // 8. Nothing here is readable through the public API.
 check("RLS is on for the stored scores", (await one("select relrowsecurity as r from pg_class where relname = 'provider_scores'"))[0].r, true);
+
+
+// 9. A data load can never fail because of the stored scores, even if their tables are gone...
+await db.exec("drop table public.provider_scores_state");
+await db.exec(`update public.npi_records set phone = phone where npi = (select npi from public.npi_records limit 1)`);
+check("a data load still works with the freshness table missing", true, true);
+check("the stored scores answer 'not usable' without the freshness table", await usable({ ...base, states: ["VA"] }), false);
+
+// ...and after the uninstall script, sorted searches run the live path and match it.
+await db.exec(read("023_provider_scores_uninstall.sql"));
+check("uninstalled: stored table is gone", (await one("select to_regclass('public.provider_scores') is null as gone"))[0].gone, true);
+check("uninstalled: no triggers left on the provider table", Number((await one("select count(*)::int as n from pg_trigger where tgname like 'provider_scores_stale%'"))[0].n), 0);
+check("uninstalled: not usable", await usable({ ...base, states: ["VA"] }), false);
+check("uninstalled: status says not installed", (await status()).installed, false);
+check("uninstalled: a sorted search still works and equals the live path", (await page({ ...base, states: ["VA"] }, 25, 0)).length > 0, true);
+await db.exec(`update public.npi_records set phone = phone where npi = (select npi from public.npi_records limit 1)`);
+check("uninstalled: data loads still work", true, true);
 
 console.log(failed ? `\n${failed} FAILED, ${passed} passed` : `\nALL ${passed} PASSED`);
 process.exit(failed ? 1 : 0);

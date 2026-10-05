@@ -46,8 +46,20 @@ keep cached.
 
 `sql/023_provider_scores.sql` adds a narrow `provider_scores` table (one row per
 active organization: state, city, specialty, ZIP, update year, has-phone,
-has-decision-maker, Medicare claims, and the score) with indexes ordered by
-score, so the top 200 is read straight from the index.
+has-decision-maker, Medicare claims, and the score) with two small indexes
+ordered by score.
+
+**Size matters on the free plan (500 MB per project).** My first version indexed
+`(state, specialty, score, claims, npi)` and similar, which measured **125 MB**
+on a real Postgres with 380,000 realistic rows: too big. The shipped design
+indexes only `(state, score)` and `(specialty, score)` (Postgres stores repeated
+keys once, so each is ~2.4 MB) and measures **about 47 MB** (table ~31 MB,
+primary key ~11 MB, indexes ~5 MB). To still return exactly the live search's
+page, it first reads the score of the last row the page needs from the small
+index, then fetches only the rows scoring at least that and sorts them exactly
+(score, then claims, then NPI); ties at that score are all included. Check free
+space before running it, and run `sql/023_provider_scores_uninstall.sql` to
+remove it and get the space back (searches keep working, on the live path).
 
 - **Correctness first.** The stored rows are used only when the table is fresh,
   was built with the same weights, the sort is "score", and the filters are ones
