@@ -2,6 +2,8 @@
 // already checked session.isAdmin (see index.js's /admin routes); nothing
 // in this file re-checks it, same trust boundary as leadsRepo's
 // listClaimedLeadsForUser.
+import { buildTeamActivity } from "../lib/teamActivity.js";
+
 function httpError(status, message) {
   const err = new Error(message);
   err.status = status;
@@ -606,4 +608,27 @@ export async function resolveOwnershipConflict(supabase, { groupId, toUserId, ap
   }
 
   return data || {};
+}
+
+// Per-rep activity for the Admin "Team activity" view: claims from the
+// ownership history, calls and meetings from the dated lines of each lead's
+// call log, and each rep's open leads right now. See lib/teamActivity.js.
+export async function getTeamActivity(supabase, { weeks = 8 } = {}) {
+  const span = Math.min(Math.max(Math.round(Number(weeks)) || 8, 1), 26);
+  const usersRes = await supabase.from("app_users").select("id, username, display_name, is_admin");
+  if (usersRes.error) throw httpError(500, "Failed to load users: " + usersRes.error.message);
+
+  const since = new Date(Date.now() - (span * 7 + 7) * 86_400_000).toISOString();
+  const events = await fetchAllRows(
+    () => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at").eq("event_type", "claimed").gte("created_at", since),
+    "claim history");
+
+  // meeting_at only exists once sql/020 has been run; the view still works without it.
+  let leads;
+  try {
+    leads = await fetchAllRows(() => supabase.from("leads").select("claimed_by, is_disconnected, notes, reminder_at, meeting_at"), "leads");
+  } catch {
+    leads = await fetchAllRows(() => supabase.from("leads").select("claimed_by, is_disconnected, notes, reminder_at"), "leads");
+  }
+  return buildTeamActivity({ users: usersRes.data || [], events, leads, weeks: span });
 }

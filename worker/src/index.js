@@ -500,6 +500,13 @@ app.get("/admin/overview", async (c) => {
   return c.json(ok({ users, suggestions, stats }));
 });
 
+// Calls, meetings and claims per rep, by week. Admin only.
+app.get("/admin/team-activity", async (c) => {
+  requireAdmin(c.get("session"));
+  const data = await adminRepo.getTeamActivity(supabaseFor(c), { weeks: c.req.query("weeks") });
+  return c.json(ok(data));
+});
+
 // Identity groups whose active claims are split across more than one
 // person. Read-only: every row here needs an explicit approved decision,
 // so nothing is resolved automatically.

@@ -6,7 +6,7 @@ const NOW = Date.parse('2026-10-05T12:00:00Z');
 const future = '2026-10-08T18:00:00Z';
 
 test('a blank meetingAt means cancel the meeting', () => {
-  assert.deepEqual(normalizeMeetingInput({ meetingAt: '', noteLabel: ' Thu  2 PM ' }, NOW), { clear: true, label: 'Thu 2 PM' });
+  assert.deepEqual(normalizeMeetingInput({ meetingAt: '', noteLabel: ' Thu  2 PM ' }, NOW), { clear: true, label: 'Thu 2 PM', outcome: null });
   assert.equal(normalizeMeetingInput({}, NOW).clear, true);
 });
 

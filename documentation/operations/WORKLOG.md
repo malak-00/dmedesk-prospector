@@ -1,5 +1,65 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-05 — Today screen, call mode, "How did it go?", contacted-before warnings, Team activity
+
+### Objective
+
+Give reps a "what do I do now" landing screen and fewer clicks per call, finish the
+meeting feature with an outcome step, warn when a Prospect lead was already worked, and
+give admins a per-rep activity view. Also tidy the search panel: Sort and the
+"only show" boxes move to the results table, the ZIP field goes, quick picks stay in view.
+
+### Actions Completed
+
+- **Today** (`docs/today.js`, new first tab and the screen after sign-in): "How did it
+  go?" (meetings that have passed), meetings today with the rep's opener notes, callbacks
+  due, and claimed leads waiting for a first call. Built from the claimed leads the app
+  already loads; no new endpoint. The tab badge counts what needs attention.
+- **How did it go?** (Today): Went well / No-show / Reschedule. Went well and No-show
+  clear the meeting through `POST /leads/meeting` with a blank `meetingAt` and a new
+  `outcome` of `held` or `no-show`, so the call log reads "Meeting held" / "Meeting
+  no-show" instead of "Meeting cancelled". The dialog then sets a status, an optional note
+  and the next callback with the existing status, notes and reminder endpoints. Reschedule
+  opens the existing meeting dialog.
+- **Call mode** (`docs/callmode.js`): a right-hand drawer that steps through checked leads
+  one at a time. Claimed leads: Call, result chips, note, callback, Save & next (same three
+  calls as the call log). Prospect leads: Call, Claim & next or Skip (same claim endpoint
+  and rules). Started from the checked rows of either table, or from Today.
+- **Contacted before** (Prospect): the Worker adds `priorContact` (status, date, rep, last
+  note) to results that were claimed and worked earlier and then returned to Prospect
+  (`attachPriorContactSafe`; best effort, results are unchanged if the lookup fails). The
+  row shows a badge and the opened card a banner. Leads a teammate holds or that are
+  disconnected stay hidden from search as before.
+- **Team activity** (`docs/team.js`, Admin tab, new `GET /admin/team-activity`, admin
+  only): calls, meetings held/booked, claims per rep and per week, open leads, overdue
+  callbacks and meetings ahead. Claims come from `lead_ownership_events`; calls and
+  meetings are read from the dated lines of each lead's call log
+  (`worker/src/lib/teamActivity.js`). The Admin tab has a switch between Team activity and
+  the existing Review queues.
+- **Search panel:** Sort and "Phone number / Decision maker / Active Medicare biller" now
+  sit above the results table (still part of the search form; changing one re-runs the
+  search). The "ZIP starts with" field is removed (a 5-digit ZIP typed in the lookup box
+  still filters). Quick picks are always visible instead of inside a collapsible section.
+- Tests: `worker/test/teamActivity.test.js` (note parsing, weekly bucketing, "Other" bucket,
+  prior-contact summary, meeting outcome) and an updated `meetings.test.js`. 58 Worker
+  tests pass; `wrangler deploy --dry-run` builds.
+
+### Database / System Result
+
+- **No SQL to run** and no schema change. Everything reads existing tables (`leads`,
+  `lead_ownership_events`, `app_users`). The new route only reads; the only write path
+  touched is the existing meeting endpoint, which now accepts an optional `outcome`.
+- Worker and frontend are not deployed by this entry; deployment is recorded separately.
+
+### Safety Status
+
+- No production data was touched, no secrets or `.env` changed.
+- Append-only audit behaviour and claim/ownership rules are unchanged: call mode claims
+  through the same endpoint and rules as the Claim button, and Team activity is read-only.
+- Team activity counts what reps wrote in call logs, so a rewritten note changes that
+  rep's own history; the view says so.
+- Manual browser testing is still required (no automated browser testing in this repo).
+
 ## 2026-10-05 — Scoring removed; search switched to DME Desk's own table for everyone
 
 ### Objective

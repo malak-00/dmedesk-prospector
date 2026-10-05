@@ -194,6 +194,26 @@ async function getOwnedGroupNpisAmongSafe(supabase, userId, providers) {
   }
 }
 
+// Marks results that were claimed and worked before and then returned to
+// Prospect, so a rep sees "voicemail on Oct 2 by Ana" before claiming them
+// again. Best-effort: a lookup failure leaves the results unmarked.
+async function attachPriorContactSafe(supabase, companies) {
+  try {
+    const npis = companies.flatMap((c) => [c.npi, ...((c.locations || []).map((l) => l.npi))]).filter(Boolean);
+    const prior = await leadsRepo.getPriorContactAmong(supabase, npis);
+    if (prior.size === 0) return companies;
+    return companies.map((company) => {
+      const matches = [company.npi, ...((company.locations || []).map((l) => l.npi))]
+        .map((npi) => prior.get(String(npi))).filter(Boolean)
+        .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      return matches.length ? Object.assign({}, company, { priorContact: matches[0] }) : company;
+    });
+  } catch (err) {
+    console.log("[companyService] Prior-contact lookup failed: " + err.message);
+    return companies;
+  }
+}
+
 async function getSearchProgressSafe(supabase, userId, criteria) {
   try {
     return await searchProgressRepo.getProgress(supabase, userId, criteria);
@@ -457,6 +477,7 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   let companies = fetchResult.companies;
 
   companies = await attachTaxonomyDescriptionsSafe(supabase, companies);
+  companies = await attachPriorContactSafe(supabase, companies);
 
   if (trackProgress && !resetProgress) {
     await saveSearchProgressSafe(supabase, options.userId, criteria, fetchResult.variantSkips, fetchResult.allSeenNpis);

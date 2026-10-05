@@ -7,6 +7,7 @@ import { createCompany } from "../lib/companyModel.js";
 import { classifyRole } from "../lib/roleClassifier.js";
 import { findUserByUsernameExact } from "../lib/users.js";
 import { normalizeMeetingInput } from "../lib/meetings.js";
+import { parseNoteLines } from "../lib/teamActivity.js";
 
 const DEFAULT_STATUSES = ["new", "called", "voicemail", "interested", "not interested", "do not call"];
 const MAX_STATUS_LENGTH = 40;
@@ -751,7 +752,11 @@ export async function setLeadMeeting(supabase, npi, input, session) {
       };
 
   const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
-  const what = parsed.clear ? "Meeting cancelled" : "Meeting booked" + (parsed.label ? " for " + parsed.label : "");
+  let what;
+  if (!parsed.clear) what = "Meeting booked" + (parsed.label ? " for " + parsed.label : "");
+  else if (parsed.outcome === "held") what = "Meeting held" + (parsed.label ? " \u2014 " + parsed.label : "");
+  else if (parsed.outcome === "no-show") what = "Meeting no-show";
+  else what = "Meeting cancelled";
   const entry = stamp + (session.displayName ? " — " + session.displayName : "") + ": " + what;
   const notes = String(existing.notes || "").trim() ? entry + "\n" + existing.notes.trim() : entry;
 
@@ -777,6 +782,49 @@ export async function setLeadMeeting(supabase, npi, input, session) {
     notes,
     rowsUpdated: 1,
   };
+}
+
+// A lead that was claimed, worked and later returned to Prospect keeps its row
+// (status, call log) but no longer shows anywhere a rep would see it. This
+// turns those rows into a short "contacted before" summary for the search
+// results. Pure, so it is unit tested without a database.
+export function summarizePriorContact(rows, namesById = new Map()) {
+  const out = new Map();
+  for (const row of rows || []) {
+    const status = String(row.status || "").trim();
+    const notes = String(row.notes || "").trim();
+    const worked = (status && status.toLowerCase() !== "new") || notes;
+    if (!worked || row.claimed_by || row.is_disconnected) continue;
+    const latest = parseNoteLines(notes)[0];
+    out.set(String(row.npi), {
+      status: status && status.toLowerCase() !== "new" ? status : "",
+      at: (latest && latest.date) || String(row.status_updated_at || "").slice(0, 10),
+      by: (latest && latest.by) || namesById.get(row.status_updated_by) || "",
+      note: latest ? latest.text : "",
+    });
+  }
+  return out;
+}
+
+export async function getPriorContactAmong(supabase, npis) {
+  const candidates = [...new Set((npis || []).map(String).filter(Boolean))];
+  if (candidates.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from("leads")
+    .select("npi, status, status_updated_at, status_updated_by, notes, claimed_by, is_disconnected")
+    .in("npi", candidates)
+    .is("claimed_by", null)
+    .eq("is_disconnected", false);
+  if (error) throw httpError(500, "Failed to load earlier contact history: " + error.message);
+  const rows = data || [];
+
+  const ids = [...new Set(rows.map((r) => r.status_updated_by).filter(Boolean))];
+  const namesById = new Map();
+  if (ids.length) {
+    const users = await supabase.from("app_users").select("id, display_name").in("id", ids);
+    if (!users.error) (users.data || []).forEach((u) => namesById.set(u.id, u.display_name));
+  }
+  return summarizePriorContact(rows, namesById);
 }
 
 export { DEFAULT_STATUSES };

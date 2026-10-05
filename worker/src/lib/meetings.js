@@ -24,7 +24,11 @@ export function validEmail(value) {
 export function normalizeMeetingInput(input = {}, now = Date.now()) {
   const meetingAtRaw = String(input.meetingAt ?? "").trim();
   const label = String(input.noteLabel ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_LABEL_LENGTH);
-  if (!meetingAtRaw) return { clear: true, label };
+  if (!meetingAtRaw) {
+    // Clearing a meeting is either a cancellation or the result of one that happened.
+    const asked = String(input.outcome ?? "").trim().toLowerCase();
+    return { clear: true, label, outcome: asked === "held" || asked === "no-show" ? asked : null };
+  }
 
   const start = new Date(meetingAtRaw);
   if (Number.isNaN(start.getTime())) throw badRequest("meetingAt must be a valid date and time");

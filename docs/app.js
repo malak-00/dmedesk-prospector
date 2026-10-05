@@ -98,6 +98,10 @@ function unwrap(payload) {
   return payload.data;
 }
 
+// Later scripts (today.js, callmode.js, team.js) register callbacks here; app.js
+// calls them with optional chaining because it finishes running before they load.
+window.dmeHooks = window.dmeHooks || {};
+
 const state = {
   companies: [],
   selected: new Set(),
@@ -381,6 +385,7 @@ function showLogin() {
   state.searchCaps = null;
   applySearchCaps();
   applySourceTrialUi();
+  window.dmeHooks.onSignedOut?.();
   // Covers both an explicit sign-out and an auto-triggered one (a 401 from
   // any API call routes here too, via unwrap()) -- either way, background
   // polling against a session that's no longer valid should stop.
@@ -400,6 +405,7 @@ function hideLogin() {
     applyExcludeKeywordsDefaultIfBlank();
     applySourceTrialUi();
     loadSearchCapabilities();
+    window.dmeHooks.onSignedIn?.();
   }
 }
 
@@ -1482,7 +1488,10 @@ function switchView(view) {
   els.viewSearch.hidden = view !== "search";
   els.viewClaimed.hidden = view !== "claimed";
   els.viewAdmin.hidden = view !== "admin";
+  const viewToday = document.getElementById("viewToday");
+  if (viewToday) viewToday.hidden = view !== "today";
   updateSelectionBar();
+  window.dmeHooks.onView?.(view);
 
   stopClaimedAutoRefresh();
   stopAdminAutoRefresh();
@@ -1780,6 +1789,8 @@ function setSearchFormDisabled(disabled) {
   els.form.querySelectorAll("input, button, select, textarea").forEach((el) => {
     el.disabled = disabled;
   });
+  document.getElementById("resultsRefine")?.querySelectorAll("input, select").forEach((el) => { el.disabled = disabled; });
+  document.getElementById("resultsRefine")?.classList.toggle("is-loading", disabled);
   // Shimmering placeholder cards while a search is in flight.
   const kpiStrip = document.getElementById("kpiSearch");
   if (kpiStrip) {
@@ -1975,6 +1986,7 @@ function updateSelectionUI() {
   els.sendDisconnectedLabel.textContent = count > 0 ? `Send ${count} to Disconnected` : "Send to Disconnected";
   updateProspectKpis();
   updateSelectionBar();
+  window.dmeHooks.onSelectionChanged?.();
 }
 
 // Small badges showing which enrichment sources actually contributed data
@@ -2011,7 +2023,7 @@ function leadRowHtml(company, index) {
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}" tabindex="0" aria-expanded="false" style="--i:${Math.min(index, 12)}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
-        <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}</div>
+        <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}${priorContactBadgeHtml(company.priorContact)}</div>
         ${sourceBadges(company.sources)}
         ${leadSignalsHtml({
           phone: primaryContact?.phone || company.phone,
@@ -2026,6 +2038,28 @@ function leadRowHtml(company, index) {
       <td><span class="chevron">▸</span></td>
     </tr>
   `;
+}
+
+// A lead that was claimed and worked before, then returned to Prospect. The
+// Worker sends { status, at, by, note } (see attachPriorContactSafe).
+function priorContactSummary(prior) {
+  const parts = [];
+  if (prior.status) parts.push(`marked "${prior.status}"`);
+  if (prior.by) parts.push(`by ${prior.by}`);
+  if (prior.at) parts.push(`on ${prior.at}`);
+  return parts.join(" ") || "worked earlier";
+}
+
+function priorContactBadgeHtml(prior) {
+  if (!prior) return "";
+  return ` <span class="prior-badge" title="${escapeHtml("Contacted before: " + priorContactSummary(prior))}">Contacted before</span>`;
+}
+
+function priorContactBannerHtml(prior) {
+  if (!prior) return "";
+  return `<div class="prior-banner" role="note">
+    <strong>Contacted before.</strong> ${escapeHtml(priorContactSummary(prior))}${prior.note ? `<span class="prior-note">${escapeHtml(prior.note)}</span>` : ""}
+  </div>`;
 }
 
 // Shown next to the company name when NPPES has multiple branches (same
@@ -2095,6 +2129,7 @@ function detailRowHtml(company, index) {
               <div class="lead-card-sub">${escapeHtml([company.taxonomy?.description, cityLine].filter(Boolean).join(" · "))}</div>
             </div>
           </div>
+          ${priorContactBannerHtml(company.priorContact)}
           <div class="detail-grid detail-grid-2">
             <div class="detail-block">
               <h4>Who to call</h4>
@@ -2813,6 +2848,7 @@ async function handleMeetingSubmit(evt) {
     }
     closeMeetingModal();
     refreshClaimedRowReminderBadge(idx);
+    window.dmeHooks.onClaimedChanged?.();
     showToast("Meeting saved");
   } catch (err) {
     showToast(err.message, true);
@@ -3067,6 +3103,7 @@ function updateClaimedSelectionUI() {
   els.claimedReturnToProspectBtn.disabled = count === 0;
   els.claimedExportGoogleSheetBtn.disabled = count === 0;
   updateClaimedKpis();
+  window.dmeHooks.onSelectionChanged?.();
 }
 
 // Returns whichever leads a "Send to Disconnected" or "Return to Prospect"
@@ -3192,6 +3229,7 @@ async function loadClaimedLeads(silent = false) {
     renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
     els.refreshClaimedBtn.classList.remove("is-spinning");
     updateClaimedUpdatedLabel();
+    window.dmeHooks.onClaimedLoaded?.();
   } catch (err) {
     els.refreshClaimedBtn.classList.remove("is-spinning");
     document.getElementById("kpiClaimed")?.classList.remove("is-loading");
@@ -4498,7 +4536,6 @@ function renderFilterChips() {
     const label = { npi: `NPI ${lookup.value}`, phone: `Phone ${value("npi")}`, zip: `ZIP ${lookup.value}`, name: `Name lookup: ${value("npi")}` }[lookup.type];
     if (label) chips.push({ key: "npi", label });
   }
-  if (value("zip")) chips.push({ key: "zip", label: `ZIP ${value("zip")}*` });
   if (form.elements.hasPhone && form.elements.hasPhone.checked) chips.push({ key: "hasPhone", label: "Has phone" });
   if (form.elements.hasDecisionMaker && form.elements.hasDecisionMaker.checked) chips.push({ key: "hasDecisionMaker", label: "Has decision maker" });
   if (form.elements.activeMedicare && form.elements.activeMedicare.checked) chips.push({ key: "activeMedicare", label: "Active Medicare biller" });
@@ -4517,12 +4554,11 @@ function renderFilterChips() {
   host.innerHTML = chips.length
     ? chips.map((c) => `<span class="filter-chip">${escapeHtml(c.label)}<button type="button" class="filter-chip-x" data-chip="${c.key}" aria-label="Remove filter: ${escapeHtml(c.label)}">×</button></span>`).join("")
     : "";
-  updateAdvancedSummary();
 }
 
 function removeFilterChip(key) {
   const form = els.form;
-  if (["npi", "city", "minMedicareClaims", "zip"].includes(key)) form.elements[key].value = "";
+  if (["npi", "city", "minMedicareClaims"].includes(key)) form.elements[key].value = "";
   else if (["hasPhone", "hasDecisionMaker", "activeMedicare"].includes(key)) form.elements[key].checked = false;
   else if (key === "states") document.getElementById("stateClearBtn").click();
   else if (key === "taxonomy") document.getElementById("taxonomyClearBtn").click();
@@ -4585,7 +4621,7 @@ applyNavRail();
 // Which "remove this" chip action undoes each suggestion the server offers.
 const RELAX_TO_CHIP = {
   hasPhone: "hasPhone", hasDecisionMaker: "hasDecisionMaker", activeMedicare: "activeMedicare",
-  minMedicareClaims: "minMedicareClaims", zip: "zip", lastUpdatedYears: "years", city: "city", nameContains: "nameContains", taxonomy: "taxonomy",
+  minMedicareClaims: "minMedicareClaims", lastUpdatedYears: "years", city: "city", nameContains: "nameContains", taxonomy: "taxonomy",
 };
 
 function formatCount(n, capped) {
@@ -4606,7 +4642,7 @@ async function loadSearchCapabilities() {
 // on screen promises something the server can't do.
 function applySearchCaps() {
   const on = searchAdvancedAvailable();
-  document.getElementById("advancedFilters").hidden = !on;
+  document.getElementById("resultsRefine").hidden = !on;
   document.getElementById("territoryBtn").hidden = !on;
   document.getElementById("availability").hidden = true;
   document.getElementById("quickPicks").hidden = true;
@@ -4695,11 +4731,8 @@ async function runInsights() {
 }
 
 // Quick picks are counted on top of the location and specialty only, so they
-// only change when those do. They also live inside the (collapsed by default)
-// quality section, so nothing is fetched until someone opens it.
+// only change when those do.
 async function loadQuickPicks(params) {
-  const section = document.getElementById("advancedFilters");
-  if (!section.open) return null;
   const key = [params.states, params.city, params.taxonomyDescriptions].join("|");
   const cache = state.quickPickCache;
   if (cache && cache.key === key && Date.now() - cache.at < 2 * 60000) return cache.picks;
@@ -4709,25 +4742,14 @@ async function loadQuickPicks(params) {
   return picks || null;
 }
 
-// "3 active" on the collapsed quality section, so it never hides a setting.
-function updateAdvancedSummary() {
-  const badge = document.getElementById("advancedSummary");
-  if (!badge) return;
-  const f = els.form.elements;
-  const active = [
-    f.zip && f.zip.value.trim(),
-    f.hasPhone && f.hasPhone.checked, f.hasDecisionMaker && f.hasDecisionMaker.checked, f.activeMedicare && f.activeMedicare.checked,
-  ].filter(Boolean).length;
-  const sortLabel = f.sortBy && f.sortBy.selectedOptions[0] ? f.sortBy.selectedOptions[0].textContent : "";
-  badge.textContent = active ? `${active} active \u00b7 ${sortLabel}` : sortLabel || "Default order";
-  badge.classList.toggle("has-active", active > 0);
-}
-
-document.getElementById("advancedFilters").addEventListener("toggle", (e) => {
-  try { localStorage.setItem("dmeProspectorAdvancedOpen", e.target.open ? "1" : "0"); } catch { /* storage blocked: the section just starts closed next time */ }
-  if (e.target.open) scheduleInsights(0); // fetch the quick picks now that they can be seen
+// Sort and the "only show" boxes sit above the results and re-run the search
+// when changed, so they behave like part of the table rather than a hidden setting.
+document.getElementById("resultsRefine").addEventListener("change", () => {
+  renderFilterChips();
+  if (els.form.classList.contains("is-loading")) return;
+  if (!state.resultPages.length) return; // nothing searched yet: the choice is used by the first search
+  els.form.requestSubmit();
 });
-try { if (localStorage.getItem("dmeProspectorAdvancedOpen") === "1") document.getElementById("advancedFilters").open = true; } catch { /* ignore */ }
 
 // The panel scrolls away with the page now, so the results bar offers a way back to it.
 document.getElementById("editFiltersBtn").addEventListener("click", () => {
@@ -5057,7 +5079,6 @@ function savedSearchSummary(values) {
 // restoring only touches what a preset names -- so put them back to their
 // defaults first, or the new search would inherit whatever was set before.
 function resetAdvancedFields() {
-  if (els.form.elements.zip) els.form.elements.zip.value = "";
   ["hasPhone", "hasDecisionMaker", "activeMedicare"].forEach((name) => { if (els.form.elements[name]) els.form.elements[name].checked = false; });
   if (els.form.elements.sortBy) els.form.elements.sortBy.value = "";
 }
@@ -5201,6 +5222,7 @@ const palette = {
 
 function paletteCommands() {
   const cmds = [
+    { label: "Go to Today", hint: "View", run: () => switchView("today") },
     { label: "Go to Prospect", hint: "View", run: () => switchView("search") },
     { label: "Go to Claimed leads", hint: "View", run: () => switchView("claimed") },
   ];
@@ -5217,6 +5239,7 @@ function paletteCommands() {
       run: () => { switchView("search"); applySavedSearch(s); },
     })),
   );
+  window.dmeHooks.paletteCommands?.().forEach((cmd) => cmds.push(cmd));
   if (!els.suggestBtn.hidden) cmds.push({ label: "Send a suggestion", hint: "Help", run: openSuggestionBox });
   if (!els.userChip.hidden) cmds.push({ label: "Sign out", hint: "Account", run: handleSignOut });
   return cmds;
