@@ -41,10 +41,10 @@ test('when everyone is already on DME Desk there is no trial to run', () => {
   assert.equal(resolveSource(result.config), 'dmedesk');
 });
 
-test('a trial search keeps its own paging bookmark; every other search is unchanged', () => {
+test('a search on DME Desk keeps its own paging bookmark (trial or not); every other search is unchanged', () => {
   const plain = fingerprint({ states: ['FL'] });
-  const trial = fingerprint({ states: ['FL'], sourceTrial: true });
-  assert.notEqual(plain, trial);
-  assert.equal(trial.includes('"trial":true'), true);
-  assert.equal(fingerprint({ states: ['FL'], sourceTrial: undefined }), plain);
+  const onDmedesk = fingerprint({ states: ['FL'], source: 'dmedesk' });
+  assert.notEqual(plain, onDmedesk);
+  assert.equal(onDmedesk.includes('"src":"dmedesk"'), true);
+  assert.equal(fingerprint({ states: ['FL'], source: undefined }), plain);
 });

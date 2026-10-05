@@ -9,7 +9,7 @@
 // rather than an HTTP round trip to a Nano-tier instance that 500s when
 // several searches land at once.
 
-import { toFilterPayload, usesAdvancedSearch } from "../lib/searchFilters.js";
+import { toFilterPayload } from "../lib/searchFilters.js";
 
 function httpError(status, message) {
   const err = new Error(message);
@@ -86,56 +86,23 @@ function toProvider(row) {
   };
 }
 
-// Only the keys sql/018 knows. Anything else the caller passes (variant
-// bookkeeping, limit/skip) is deliberately not forwarded.
-function toCriteria(criteria = {}) {
-  const terms = (value, fallback) => {
-    const list = Array.isArray(value) && value.length ? value : fallback ? [fallback] : [];
-    const cleaned = list.map((term) => String(term).trim()).filter(Boolean);
-    return cleaned.length ? cleaned : undefined;
-  };
-
-  const payload = {
-    npi: criteria.npi ? String(criteria.npi).trim() : undefined,
-    state: criteria.state || undefined,
-    city: criteria.city || undefined,
-    taxonomyCode: criteria.taxonomyCode || undefined,
-    taxonomyDescription: criteria.taxonomyCode ? undefined : criteria.taxonomyDescription || undefined,
-    organizationName: criteria.organizationName || undefined,
-    // Counting is the expensive half of a search and most callers never read
-    // the number, so they say so and skip it.
-    includeCount: criteria.includeCount === false ? false : undefined,
-    nameContains: terms(criteria.nameContainsTerms, criteria.nameContains),
-    excludeKeywords: terms(criteria.excludeKeywords),
-    lastUpdatedYears: terms(criteria.lastUpdatedYears, criteria.lastUpdatedYear),
-  };
-  Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
-  return payload;
-}
-
 export async function searchProviders(supabase, criteria = {}) {
   const limit = criteria.limit || 20;
   const skip = criteria.skip || 0;
 
-  // A search that uses none of the newer options goes through sql/018's
-  // search_providers exactly as it always has. Quality filters, ZIP, phone and
-  // text lookup, and sorting need sql/021's search_providers_v2.
-  const advanced = usesAdvancedSearch(criteria);
-  const payload = advanced
-    ? Object.assign(toFilterPayload(criteria, { collapsed: Boolean(criteria.collapsed) }),
-        criteria.includeCount === false ? { includeCount: false } : {})
-    : toCriteria(criteria);
+  // Every search of DME Desk's own table goes through sql/021's
+  // search_providers_v2 (kept current by sql/022 and sql/024).
+  const payload = Object.assign(toFilterPayload(criteria, { collapsed: Boolean(criteria.collapsed) }),
+    criteria.includeCount === false ? { includeCount: false } : {});
 
-  const { data, error } = await supabase.rpc(advanced ? "search_providers_v2" : "search_providers", {
+  const { data, error } = await supabase.rpc("search_providers_v2", {
     p_criteria: payload,
     p_limit: limit,
     p_skip: skip,
   });
   if (error) {
     if (error.code === "PGRST202" || error.code === "42883" || /Could not find the function/i.test(error.message || "")) {
-      throw httpError(503, advanced
-        ? "Quality filters, sorting and lookups by phone or text aren't installed yet. Run sql/021_search_insights.sql."
-        : "Searching DME Desk's own provider table isn't installed yet. Run sql/018_provider_search.sql, or set NPI_SOURCE=mirror.");
+      throw httpError(503, "Searching DME Desk's own provider table isn't installed yet. Run sql/021_search_insights.sql and sql/022_search_speed.sql, or set NPI_SOURCE=mirror.");
     }
     throw httpError(502, "Provider search failed: " + error.message);
   }

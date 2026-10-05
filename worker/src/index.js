@@ -138,9 +138,8 @@ function readSearchCriteria(c) {
     minMedicareClaims: q("minMedicareClaims") ? Number(q("minMedicareClaims")) : undefined,
     // Quality filters, sort order, and text/phone lookup (sql/021).
     ...readAdvancedCriteria(q),
-    // An admin's trial of DME Desk search keeps its own paging bookmarks, so
-    // trying it never disturbs the bookmarks made on the configured source.
-    sourceTrial: c.get("sourceTrial") || undefined,
+    // Which source this request reads from, so paging bookmarks are kept per source.
+    source: ProviderSource.resolveSource(c.get("config")) === ProviderSource.DME_DESK ? "dmedesk" : undefined,
   };
 }
 

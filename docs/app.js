@@ -196,13 +196,12 @@ function wireSortableHeaders(table, defaultDirs, onSort) {
 }
 
 const PROSPECT_SORT_COMPARATORS = {
-  score: (a, b) => (a.score?.value ?? -1) - (b.score?.value ?? -1),
   company: (a, b) => (a.name || "").localeCompare(b.name || ""),
   specialty: (a, b) => (a.taxonomy?.description || "").localeCompare(b.taxonomy?.description || ""),
   location: (a, b) =>
     `${a.address?.state || ""}|${a.address?.city || ""}`.localeCompare(`${b.address?.state || ""}|${b.address?.city || ""}`),
 };
-const PROSPECT_DEFAULT_SORT_DIR = { score: -1, company: 1, specialty: 1, location: 1 };
+const PROSPECT_DEFAULT_SORT_DIR = { company: 1, specialty: 1, location: 1 };
 
 function sortProspectResults(key, defaultDir) {
   state.sortDir = state.sortKey === key ? state.sortDir * -1 : defaultDir;
@@ -1521,60 +1520,10 @@ function showToast(message, isError = false, linkUrl = null) {
   setTimeout(() => { els.toast.className = "toast"; }, 5000);
 }
 
-function scoreTier(pct) {
-  if (pct >= 65) return "high";
-  if (pct >= 35) return "mid";
-  return "low";
-}
-
-function scoreRing(score) {
-  const pct = score?.percentage ?? 0;
-  const tier = scoreTier(pct);
-  const color = { high: "var(--score-high)", mid: "var(--score-mid)", low: "var(--score-low)" }[tier];
-  const r = 16, c = 2 * Math.PI * r;
-  const offset = c - (pct / 100) * c;
-  return `
-    <div class="score-ring">
-      <svg width="40" height="40" viewBox="0 0 40 40">
-        <circle class="track" cx="20" cy="20" r="${r}"></circle>
-        <circle class="fill" cx="20" cy="20" r="${r}" stroke="${color}"
-          stroke-dasharray="${c}" stroke-dashoffset="${offset}"></circle>
-      </svg>
-      <span class="label">${pct}</span>
-    </div>`;
-}
-
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str ?? "";
   return div.innerHTML;
-}
-
-// Human-readable labels for ScoringService's breakdown keys -- the
-// breakdown was already computed server-side and sent down with every
-// company, just never rendered anywhere until now.
-const SCORE_FACTOR_LABELS = {
-  hasPhone: "Has phone number",
-  completeAddress: "Complete address on file",
-  hasDecisionMaker: "Contact identified",
-  medicareActive: "Active Medicare biller",
-};
-
-function scoreTooltipHtml(score) {
-  if (!score?.breakdown) return "";
-  const rows = Object.entries(score.breakdown).map(([key, points]) => {
-    const earned = points > 0;
-    const label = SCORE_FACTOR_LABELS[key] || key;
-    return `<div class="score-tooltip-row ${earned ? "earned" : ""}">
-      <span class="score-tooltip-mark">${earned ? "✓" : "✗"}</span>
-      <span class="score-tooltip-label">${escapeHtml(label)}</span>
-    </div>`;
-  }).join("");
-  return `
-    <div class="score-tooltip">
-      <div class="score-tooltip-title">${score.value ?? 0}/${score.maxPossible ?? "?"} points</div>
-      ${rows}
-    </div>`;
 }
 
 // Prefer the contact's direct line; fall back to the company's main number
@@ -1630,8 +1579,8 @@ function buildSearchParams(formData) {
 // filters are dropped for them. Phone, ZIP and name-by-owner need the DME Desk
 // provider table (sql/021); without it a name still works the old way.
 const LOOKUP_IGNORED_PARAMS = ["nameContainsTerms", "excludeKeywords", "states", "taxonomyDescriptions", "lastUpdatedYears", "city", "minMedicareClaims",
-  "hasPhone", "hasDecisionMaker", "activeMedicare", "minScore", "zip", "sortBy"];
-const ADVANCED_PARAMS = ["hasPhone", "hasDecisionMaker", "activeMedicare", "minScore", "zip", "sortBy"];
+  "hasPhone", "hasDecisionMaker", "activeMedicare", "zip", "sortBy"];
+const ADVANCED_PARAMS = ["hasPhone", "hasDecisionMaker", "activeMedicare", "zip", "sortBy"];
 
 function isNpiLookupValue(value) {
   return /^\d{10}$/.test(String(value || "").trim());
@@ -1654,6 +1603,7 @@ function classifyLookup(raw) {
 }
 
 function applyLookupField(params) {
+  delete params.minScore; // the old fit-score filter (a saved search may still carry it)
   // Controls for options this deployment can't honour (sql/021 not run, or
   // searches still reading the mirror) must not send anything.
   if (!searchAdvancedAvailable()) ADVANCED_PARAMS.forEach((key) => { delete params[key]; });
@@ -1844,7 +1794,7 @@ async function executeSearch(params, { isMore = false } = {}) {
   els.searchMoreBtn.disabled = true;
   setStatus("busy", isMore ? "Searching more…" : "Searching…");
   if (!isMore) {
-    els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="8"><div class="loading-row"><span class="spinner"></span> <span id="searchStatusMsg">Searching NPPES registry…</span></div></td></tr>`;
+    els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7"><div class="loading-row"><span class="spinner"></span> <span id="searchStatusMsg">Searching NPPES registry…</span></div></td></tr>`;
   }
 
   const phaseTimers = [
@@ -1879,7 +1829,7 @@ async function executeSearch(params, { isMore = false } = {}) {
         // comment on why this no longer means "the same leads every time".
         state.resultPages = [page];
       }
-      state.sortKey = null; // fresh results start in the server's own order (score desc)
+      state.sortKey = null; // fresh results start in the server's own order
       state.sortDir = 1;
       updateSortIndicators(els.resultsTable, null, 1);
       goToPage(state.resultPages.length - 1);
@@ -1913,7 +1863,7 @@ async function executeSearch(params, { isMore = false } = {}) {
     const message = err instanceof TypeError
       ? "Lost connection or the search took too long — try narrowing your filters (fewer specialties/states) or click Search more again."
       : err.message;
-    if (!isMore) els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(message)}</td></tr>`;
+    if (!isMore) els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(message)}</td></tr>`;
     setStatus("error", "Error");
     showToast(message, true);
     // A failed click always leaves it re-clickable -- reaching here means it
@@ -1992,7 +1942,7 @@ function renderResults(excludedAsClaimed) {
   els.selectAll.checked = companies.length > 0 && state.selected.size === companies.length;
 
   if (companies.length === 0) {
-    els.resultsBody.innerHTML = emptyRowHtml(8, "search", "No leads matched that search", "Try a wider area, fewer specialties, or remove a filter chip above.");
+    els.resultsBody.innerHTML = emptyRowHtml(7, "search", "No leads matched that search", "Try a wider area, fewer specialties, or remove a filter chip above.");
     updateSelectionUI();
     return;
   }
@@ -2061,12 +2011,6 @@ function leadRowHtml(company, index) {
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}" tabindex="0" aria-expanded="false" style="--i:${Math.min(index, 12)}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
-        <div class="score-ring-wrap" tabindex="0">
-          ${scoreRing(company.score)}
-          ${scoreTooltipHtml(company.score)}
-        </div>
-      </td>
-      <td>
         <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}</div>
         ${sourceBadges(company.sources)}
         ${leadSignalsHtml({
@@ -2120,10 +2064,6 @@ function detailRowHtml(company, index) {
   const fullAddress = [addr.line1, cityLine, addr.postalCode].filter(Boolean).join(", ");
   const dms = company.decisionMakers || [];
   const firstCallable = dms.findIndex((dm) => (dm.phone || "").trim());
-  const reasons = Object.entries(company.score?.breakdown || {}).map(([key, points]) => {
-    const earned = points > 0;
-    return `<span class="reason ${earned ? "yes" : "no"}">${earned ? "✓" : "✗"} ${escapeHtml(SCORE_FACTOR_LABELS[key] || key)}</span>`;
-  }).join("");
   const mainPhone = (company.phone || "").trim();
 
   const contactsHtml = dms.map((dm, i) => {
@@ -2146,7 +2086,7 @@ function detailRowHtml(company, index) {
 
   return `
     <tr class="detail-row">
-      <td colspan="8">
+      <td colspan="7">
         <div class="lead-card">
           <div class="lead-card-head">
             <div class="lead-avatar" aria-hidden="true">${escapeHtml(leadInitials(company.name))}</div>
@@ -2154,14 +2094,12 @@ function detailRowHtml(company, index) {
               <div class="lead-card-name">${escapeHtml(company.name)}</div>
               <div class="lead-card-sub">${escapeHtml([company.taxonomy?.description, cityLine].filter(Boolean).join(" · "))}</div>
             </div>
-            ${scoreBadgeHtml(company.score?.percentage)}
           </div>
           <div class="detail-grid detail-grid-2">
             <div class="detail-block">
               <h4>Who to call</h4>
               ${contactsHtml || '<span class="muted-note">No decision maker identified yet.</span>'}
               ${!dms.length && mainPhone ? `<div class="who-actions" style="margin-top:10px"><a class="btn btn-primary btn-small" href="tel:${escapeHtml(mainPhone)}">${SIGNAL_ICONS.phone}Call main line</a></div>` : ""}
-              ${reasons ? `<div class="reasons-title">Why this lead</div><div class="reasons">${reasons}</div>` : ""}
             </div>
             <div class="detail-block">
               <h4>Company</h4>
@@ -2177,7 +2115,6 @@ function detailRowHtml(company, index) {
                   ["NPI", `<span class="mono">${escapeHtml(company.npi || "—")}</span>`],
                   ["NPPES updated", escapeHtml(company.lastUpdated || "—")],
                   ["Data sources", escapeHtml(sourcesList || "NPPES only")],
-                  ["Score", escapeHtml(`${company.score?.percentage ?? 0}% (${company.score?.value ?? 0}/${company.score?.maxPossible ?? "?"} pts)`)],
                 ])}
               </details>
               <div class="brief-link-row"><button type="button" class="text-action" data-brief-index="${index}">${SPARK_ICON}Prep a call brief</button></div>
@@ -2256,15 +2193,9 @@ document.addEventListener("click", (e) => {
   else showToast("Couldn't copy — select the number manually", true);
 }, true);
 
-/* ---------- Card header badge, call-log (work mode) ---------- */
+/* ---------- Call-log (work mode) ---------- */
 
 const SPARK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l1.3 3.7L13 6.5l-3.7 1.3L8 11.5 6.7 7.8 3 6.5l3.7-1.3ZM12.5 10l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6Z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>';
-
-// Small "fit" badge for the card header, colored by the same tiers as the score ring.
-function scoreBadgeHtml(pct) {
-  if (typeof pct !== "number" || Number.isNaN(pct)) return "";
-  return `<span class="score-badge tier-${scoreTier(pct)}" title="Lead score: how well this provider matches what we look for">${pct}% fit</span>`;
-}
 
 // Quick-remind chips: N days from now at 9:00 local time.
 function remindDateIso(days) {
@@ -2432,22 +2363,6 @@ function factsHtml(rows) {
 
 function websiteLink(url) {
   return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>` : "—";
-}
-
-function scoreBreakdownHtml(score) {
-  if (!score) return '<span class="muted-note">No score available</span>';
-  const pct = Math.max(0, Math.min(100, score.percentage ?? 0));
-  const rows = Object.entries(score.breakdown || {}).map(([key, points]) => {
-    const earned = points > 0;
-    return `<li class="${earned ? "earned" : ""}"><span class="factor-mark">${earned ? "✓" : "✗"}</span>${escapeHtml(SCORE_FACTOR_LABELS[key] || key)}</li>`;
-  }).join("");
-  return `
-    <div class="score-meter">
-      <span class="score-meter-pct">${pct}%</span>
-      <span class="muted-note">${escapeHtml(String(score.value ?? 0))}/${escapeHtml(String(score.maxPossible ?? "?"))} points</span>
-    </div>
-    <div class="meter"><div class="meter-fill tier-${scoreTier(pct)}" style="width:${pct}%"></div></div>
-    ${rows ? `<ul class="factor-list">${rows}</ul>` : ""}`;
 }
 
 function attachRowHandlers() {
@@ -3599,10 +3514,6 @@ function companyLikeFromClaimedLead(lead) {
           medicarePayment: lead.medicarePayment !== "" ? Number(lead.medicarePayment) : null,
         }
       : null,
-    score: {
-      value: lead.scoreValue !== "" ? Number(lead.scoreValue) : null,
-      percentage: lead.scorePercentage !== "" ? Number(lead.scorePercentage) : null,
-    },
     sources: {
       nppes: true,
       places: activeSources.includes("places"),
@@ -3617,7 +3528,6 @@ function claimedDetailRowHtml(lead, index) {
   const sourcesList = lead.sources
     ? lead.sources.split(";").map((s) => s.trim().toUpperCase()).filter(Boolean).join(", ")
     : "";
-  const scoreLine = lead.scorePercentage !== "" ? `${lead.scorePercentage}% (${lead.scoreValue || "?"} pts)` : "Not scored";
   const medicareLine = lead.medicareClaims !== ""
     ? `${Number(lead.medicareClaims).toLocaleString()} claims` +
       (lead.medicareBeneficiaries !== "" ? `, ${Number(lead.medicareBeneficiaries).toLocaleString()} beneficiaries` : "") +
@@ -3638,7 +3548,6 @@ function claimedDetailRowHtml(lead, index) {
               <div class="lead-card-name">${escapeHtml(lead.name)}</div>
               <div class="lead-card-sub">${escapeHtml([lead.taxonomy, cityLine].filter(Boolean).join(" · "))}</div>
             </div>
-            ${scoreBadgeHtml(lead.scorePercentage === "" ? null : Number(lead.scorePercentage))}
           </div>
           <div class="detail-grid detail-grid-work">
             <div class="detail-block call-log" data-claimed-index="${index}">
@@ -3703,7 +3612,6 @@ function claimedDetailRowHtml(lead, index) {
                   ["NPI", `<span class="mono">${escapeHtml(lead.npi || "—")}</span>`],
                   ["Company phone", escapeHtml(lead.companyPhone || "—")],
                   ["Website", websiteLink(lead.website)],
-                  ["Score", escapeHtml(scoreLine)],
                   ["Medicare (CMS)", escapeHtml(medicareLine)],
                   ["NPPES updated", escapeHtml(lead.nppesLastUpdated || "—")],
                   ["Data sources", escapeHtml(sourcesList || "NPPES only")],
@@ -4484,16 +4392,17 @@ function updateProspectKpis() {
   if (!strip) return;
   const list = state.companies || [];
   strip.hidden = state.resultPages.length === 0 && !strip.classList.contains("is-loading");
-  const pcts = list.map((c) => c.score?.percentage ?? 0);
-  const high = pcts.filter((p) => p >= 65).length;
-  const avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : 0;
+  const withPhone = list.filter((c) => (c.phone || "").trim() || (c.decisionMakers || []).some((dm) => (dm.phone || "").trim())).length;
+  const medicareActive = list.filter((c) => typeof c.medicare?.totalClaims === "number" && c.medicare.totalClaims > 0).length;
+  const share = (n) => (list.length ? `${Math.round((n / list.length) * 100)}% of results` : "\u00a0");
   setKpi("kpiFound", list.length);
   setText("kpiFoundSub", state.resultPages.length > 1
     ? `page ${state.currentPage + 1} of ${state.resultPages.length}`
     : (state.excludedAsClaimed > 0 ? `${state.excludedAsClaimed} already claimed, hidden` : "this search"));
-  setKpi("kpiHigh", high);
-  setText("kpiHighSub", list.length ? `${Math.round((high / list.length) * 100)}% of results` : " ");
-  setKpi("kpiAvg", avg);
+  setKpi("kpiPhone", withPhone);
+  setText("kpiPhoneSub", share(withPhone));
+  setKpi("kpiMedicare", medicareActive);
+  setText("kpiMedicareSub", share(medicareActive));
   setKpi("kpiSelected", state.selected.size);
 }
 
@@ -4544,9 +4453,7 @@ function updateSelectionBar() {
   if (!bar) return;
   const count = state.selected.size;
   bar.hidden = !(count > 0 && state.view === "search");
-  const pcts = [...state.selected].map((i) => state.companies[i]?.score?.percentage).filter((p) => typeof p === "number");
-  const avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
-  setText("selectionBarCount", avg === null ? `${count} selected` : `${count} selected · avg score ${avg}`);
+  setText("selectionBarCount", `${count} selected`);
 }
 
 /* Overdue-callback strip (Claimed view) */
@@ -4591,7 +4498,6 @@ function renderFilterChips() {
     const label = { npi: `NPI ${lookup.value}`, phone: `Phone ${value("npi")}`, zip: `ZIP ${lookup.value}`, name: `Name lookup: ${value("npi")}` }[lookup.type];
     if (label) chips.push({ key: "npi", label });
   }
-  if (value("minScore")) chips.push({ key: "minScore", label: `Fit score ${value("minScore")}%+` });
   if (value("zip")) chips.push({ key: "zip", label: `ZIP ${value("zip")}*` });
   if (form.elements.hasPhone && form.elements.hasPhone.checked) chips.push({ key: "hasPhone", label: "Has phone" });
   if (form.elements.hasDecisionMaker && form.elements.hasDecisionMaker.checked) chips.push({ key: "hasDecisionMaker", label: "Has decision maker" });
@@ -4616,7 +4522,7 @@ function renderFilterChips() {
 
 function removeFilterChip(key) {
   const form = els.form;
-  if (["npi", "city", "minMedicareClaims", "minScore", "zip"].includes(key)) form.elements[key].value = "";
+  if (["npi", "city", "minMedicareClaims", "zip"].includes(key)) form.elements[key].value = "";
   else if (["hasPhone", "hasDecisionMaker", "activeMedicare"].includes(key)) form.elements[key].checked = false;
   else if (key === "states") document.getElementById("stateClearBtn").click();
   else if (key === "taxonomy") document.getElementById("taxonomyClearBtn").click();
@@ -4678,7 +4584,7 @@ applyNavRail();
 
 // Which "remove this" chip action undoes each suggestion the server offers.
 const RELAX_TO_CHIP = {
-  minScore: "minScore", hasPhone: "hasPhone", hasDecisionMaker: "hasDecisionMaker", activeMedicare: "activeMedicare",
+  hasPhone: "hasPhone", hasDecisionMaker: "hasDecisionMaker", activeMedicare: "activeMedicare",
   minMedicareClaims: "minMedicareClaims", zip: "zip", lastUpdatedYears: "years", city: "city", nameContains: "nameContains", taxonomy: "taxonomy",
 };
 
@@ -4693,7 +4599,7 @@ async function loadSearchCapabilities() {
     state.searchCaps = { advanced: false }; // counts are a convenience; searching still works without them
   }
   applySearchCaps();
-  applySourceTrialUi(); // its tooltip reports whether the stored scores are fresh
+  applySourceTrialUi(); // hides the switch once everyone is on DME Desk
 }
 
 // Shows the controls this deployment supports and hides the rest, so nothing
@@ -4719,17 +4625,15 @@ function applySourceTrialUi() {
   const btn = document.getElementById("sourceTrialBtn");
   if (!btn) return;
   const isAdmin = Boolean(getSession()?.isAdmin);
-  btn.hidden = !isAdmin;
-  if (!isAdmin) return;
+  // Once the Worker itself reads from DME Desk there is nothing left to try.
+  const caps = state.searchCaps;
+  const everyoneOnDmedesk = Boolean(caps && caps.source === "dmedesk" && !caps.trial);
+  btn.hidden = !isAdmin || everyoneOnDmedesk;
+  if (btn.hidden) return;
   const on = sourceTrialActive();
-  const index = state.searchCaps && state.searchCaps.scoreIndex;
-  btn.title = !on
-    ? "Admins only. Switch your searches to DME Desk's own provider table (trial)."
-    : index && index.fresh
-    ? "Your searches read from DME Desk's own provider table (trial). Stored fit scores are up to date, so \"best fit first\" is fast."
-    : index
-    ? "Your searches read from DME Desk's own provider table (trial). The stored fit scores are out of date, so \"best fit first\" is slower until they are rebuilt (run select public.refresh_provider_scores(); in Supabase)."
-    : "Your searches read from DME Desk's own provider table (trial).";
+  btn.title = on
+    ? "Your searches read from DME Desk's own provider table (trial)."
+    : "Admins only. Switch your searches to DME Desk's own provider table (trial).";
   btn.classList.toggle("is-on", on);
   btn.setAttribute("aria-pressed", String(on));
   document.getElementById("sourceTrialLabel").textContent = on ? "Search source: DME Desk (trial)" : "Search source: current";
@@ -4811,11 +4715,11 @@ function updateAdvancedSummary() {
   if (!badge) return;
   const f = els.form.elements;
   const active = [
-    f.minScore && f.minScore.value, f.zip && f.zip.value.trim(),
+    f.zip && f.zip.value.trim(),
     f.hasPhone && f.hasPhone.checked, f.hasDecisionMaker && f.hasDecisionMaker.checked, f.activeMedicare && f.activeMedicare.checked,
   ].filter(Boolean).length;
   const sortLabel = f.sortBy && f.sortBy.selectedOptions[0] ? f.sortBy.selectedOptions[0].textContent : "";
-  badge.textContent = active ? `${active} active \u00b7 ${sortLabel}` : sortLabel;
+  badge.textContent = active ? `${active} active \u00b7 ${sortLabel}` : sortLabel || "Default order";
   badge.classList.toggle("has-active", active > 0);
 }
 
@@ -4869,7 +4773,6 @@ document.getElementById("availability").addEventListener("click", (e) => {
 function quickPickActive(patch) {
   return Object.entries(patch).every(([key, value]) => {
     if (key === "lastUpdatedYears") return value.every((y) => els.form.querySelector(`input[name="lastUpdatedYears"][value="${y}"]`)?.checked);
-    if (key === "minScore") return String(els.form.elements.minScore.value) === String(value);
     return Boolean(els.form.elements[key] && els.form.elements[key].checked);
   });
 }
@@ -4882,8 +4785,6 @@ function setQuickPick(patch, on) {
         if (box) box.checked = on;
       });
       updateYearSummary();
-    } else if (key === "minScore") {
-      els.form.elements.minScore.value = on ? String(value) : "";
     } else if (els.form.elements[key]) {
       els.form.elements[key].checked = on;
     }
@@ -5156,9 +5057,9 @@ function savedSearchSummary(values) {
 // restoring only touches what a preset names -- so put them back to their
 // defaults first, or the new search would inherit whatever was set before.
 function resetAdvancedFields() {
-  ["minScore", "zip"].forEach((name) => { if (els.form.elements[name]) els.form.elements[name].value = ""; });
+  if (els.form.elements.zip) els.form.elements.zip.value = "";
   ["hasPhone", "hasDecisionMaker", "activeMedicare"].forEach((name) => { if (els.form.elements[name]) els.form.elements[name].checked = false; });
-  if (els.form.elements.sortBy) els.form.elements.sortBy.value = "score";
+  if (els.form.elements.sortBy) els.form.elements.sortBy.value = "";
 }
 
 function applySavedSearch(search) {

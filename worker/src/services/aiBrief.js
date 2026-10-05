@@ -14,7 +14,6 @@ function buildPrompt(company) {
     ? "Primary contact: " + dm.name + (dm.title ? ", " + dm.title : "") + " (role: " + dm.roleCategory + ")"
     : "No named contact identified -- brief should suggest asking for the owner or office manager.";
 
-  const score = company.score || {};
   const places = company.places || {};
 
   let reputationLine;
@@ -53,7 +52,7 @@ function buildPrompt(company) {
     reputationLine + "\n" +
     medicareLine + "\n" +
     dmLine + "\n" +
-    "Lead score: " + (score.percentage != null ? score.percentage : "N/A") + "% (" + (score.value != null ? score.value : "N/A") + "/" + (score.maxPossible != null ? score.maxPossible : "N/A") + " points)\n\n" +
+    "\n" +
     "Base the pain point and talking point on the SPECIFIC signals above (web presence, reputation, Medicare volume) rather than generic DME industry claims. For example: no website or reviews suggests missed calls go nowhere; high Medicare volume means every missed call is expensive; low ratings suggest service strain.\n\n" +
     "Write a concise call brief with exactly these sections, each 1-3 short lines:\n" +
     "1. Opening line (personalized, not generic)\n" +

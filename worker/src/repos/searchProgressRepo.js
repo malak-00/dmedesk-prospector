@@ -33,7 +33,6 @@ export function fingerprint(criteria = {}) {
   if (criteria.hasPhone) advanced.hasPhone = true;
   if (criteria.hasDecisionMaker) advanced.hasDecisionMaker = true;
   if (criteria.activeMedicare) advanced.activeMedicare = true;
-  if (criteria.minScore) advanced.minScore = Number(criteria.minScore);
   if (criteria.zip) advanced.zip = String(criteria.zip);
   if (criteria.sortBy) advanced.sortBy = String(criteria.sortBy);
   // The Medicare minimum only counts once the database applies it (any of the
@@ -43,8 +42,11 @@ export function fingerprint(criteria = {}) {
     advanced.minMedicareClaims = Number(criteria.minMedicareClaims);
   }
   if (Object.keys(advanced).length) parts.advanced = advanced;
-  // An admin trying DME Desk search keeps separate bookmarks from the configured source.
-  if (criteria.sourceTrial) parts.trial = true;
+  // Searches read from DME Desk's own table keep their own bookmarks. A bookmark is
+  // a position in one source's ordering, so a position saved against the mirror
+  // would skip or repeat leads here. The old bookmark is left untouched (so
+  // switching back loses nothing) and getProgress carries over what was already seen.
+  if (criteria.source === "dmedesk") parts.src = "dmedesk";
   return JSON.stringify(parts);
 }
 
@@ -55,15 +57,25 @@ const MAX_SEEN_NPIS = 4000;
 export async function getProgress(supabase, userId, criteria) {
   if (!userId) return null;
   try {
-    const fp = fingerprint(criteria);
-    const { data, error } = await supabase
+    const lookup = async (fp) => supabase
       .from("search_progress")
       .select("variant_skips, seen_npis")
       .eq("user_id", userId)
       .eq("filter_fingerprint", fp)
       .maybeSingle();
-    if (error || !data) return null;
-    return { variantSkips: data.variant_skips || {}, seenNpis: data.seen_npis || [] };
+
+    const { data, error } = await lookup(fingerprint(criteria));
+    if (!error && data) return { variantSkips: data.variant_skips || {}, seenNpis: data.seen_npis || [] };
+
+    // First time this rep runs this search against DME Desk's own table: their
+    // old bookmark counts positions in the mirror's ordering, which would skip or
+    // repeat leads here, so the position starts fresh. What they have already
+    // SEEN carries over, so they are not shown the same leads again.
+    if (criteria.source === "dmedesk") {
+      const legacy = await lookup(fingerprint({ ...criteria, source: undefined }));
+      if (!legacy.error && legacy.data) return { variantSkips: {}, seenNpis: legacy.data.seen_npis || [] };
+    }
+    return null;
   } catch (err) {
     console.log("[searchProgressRepo] getProgress failed: " + err.message);
     return null;

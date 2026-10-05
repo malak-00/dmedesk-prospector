@@ -479,7 +479,7 @@ body {
   border-bottom: 1px solid var(--hairline);
   white-space: nowrap;
 }
-.col-check { width: 42px; } .col-score { width: 80px; } .col-expand { width: 40px; }
+.col-check { width: 42px; }  .col-expand { width: 40px; }
 
 /* Fixed layout + real column widths (summing to 100%) instead of the
    default auto-layout: with 9 columns including a free-text Notes input,
@@ -580,28 +580,6 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .mono { font-family: var(--font-mono); font-size: 14px; }
 .chevron { display: inline-block; transition: transform 0.15s ease; color: var(--muted); }
 .chevron.open { transform: rotate(90deg); color: var(--accent-ink); }
-
-.score-ring { display: inline-flex; align-items: center; justify-content: center; position: relative; width: 42px; height: 42px; }
-.score-ring svg { transform: rotate(-90deg); }
-.score-ring circle { fill: none; stroke-width: 4.5; }
-.score-ring .track { stroke: var(--hairline); }
-.score-ring .fill { stroke-linecap: round; transition: stroke-dashoffset 0.5s ease; }
-.score-ring .label { position: absolute; font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
-
-.score-ring-wrap { position: relative; display: inline-flex; border-radius: 8px; }
-.score-ring-wrap:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
-.score-ring-wrap:focus:not(:focus-visible) { outline: none; }
-.score-tooltip {
-  display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 25;
-  background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-card); padding: 10px 12px; width: 220px;
-}
-.score-ring-wrap:hover .score-tooltip, .score-ring-wrap:focus .score-tooltip, .score-ring-wrap:focus-within .score-tooltip { display: block; }
-.score-tooltip-title { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
-.score-tooltip-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); padding: 2px 0; }
-.score-tooltip-row.earned { color: var(--ink); }
-.score-tooltip-mark { width: 12px; text-align: center; font-weight: 700; color: var(--muted-2); }
-.score-tooltip-row.earned .score-tooltip-mark { color: var(--score-high); }
 
 /* ---------- Expanded row ---------- */
 
@@ -1169,18 +1147,7 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 .contact-card { display: flex; gap: 10px; align-items: flex-start; }
 .contact-card-body { min-width: 0; }
 
-.score-meter { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
-.score-meter-pct { font-family: var(--font-mono); font-size: 22px; font-weight: 600; }
-.meter { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
-.meter-fill { height: 100%; border-radius: 3px; animation: meterGrow 0.5s ease both; transform-origin: left; }
 @keyframes meterGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-.meter-fill.tier-high { background: var(--score-high); }
-.meter-fill.tier-mid { background: var(--score-mid); }
-.meter-fill.tier-low { background: var(--score-low); }
-.factor-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
-.factor-list li.earned { color: var(--ink); }
-.factor-mark { display: inline-block; width: 18px; font-weight: 700; color: var(--muted-2); }
-.factor-list li.earned .factor-mark { color: var(--score-high); }
 
 /* ---------- Floating selection bar ---------- */
 
@@ -1229,7 +1196,9 @@ th.sort-desc .sort-arrow::after { content: "↓"; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lead-card, .palette-card, .selection-bar, .meter-fill { animation: none; }
+  .lead-card,
+.palette-card,
+.selection-bar { animation: none; }
   .kpi-card, .view-tabs .tab, .btn, .chevron { transition: none; }
 }
 
@@ -1344,11 +1313,10 @@ button, input, select, textarea { font-family: var(--font-ui); letter-spacing: i
 .selection-chip { font-family: var(--font-ui); font-size: 12px; font-weight: 600; }
 .status { font-family: var(--font-ui); font-size: 12px; font-weight: 500; }
 #pageInfo { font-family: var(--font-ui); font-size: 13px; }
-.score-ring .label { font-family: var(--font-ui); font-size: 12.5px; font-weight: 700; letter-spacing: -0.02em; }
-.score-tooltip-title { font-family: var(--font-ui); }
 
 /* Numbers that carry the dashboard */
-.kpi-value, .stat-value, .score-meter-pct {
+.kpi-value,
+.stat-value {
   font-family: var(--font-ui);
   font-weight: 650;
   letter-spacing: -0.03em;
@@ -1356,7 +1324,6 @@ button, input, select, textarea { font-family: var(--font-ui); letter-spacing: i
 .kpi-value { font-size: 30px; line-height: 1.15; }
 .kpi-label { font-size: 12.5px; font-weight: 500; }
 .kpi-sub { font-size: 12px; }
-.score-meter-pct { font-size: 24px; }
 
 /* Buttons and inputs */
 .btn { font-size: 13px; font-weight: 600; letter-spacing: -0.003em; padding: 9px 16px; border-radius: var(--radius-sm); }
@@ -1376,7 +1343,7 @@ input[type="text"], input[type="number"], input[type="password"], select, textar
 .lead-card-sub { font-size: 13px; }
 .fact { font-size: 13.5px; }
 .fact dt { font-size: 12.5px; font-weight: 500; }
-.factor-list { font-size: 13.5px; }
+
 .detail-block { padding: 16px 18px; border-radius: var(--radius-lg); }
 .contact-card-body { font-size: 13.5px; }
 .contact-phone { font-size: 12.5px; }
@@ -1391,7 +1358,6 @@ input[type="text"], input[type="number"], input[type="password"], select, textar
 /* Brand header */
 .user-chip { font-size: 13px; }
 .user-chip #userName { font-weight: 600; }
-
 
 /* ======================================================================
    Polish pass: display font, bolder accent, header and logo, search form,
@@ -1420,12 +1386,18 @@ input[type="text"], input[type="number"], input[type="password"], select, textar
   --input-line: #CBD2DC;
 }
 
-h1, h2, h3,
-.lead-card-name, .kpi-value, .stat-value, .score-meter-pct,
-.admin-panel .results-count, .login-card h1 {
+h1,
+h2,
+h3,
+.lead-card-name,
+.kpi-value,
+.stat-value,
+.admin-panel .results-count,
+.login-card h1 {
   font-family: var(--font-display);
 }
-.kpi-value, .stat-value, .score-meter-pct { font-weight: 700; letter-spacing: -0.035em; }
+.kpi-value,
+.stat-value { font-weight: 700; letter-spacing: -0.035em; }
 .lead-card-name { font-weight: 700; }
 .company-name { font-family: var(--font-display); font-weight: 650; }
 .suggestion-card h3, .admin-leads-header h3 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
@@ -1436,7 +1408,6 @@ h1, h2, h3,
   font-weight: 650;
 }
 .btn-primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
-.score-ring .label { font-family: var(--font-display); font-weight: 700; }
 
 /* ---------- Header and logo ---------- */
 
@@ -1578,7 +1549,6 @@ h1, h2, h3,
 .suggestion-card, .login-card { border-color: var(--line); border-radius: 20px; }
 .login-card .btn-primary { padding: 12px 18px; border-radius: 10px; }
 
-
 /* ======================================================================
    Dark mode rebuild + logo crop. The logo PNG has wide empty margins and
    navy text, so it is cropped (not stretched) and sits on a light plate in
@@ -1690,7 +1660,6 @@ h1, h2, h3,
 :root[data-theme="dark"] .palette-card,
 :root[data-theme="dark"] .suggestion-card,
 :root[data-theme="dark"] .login-card,
-:root[data-theme="dark"] .score-tooltip,
 :root[data-theme="dark"] .selection-bar,
 :root[data-theme="dark"] .toast {
   background: #1C232D;
@@ -1713,8 +1682,7 @@ h1, h2, h3,
 :root[data-theme="dark"] .user-chip { background: var(--surface-2); border-color: var(--line); }
 :root[data-theme="dark"] .source-badge { background: rgba(255, 255, 255, 0.05); border-color: var(--line); color: var(--muted); }
 :root[data-theme="dark"] .status-badge { background: rgba(255, 255, 255, 0.05); }
-:root[data-theme="dark"] .score-ring .track { stroke: rgba(255, 255, 255, 0.1); }
-:root[data-theme="dark"] .meter { background: rgba(255, 255, 255, 0.07); }
+
 :root[data-theme="dark"] .tab-kbd,
 :root[data-theme="dark"] .palette-foot kbd { background: rgba(255, 255, 255, 0.05); border-color: var(--line); }
 :root[data-theme="dark"] .provider-change-badge { color: #FCD34D; background: rgba(252, 211, 77, 0.1); border-color: rgba(252, 211, 77, 0.35); }
@@ -1723,7 +1691,6 @@ h1, h2, h3,
 
 /* Slim dark scrollbars */
 :root[data-theme="dark"] * { scrollbar-width: thin; scrollbar-color: #2C3544 transparent; }
-
 
 /* ======================================================================
    Extras: empty states, status pills, row signals and quick actions,
@@ -1879,7 +1846,7 @@ h1, h2, h3,
 .density-compact .company-taxonomy { font-size: 12px; margin-top: 0; }
 .density-compact .source-badges { margin-top: 2px; }
 .density-compact .row-meta { margin-top: 2px; min-height: 20px; }
-.density-compact .score-ring { transform: scale(0.82); }
+
 .density-compact .status-select { padding-top: 3px; padding-bottom: 3px; }
 
 /* ---------- KPI loading skeletons ---------- */
@@ -1918,18 +1885,8 @@ body { animation: pageIn 0.35s ease both; }
 /* ======================================================================
    Lead cards v2: "Who to call + Company" (Prospect) and "Log this call"
    work mode (Claimed). One filled button per card (Call); everything else
-   is quiet. Score lives in the header as a small badge.
+   is quiet.
    ====================================================================== */
-
-.lead-card-head .score-badge { margin-left: auto; }
-.score-badge {
-  display: inline-flex; align-items: center; white-space: nowrap;
-  font-size: 12px; font-weight: 650; padding: 4px 11px; border-radius: 999px;
-  border: 1px solid transparent;
-}
-.score-badge.tier-high { color: var(--score-high); background: color-mix(in srgb, var(--score-high) 13%, transparent); border-color: color-mix(in srgb, var(--score-high) 35%, transparent); }
-.score-badge.tier-mid { color: var(--score-mid); background: color-mix(in srgb, var(--score-mid) 13%, transparent); border-color: color-mix(in srgb, var(--score-mid) 35%, transparent); }
-.score-badge.tier-low { color: var(--score-low); background: color-mix(in srgb, var(--score-low) 13%, transparent); border-color: color-mix(in srgb, var(--score-low) 35%, transparent); }
 
 .detail-grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
 .detail-grid-work { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
@@ -1950,10 +1907,6 @@ body { animation: pageIn 0.35s ease both; }
 
 /* "Why this lead" tags */
 .reasons-title { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
-.reasons { display: flex; flex-wrap: wrap; gap: 6px; }
-.reason { font-size: 12px; font-weight: 550; padding: 3px 10px; border-radius: 999px; }
-.reason.yes { color: var(--accent-ink); background: var(--accent-soft); }
-.reason.no { color: var(--muted); background: var(--surface-2); }
 
 /* Quiet secondary actions */
 .text-action {
@@ -2150,7 +2103,6 @@ body { animation: pageIn 0.35s ease both; }
 .source-trial.is-on .source-dot { background: var(--score-high); box-shadow: 0 0 0 3px var(--glow-high); }
 .source-trial[hidden] { display: none; }
 
-
 /* ======================================================================
    Search panel decluttered; panel no longer sticky; Territory redesign.
    ====================================================================== */
@@ -2275,7 +2227,6 @@ details.advanced-filters > .quick-picks { margin: 0; padding: 4px 14px 12px; }
 :root[data-theme="dark"] .best-card { background: #1C232D; }
 :root[data-theme="dark"] .territory-tools input[type="search"] { background: var(--field-bg); }
 
-
 /* ======================================================================
    Light theme contrast pass + specialty tag.
 
@@ -2395,8 +2346,7 @@ details.advanced-filters > .quick-picks { margin: 0; padding: 4px 14px 12px; }
 :root[data-theme="light"] .status,
 :root[data-theme="light"] .user-chip { background: #FFFFFF; border-color: var(--line); }
 :root[data-theme="light"] .source-badge { background: var(--surface-2); border-color: var(--hairline); color: var(--muted); }
-:root[data-theme="light"] .progress-track,
-:root[data-theme="light"] .meter { background: #D8DFE8; }
+:root[data-theme="light"] .progress-track { background: #D8DFE8; }
 
 /* Territory: dark text on the shaded cells (white on a light tint is unreadable). */
 :root[data-theme="light"] .heat-cell.is-hot { color: var(--ink); }

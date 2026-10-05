@@ -1,5 +1,5 @@
 // Port of appscript/services/CompanyService.js -- orchestrates
-// NPPES -> dedup -> optionally scrape -> score -> sort. Logic is
+// NPPES -> dedup -> optionally scrape. Logic is
 // unchanged from the Apps Script version; only the I/O calls (Sheets ->
 // Supabase, UrlFetchApp -> fetch) and the warn-once-per-execution comments
 // (meaningless on a stateless Worker request) were dropped.
@@ -24,7 +24,6 @@ import * as Nppes from "./nppes.js";
 import * as Scraper from "./scraper.js";
 import { classifyRole } from "../lib/roleClassifier.js";
 import { createCompany } from "../lib/companyModel.js";
-import { scoreCompany } from "../lib/scoring.js";
 import * as leadsRepo from "../repos/leadsRepo.js";
 import * as searchProgressRepo from "../repos/searchProgressRepo.js";
 import * as ProviderSource from "./providerSource.js";
@@ -478,11 +477,9 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
     );
   }
 
-  companies = companies.map((company) => Object.assign({}, company, { score: scoreCompany(company) }));
-  // With no sort chosen, the page is ordered by score here, as it always was.
-  // A chosen sort was already applied by the database before paging; sorting
-  // again by score would undo it.
-  if (!criteria.sortBy) companies.sort((a, b) => b.score.value - a.score.value);
+  // Leads keep the order the provider table returned them in: NPI order, or the
+  // sort the rep chose (applied by the database before paging, so page one is
+  // the right page).
 
   return {
     count: companies.length,

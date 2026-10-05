@@ -27,8 +27,7 @@ Required manual sequence:
 020_lead_meetings.sql             (before "Book a meeting" works; run on its own, not in RUN_PENDING)
 021_search_insights.sql           (before lead counts, quality filters and sorting work; needs 018)
 022_search_speed.sql              (after 021: cheaper counts, one-call quick picks, no per-row specialty lookup)
-023_provider_scores.sql           (after 022: stored fit scores, ~47 MB, so "best fit first" stays fast; then run select public.refresh_provider_scores();)
-023_provider_scores_uninstall.sql (removes 023 and returns its space)
+024_remove_scoring.sql           (after 022: leads are no longer scored; replaces two search functions, drops the score function)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -77,7 +76,7 @@ in `003`); save their output with the run.
 | `020_lead_meetings.sql` | Adds `leads.meeting_at`, `meeting_duration_min`, `meeting_remind_before_min`, `meeting_email`, `meeting_opener_notes` (additive, nullable) plus a trigger that clears them when `claimed_by` changes | **Not yet run — required for "Book a meeting" in Claimed leads.** See `documentation/plans/MEETINGS_PLAN.md` |
 | `021_search_insights.sql` | Read-only: `search_insights()` (matched / unclaimed / left for you), `search_territory()`, `search_providers_v2()` (quality filters, ZIP, phone and text lookup, sort before paging) and their helpers. Leaves `search_providers()` untouched | **Not yet run — required for the smarter Prospect search.** See `documentation/plans/SEARCH_INSIGHTS_PLAN.md` |
 | `022_search_speed.sql` | Replaces three of 021's functions with cheaper versions: `search_insights()` counts in one pass, new `search_quick_counts()`, and `search_providers_v2()` drops the per-row specialty-name lookup. Read-only, rerun-safe | **Not yet run — optional speed-up; the Worker works without it** |
-| `023_provider_scores.sql` | Stored fit scores: a narrow `provider_scores` table (about **47 MB** for ~380,000 providers: ~31 MB table, ~11 MB primary key, two ~2.4 MB ordering indexes), triggers that mark it stale whenever provider or Medicare data changes, `refresh_provider_scores()`, and a stored-score path in `search_providers_v2()` used only when the table is fresh and the search is one it can answer exactly. Creates two new tables; never writes to existing ones. `023_provider_scores_uninstall.sql` removes it and returns the space | **Not yet run — optional speed-up. Check free space first (`select pg_size_pretty(pg_database_size(current_database()));`), then run it and `select public.refresh_provider_scores();`; repeat the refresh after every monthly data load** |
+| `024_remove_scoring.sql` | Removes fit scoring from search: `provider_filter_sql()` loses the minimum-score filter, `search_providers_v2()` loses the score (default order is NPI order; `sortBy` is `medicare`, `updated` or `name`), and `provider_score_sql()` is dropped. Functions only: no table or data changes; `leads.score_value` / `score_percentage` are left in place, unused | **Not yet run — recommended; the Worker works without it, but the old score sort and filter stay in the database until it is run** |
 
 ## Notes on individual files
 

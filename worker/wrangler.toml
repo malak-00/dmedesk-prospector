@@ -3,6 +3,18 @@ main = "src/index.js"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 
+# A deploy must never delete a variable somebody set in the Cloudflare dashboard.
+# Without this, `wrangler deploy` removes dashboard variables that are not in this
+# file, and a lost NPI_SOURCE would silently put search back on the old mirror.
+keep_vars = true
+
+# Which copy of NPPES search reads from ("mirror" = the old fakeNPI project,
+# "dmedesk" = this project's own npi_records). Set here so it survives every
+# deploy and is reviewed like code. To roll back, change it to "mirror" and
+# deploy. See worker/README.md.
+[vars]
+NPI_SOURCE = "dmedesk"
+
 # All of these are secrets, not vars -- never put real values here.
 # Set them with `wrangler secret put <NAME>` (see worker/README.md):
 #   SUPABASE_URL

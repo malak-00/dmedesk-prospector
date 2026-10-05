@@ -121,22 +121,27 @@ scripts/
 
 | value | meaning |
 |---|---|
-| `mirror` (the default, and anything unrecognised) | the fakeNPI project over HTTP, at `FAKENPI_BASE_URL` |
-| `dmedesk` | this project's own `npi_records`, through `sql/018`'s `search_providers()` |
+| `mirror` (the default if unset, and anything unrecognised) | the fakeNPI project over HTTP, at `FAKENPI_BASE_URL` |
+| `dmedesk` | this project's own `npi_records`, through `sql/021`'s `search_providers_v2()` (kept current by `sql/022` and `sql/024`) |
 
-`dmedesk` needs `sql/018_provider_search.sql` installed; until then a search
-against it returns a 503 naming the file, and `mirror` keeps working.
+**It is set to `dmedesk` in `wrangler.toml`** (`[vars]`), so it is reviewed like code
+and survives every deploy. `keep_vars = true` is also set: without it,
+`wrangler deploy` deletes any variable that exists only in the Cloudflare dashboard,
+and a lost `NPI_SOURCE` would silently put search back on the mirror.
 
-Before switching, compare them on real searches: Admin -> **Search source** ->
+`dmedesk` needs `sql/021_search_insights.sql` and `sql/022_search_speed.sql`
+installed; until then a search returns a 503 naming the file.
+
+**Rolling back:** change the value to `"mirror"` in `wrangler.toml` and run
+`wrangler deploy`. Because bookmarks are kept per source, nothing a rep has saved is
+lost in either direction. (A value changed only in the Cloudflare dashboard is
+overwritten by `wrangler.toml` on the next deploy.)
+
+To compare the two sources on real searches: Admin -> **Search source** ->
 Compare sources (the same thing as `GET /admin/search-compare?state=VA`). It
 runs one search against both and shows each side's count, timing, and any NPI
 one has that the other doesn't -- a gap is usually a provider the last
 monthly refresh hasn't loaded yet.
-
-Set it as a plain variable in the Cloudflare dashboard (it isn't a secret),
-or in `wrangler.toml`. Reverting is setting it back to `mirror`; neither
-direction needs a deploy.
-
 ## Deploy
 
 ```bash

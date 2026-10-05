@@ -40,6 +40,5 @@ export function createCompany(opts = {}) {
       website: Boolean(sources.website),
       cms: Boolean(sources.cms),
     },
-    score: null,
   };
 }

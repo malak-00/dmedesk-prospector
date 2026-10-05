@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Plus+Jakarta+Sans:wght@600..800&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=51">
+<link rel="stylesheet" href="style.css?v=52">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -106,8 +106,8 @@
     <div id="viewSearch">
       <div class="kpi-strip" id="kpiSearch" hidden>
         <div class="kpi-card"><span class="kpi-label">Leads found</span><span class="kpi-value" id="kpiFound">0</span><span class="kpi-sub" id="kpiFoundSub">&nbsp;</span></div>
-        <div class="kpi-card"><span class="kpi-label">High fit (65%+)</span><span class="kpi-value" id="kpiHigh">0</span><span class="kpi-sub" id="kpiHighSub">&nbsp;</span></div>
-        <div class="kpi-card"><span class="kpi-label">Average score</span><span class="kpi-value" id="kpiAvg">0</span><span class="kpi-sub">out of 100</span></div>
+        <div class="kpi-card"><span class="kpi-label">With a phone number</span><span class="kpi-value" id="kpiPhone">0</span><span class="kpi-sub" id="kpiPhoneSub">&nbsp;</span></div>
+        <div class="kpi-card"><span class="kpi-label">Active Medicare billers</span><span class="kpi-value" id="kpiMedicare">0</span><span class="kpi-sub" id="kpiMedicareSub">&nbsp;</span></div>
         <div class="kpi-card"><span class="kpi-label">Selected</span><span class="kpi-value" id="kpiSelected">0</span><span class="kpi-sub">ready to claim</span></div>
       </div>
       <section class="search-panel" id="searchPanel" aria-label="Search filters">
@@ -226,21 +226,11 @@
           <details class="advanced-filters" id="advancedFilters" hidden>
             <summary>
               <span class="adv-title">Lead quality and order</span>
-              <span class="adv-badge" id="advancedSummary">Best fit first</span>
+              <span class="adv-badge" id="advancedSummary">Default order</span>
               <span class="adv-hint">Quick picks and filters for better leads</span>
             </summary>
             <div class="quick-picks" id="quickPicks" hidden aria-label="Quick picks"></div>
             <div class="advanced-grid">
-            <label class="field" title="Fit score is out of 100%: phone on file, a complete address, a decision maker, and Medicare activity each add points.">
-              <span>Minimum fit score</span>
-              <select name="minScore" id="minScoreSelect">
-                <option value="">Any score</option>
-                <option value="25">25% or higher</option>
-                <option value="50">50% or higher</option>
-                <option value="75">75% or higher</option>
-                <option value="100">100% only</option>
-              </select>
-            </label>
             <label class="field" title="Only providers whose ZIP code starts with these digits (3 to 5 digits, for example 331 for the Miami area).">
               <span>ZIP starts with</span>
               <input type="text" name="zip" id="zipInput" inputmode="numeric" maxlength="5" placeholder="e.g. 331" autocomplete="off">
@@ -248,11 +238,10 @@
             <label class="field" title="Decides which leads come first. The order is applied before paging, so page one holds the best matches.">
               <span>Sort by</span>
               <select name="sortBy" id="sortBySelect">
-                <option value="score">Best fit first</option>
+                <option value="" selected>Default order</option>
                 <option value="medicare">Most Medicare activity</option>
                 <option value="updated">Recently updated</option>
                 <option value="name">Company name A to Z</option>
-                <option value="">Original order</option>
               </select>
             </label>
             <div class="advanced-checks">
@@ -325,7 +314,6 @@
             <thead>
               <tr>
                 <th class="col-check"><input type="checkbox" id="selectAll"></th>
-                <th class="col-score sortable" data-sort-key="score">Score<span class="sort-arrow"></span></th>
                 <th class="sortable" data-sort-key="company">Company<span class="sort-arrow"></span></th>
                 <th class="col-specialty sortable" data-sort-key="specialty">Specialty<span class="sort-arrow"></span></th>
                 <th class="sortable" data-sort-key="location">Location<span class="sort-arrow"></span></th>
@@ -335,11 +323,11 @@
               </tr>
             </thead>
             <tbody id="resultsBody">
-              <tr class="empty-row"><td colspan="8">
+              <tr class="empty-row"><td colspan="7">
                 <div class="empty-state">
                   <div class="empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
                   <div class="empty-title">Start your first search</div>
-                  <p class="empty-body">Pick a state or specialty, or look up an NPI or company name above, then search to see scored leads here.</p>
+                  <p class="empty-body">Pick a state or specialty, or look up an NPI or company name above, then search to see leads here.</p>
                   <button type="button" class="btn btn-primary" data-empty-action="focus-search">Set up a search</button>
                   <div class="empty-saved" id="emptySavedSearches"></div>
                 </div>
@@ -804,6 +792,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=51"></script>
+  <script src="app.js?v=52"></script>
 </body>
 </html>

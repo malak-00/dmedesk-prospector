@@ -1,6 +1,48 @@
 # DME Desk Prospector Worklog
 
-## 2026-10-05 — Smarter Prospect search (counts, quality filters, sorting, lookups) — live for admins (trial)
+## 2026-10-05 — Scoring removed; search switched to DME Desk's own table for everyone
+
+### Objective
+
+Remove lead scoring completely (it only measured how complete a provider's data was),
+read search from DME Desk's own provider table for all reps, and make sure a deploy
+can never silently undo that setting.
+
+### Actions Completed
+
+- **Scoring removed:** Worker (`lib/scoring.js` deleted, no scoring in search, the
+  call-brief prompt, lead inserts or the DTO), frontend (score column, ring, tooltip,
+  badges, "High fit" and "Average score" cards, "why this lead" tags, minimum-score
+  filter, "best fit first" sort, "High fit" quick pick, and the dead CSS), and SQL
+  (`sql/024_remove_scoring.sql`, **not yet run**: replaces `provider_filter_sql()` and
+  `search_providers_v2()` without score, drops `provider_score_sql()`; functions only).
+- **Kept deliberately:** `leads.score_value` / `score_percentage` columns and data
+  (dropping a column is irreversible); the Google Sheet "Score" and "Score %" columns,
+  written empty, so later columns keep their positions for external readers.
+- **Deleted before ever being run:** the stored-score table work (`sql/023_*`, which
+  measured 125 MB, then ~47 MB, on a 500 MB free plan). No longer needed.
+- **Source switch:** `worker/wrangler.toml` now has `keep_vars = true` and
+  `[vars] NPI_SOURCE = "dmedesk"`. Every DME Desk search uses `search_providers_v2()`;
+  a specialty with no code matches nothing; "Search more" bookmarks are kept per source
+  (a rep's first DME Desk search restarts at the top but skips what they had seen; their
+  mirror bookmarks are untouched, so rollback loses nothing).
+- New defaults: sort is "Default order" (NPI order, fast); other sorts are Medicare
+  activity, recently updated and name. Prospect gained a Specialty column.
+- Tests: Worker 51 pass; SQL 44 checks (021, 022, 024 in order) on a throwaway
+  Postgres; frontend linted with ESLint (no undefined or unused names).
+
+### Database / System Result
+
+- **No SQL was executed by the agent.** `sql/024` is functions-only and is run by the
+  project owner. No data was changed or deleted.
+- Worker deploy changes which source every rep's search reads from.
+
+### Safety Status
+
+- Claim, ownership and audit logic untouched. Old saved bookmarks are never modified.
+- Rollback: set `NPI_SOURCE` to `"mirror"` in `wrangler.toml` and deploy.
+
+## (earlier the same day) Smarter Prospect search (counts, quality filters, sorting, lookups) — live for admins (trial)
 
 ### Update 4 (same day): lean stored scores, light-theme contrast, specialty
 

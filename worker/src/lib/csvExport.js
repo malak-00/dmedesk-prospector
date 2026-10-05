@@ -78,7 +78,6 @@ export function flattenCompany(company) {
   const address = company.address || {};
   const taxonomy = company.taxonomy || {};
   const places = company.places || {};
-  const score = company.score || {};
 
   return {
     name: company.name,
@@ -98,8 +97,10 @@ export function flattenCompany(company) {
     contactPhone: primaryContact && primaryContact.phone ? primaryContact.phone : "",
     additionalContacts: Math.max(((company.decisionMakers && company.decisionMakers.length) || 1) - 1, 0),
     rating: places.rating != null ? places.rating : "",
-    scoreValue: score.value != null ? score.value : "",
-    scorePercentage: score.percentage != null ? score.percentage : "",
+    // Leads are no longer scored. The two columns stay (empty) so every column
+    // after them keeps its position for anything that reads the sheet by position.
+    scoreValue: "",
+    scorePercentage: "",
     sources: activeSources,
     medicareClaims: company.medicare && company.medicare.totalClaims != null ? company.medicare.totalClaims : "",
     medicareBeneficiaries:

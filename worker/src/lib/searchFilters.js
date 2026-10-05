@@ -3,9 +3,8 @@
 // them from a request, turning criteria into the payload sql/021 expects,
 // suggesting which filter to drop when a search comes up empty, and the
 // one-click "quick picks". No I/O here, so it is unit tested on its own.
-import { WEIGHTS } from "./scoring.js";
 
-export const SORT_OPTIONS = ["score", "medicare", "updated", "name"];
+export const SORT_OPTIONS = ["medicare", "updated", "name"];
 
 const truthy = (value) => value === true || value === "true" || value === "on" || value === "1";
 const digits = (value) => String(value ?? "").replace(/\D/g, "");
@@ -17,9 +16,6 @@ export function readAdvancedCriteria(q) {
   if (truthy(q("hasPhone"))) out.hasPhone = true;
   if (truthy(q("hasDecisionMaker"))) out.hasDecisionMaker = true;
   if (truthy(q("activeMedicare"))) out.activeMedicare = true;
-
-  const minScore = Math.round(Number(q("minScore")));
-  if (Number.isFinite(minScore) && minScore > 0) out.minScore = Math.min(minScore, 100);
 
   const zip = digits(q("zip"));
   if (zip.length >= 3) out.zip = zip.slice(0, 5);
@@ -38,10 +34,11 @@ export function readAdvancedCriteria(q) {
   return out;
 }
 
-// Does this search need sql/021's search_providers_v2?
+// Does this search use an option that changes which providers come back or in
+// what order (as opposed to the original state / city / specialty filters)?
 export function usesAdvancedSearch(criteria = {}) {
   return Boolean(
-    criteria.hasPhone || criteria.hasDecisionMaker || criteria.activeMedicare || criteria.minScore ||
+    criteria.hasPhone || criteria.hasDecisionMaker || criteria.activeMedicare ||
     criteria.zip || criteria.sortBy || criteria.lookupText || criteria.lookupPhone
   );
 }
@@ -57,10 +54,16 @@ const terms = (list, single) => {
   return cleaned.length ? cleaned : undefined;
 };
 
+// A code no real specialty has. Sent when someone asked for specialties we
+// could not find a code for, so the search matches nothing (which is what
+// asking for a specialty that does not exist should do) instead of silently
+// dropping the filter and matching everything.
+export const NO_SUCH_SPECIALTY = "__no_such_specialty__";
+
 // criteria -> the jsonb sql/021's functions read. `collapsed` sends the whole
 // list of states and specialties in one query (what insights and the sorted
 // search want); otherwise it sends the single state/specialty of one
-// fan-out variant, as search_providers always has.
+// fan-out variant.
 export function toFilterPayload(criteria = {}, { collapsed = false } = {}) {
   const claims = criteria.minMedicareClaims;
   const payload = {
@@ -75,19 +78,22 @@ export function toFilterPayload(criteria = {}, { collapsed = false } = {}) {
     hasPhone: criteria.hasPhone || undefined,
     hasDecisionMaker: criteria.hasDecisionMaker || undefined,
     activeMedicare: criteria.activeMedicare || undefined,
-    minScore: criteria.minScore || undefined,
     zip: criteria.zip || undefined,
     minMedicareClaims: claims != null && claims !== "" && Number.isFinite(Number(claims)) && Number(claims) > 0 ? Number(claims) : undefined,
     sortBy: criteria.sortBy || undefined,
-    // The weights live in lib/scoring.js; the database only does the sums.
-    scoreWeights: criteria.minScore || criteria.sortBy ? WEIGHTS : undefined,
   };
+  const askedForSpecialty = Boolean((criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length) || criteria.taxonomyDescription);
   if (collapsed) {
     payload.states = terms(criteria.states, criteria.state);
     payload.taxonomyCodes = terms(criteria.taxonomyCodes, criteria.taxonomyCode);
   } else {
     payload.state = criteria.state || undefined;
     payload.taxonomyCode = criteria.taxonomyCode || undefined;
+  }
+  const haveCode = collapsed ? Boolean(payload.taxonomyCodes) : Boolean(payload.taxonomyCode);
+  if (askedForSpecialty && !haveCode) {
+    if (collapsed) payload.taxonomyCodes = [NO_SUCH_SPECIALTY];
+    else payload.taxonomyCode = NO_SUCH_SPECIALTY;
   }
   Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
   return payload;
@@ -97,7 +103,6 @@ export function toFilterPayload(criteria = {}, { collapsed = false } = {}) {
 // keywords are deliberately not offered: they are a rep's saved default, and
 // a one-click suggestion should never wipe it.
 const RELAXATIONS = [
-  { key: "minScore", active: (c) => c.minScore > 0, label: (c) => `Lower the minimum fit score (now ${c.minScore}%)`, drop: { minScore: undefined } },
   { key: "hasPhone", active: (c) => c.hasPhone, label: () => "Don't require a phone number", drop: { hasPhone: undefined } },
   { key: "hasDecisionMaker", active: (c) => c.hasDecisionMaker, label: () => "Don't require a decision maker on file", drop: { hasDecisionMaker: undefined } },
   { key: "activeMedicare", active: (c) => c.activeMedicare, label: () => "Include providers with no Medicare activity", drop: { activeMedicare: undefined } },
@@ -121,7 +126,6 @@ export function relaxedVariants(criteria = {}) {
 export function quickPickDefinitions(now = new Date()) {
   const year = String(now.getFullYear());
   return [
-    { id: "high-fit", label: "High fit (75%+)", patch: { minScore: 75 }, criteria: { minScore: 75 } },
     { id: "medicare", label: "Active Medicare billers", patch: { activeMedicare: true }, criteria: { activeMedicare: true } },
     { id: "reachable", label: "Phone and owner on file", patch: { hasPhone: true, hasDecisionMaker: true }, criteria: { hasPhone: true, hasDecisionMaker: true } },
     { id: "fresh", label: `Updated in ${year}`, patch: { lastUpdatedYears: [year] }, criteria: { lastUpdatedYears: [year] } },
@@ -134,5 +138,6 @@ export function baseLocationCriteria(criteria = {}) {
   return {
     states: criteria.states, state: criteria.state, city: criteria.city,
     taxonomyCodes: criteria.taxonomyCodes, taxonomyCode: criteria.taxonomyCode,
+    taxonomyDescriptions: criteria.taxonomyDescriptions, taxonomyDescription: criteria.taxonomyDescription,
   };
 }
