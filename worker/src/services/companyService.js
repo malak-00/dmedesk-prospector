@@ -424,16 +424,27 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   // instead of paging forward from the reset run's own results.
   const resetProgress = Boolean(options.resetProgress);
   let effectiveCriteria = criteria;
+  let existingSeenNpis = [];
   if (options.clientProvidedVariantSkips) {
     effectiveCriteria = criteria;
+    if (trackProgress && !resetProgress) {
+      const progress = await getSearchProgressSafe(supabase, options.userId, criteria);
+      if (progress && Array.isArray(progress.seenNpis) && progress.seenNpis.length) {
+        existingSeenNpis = progress.seenNpis;
+        effectiveCriteria = Object.assign({}, criteria, {
+          excludeNpis: (criteria.excludeNpis || []).concat(existingSeenNpis),
+        });
+      }
+    }
   } else if (resetProgress) {
     effectiveCriteria = Object.assign({}, criteria, { variantSkips: {}, excludeNpis: [] });
   } else if (trackProgress) {
     const progress = await getSearchProgressSafe(supabase, options.userId, criteria);
     if (progress) {
+      existingSeenNpis = progress.seenNpis || [];
       effectiveCriteria = Object.assign({}, criteria, {
         variantSkips: progress.variantSkips,
-        excludeNpis: (criteria.excludeNpis || []).concat(progress.seenNpis),
+        excludeNpis: (criteria.excludeNpis || []).concat(existingSeenNpis),
       });
     }
   }
@@ -446,7 +457,10 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   companies = await attachTaxonomyDescriptionsSafe(supabase, companies);
 
   if (trackProgress && !resetProgress) {
-    await saveSearchProgressSafe(supabase, options.userId, criteria, fetchResult.variantSkips, fetchResult.allSeenNpis);
+    const combinedSeenNpis = existingSeenNpis.length
+      ? existingSeenNpis.concat(fetchResult.allSeenNpis)
+      : fetchResult.allSeenNpis;
+    await saveSearchProgressSafe(supabase, options.userId, criteria, fetchResult.variantSkips, combinedSeenNpis);
   }
 
   if (scrapeWebsites) {

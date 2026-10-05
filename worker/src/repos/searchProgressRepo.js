@@ -22,13 +22,18 @@ export function fingerprint(criteria = {}) {
     taxonomies: normalizeList(
       criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length ? criteria.taxonomyDescriptions : [criteria.taxonomyDescription]
     ),
+    taxonomyCodes: normalizeList(
+      criteria.taxonomyCodes && criteria.taxonomyCodes.length ? criteria.taxonomyCodes : [criteria.taxonomyCode]
+    ),
     years: normalizeList(criteria.lastUpdatedYears && criteria.lastUpdatedYears.length ? criteria.lastUpdatedYears : [criteria.lastUpdatedYear]),
     excludeKeywords: normalizeList(criteria.excludeKeywords),
+    requireCmsClaims: Boolean(criteria.requireCmsClaims),
+    minMedicareClaims: criteria.minMedicareClaims != null && !Number.isNaN(Number(criteria.minMedicareClaims)) ? Number(criteria.minMedicareClaims) : "",
   };
   return JSON.stringify(parts);
 }
 
-const MAX_SEEN_NPIS = 4000;
+const MAX_SEEN_NPIS = 20000;
 
 // Never throws -- a resume/persist hiccup should never break an otherwise-
 // working search, same guarantee CompanyService relied on from the Sheets version.
@@ -54,7 +59,7 @@ export async function saveProgress(supabase, userId, criteria, variantSkips, see
   if (!userId) return;
   try {
     const fp = fingerprint(criteria);
-    const capped = (seenNpis || []).map(String).slice(-MAX_SEEN_NPIS);
+    const capped = [...new Set((seenNpis || []).map(String).filter(Boolean))].slice(-MAX_SEEN_NPIS);
     await supabase.from("search_progress").upsert(
       {
         user_id: userId,
