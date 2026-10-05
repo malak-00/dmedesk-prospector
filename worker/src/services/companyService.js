@@ -29,6 +29,7 @@ import * as leadsRepo from "../repos/leadsRepo.js";
 import * as searchProgressRepo from "../repos/searchProgressRepo.js";
 import * as ProviderSource from "./providerSource.js";
 import * as taxonomiesRepo from "../repos/taxonomiesRepo.js";
+import { isLookup, usesAdvancedSearch } from "../lib/searchFilters.js";
 
 const NPPES_PAGE_SIZE = 200;
 // A variant is exhausted once its page comes back short of
@@ -254,11 +255,24 @@ function buildCriteriaVariants(criteria) {
 }
 
 function variantKey(variant) {
+  // One query that holds every state and specialty (the sorted / quality-filter
+  // search) has one bookmark, separate from the per-state-and-specialty ones.
+  if (variant.collapsed) return "*|" + (variant.sortBy || "");
   return (variant.state || "") + "|" + (variant.taxonomyDescription || "");
 }
 
 async function fetchFreshProviders(config, supabase, criteria, desiredLimit, userId) {
-  const variants = criteria.npi ? [criteria] : buildCriteriaVariants(criteria);
+  // A lookup (NPI, phone, name text) finds one business wherever it is, so it
+  // is one query. The sorted / quality-filter search is also one query: the
+  // database applies every state and specialty at once, which is what makes a
+  // sort order mean something across them. Everything else fans out into one
+  // query per state-and-specialty pair, as it always has.
+  const oneQuery = usesAdvancedSearch(criteria) && ProviderSource.resolveSource(config) === ProviderSource.DME_DESK;
+  const variants = isLookup(criteria)
+    ? [criteria]
+    : oneQuery
+    ? [Object.assign({}, criteria, { collapsed: true })]
+    : buildCriteriaVariants(criteria);
   const mergeBranches = !criteria.npi;
   const merger = createBranchMerger();
 
@@ -409,7 +423,7 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
 
   const desiredLimit = criteria.limit || 20;
 
-  const trackProgress = Boolean(options.userId) && !criteria.npi;
+  const trackProgress = Boolean(options.userId) && !isLookup(criteria);
   // resetProgress is a self-contained detour, not a mutation of the saved
   // bookmark: it starts this filter combo over from skip 0 / no excluded
   // NPIs for THIS search session, but never reads OR writes
@@ -465,7 +479,10 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   }
 
   companies = companies.map((company) => Object.assign({}, company, { score: scoreCompany(company) }));
-  companies.sort((a, b) => b.score.value - a.score.value);
+  // With no sort chosen, the page is ordered by score here, as it always was.
+  // A chosen sort was already applied by the database before paging; sorting
+  // again by score would undo it.
+  if (!criteria.sortBy) companies.sort((a, b) => b.score.value - a.score.value);
 
   return {
     count: companies.length,

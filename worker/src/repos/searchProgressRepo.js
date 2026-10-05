@@ -25,6 +25,26 @@ export function fingerprint(criteria = {}) {
     years: normalizeList(criteria.lastUpdatedYears && criteria.lastUpdatedYears.length ? criteria.lastUpdatedYears : [criteria.lastUpdatedYear]),
     excludeKeywords: normalizeList(criteria.excludeKeywords),
   };
+  // The quality filters and sort order change which leads a search holds and
+  // in what order, so a different one is a different search with its own
+  // bookmark. They are added only when set, so every search made before they
+  // existed keeps exactly the fingerprint (and saved progress) it had.
+  const advanced = {};
+  if (criteria.hasPhone) advanced.hasPhone = true;
+  if (criteria.hasDecisionMaker) advanced.hasDecisionMaker = true;
+  if (criteria.activeMedicare) advanced.activeMedicare = true;
+  if (criteria.minScore) advanced.minScore = Number(criteria.minScore);
+  if (criteria.zip) advanced.zip = String(criteria.zip);
+  if (criteria.sortBy) advanced.sortBy = String(criteria.sortBy);
+  // The Medicare minimum only counts once the database applies it (any of the
+  // options above in play); on its own it is still the old after-the-fact
+  // filter, and old searches must keep their fingerprint.
+  if (Object.keys(advanced).length && criteria.minMedicareClaims != null && criteria.minMedicareClaims !== "" && Number(criteria.minMedicareClaims) > 0) {
+    advanced.minMedicareClaims = Number(criteria.minMedicareClaims);
+  }
+  if (Object.keys(advanced).length) parts.advanced = advanced;
+  // An admin trying DME Desk search keeps separate bookmarks from the configured source.
+  if (criteria.sourceTrial) parts.trial = true;
   return JSON.stringify(parts);
 }
 

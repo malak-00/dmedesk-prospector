@@ -2028,3 +2028,124 @@ body { animation: pageIn 0.35s ease both; }
 .field-optional { font-style: normal; font-weight: 500; font-size: 11px; color: var(--muted-2); margin-left: 4px; }
 .meeting-card textarea { min-height: 110px; line-height: 1.5; }
 .meeting-status-check { font-size: 13px; }
+
+/* ======================================================================
+   Smarter search: lookup hint, quality filters, availability line, quick
+   picks, progress bar, territory map, saved-search badges.
+   ====================================================================== */
+
+.lookup-hint { min-height: 14px; font-size: 11.5px; font-weight: 500; color: var(--accent-ink); }
+.lookup-hint:empty { display: none; }
+
+/* Quality and sort controls */
+.advanced-filters {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px 18px; align-items: end;
+  margin: 18px 0 0; padding: 14px 16px 16px; min-width: 0;
+  border: 1px dashed var(--line); border-radius: var(--radius-md); background: transparent;
+}
+.advanced-filters[hidden] { display: none; }
+.advanced-filters legend { padding: 0 8px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.advanced-checks { display: flex; flex-direction: column; gap: 8px; grid-column: span 2; }
+@media (max-width: 640px) { .advanced-checks { grid-column: auto; } }
+#searchForm.is-loading .advanced-filters { opacity: 0.55; pointer-events: none; }
+
+/* "412 match, 137 not yet claimed, 96 left for you" */
+.availability {
+  margin: 12px 0 0; padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+  font-size: 13.5px; color: var(--ink); background: var(--accent-soft);
+  border: 1px solid var(--selection-chip-border); border-radius: var(--radius-md);
+  transition: opacity 0.15s ease;
+}
+.availability[hidden] { display: none; }
+.availability.is-stale { opacity: 0.55; }
+.availability strong { font-weight: 700; font-variant-numeric: tabular-nums; }
+.availability .avail-left { color: var(--accent-ink); font-size: 15px; }
+.avail-dot { color: var(--muted-2); margin: 0 2px; }
+.avail-sub { font-size: 12px; color: var(--muted); }
+.availability.is-hint { background: transparent; border-style: dashed; border-color: var(--line); color: var(--muted); }
+.availability.is-empty { background: var(--login-error-bg); border-color: var(--login-error-border); }
+.availability.is-empty .avail-left { color: var(--score-low); }
+.avail-suggest { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.suggest-btn {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  font-family: var(--font-ui); font-size: 12.5px; font-weight: 600; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--input-line, var(--hairline)); border-radius: 999px; padding: 5px 12px;
+}
+.suggest-btn b { color: var(--score-high); font-variant-numeric: tabular-nums; }
+.suggest-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+
+/* Quick picks */
+.quick-picks { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 0; }
+.quick-picks[hidden] { display: none; }
+.pick-chip {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  font-family: var(--font-ui); font-size: 12.5px; font-weight: 600; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--input-line, var(--hairline)); border-radius: 999px; padding: 5px 6px 5px 12px;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.pick-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
+.pick-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+.pick-chip.is-active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.pick-count {
+  min-width: 26px; padding: 1px 8px; text-align: center; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+  border-radius: 999px; color: var(--accent-ink); background: var(--accent-soft);
+}
+.pick-chip.is-active .pick-count { color: var(--on-accent); background: rgba(255, 255, 255, 0.25); }
+
+/* Progress through a search */
+.search-progress { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+.search-progress[hidden] { display: none; }
+.progress-track { width: 110px; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.4s ease; }
+
+/* Territory explorer */
+.territory-card { width: min(980px, 100%); max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; }
+.territory-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.territory-body { min-height: 0; overflow: auto; }
+.territory-scroll { overflow: auto; max-height: 62vh; border: 1px solid var(--line); border-radius: var(--radius-md); }
+.territory-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12.5px; }
+.territory-table th, .territory-table td { padding: 4px; text-align: center; }
+.territory-table thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--surface); padding: 10px 6px; vertical-align: bottom;
+  font-size: 11px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--line);
+}
+.territory-table thead th span { display: block; max-width: 92px; margin: 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.territory-table tbody th { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; padding: 3px 6px; }
+.territory-table thead th:first-child { left: 0; z-index: 3; }
+.heat-state {
+  display: flex; align-items: center; gap: 8px; width: 100%; cursor: pointer; padding: 6px 8px; border-radius: 8px;
+  font-family: var(--font-ui); font-size: 12.5px; font-weight: 700; color: var(--ink); background: none; border: none;
+}
+.heat-state span { font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
+.heat-state:hover { background: var(--accent-soft); }
+.heat-cell {
+  min-width: 52px; padding: 7px 6px; cursor: pointer; border: 1px solid transparent; border-radius: 8px;
+  font-family: var(--font-ui); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink);
+  background: color-mix(in srgb, var(--accent) calc(var(--heat, 0.1) * 70%), transparent);
+}
+.heat-cell.is-hot { color: var(--on-accent); }
+.heat-cell:hover { border-color: var(--ink); }
+.heat-empty { color: var(--muted-2); }
+.territory-foot { margin: 10px 2px 0; font-size: 12px; }
+
+/* Saved-search badge */
+.saved-badge { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.saved-badge:empty { display: none; }
+.saved-badge.is-new { color: var(--score-high); }
+.saved-badge.is-down { color: var(--score-mid); }
+
+:root[data-theme="dark"] .advanced-filters { border-color: rgba(255, 255, 255, 0.1); }
+:root[data-theme="dark"] .suggest-btn, :root[data-theme="dark"] .pick-chip { background: var(--field-bg); }
+:root[data-theme="dark"] .pick-chip.is-active { background: var(--accent); }
+:root[data-theme="dark"] .territory-table thead th, :root[data-theme="dark"] .territory-table tbody th { background: #1C232D; }
+
+@media (prefers-reduced-motion: reduce) {
+  .availability, .progress-fill { transition: none; }
+}
+
+/* Admin trial: which provider table my searches read from */
+.source-trial { gap: 8px; }
+.source-trial .source-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-2); }
+.source-trial.is-on { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+.source-trial.is-on .source-dot { background: var(--score-high); box-shadow: 0 0 0 3px var(--glow-high); }
+.source-trial[hidden] { display: none; }

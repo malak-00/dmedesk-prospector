@@ -1,5 +1,61 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-05 — Smarter Prospect search (counts, quality filters, sorting, lookups) — live for admins (trial)
+
+### Update (same day)
+
+- `sql/021` was run by the project owner. Worker deployed as version
+  `b14c364c-c4f3-4887-b682-badb40849291`; frontend pushed.
+- Added an **admin-only trial**: `X-Search-Source: dmedesk` is honoured for admin
+  sessions only (`worker/src/lib/sourceTrial.js`), so admins can search DME Desk's
+  own provider table while everyone else stays on the mirror. `NPI_SOURCE` is
+  still unset on the live Worker (verified by comparing the bindings of the
+  versions before and after this deploy: no plain-text variables existed).
+- Worker tests: 45 pass across 6 files. No data was changed.
+- Findings from the source comparison and the open items before a full switch
+  are in `documentation/plans/SEARCH_INSIGHTS_PLAN.md`.
+
+### Original entry (written before deployment)
+
+### Objective
+
+Stop reps guessing which filter combinations still hold leads: show how many
+are left for them, explain and fix empty searches, add quality filters and
+sorting that apply before paging, and widen the lookup box.
+
+### Actions Completed
+
+- `sql/021_search_insights.sql` (new, **not run**): read-only `search_insights()`,
+  `search_territory()`, `search_providers_v2()`, `search_features()` and helpers.
+  `search_providers()` (018) is untouched. Tested on a throwaway in-memory
+  Postgres: `sql/tests/021_search_insights.test.mjs`, 35 checks.
+- Worker: `lib/searchFilters.js`, `services/searchInsights.js`, new routes
+  `GET /search/capabilities`, `/search/insights`, `/search/quickpicks`,
+  `/search/territory`; `providerSearch.js` routes searches that use the new
+  options to v2; `companyService.js` runs a sorted/filtered search as one query
+  and keeps the database's order; phone and text lookups are one query with no
+  paging memory. Searches using none of the new options take the original path.
+- Search-progress fingerprints gain the new options only when set. Verified
+  byte-identical to the committed version for existing-style searches.
+- Frontend: availability line, suggestions, quick picks, progress bar, territory
+  explorer, saved-search "new since" badges, quality-filter controls, sort
+  select, and the smart lookup box (NPI / phone / ZIP / name or owner).
+- Worker tests: 40 pass across 5 files (new: searchFilters, searchFlow, meetings).
+
+### Database / System Result
+
+- **No SQL was run and nothing was deployed.** All new database functions are
+  read-only and rerun-safe; they write no table.
+- Until `021` is run and searches read from DME Desk's own table
+  (`NPI_SOURCE=dmedesk`), the new controls stay hidden and search is unchanged.
+
+### Safety Status
+
+- Claim, ownership and audit logic untouched. New functions are `security
+  definer` with execute granted to `service_role` only, like 018. Every value
+  reaches SQL through `%L` quoting (an injection attempt is a test case).
+- Exclude keywords are never offered as a one-click "loosen" suggestion.
+
 ## 2026-10-05 — Lead cards v2, status/call-log merge, meetings (first slice)
 
 ### Objective

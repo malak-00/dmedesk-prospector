@@ -25,6 +25,7 @@ Required manual sequence:
 017_lead_sync_restart.sql         (run a claimed-lead sync again from the start)
 018_provider_search.sql           (before search can read from this project)
 020_lead_meetings.sql             (before "Book a meeting" works; run on its own, not in RUN_PENDING)
+021_search_insights.sql           (before lead counts, quality filters and sorting work; needs 018)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -70,8 +71,8 @@ in `003`); save their output with the run.
 | `016_refresh_run_recovery.sql` | `abort_medicare_refresh()`, and `abort_nppes_refresh()` relaxed to accept a `complete` run: closing out a staged run whose staging is gone | Executed 2026-09-17 (used to close out the empty Medicare run) |
 | `017_lead_sync_restart.sql` | `reset_lead_sync()`: clears the sync cursor so a run that has been synced can be synced again | **Not yet run — needed for `--sync-run --restart`** |
 | `018_provider_search.sql` | `search_providers()` + its indexes: provider search against this project's own `npi_records`, every filter in SQL | **Production verification pending — required before `NPI_SOURCE=dmedesk`** |
-
 | `020_lead_meetings.sql` | Adds `leads.meeting_at`, `meeting_duration_min`, `meeting_remind_before_min`, `meeting_email`, `meeting_opener_notes` (additive, nullable) plus a trigger that clears them when `claimed_by` changes | **Not yet run — required for "Book a meeting" in Claimed leads.** See `documentation/plans/MEETINGS_PLAN.md` |
+| `021_search_insights.sql` | Read-only: `search_insights()` (matched / unclaimed / left for you), `search_territory()`, `search_providers_v2()` (quality filters, ZIP, phone and text lookup, sort before paging) and their helpers. Leaves `search_providers()` untouched | **Not yet run — required for the smarter Prospect search.** See `documentation/plans/SEARCH_INSIGHTS_PLAN.md` |
 
 ## Notes on individual files
 

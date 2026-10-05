@@ -28,10 +28,13 @@ import * as CompanyService from "./services/companyService.js";
 import * as CsvExport from "./lib/csvExport.js";
 import * as GoogleSheets from "./services/googleSheets.js";
 import * as GoogleCalendar from "./services/googleCalendar.js";
+import * as SearchInsights from "./services/searchInsights.js";
+import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
+import { applySourceTrial, SOURCE_HEADER } from "./lib/sourceTrial.js";
 
 const app = new Hono();
 
-app.use("*", cors({ origin: "*", allowHeaders: ["Content-Type", "Authorization"], allowMethods: ["GET", "POST", "OPTIONS"] }));
+app.use("*", cors({ origin: "*", allowHeaders: ["Content-Type", "Authorization", SOURCE_HEADER], allowMethods: ["GET", "POST", "OPTIONS"] }));
 
 function ok(data) {
   return { success: true, data };
@@ -53,6 +56,12 @@ app.use("*", async (c, next) => {
     return c.json({ success: false, status: 401, error: "Not signed in (or session expired)" }, 401);
   }
   c.set("session", session);
+
+  // An admin can opt in to searching DME Desk's own provider table while
+  // everyone else stays on the configured source. See lib/sourceTrial.js.
+  const trial = applySourceTrial(c.get("config"), session, c.req.header(SOURCE_HEADER));
+  c.set("config", trial.config);
+  c.set("sourceTrial", trial.trial);
   return next();
 });
 
@@ -127,6 +136,11 @@ function readSearchCriteria(c) {
     excludeNpis: parseCommaList(q("excludeNpis")),
     requireCmsClaims: q("requireCmsClaims") === "true" || q("requireCmsClaims") === "on",
     minMedicareClaims: q("minMedicareClaims") ? Number(q("minMedicareClaims")) : undefined,
+    // Quality filters, sort order, and text/phone lookup (sql/021).
+    ...readAdvancedCriteria(q),
+    // An admin's trial of DME Desk search keeps its own paging bookmarks, so
+    // trying it never disturbs the bookmarks made on the configured source.
+    sourceTrial: c.get("sourceTrial") || undefined,
   };
 }
 
@@ -137,6 +151,9 @@ function hasAnySearchCriteria(criteria) {
       criteria.nameContains ||
       (criteria.nameContainsTerms && criteria.nameContainsTerms.length) ||
       criteria.city ||
+      criteria.lookupText ||
+      criteria.lookupPhone ||
+      criteria.zip ||
       criteria.taxonomyDescription ||
       (criteria.taxonomyDescriptions && criteria.taxonomyDescriptions.length)
   );
@@ -224,11 +241,22 @@ app.get("/admin/search-compare", async (c) => {
   }));
 });
 
+// The quality filters, sorting and text/phone lookups run in DME Desk's own
+// provider table. Quietly ignoring them against the mirror would hand back
+// results that don't match what was asked for, so say so instead.
+function mirrorCannotDo(c, criteria) {
+  if (!usesAdvancedSearch(criteria)) return null;
+  if (ProviderSource.resolveSource(c.get("config")) === ProviderSource.DME_DESK) return null;
+  return c.json({ success: false, status: 400, error: "Quality filters, sorting and name/phone lookups need searches to read from DME Desk's own provider table (NPI_SOURCE=dmedesk)." }, 400);
+}
+
 app.get("/search/companies", async (c) => {
   let criteria = readSearchCriteria(c);
   if (!hasAnySearchCriteria(criteria)) {
     return c.json({ success: false, status: 400, error: "At least one of NPI, company name, city, or specialty is required -- a state alone isn't specific enough for NPPES" }, 400);
   }
+  const refused = mirrorCannotDo(c, criteria);
+  if (refused) return refused;
   criteria = await attachTaxonomyCodes(supabaseFor(c), criteria);
   const session = c.get("session");
   const data = await CompanyService.searchCompanies(c.get("config"), supabaseFor(c), criteria, {
@@ -238,6 +266,55 @@ app.get("/search/companies", async (c) => {
     clientProvidedVariantSkips: Boolean(c.req.query("variantSkips")),
     resetProgress: c.req.query("resetProgress") === "true",
   });
+  return c.json(ok(data));
+});
+
+// ---- search insights (sql/021) ---------------------------------------------
+
+app.get("/search/capabilities", async (c) => {
+  const data = await SearchInsights.getCapabilities(c.get("config"), supabaseFor(c));
+  return c.json(ok({ ...data, trial: Boolean(c.get("sourceTrial")) }));
+});
+
+async function insightsCriteria(c) {
+  const criteria = readSearchCriteria(c);
+  return attachTaxonomyCodes(supabaseFor(c), criteria);
+}
+
+// Is the answer to "how many?" even meaningful for this search? A lookup is
+// one business, and a request with no filters at all would just count the table.
+function insightsNotApplicable(criteria) {
+  if (criteria.npi || criteria.lookupText || criteria.lookupPhone) return { lookup: true };
+  // The sort order is always sent (it defaults to "best fit first") and isn't a
+  // filter, so it must not make an empty form look like a search.
+  const { sortBy: _ignored, ...withoutSort } = criteria;
+  const hasFilter = hasAnySearchCriteria(criteria) || (criteria.states && criteria.states.length) || criteria.state ||
+    (criteria.lastUpdatedYears && criteria.lastUpdatedYears.length) || usesAdvancedSearch(withoutSort);
+  return hasFilter ? null : { empty: true };
+}
+
+app.get("/search/insights", async (c) => {
+  const caps = await SearchInsights.getCapabilities(c.get("config"), supabaseFor(c));
+  if (!caps.advanced) return c.json({ success: false, status: 409, error: caps.reason }, 409);
+  const criteria = await insightsCriteria(c);
+  const skip = insightsNotApplicable(criteria);
+  if (skip) return c.json(ok(skip));
+  const data = await SearchInsights.getInsights(supabaseFor(c), c.get("session").id, criteria);
+  return c.json(ok(data));
+});
+
+app.get("/search/quickpicks", async (c) => {
+  const caps = await SearchInsights.getCapabilities(c.get("config"), supabaseFor(c));
+  if (!caps.advanced) return c.json({ success: false, status: 409, error: caps.reason }, 409);
+  const criteria = await insightsCriteria(c);
+  const picks = await SearchInsights.getQuickPicks(supabaseFor(c), criteria);
+  return c.json(ok({ picks }));
+});
+
+app.get("/search/territory", async (c) => {
+  const caps = await SearchInsights.getCapabilities(c.get("config"), supabaseFor(c));
+  if (!caps.advanced) return c.json({ success: false, status: 409, error: caps.reason }, 409);
+  const data = await SearchInsights.getTerritory(supabaseFor(c));
   return c.json(ok(data));
 });
 

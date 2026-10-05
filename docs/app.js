@@ -51,7 +51,21 @@ function clearSession() {
 
 function authHeaders() {
   const token = getSession()?.token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  if (!token) return {};
+  const headers = { Authorization: `Bearer ${token}` };
+  // Admins trying DME Desk's own provider table say so on every request; the
+  // server honours it for admins only and ignores it for anyone else.
+  if (sourceTrialActive()) headers["X-Search-Source"] = "dmedesk";
+  return headers;
+}
+
+// Admin-only trial of searching DME Desk's own provider table. On by default
+// for admins, remembered per browser, and switched off with one click.
+const SOURCE_TRIAL_KEY = "dmeProspectorSourceTrial"; // "off" | unset (on)
+
+function sourceTrialActive() {
+  if (!getSession()?.isAdmin) return false;
+  try { return localStorage.getItem(SOURCE_TRIAL_KEY) !== "off"; } catch { return true; }
 }
 
 async function apiGet(path, params = {}) {
@@ -140,6 +154,10 @@ const state = {
   statuses: [],
   reminderTargetIndex: null,
   meetingTargetIndex: null,
+  // What this deployment can do for search: { advanced: bool, reason? }; null until asked.
+  searchCaps: null,
+  insightsTimer: null,
+  insightsSeq: 0,
   // Which single call-log entry (if any) is currently showing its inline
   // editor -- only one at a time app-wide. Re-rendering the detail panel
   // (the same "recompute from state" approach used everywhere else in this
@@ -359,6 +377,9 @@ function showLogin() {
   els.userChip.hidden = true;
   els.suggestBtn.hidden = true;
   els.adminTab.hidden = true;
+  state.searchCaps = null;
+  applySearchCaps();
+  applySourceTrialUi();
   // Covers both an explicit sign-out and an auto-triggered one (a 401 from
   // any API call routes here too, via unwrap()) -- either way, background
   // polling against a session that's no longer valid should stop.
@@ -376,6 +397,8 @@ function hideLogin() {
     els.suggestBtn.hidden = false;
     els.adminTab.hidden = !session.isAdmin;
     applyExcludeKeywordsDefaultIfBlank();
+    applySourceTrialUi();
+    loadSearchCapabilities();
   }
 }
 
@@ -1596,25 +1619,72 @@ function buildSearchParams(formData) {
   return applyLookupField(params);
 }
 
-// The first field takes either a 10-digit NPI (exact match -- the Worker
-// ignores every other filter for it) or a company name. A name is sent as a
-// name-contains search with the other filters dropped, so "lookup" means the
-// same thing for both: find this one business, wherever it is.
-const LOOKUP_IGNORED_PARAMS = ["nameContainsTerms", "excludeKeywords", "states", "taxonomyDescriptions", "lastUpdatedYears", "city", "minMedicareClaims"];
+// The first field is a smart lookup box. What you type decides what it does:
+//   10 digits                    -> an exact NPI (the Worker ignores every other filter)
+//   a formatted phone number     -> that business, by its phone or its owner's phone
+//   exactly 5 digits             -> a ZIP-code filter (the other filters still apply)
+//   anything else                -> a business or owner NAME, wherever it is
+// NPI, phone and name lookups mean "find this one business", so the other
+// filters are dropped for them. Phone, ZIP and name-by-owner need the DME Desk
+// provider table (sql/021); without it a name still works the old way.
+const LOOKUP_IGNORED_PARAMS = ["nameContainsTerms", "excludeKeywords", "states", "taxonomyDescriptions", "lastUpdatedYears", "city", "minMedicareClaims",
+  "hasPhone", "hasDecisionMaker", "activeMedicare", "minScore", "zip", "sortBy"];
+const ADVANCED_PARAMS = ["hasPhone", "hasDecisionMaker", "activeMedicare", "minScore", "zip", "sortBy"];
 
 function isNpiLookupValue(value) {
   return /^\d{10}$/.test(String(value || "").trim());
 }
 
+function searchAdvancedAvailable() {
+  return Boolean(state.searchCaps && state.searchCaps.advanced);
+}
+
+// What kind of lookup is this text? { type: "none" | "npi" | "phone" | "zip" | "name", value }
+function classifyLookup(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return { type: "none", value: "" };
+  if (isNpiLookupValue(text)) return { type: "npi", value: text };
+  const digits = text.replace(/\D/g, "");
+  const looksLikePhone = /^\+?1?[\s().-]*\d{3}[\s().-]*\d{3}[\s.-]*\d{4}$/.test(text) && /[\s().+-]/.test(text) && digits.length >= 10;
+  if (looksLikePhone) return { type: "phone", value: digits.slice(-10) };
+  if (/^\d{5}$/.test(text)) return { type: "zip", value: text };
+  return { type: "name", value: text.replace(/,/g, " ").replace(/\s+/g, " ").trim() };
+}
+
 function applyLookupField(params) {
-  const lookup = String(params.npi || "").trim();
-  if (!lookup) return params;
-  if (isNpiLookupValue(lookup)) { params.npi = lookup; return params; }
+  // Controls for options this deployment can't honour (sql/021 not run, or
+  // searches still reading the mirror) must not send anything.
+  if (!searchAdvancedAvailable()) ADVANCED_PARAMS.forEach((key) => { delete params[key]; });
+
+  const lookup = classifyLookup(params.npi);
+  if (lookup.type === "none") { delete params.npi; return params; }
+  if (lookup.type === "npi") { params.npi = lookup.value; return params; }
+
+  const advanced = searchAdvancedAvailable();
+  if (lookup.type === "zip" && advanced) {
+    delete params.npi;
+    params.zip = lookup.value;
+    return params;
+  }
+
+  // Phone, name (or a ZIP/phone this deployment can't use, which falls back to a name search).
   LOOKUP_IGNORED_PARAMS.forEach((key) => { delete params[key]; });
   delete params.npi;
-  // The server splits this list on commas, so a comma inside a name ("Smith, LLC") would become two terms.
-  params.nameContainsTerms = lookup.replace(/,/g, " ").replace(/\s+/g, " ").trim();
+  if (advanced && lookup.type === "phone") params.lookupPhone = lookup.value;
+  else if (advanced) params.lookupText = lookup.type === "name" ? lookup.value : String(lookup.value);
+  else params.nameContainsTerms = (lookup.type === "name" ? lookup.value : String(lookup.value)).replace(/,/g, " ");
   return params;
+}
+
+// A one-line explanation of what the box will do with what is typed.
+function lookupHintText(raw) {
+  const lookup = classifyLookup(raw);
+  const advanced = searchAdvancedAvailable();
+  if (lookup.type === "npi") return "Exact NPI lookup. Other filters are ignored.";
+  if (lookup.type === "phone") return advanced ? "Phone lookup (company or owner line). Other filters are ignored." : "Phone lookup needs the DME Desk provider table; searching it as text.";
+  if (lookup.type === "zip") return advanced ? "Filters to this ZIP code. Your other filters still apply." : "Searching this as text.";
+  if (lookup.type === "name") return advanced ? "Finds this company or owner by name. Other filters are ignored." : "Finds companies with this in their name. Other filters are ignored.";
+  return "";
 }
 
 // The whole search (NPPES fetch + Foursquare/OSM/CMS enrichment + optional
@@ -1763,7 +1833,7 @@ function setSearchFormDisabled(disabled) {
   if (kpiStrip) {
     kpiStrip.classList.toggle("is-loading", disabled);
     if (disabled) kpiStrip.hidden = false;
-    else updateProspectKpis();
+    else { updateProspectKpis(); scheduleInsights(250); } // a finished search changes what is left for you
   }
 }
 
@@ -4505,7 +4575,16 @@ function renderFilterChips() {
   const summarize = (items, noun) => (items.length <= 3 ? items.join(", ") : `${items.length} ${noun}`);
   const chips = [];
 
-  if (value("npi")) chips.push({ key: "npi", label: isNpiLookupValue(value("npi")) ? `NPI ${value("npi")}` : `Name lookup: ${value("npi")}` });
+  if (value("npi")) {
+    const lookup = classifyLookup(value("npi"));
+    const label = { npi: `NPI ${lookup.value}`, phone: `Phone ${value("npi")}`, zip: `ZIP ${lookup.value}`, name: `Name lookup: ${value("npi")}` }[lookup.type];
+    if (label) chips.push({ key: "npi", label });
+  }
+  if (value("minScore")) chips.push({ key: "minScore", label: `Fit score ${value("minScore")}%+` });
+  if (value("zip")) chips.push({ key: "zip", label: `ZIP ${value("zip")}*` });
+  if (form.elements.hasPhone && form.elements.hasPhone.checked) chips.push({ key: "hasPhone", label: "Has phone" });
+  if (form.elements.hasDecisionMaker && form.elements.hasDecisionMaker.checked) chips.push({ key: "hasDecisionMaker", label: "Has decision maker" });
+  if (form.elements.activeMedicare && form.elements.activeMedicare.checked) chips.push({ key: "activeMedicare", label: "Active Medicare biller" });
   const states = checked("states").map((cb) => cb.value);
   if (states.length) chips.push({ key: "states", label: `State: ${summarize(states, "states")}` });
   if (value("city")) chips.push({ key: "city", label: `City: ${value("city")}` });
@@ -4517,6 +4596,7 @@ function renderFilterChips() {
   const nameTerms = value("nameContainsTerms").split(",").map((t) => t.trim()).filter(Boolean);
   if (nameTerms.length) chips.push({ key: "nameContains", label: `Name has: ${summarize(nameTerms, "terms")}` });
 
+  scheduleInsights();
   host.innerHTML = chips.length
     ? chips.map((c) => `<span class="filter-chip">${escapeHtml(c.label)}<button type="button" class="filter-chip-x" data-chip="${c.key}" aria-label="Remove filter: ${escapeHtml(c.label)}">×</button></span>`).join("")
     : '<span class="muted-note">No filters applied</span>';
@@ -4524,7 +4604,8 @@ function renderFilterChips() {
 
 function removeFilterChip(key) {
   const form = els.form;
-  if (["npi", "city", "minMedicareClaims"].includes(key)) form.elements[key].value = "";
+  if (["npi", "city", "minMedicareClaims", "minScore", "zip"].includes(key)) form.elements[key].value = "";
+  else if (["hasPhone", "hasDecisionMaker", "activeMedicare"].includes(key)) form.elements[key].checked = false;
   else if (key === "states") document.getElementById("stateClearBtn").click();
   else if (key === "taxonomy") document.getElementById("taxonomyClearBtn").click();
   else if (key === "years") document.getElementById("yearClearBtn").click();
@@ -4580,6 +4661,275 @@ document.getElementById("navCollapse").addEventListener("click", () => {
 });
 window.addEventListener("resize", applyNavRail);
 applyNavRail();
+
+/* ---------- Search insights: availability, quick picks, progress, territory ---------- */
+
+// Which "remove this" chip action undoes each suggestion the server offers.
+const RELAX_TO_CHIP = {
+  minScore: "minScore", hasPhone: "hasPhone", hasDecisionMaker: "hasDecisionMaker", activeMedicare: "activeMedicare",
+  minMedicareClaims: "minMedicareClaims", zip: "zip", lastUpdatedYears: "years", city: "city", nameContains: "nameContains", taxonomy: "taxonomy",
+};
+
+function formatCount(n, capped) {
+  return Number(n || 0).toLocaleString() + (capped ? "+" : "");
+}
+
+async function loadSearchCapabilities() {
+  try {
+    state.searchCaps = await apiGet("search/capabilities");
+  } catch {
+    state.searchCaps = { advanced: false }; // counts are a convenience; searching still works without them
+  }
+  applySearchCaps();
+}
+
+// Shows the controls this deployment supports and hides the rest, so nothing
+// on screen promises something the server can't do.
+function applySearchCaps() {
+  const on = searchAdvancedAvailable();
+  document.getElementById("advancedFilters").hidden = !on;
+  document.getElementById("territoryBtn").hidden = !on;
+  document.getElementById("availability").hidden = true;
+  document.getElementById("quickPicks").hidden = true;
+  document.getElementById("searchProgress").hidden = true;
+  // Only promise phone, ZIP and owner-name lookups where they work.
+  const label = document.querySelector("label.field:has(#lookupInput) > span");
+  if (label) label.textContent = on ? "Lookup: NPI, phone, ZIP or name" : "NPI or company name (lookup)";
+  document.getElementById("lookupInput").placeholder = on ? "NPI, (954) 907-8765, 33024, or a name" : "1234567890 or company name";
+  updateLookupHint();
+  if (on) scheduleInsights(0);
+}
+
+/* Admin trial: which provider table my searches read from */
+
+function applySourceTrialUi() {
+  const btn = document.getElementById("sourceTrialBtn");
+  if (!btn) return;
+  const isAdmin = Boolean(getSession()?.isAdmin);
+  btn.hidden = !isAdmin;
+  if (!isAdmin) return;
+  const on = sourceTrialActive();
+  btn.classList.toggle("is-on", on);
+  btn.setAttribute("aria-pressed", String(on));
+  document.getElementById("sourceTrialLabel").textContent = on ? "Search source: DME Desk (trial)" : "Search source: current";
+}
+
+document.getElementById("sourceTrialBtn").addEventListener("click", () => {
+  const turningOn = !sourceTrialActive();
+  try { localStorage.setItem(SOURCE_TRIAL_KEY, turningOn ? "on" : "off"); } catch { /* storage blocked: the choice lasts until reload */ }
+  applySourceTrialUi();
+  // Paging memory belongs to the source it was made on, so start clean.
+  state.lastSearchParams = null;
+  state.searchMoreSeenNpis = [];
+  els.searchMoreBtn.hidden = true;
+  loadSearchCapabilities();
+  showToast(turningOn ? "Your searches now read from DME Desk's own provider table (trial). Search again." : "Your searches are back on the current source. Search again.");
+});
+
+function updateLookupHint() {
+  const hint = document.getElementById("lookupHint");
+  if (hint) hint.textContent = lookupHintText(document.getElementById("lookupInput").value);
+}
+document.getElementById("lookupInput").addEventListener("input", updateLookupHint);
+
+// What the form currently asks for, in the shape the server's /search/* routes read.
+function insightParams() {
+  const params = buildSearchParams(new FormData(els.form));
+  ["limit", "enrich", "scrape", "resetProgress"].forEach((key) => { delete params[key]; });
+  return params;
+}
+
+function scheduleInsights(delay = 700) {
+  if (!searchAdvancedAvailable()) return;
+  clearTimeout(state.insightsTimer);
+  document.getElementById("availability").classList.add("is-stale");
+  state.insightsTimer = setTimeout(runInsights, delay);
+}
+
+async function runInsights() {
+  // The form is locked while a search runs, and a locked form posts nothing.
+  if (els.form.classList.contains("is-loading")) { scheduleInsights(600); return; }
+  const seq = ++state.insightsSeq;
+  const params = insightParams();
+  try {
+    const [insights, picks] = await Promise.all([
+      apiGet("search/insights", params),
+      apiGet("search/quickpicks", params).catch(() => null),
+    ]);
+    if (seq !== state.insightsSeq) return; // a newer question is already on its way
+    renderAvailability(insights);
+    renderQuickPicks(picks && picks.picks, insights);
+    renderSearchProgress(insights);
+  } catch (err) {
+    if (seq !== state.insightsSeq) return;
+    console.log("[insights] " + err.message);
+    const box = document.getElementById("availability");
+    box.classList.remove("is-stale");
+    box.hidden = true;
+  }
+}
+
+function renderAvailability(ins) {
+  const box = document.getElementById("availability");
+  box.classList.remove("is-stale");
+  if (ins.lookup) { box.hidden = true; return; }
+  box.hidden = false;
+  if (ins.empty) {
+    box.className = "availability is-hint";
+    box.innerHTML = '<span class="avail-main">Pick a state, city or specialty to see how many leads are available.</span>';
+    return;
+  }
+  const none = ins.matched === 0 || ins.left === 0;
+  box.className = `availability${none ? " is-empty" : ""}`;
+  let html = `<span class="avail-main"><strong>${formatCount(ins.matched, ins.capped.matched)}</strong> providers match
+    <span class="avail-dot">·</span> <strong>${formatCount(ins.unclaimed, ins.capped.unclaimed)}</strong> not yet claimed
+    <span class="avail-dot">·</span> <strong class="avail-left">${formatCount(ins.left, ins.capped.left)}</strong> left for you</span>`;
+  if (ins.seenCount) html += `<span class="avail-sub">You've already seen ${formatCount(ins.seenCount)} from this search.</span>`;
+  if (none) {
+    const intro = ins.matched === 0 ? "Nothing matches these filters." : "You've been through everything here.";
+    html += ins.suggestions && ins.suggestions.length
+      ? `<div class="avail-suggest"><span>${intro} Try:</span>${ins.suggestions.map((sug) =>
+          `<button type="button" class="suggest-btn" data-relax="${escapeHtml(sug.key)}">${escapeHtml(sug.label)}<b>+${formatCount(sug.left, sug.capped)}</b></button>`).join("")}</div>`
+      : `<div class="avail-suggest"><span>${intro} Try a wider area or fewer filters.</span></div>`;
+  }
+  box.innerHTML = html;
+}
+
+document.getElementById("availability").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-relax]");
+  if (btn && RELAX_TO_CHIP[btn.dataset.relax]) removeFilterChip(RELAX_TO_CHIP[btn.dataset.relax]);
+});
+
+/* Quick picks */
+
+function quickPickActive(patch) {
+  return Object.entries(patch).every(([key, value]) => {
+    if (key === "lastUpdatedYears") return value.every((y) => els.form.querySelector(`input[name="lastUpdatedYears"][value="${y}"]`)?.checked);
+    if (key === "minScore") return String(els.form.elements.minScore.value) === String(value);
+    return Boolean(els.form.elements[key] && els.form.elements[key].checked);
+  });
+}
+
+function setQuickPick(patch, on) {
+  Object.entries(patch).forEach(([key, value]) => {
+    if (key === "lastUpdatedYears") {
+      value.forEach((y) => {
+        const box = els.form.querySelector(`input[name="lastUpdatedYears"][value="${y}"]`);
+        if (box) box.checked = on;
+      });
+      updateYearSummary();
+    } else if (key === "minScore") {
+      els.form.elements.minScore.value = on ? String(value) : "";
+    } else if (els.form.elements[key]) {
+      els.form.elements[key].checked = on;
+    }
+  });
+}
+
+function renderQuickPicks(picks, ins) {
+  const host = document.getElementById("quickPicks");
+  if (!picks || !picks.length || (ins && ins.lookup)) { host.hidden = true; return; }
+  host.hidden = false;
+  host.innerHTML = '<span class="muted-note">Quick picks</span>' + picks.map((pick) => {
+    const active = quickPickActive(pick.patch);
+    const empty = pick.unclaimed === 0 && !active;
+    return `<button type="button" class="pick-chip${active ? " is-active" : ""}" data-pick="${escapeHtml(pick.id)}" ${empty ? "disabled" : ""}
+      title="${active ? "Click to remove this filter" : "Apply this filter"}">${escapeHtml(pick.label)}${pick.unclaimed == null ? "" : `<span class="pick-count">${formatCount(pick.unclaimed, pick.capped)}</span>`}</button>`;
+  }).join("");
+  host._picks = picks;
+}
+
+document.getElementById("quickPicks").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-pick]");
+  const host = document.getElementById("quickPicks");
+  const pick = btn && (host._picks || []).find((p) => p.id === btn.dataset.pick);
+  if (!pick) return;
+  const wasActive = quickPickActive(pick.patch);
+  setQuickPick(pick.patch, !wasActive);
+  renderFilterChips();
+  showToast(wasActive ? `Removed "${pick.label}"` : `Applied "${pick.label}" — press Search to run it`);
+});
+
+/* "How much of this have I worked?" */
+
+function renderSearchProgress(ins) {
+  const box = document.getElementById("searchProgress");
+  const worked = ins.seenCount || 0;
+  if (ins.lookup || ins.empty || !state.resultPages.length || worked === 0) { box.hidden = true; return; }
+  const total = worked + ins.left;
+  document.getElementById("searchProgressFill").style.width = `${total ? Math.min(100, Math.round((worked / total) * 100)) : 100}%`;
+  document.getElementById("searchProgressText").textContent = `${formatCount(worked)} worked · ${formatCount(ins.left, ins.capped.left)} left`;
+  box.hidden = false;
+}
+
+/* Territory explorer */
+
+const territory = {
+  overlay: document.getElementById("territoryOverlay"),
+  body: document.getElementById("territoryBody"),
+  data: null,
+  loadedAt: 0,
+};
+
+async function openTerritory() {
+  territory.overlay.hidden = false;
+  if (territory.data && Date.now() - territory.loadedAt < 5 * 60000) { renderTerritory(territory.data); return; }
+  territory.body.innerHTML = '<span class="muted-note">Counting leads…</span>';
+  try {
+    territory.data = await apiGet("search/territory");
+    territory.loadedAt = Date.now();
+    renderTerritory(territory.data);
+  } catch (err) {
+    territory.body.innerHTML = `<span class="muted-note">${escapeHtml(err.message)}</span>`;
+  }
+}
+
+function renderTerritory(data) {
+  if (!data.states.length || !data.specialties.length) {
+    territory.body.innerHTML = '<span class="muted-note">No enabled specialties with leads yet.</span>';
+    return;
+  }
+  const max = Math.max(1, ...data.states.flatMap((st) => data.specialties.map((sp) => (st.cells[sp.code] || {}).unclaimed || 0)));
+  const head = data.specialties.map((sp) => `<th scope="col" title="${escapeHtml(sp.label)}"><span>${escapeHtml(sp.label)}</span></th>`).join("");
+  const rows = data.states.map((st) => {
+    const cells = data.specialties.map((sp) => {
+      const cell = st.cells[sp.code];
+      if (!cell || !cell.unclaimed) return '<td><span class="heat-empty">·</span></td>';
+      const heat = Math.max(0.12, cell.unclaimed / max).toFixed(2);
+      return `<td><button type="button" class="heat-cell${heat >= 0.55 ? " is-hot" : ""}" style="--heat:${heat}" data-state="${escapeHtml(st.state)}" data-desc="${escapeHtml(sp.description || sp.label)}"
+        title="${escapeHtml(`${st.state} · ${sp.label}: ${cell.unclaimed.toLocaleString()} unclaimed of ${cell.total.toLocaleString()}`)}">${cell.unclaimed.toLocaleString()}</button></td>`;
+    }).join("");
+    const name = (typeof US_STATE_NAMES !== "undefined" && US_STATE_NAMES[st.state]) || st.state;
+    return `<tr><th scope="row"><button type="button" class="heat-state" data-state="${escapeHtml(st.state)}" title="Search all of ${escapeHtml(name)}">${escapeHtml(st.state)}<span>${st.unclaimed.toLocaleString()}</span></button></th>${cells}</tr>`;
+  }).join("");
+  territory.body.innerHTML = `<div class="territory-scroll"><table class="territory-table"><thead><tr><th scope="col"></th>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted-note territory-foot">Counts are active organizations nobody has claimed or disconnected. Updated ${escapeHtml(new Date(data.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}.</p>`;
+}
+
+function applyTerritorySelection(stateCode, description) {
+  stateOptionsContainer.querySelectorAll('input[name="states"]').forEach((box) => { box.checked = box.value === stateCode; });
+  cityInput.value = "";
+  updateStateSummary();
+  refreshCityOptions();
+  if (description) {
+    taxonomyOptionsContainer.querySelectorAll('input[name="taxonomyDescriptions"]').forEach((box) => { box.checked = box.value === description; });
+    taxonomyAllCheckbox.checked = false;
+    updateTaxonomySummary();
+  }
+  territory.overlay.hidden = true;
+  setFiltersCollapsed(false);
+  renderFilterChips();
+  showToast(`Filters set to ${stateCode}${description ? " and that specialty" : ""} — press Search to run it`);
+}
+
+document.getElementById("territoryBtn").addEventListener("click", openTerritory);
+document.getElementById("territoryClose").addEventListener("click", () => { territory.overlay.hidden = true; });
+territory.overlay.addEventListener("click", (e) => {
+  if (e.target === territory.overlay) { territory.overlay.hidden = true; return; }
+  const btn = e.target.closest("[data-state]");
+  if (btn) applyTerritorySelection(btn.dataset.state, btn.dataset.desc || "");
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !territory.overlay.hidden) territory.overlay.hidden = true; });
 
 /* Dropdown menus (saved searches, column chooser) */
 
@@ -4695,12 +5045,84 @@ function savedSearchSummary(values) {
   return parts.join(" · ") || "All leads";
 }
 
+// A preset saved before the quality filters existed doesn't mention them, and
+// restoring only touches what a preset names -- so put them back to their
+// defaults first, or the new search would inherit whatever was set before.
+function resetAdvancedFields() {
+  ["minScore", "zip"].forEach((name) => { if (els.form.elements[name]) els.form.elements[name].value = ""; });
+  ["hasPhone", "hasDecisionMaker", "activeMedicare"].forEach((name) => { if (els.form.elements[name]) els.form.elements[name].checked = false; });
+  if (els.form.elements.sortBy) els.form.elements.sortBy.value = "score";
+}
+
 function applySavedSearch(search) {
+  resetAdvancedFields();
   sessionStorage.setItem(SEARCH_FILTERS_KEY, JSON.stringify(search.values));
   restoreSearchFormState();
   renderFilterChips();
   setFiltersCollapsed(false);
   showToast(`Applied "${search.name}" — press Search to run it`);
+  snapshotSavedSearch(search.name); // "new since last time" now counts from today
+}
+
+// A saved search's values (the form-state shape) -> the query the server's
+// /search/* routes read, so it can be counted without touching the form.
+function savedValuesToParams(values) {
+  const params = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (["enrich", "scrape", "limit", "excludeKeywords", "resetProgress"].includes(key)) continue;
+    if (Array.isArray(value)) { if (value.length) params[key] = value.join(","); }
+    else if (value === true) params[key] = "on";
+    else if (value !== false && value !== "" && value != null) params[key] = String(value);
+  }
+  return applyLookupField(params);
+}
+
+async function countForSavedSearch(search) {
+  if (!searchAdvancedAvailable()) return null;
+  try {
+    const ins = await apiGet("search/insights", savedValuesToParams(search.values));
+    return ins.lookup || ins.empty ? null : ins;
+  } catch {
+    return null;
+  }
+}
+
+// Remembers how many unclaimed leads a saved search held when it was saved or
+// last used, so the menu can say how many are new since.
+async function snapshotSavedSearch(name) {
+  const entry = readSavedSearches().find((s) => s.name === name);
+  if (!entry) return;
+  const ins = await countForSavedSearch(entry);
+  if (!ins) return;
+  const list = readSavedSearches(); // re-read: the list may have changed while counting
+  const current = list.find((s) => s.name === name);
+  if (!current) return;
+  current.snapshot = { unclaimed: ins.unclaimed, at: Date.now() };
+  writeSavedSearches(list);
+}
+
+function paintSavedBadge(el, ins, snapshot) {
+  if (!ins) { el.textContent = ""; el.className = "saved-badge"; return; }
+  const now = ins.unclaimed;
+  const capped = ins.capped.unclaimed;
+  if (snapshot && !capped && now > snapshot.unclaimed) { el.className = "saved-badge is-new"; el.textContent = `+${now - snapshot.unclaimed} new`; }
+  else if (snapshot && !capped && now < snapshot.unclaimed) { el.className = "saved-badge is-down"; el.textContent = `${snapshot.unclaimed - now} claimed`; }
+  else { el.className = "saved-badge"; el.textContent = `${formatCount(now, capped)} available`; }
+}
+
+async function refreshSavedBadges() {
+  if (!searchAdvancedAvailable()) return;
+  const list = readSavedSearches();
+  let next = 0;
+  const worker = async () => {
+    while (next < list.length) {
+      const i = next++;
+      const ins = await countForSavedSearch(list[i]);
+      const el = document.querySelector(`[data-saved-badge="${i}"]`);
+      if (el) paintSavedBadge(el, ins, list[i].snapshot);
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]); // three at a time, so a long list doesn't flood the server
 }
 
 function renderSavedSearches() {
@@ -4711,6 +5133,7 @@ function renderSavedSearches() {
           <button type="button" class="saved-apply" data-saved-apply="${i}">
             <span class="saved-name">${escapeHtml(s.name)}</span>
             <span class="saved-sub">${escapeHtml(savedSearchSummary(s.values))}</span>
+            <span class="saved-badge" data-saved-badge="${i}"></span>
           </button>
           <button type="button" class="saved-del" data-saved-del="${i}" aria-label="Delete saved search ${escapeHtml(s.name)}">×</button>
         </div>`).join("")
@@ -4736,6 +5159,11 @@ document.getElementById("savedForm").addEventListener("submit", (e) => {
   input.value = "";
   renderSavedSearches();
   showToast(`Saved "${name}"`);
+  snapshotSavedSearch(name).then(refreshSavedBadges);
+});
+// Opening the menu counts each saved search (a few at a time) and shows what changed.
+document.getElementById("savedSearchesBtn").addEventListener("click", () => {
+  setTimeout(() => { if (!document.getElementById("savedPanel").hidden) refreshSavedBadges(); }, 0);
 });
 document.addEventListener("click", (e) => {
   const apply = e.target.closest("[data-saved-apply]");

@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Plus+Jakarta+Sans:wght@600..800&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=46">
+<link rel="stylesheet" href="style.css?v=48">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -125,13 +125,24 @@
               </form>
             </div>
           </div>
+          <button type="button" class="btn btn-ghost btn-small" id="territoryBtn" hidden title="See where the unclaimed leads are, by state and specialty">
+            <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 2.5h4v4h-4zM9.5 2.5h4v4h-4zM2.5 9.5h4v4h-4zM9.5 9.5h4v4h-4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+            <span>Territory</span>
+          </button>
+          <button type="button" class="btn btn-ghost btn-small source-trial" id="sourceTrialBtn" hidden aria-pressed="true" title="Admins only. Switch between the current search source and DME Desk&#39;s own provider table. This only affects your searches.">
+            <span class="source-dot" aria-hidden="true"></span>
+            <span id="sourceTrialLabel">Search source: DME Desk (trial)</span>
+          </button>
           <div class="filter-chips" id="filterChips" aria-label="Active filters"></div>
         </div>
+        <div class="quick-picks" id="quickPicks" hidden aria-label="Quick picks"></div>
+        <div class="availability" id="availability" hidden role="status" aria-live="polite"></div>
         <form id="searchForm">
           <div class="field-grid">
-            <label class="field" title="Type a 10-digit NPI for an exact match, or a company name to find it by name. Either way, every other filter below is ignored for this search.">
-              <span>NPI or company name (lookup)</span>
-              <input type="text" name="npi" placeholder="1234567890 or company name" maxlength="100" autocomplete="off">
+            <label class="field" title="One box for a quick lookup. A 10-digit number is an NPI. A phone number like (954) 907-8765 finds that business. A 5-digit number filters to that ZIP code. Anything else is searched as a company name or an owner's name. NPI, phone and name lookups ignore the other filters below.">
+              <span>Lookup: NPI, phone, ZIP or name</span>
+              <input type="text" name="npi" id="lookupInput" placeholder="NPI, (954) 907-8765, 33024, or a name" maxlength="100" autocomplete="off">
+              <small class="lookup-hint" id="lookupHint"></small>
             </label>
             <div class="field" title="Matches any company whose name contains at least one of these (case-insensitive). Press Enter after each one. Only remembered for this browser tab -- not saved to your account.">
               <label for="nameContainsEntry">Company name (contains)</label>
@@ -213,6 +224,38 @@
               </div>
             </div>
           </div>
+          <fieldset class="advanced-filters" id="advancedFilters" hidden>
+            <legend>Lead quality and order</legend>
+            <label class="field" title="Fit score is out of 100%: phone on file, a complete address, a decision maker, and Medicare activity each add points.">
+              <span>Minimum fit score</span>
+              <select name="minScore" id="minScoreSelect">
+                <option value="">Any score</option>
+                <option value="25">25% or higher</option>
+                <option value="50">50% or higher</option>
+                <option value="75">75% or higher</option>
+                <option value="100">100% only</option>
+              </select>
+            </label>
+            <label class="field" title="Only providers whose ZIP code starts with these digits (3 to 5 digits, for example 331 for the Miami area).">
+              <span>ZIP starts with</span>
+              <input type="text" name="zip" id="zipInput" inputmode="numeric" maxlength="5" placeholder="e.g. 331" autocomplete="off">
+            </label>
+            <label class="field" title="Decides which leads come first. The order is applied before paging, so page one holds the best matches.">
+              <span>Sort by</span>
+              <select name="sortBy" id="sortBySelect">
+                <option value="score">Best fit first</option>
+                <option value="medicare">Most Medicare activity</option>
+                <option value="updated">Recently updated</option>
+                <option value="name">Company name A to Z</option>
+                <option value="">Original order</option>
+              </select>
+            </label>
+            <div class="advanced-checks">
+              <label class="checkbox"><input type="checkbox" name="hasPhone"><span>Has a phone number</span></label>
+              <label class="checkbox"><input type="checkbox" name="hasDecisionMaker"><span>Has a decision maker on file</span></label>
+              <label class="checkbox"><input type="checkbox" name="activeMedicare"><span>Active Medicare biller</span></label>
+            </div>
+          </fieldset>
           <div class="field-row">
             <label class="checkbox">
               <input type="checkbox" name="enrich" checked>
@@ -238,6 +281,10 @@
         <div class="results-toolbar">
           <div class="results-meta">
             <div class="results-count" id="resultsCount">No search run yet</div>
+            <div class="search-progress" id="searchProgress" hidden title="How much of this search you have already worked through">
+              <div class="progress-track"><div class="progress-fill" id="searchProgressFill"></div></div>
+              <span id="searchProgressText"></span>
+            </div>
             <div class="selection-chip" id="selectionChip" hidden>
               <span id="selectionCount">0 selected</span>
               <button type="button" class="link-btn" id="clearSelectionBtn">Clear</button>
@@ -663,6 +710,19 @@
     </form>
   </div>
 
+  <div id="territoryOverlay" class="suggestion-overlay" hidden>
+    <div class="suggestion-card territory-card" role="dialog" aria-modal="true" aria-labelledby="territoryTitle">
+      <div class="territory-head">
+        <div>
+          <h3 id="territoryTitle">Where the leads are</h3>
+          <p class="suggestion-hint">Unclaimed providers by state and specialty. Pick a cell to fill in the filters. Darker means more leads.</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-small" id="territoryClose">Close</button>
+      </div>
+      <div class="territory-body" id="territoryBody"><span class="muted-note">Loading…</span></div>
+    </div>
+  </div>
+
   <div id="meetingOverlay" class="suggestion-overlay" hidden>
     <form id="meetingForm" class="suggestion-card meeting-card">
       <h3 id="meetingTitle">Book a meeting</h3>
@@ -733,6 +793,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=46"></script>
+  <script src="app.js?v=48"></script>
 </body>
 </html>

@@ -9,6 +9,8 @@
 // rather than an HTTP round trip to a Nano-tier instance that 500s when
 // several searches land at once.
 
+import { toFilterPayload, usesAdvancedSearch } from "../lib/searchFilters.js";
+
 function httpError(status, message) {
   const err = new Error(message);
   err.status = status;
@@ -115,14 +117,25 @@ export async function searchProviders(supabase, criteria = {}) {
   const limit = criteria.limit || 20;
   const skip = criteria.skip || 0;
 
-  const { data, error } = await supabase.rpc("search_providers", {
-    p_criteria: toCriteria(criteria),
+  // A search that uses none of the newer options goes through sql/018's
+  // search_providers exactly as it always has. Quality filters, ZIP, phone and
+  // text lookup, and sorting need sql/021's search_providers_v2.
+  const advanced = usesAdvancedSearch(criteria);
+  const payload = advanced
+    ? Object.assign(toFilterPayload(criteria, { collapsed: Boolean(criteria.collapsed) }),
+        criteria.includeCount === false ? { includeCount: false } : {})
+    : toCriteria(criteria);
+
+  const { data, error } = await supabase.rpc(advanced ? "search_providers_v2" : "search_providers", {
+    p_criteria: payload,
     p_limit: limit,
     p_skip: skip,
   });
   if (error) {
     if (error.code === "PGRST202" || error.code === "42883" || /Could not find the function/i.test(error.message || "")) {
-      throw httpError(503, "Searching DME Desk's own provider table isn't installed yet. Run sql/018_provider_search.sql, or set NPI_SOURCE=mirror.");
+      throw httpError(503, advanced
+        ? "Quality filters, sorting and lookups by phone or text aren't installed yet. Run sql/021_search_insights.sql."
+        : "Searching DME Desk's own provider table isn't installed yet. Run sql/018_provider_search.sql, or set NPI_SOURCE=mirror.");
     }
     throw httpError(502, "Provider search failed: " + error.message);
   }
