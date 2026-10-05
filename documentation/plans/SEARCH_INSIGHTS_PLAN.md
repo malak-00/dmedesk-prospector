@@ -35,6 +35,43 @@ their own paging bookmarks, so they never disturb a rep's mirror bookmarks.
   search. Counts above 5,000 matches are lower bounds and are shown with a "+".
   The Worker caches identical count questions for 30 seconds.
 
+## Stored fit scores (sql/023, 2026-10-05)
+
+Measured on the live database (Supabase Nano: shared compute, 0.5 GB memory): the
+query behind "best fit first" for Virginia took 4.3 s cold and 0.18 s warm, with
+a correct plan both times (index scan, primary-key join to the Medicare table,
+top-N sort, JIT off). The cost was reading and scoring all ~8,400 wide
+`npi_records` rows (183 MB table) on every search, which a small machine cannot
+keep cached.
+
+`sql/023_provider_scores.sql` adds a narrow `provider_scores` table (one row per
+active organization: state, city, specialty, ZIP, update year, has-phone,
+has-decision-maker, Medicare claims, and the score) with indexes ordered by
+score, so the top 200 is read straight from the index.
+
+- **Correctness first.** The stored rows are used only when the table is fresh,
+  was built with the same weights, the sort is "score", and the filters are ones
+  the table answers exactly (states, city, specialty, update years, ZIP, minimum
+  score, has phone, has decision maker, active Medicare, minimum claims).
+  Company-name text, exclude keywords, owner/phone/NPI lookups, inactive or
+  individual providers and other sorts use the live path as before.
+- **Same SQL, same answer.** The build uses the live search's own score
+  expression. `sql/tests/023_provider_scores.test.mjs` compares the two paths on
+  3,000 random providers across about 100 filter and page combinations and
+  requires identical results in identical order (151 checks).
+- **Stale never served.** Statement-level triggers on `npi_records` and
+  `npi_cms_enrichment` mark the table stale (at most once a second). A rebuild
+  that overlaps a data change stays stale.
+- **Plan detail.** A single state or specialty is written as `=`, not
+  `= any(array)`: only the plain form lets Postgres read the score index in
+  order and stop after the first page.
+- **To keep it fresh:** `select public.refresh_provider_scores();` after every
+  monthly data load (not yet wired into `scripts/nppes_ingest`). Until then
+  searches silently use the live path. The app shows the state in the tooltip of
+  the admin "Search source" button.
+- Weights live in `worker/src/lib/scoring.js`; a Worker test fails if the SQL
+  defaults ever drift from them.
+
 ## Findings from the first comparison (2026-10-05)
 
 - Coverage: 100% of the mirror's sampled results are in DME Desk (VA and NY).

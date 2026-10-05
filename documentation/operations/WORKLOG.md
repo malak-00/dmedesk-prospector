@@ -2,6 +2,20 @@
 
 ## 2026-10-05 — Smarter Prospect search (counts, quality filters, sorting, lookups) — live for admins (trial)
 
+### Update 3 (same day): stored fit scores
+
+- Measured the sorted search on the live database: 4.3 s cold, 0.18 s warm, on a
+  Nano instance; the plan was correct, so the cost is scoring ~8,400 wide rows
+  per search on a machine that cannot keep them cached.
+- Added `sql/023_provider_scores.sql` (**not run**; optional): a narrow
+  `provider_scores` table, stale-marking triggers, `refresh_provider_scores()`
+  and a stored-score path inside `search_providers_v2()`. It is used only when
+  fresh and only for searches it can answer exactly; otherwise nothing changes.
+- Worker reports whether the stored scores are fresh (`/search/capabilities`).
+  Tests: SQL 151 + 39 checks on a throwaway Postgres; Worker 50 pass.
+- No data was changed. Follow-up: call `refresh_provider_scores()` from the
+  monthly ingest.
+
 ### Update 2 (same day): layout, Territory and speed
 
 - Search panel decluttered and made non-sticky (it covered the results table);

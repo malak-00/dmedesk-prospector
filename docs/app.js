@@ -4683,6 +4683,7 @@ async function loadSearchCapabilities() {
     state.searchCaps = { advanced: false }; // counts are a convenience; searching still works without them
   }
   applySearchCaps();
+  applySourceTrialUi(); // its tooltip reports whether the stored scores are fresh
 }
 
 // Shows the controls this deployment supports and hides the rest, so nothing
@@ -4711,6 +4712,14 @@ function applySourceTrialUi() {
   btn.hidden = !isAdmin;
   if (!isAdmin) return;
   const on = sourceTrialActive();
+  const index = state.searchCaps && state.searchCaps.scoreIndex;
+  btn.title = !on
+    ? "Admins only. Switch your searches to DME Desk's own provider table (trial)."
+    : index && index.fresh
+    ? "Your searches read from DME Desk's own provider table (trial). Stored fit scores are up to date, so \"best fit first\" is fast."
+    : index
+    ? "Your searches read from DME Desk's own provider table (trial). The stored fit scores are out of date, so \"best fit first\" is slower until they are rebuilt (run select public.refresh_provider_scores(); in Supabase)."
+    : "Your searches read from DME Desk's own provider table (trial).";
   btn.classList.toggle("is-on", on);
   btn.setAttribute("aria-pressed", String(on));
   document.getElementById("sourceTrialLabel").textContent = on ? "Search source: DME Desk (trial)" : "Search source: current";

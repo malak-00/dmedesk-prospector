@@ -58,7 +58,10 @@ export async function getCapabilities(config, supabase) {
         reason: isMissingFunction(error) ? "Run sql/021_search_insights.sql to turn on lead counts, quality filters and sorting." : "Search insights are unavailable right now.",
       };
     }
-    return { source, advanced: true, version: (data && data.version) || 1 };
+    // Is the stored fit score fresh? (sql/023.) Absent when that file hasn't been run.
+    const index = await supabase.rpc("search_score_index_status");
+    const scoreIndex = !index.error && index.data ? index.data : null;
+    return { source, advanced: true, version: (data && data.version) || 1, scoreIndex };
   });
 }
 

@@ -53,6 +53,10 @@ await db.exec(fs.readFileSync(sqlFile, "utf8"));
 // must hold with both installed, exactly as in production.
 const sqlFile022 = process.env.SQL_FILE_022 || new URL("../022_search_speed.sql", import.meta.url);
 if (fs.existsSync(sqlFile022)) await db.exec(fs.readFileSync(sqlFile022, "utf8"));
+// 023 adds the stored-score path to search_providers_v2; with the table stale (never built)
+// every search must still take the live path and give the same answers.
+const sqlFile023 = process.env.SQL_FILE_023 || new URL("../023_provider_scores.sql", import.meta.url);
+if (fs.existsSync(sqlFile023)) await db.exec(fs.readFileSync(sqlFile023, "utf8"));
 
 let failed = 0;
 const check = (label, actual, expected) => {
