@@ -1,5 +1,44 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-02 — Frontend UI refresh (sidebar dashboard + expanding lead cards)
+
+### Objective
+
+Modernize the browser UI: sidebar navigation with a dashboard feel (option B)
+and card-style lead details that expand directly below the lead row (option C).
+
+### Actions Completed
+
+- `docs/index.html`: tabs became an icon sidebar with a Claimed count badge;
+  added KPI strips (Prospect and Claimed), a collapsible filter bar with
+  removable filter chips, a floating selection bar, and a Ctrl/Cmd+K quick
+  actions palette. Cache-bust versions bumped (style v38, app v40).
+- `docs/app.js`: lead detail rows now render as cards (header with avatar,
+  call/website/brief actions; score breakdown, details, contacts, branches;
+  Claimed adds reminder, meeting, call log). Existing data hooks and element
+  ids (`data-brief-index`, `data-reminder-index`, `data-book-meeting-index`,
+  notes handlers) are unchanged.
+- `docs/style.css`: new rules appended at the end of the file; existing rules
+  were left in place and layered over.
+- Follow-up passes the same day: Inter + Plus Jakarta Sans typography, a
+  rebuilt dark theme, cropped logo, removal of the "still being developed"
+  banner, collapsible sidebar (remembered per browser), empty states, colored
+  status pills, row signal icons and hover quick actions (copy phone, open
+  site), saved searches and a Claimed column chooser (both stored in browser
+  localStorage only), overdue-callback strip, comfortable/compact density,
+  KPI skeletons and count-up, and a "last refreshed" label.
+
+### Database / System Result
+
+- No API, SQL, migration, or production data change. Frontend files only.
+- Not deployed. Manual browser verification is still pending.
+
+### Safety Status
+
+- Claim/ownership logic, append-only audit behavior, and secrets untouched.
+- Selection-bar and palette actions call the existing handlers; they add no
+  new write paths.
+
 ## 2026-09-29 — Admin merge status, selective unclaim, and claim reliability
 
 ### Objective
@@ -144,7 +183,7 @@ blank Description column.
 
 - Updated `worker/src/repos/taxonomiesRepo.js` so description-to-code lookup
   falls back to `facility_type`, matching the frontend's `description ||
-  facility_type` behavior.
+facility_type` behavior.
 - Kept code-based searching as the preferred path, including for legacy rows.
 - Added a separate fallback lookup for unresolved facility-type labels without
   changing taxonomy data or executing SQL.
@@ -285,7 +324,6 @@ The next implementation should add reusable grouping/preflight code and tests,
 then add atomic group-aware claiming only after the two ownership conflicts have
 explicit owner decisions.
 
-
 ## 2026-09-09 — Local migration verification and remote history reconciliation
 
 - Pulled the linked Supabase schema into `supabase/migrations/20260909151917_remote_schema.sql`.
@@ -303,9 +341,11 @@ Build the reusable grouping/preflight layer and dry-run intake report. After tha
 ## 2026-09-17 — Database storage quota recovery, SQL immutability audit, and BD Meetings sync plan
 
 ### Objective
+
 Diagnose and resolve the Supabase storage quota overage (742 MB / 500 MB), diagnose the return-to-prospect SQL immutability crash, audit "Send to Sheets" and Claimed tab merges against grouping rules, and plan the BD Meetings NPI sync.
 
 ### Actions completed
+
 1. **Database Storage Quota Diagnosis & Truncation**:
    - Identified that 84% of database storage was consumed by `provider_field_history` (294 MB data + 31 MB index) and `nppes_refresh_staging` (223 MB data + 33 MB index).
    - User truncated temporary staging tables in the Supabase SQL Editor.
@@ -327,6 +367,7 @@ Diagnose and resolve the Supabase storage quota overage (742 MB / 500 MB), diagn
    - Documented markdown and worklog maintenance protocols in `agents.md`.
 
 ### Safety status
+
 - Core sales pipeline (`leads`, `app_users`, `lead_groups`) was untouched during staging truncation.
 - Production schema was not altered during this session.
 - Staging table truncation removed only temporary ingest rows, not active provider registry records (`npi_records`).
@@ -499,4 +540,3 @@ No application code, database schema, production data, calendar events, or deplo
 ### Safety Status
 
 No destructive commands or production SQL were executed. No spreadsheet rows, Supabase records, claims, or calendar events were modified.
-
