@@ -125,7 +125,7 @@ export async function bookMeeting(config, lead, { startTime, durationMinutes = D
     method: "POST",
     body: JSON.stringify({
       summary: `Meeting with George ${lead.name || "Lead"}${lead.contactName ? ` - ${lead.contactName}` : ""}`,
-      description: `Booked from DME Desk Prospector\nNPI: ${lead.npi}\nCompany: ${lead.name || ""}`,
+      description: `Booked from BD Lead Prospector\nNPI: ${lead.npi}\nCompany: ${lead.name || ""}`,
       start: { dateTime: start.toISOString(), timeZone: config.googleCalendarTimeZone() },
       end: { dateTime: end.toISOString(), timeZone: config.googleCalendarTimeZone() },
       attendees: guests,

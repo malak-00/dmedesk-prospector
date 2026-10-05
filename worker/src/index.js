@@ -82,7 +82,7 @@ function supabaseFor(c) {
 
 // ---- health & auth ----------------------------------------------------
 
-app.get("/health", (c) => c.json(ok({ name: "DME Desk Prospector", status: "running" })));
+app.get("/health", (c) => c.json(ok({ name: "BD Lead Prospector", status: "running" })));
 
 app.post("/auth/login", async (c) => {
   const body = await c.req.json().catch(() => ({}));
