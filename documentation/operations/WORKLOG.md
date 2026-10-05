@@ -24,13 +24,13 @@ email and private opener notes.
 
 ### Database / System Result
 
-- **SQL not yet run.** `020` is additive (five nullable columns, check
-  constraints, one trigger). An attempt to run it through the Supabase
-  connector was stopped: the only project that connector can see
-  (`saleooperations`, ref `gnhwfulkkogtwqygmekg`) is a different application
-  (no `leads`, `app_users`, or `lead_ownership_events` tables), so nothing was
-  executed there. It still needs to be run in the Supabase project the Worker
-  uses (its `SUPABASE_URL` secret), via the SQL Editor.
+- **`020` run by the project owner** in the Supabase SQL Editor, in the
+  project the Worker uses (reported 2026-10-05; the agent did not run it and
+  has not independently verified the result). It is additive (five nullable
+  columns, check constraints, one trigger). An attempt to run it through the
+  agent's Supabase connector was stopped: the only project that connector can
+  see (`saleooperations`, ref `gnhwfulkkogtwqygmekg`) is a different
+  application, so nothing was executed there.
 - **Worker deployed 2026-10-05** (`dmedesk-prospector-api`, version
   `cabe0ccd-2edb-4668-9dbc-16e59889d338`). Until `020` is run, `POST
   /leads/meeting` answers 503 "Meetings aren't installed yet". Unauthenticated
@@ -41,9 +41,8 @@ email and private opener notes.
 
 - No append-only table, claim, or ownership rule touched. Meeting data is
   cleared by trigger when ownership changes. No secrets involved.
-- Frontend for cards v2 / status merge / meetings is **not pushed yet**: held
-  until `020` is run so the Book a meeting button does not error in production.
-  Manual browser verification pending.
+- Frontend for cards v2 / status merge / meetings pushed after `020` was run.
+  Manual browser verification of the live site is still pending.
 
 ## 2026-10-02 — Frontend UI refresh (sidebar dashboard + expanding lead cards)
 

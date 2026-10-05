@@ -1,9 +1,8 @@
 # Meetings for claimed leads
 
-Status: first slice built. **Worker deployed (2026-10-05); SQL not yet run;
-frontend not yet pushed.** Remaining: run `sql/020_lead_meetings.sql` in the
-Supabase project the Worker uses, then push the frontend (before the SQL, the
-Book a meeting button would show "not installed yet").
+Status: first slice live as of 2026-10-05. Worker deployed, `sql/020` run by
+the project owner, frontend pushed. Pending: a manual check of booking,
+editing and cancelling a meeting on the live site.
 
 ## What a rep can do now
 

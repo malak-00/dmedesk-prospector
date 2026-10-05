@@ -139,6 +139,7 @@ const state = {
   claimedSortDir: 1,
   statuses: [],
   reminderTargetIndex: null,
+  meetingTargetIndex: null,
   // Which single call-log entry (if any) is currently showing its inline
   // editor -- only one at a time app-wide. Re-rendering the detail panel
   // (the same "recompute from state" approach used everywhere else in this
@@ -348,6 +349,7 @@ const els = {
   reminderClearBtn: document.getElementById("reminderClearBtn"),
   reminderCancelBtn: document.getElementById("reminderCancelBtn"),
   reminderSaveBtn: document.getElementById("reminderSaveBtn"),
+  meetingOverlay: document.getElementById("meetingOverlay"),
 };
 
 /* ---------- Sign in ---------- */
@@ -2012,9 +2014,35 @@ function detailRowHtml(company, index) {
   const sourcesList = company.sources
     ? Object.keys(company.sources).filter((k) => company.sources[k]).map((k) => k.toUpperCase()).join(", ")
     : "";
-  const headPhone = (company.decisionMakers?.[0]?.phone || company.phone || "").trim();
-  const subline = [company.taxonomy?.description, [company.address?.city, company.address?.state].filter(Boolean).join(", ")]
-    .filter(Boolean).join(" · ");
+  const addr = company.address || {};
+  const cityLine = [addr.city, addr.state].filter(Boolean).join(", ");
+  const fullAddress = [addr.line1, cityLine, addr.postalCode].filter(Boolean).join(", ");
+  const dms = company.decisionMakers || [];
+  const firstCallable = dms.findIndex((dm) => (dm.phone || "").trim());
+  const reasons = Object.entries(company.score?.breakdown || {}).map(([key, points]) => {
+    const earned = points > 0;
+    return `<span class="reason ${earned ? "yes" : "no"}">${earned ? "✓" : "✗"} ${escapeHtml(SCORE_FACTOR_LABELS[key] || key)}</span>`;
+  }).join("");
+  const mainPhone = (company.phone || "").trim();
+
+  const contactsHtml = dms.map((dm, i) => {
+    const phone = (dm.phone || "").trim();
+    return `
+      <div class="who-row">
+        <div class="lead-avatar lead-avatar-sm" aria-hidden="true">${escapeHtml(leadInitials(dm.name))}</div>
+        <div class="who-main">
+          <div class="who-name">${escapeHtml(dm.name)}${dm.roleCategory ? `<span class="contact-role">${escapeHtml(dm.roleCategory)}</span>` : ""}</div>
+          ${dm.title ? `<div class="who-sub">${escapeHtml(dm.title)}</div>` : ""}
+          ${phone ? `<div class="who-sub">${escapeHtml(phone)}</div>` : '<div class="who-sub">No direct number</div>'}
+        </div>
+        <div class="who-actions">
+          ${phone ? `<a class="btn ${i === firstCallable ? "btn-primary" : "btn-ghost"} btn-small" href="tel:${escapeHtml(phone)}">${SIGNAL_ICONS.phone}Call</a>
+            <button type="button" class="btn btn-ghost btn-small" data-copy-phone="${escapeHtml(phone)}">${SIGNAL_ICONS.copy}Copy</button>` : ""}
+          ${dm.email ? `<a class="btn btn-ghost btn-small" href="mailto:${escapeHtml(dm.email)}">Email</a>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+
   return `
     <tr class="detail-row">
       <td colspan="7">
@@ -2023,46 +2051,38 @@ function detailRowHtml(company, index) {
             <div class="lead-avatar" aria-hidden="true">${escapeHtml(leadInitials(company.name))}</div>
             <div class="lead-card-title">
               <div class="lead-card-name">${escapeHtml(company.name)}</div>
-              <div class="lead-card-sub">${escapeHtml(subline)}</div>
+              <div class="lead-card-sub">${escapeHtml([company.taxonomy?.description, cityLine].filter(Boolean).join(" · "))}</div>
             </div>
-            <div class="lead-card-actions">
-              ${headPhone ? `<a class="btn btn-ghost btn-small" href="tel:${escapeHtml(headPhone)}">Call ${escapeHtml(headPhone)}</a>` : ""}
-              ${company.website ? `<a class="btn btn-ghost btn-small" href="${escapeHtml(company.website)}" target="_blank" rel="noopener">Website</a>` : ""}
-              <button class="btn btn-primary btn-small" data-brief-index="${index}">Generate call brief</button>
-            </div>
+            ${scoreBadgeHtml(company.score?.percentage)}
           </div>
-          <div class="detail-grid">
+          <div class="detail-grid detail-grid-2">
             <div class="detail-block">
-              <h4>Score breakdown</h4>
-              ${scoreBreakdownHtml(company.score)}
+              <h4>Who to call</h4>
+              ${contactsHtml || '<span class="muted-note">No decision maker identified yet.</span>'}
+              ${!dms.length && mainPhone ? `<div class="who-actions" style="margin-top:10px"><a class="btn btn-primary btn-small" href="tel:${escapeHtml(mainPhone)}">${SIGNAL_ICONS.phone}Call main line</a></div>` : ""}
+              ${reasons ? `<div class="reasons-title">Why this lead</div><div class="reasons">${reasons}</div>` : ""}
             </div>
             <div class="detail-block">
-              <h4>Details</h4>
+              <h4>Company</h4>
               ${factsHtml([
-                ["NPI", `<span class="mono">${escapeHtml(company.npi || "—")}</span>`],
-                ["Address", `${escapeHtml(company.address?.line1 || "")}<br>${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")} ${escapeHtml(company.address?.postalCode || "")}`],
-                ["Company phone", escapeHtml(company.phone || "—")],
-                ["Website", websiteLink(company.website)],
-                ["NPPES updated", escapeHtml(company.lastUpdated || "—")],
+                ["Address", fullAddress ? `${escapeHtml(fullAddress)}<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}" target="_blank" rel="noopener">Open in Maps</a>` : "—"],
+                ["Main line", mainPhone ? `<a href="tel:${escapeHtml(mainPhone)}">${escapeHtml(mainPhone)}</a>` : "—"],
+                ["Website", company.website ? websiteLink(company.website) : '<span class="muted-note">No website found</span>'],
                 ["Medicare (CMS)", escapeHtml(medicareSummary(company.medicare))],
-                ["Data sources", escapeHtml(sourcesList || "NPPES only")],
               ])}
+              <details class="more-details">
+                <summary>More details</summary>
+                ${factsHtml([
+                  ["NPI", `<span class="mono">${escapeHtml(company.npi || "—")}</span>`],
+                  ["NPPES updated", escapeHtml(company.lastUpdated || "—")],
+                  ["Data sources", escapeHtml(sourcesList || "NPPES only")],
+                  ["Score", escapeHtml(`${company.score?.percentage ?? 0}% (${company.score?.value ?? 0}/${company.score?.maxPossible ?? "?"} pts)`)],
+                ])}
+              </details>
+              <div class="brief-link-row"><button type="button" class="text-action" data-brief-index="${index}">${SPARK_ICON}Prep a call brief</button></div>
             </div>
-            <div class="detail-block">
-              <h4>Decision makers (${company.decisionMakers?.length || 0})</h4>
-              ${(company.decisionMakers || []).map((dm) => `
-                <div class="contact-item contact-card">
-                  <div class="lead-avatar lead-avatar-sm" aria-hidden="true">${escapeHtml(leadInitials(dm.name))}</div>
-                  <div class="contact-card-body">
-                    <div>${escapeHtml(dm.name)}${dm.roleCategory ? `<span class="contact-role">${escapeHtml(dm.roleCategory)}</span>` : ""}</div>
-                    ${dm.title ? `<div class="contact-phone">${escapeHtml(dm.title)}</div>` : ""}
-                    ${dm.phone ? `<div class="mono contact-phone"><a href="tel:${escapeHtml(dm.phone)}">${escapeHtml(dm.phone)}</a></div>` : ""}
-                  </div>
-                </div>
-              `).join("") || '<span class="muted-note">None identified</span>'}
-            </div>
-            ${branchLocationsHtml(company.locations)}
           </div>
+          ${branchLocationsHtml(company.locations) ? `<div class="detail-grid">${branchLocationsHtml(company.locations)}</div>` : ""}
           <div class="brief-box">
             <div class="brief-output" id="brief-${index}"></div>
           </div>
@@ -2134,6 +2154,166 @@ document.addEventListener("click", (e) => {
   if (navigator.clipboard?.writeText) navigator.clipboard.writeText(phone).then(done, () => showToast("Couldn't copy — select the number manually", true));
   else showToast("Couldn't copy — select the number manually", true);
 }, true);
+
+/* ---------- Card header badge, call-log (work mode) ---------- */
+
+const SPARK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l1.3 3.7L13 6.5l-3.7 1.3L8 11.5 6.7 7.8 3 6.5l3.7-1.3ZM12.5 10l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6Z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>';
+
+// Small "fit" badge for the card header, colored by the same tiers as the score ring.
+function scoreBadgeHtml(pct) {
+  if (typeof pct !== "number" || Number.isNaN(pct)) return "";
+  return `<span class="score-badge tier-${scoreTier(pct)}" title="Lead score: how well this provider matches what we look for">${pct}% fit</span>`;
+}
+
+// Quick-remind chips: N days from now at 9:00 local time.
+function remindDateIso(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + Number(days));
+  d.setHours(9, 0, 0, 0);
+  return d.toISOString();
+}
+
+// One-click call logging: an outcome chip and/or a note becomes a single
+// timestamped call-log entry ("Voicemail — asked for a callback"), and a
+// remind chip sets the callback. Uses the same endpoints as the old notes
+// input and reminder dialog -- no new API.
+async function saveCallLog(idx) {
+  const root = document.querySelector(`.call-log[data-claimed-index="${idx}"]`);
+  const lead = state.claimedLeads[idx];
+  if (!root || !lead) return;
+  const status = root.querySelector(".status-chip.active")?.dataset.status || "";
+  const text = root.querySelector(".call-note").value.trim();
+  const remind = root.querySelector(".remind-chip.active")?.dataset.remind || "";
+  if (!status && !text && !remind) {
+    showToast("Pick a result, add a note, or choose a reminder first", true);
+    return;
+  }
+  const saveBtn = root.querySelector("[data-call-save]");
+  saveBtn.disabled = true;
+  let partlySaved = false;
+  try {
+    // One action, one story: the result sets the lead's status AND leads the
+    // call-log entry, so the two can never disagree.
+    if (status && status !== lead.status) {
+      await apiPost("leads/status", { npi: lead.npi, status });
+      lead.status = status;
+      partlySaved = true;
+      syncRowStatusSelect(idx, status);
+    }
+    if (status || text) {
+      const data = await apiPost("leads/notes", { npi: lead.npi, note: [status, text].filter(Boolean).join(" — ") });
+      lead.notes = data.notes;
+      partlySaved = true;
+      updateNotesPreview(idx, data.notes);
+    }
+    if (remind) {
+      const data = await apiPost("leads/reminder", { npi: lead.npi, reminderAt: remindDateIso(remind) });
+      lead.reminderAt = data.reminderAt;
+    }
+    showToast(remind ? "Call logged and reminder set" : "Call logged");
+    refreshClaimedRowReminderBadge(idx); // also redraws the open card
+    // A callback-style result with no reminder chosen: offer to set a time.
+    if (status && isCallbackStatus(status) && !remind) openReminderModal(idx);
+  } catch (err) {
+    showToast(err.message, true);
+    // Part of it may already be saved -- redraw so a retry can't log it twice.
+    if (partlySaved) refreshClaimedDetailIfExpanded(idx);
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+// Statuses offered as call results: the common ones first, then any custom
+// statuses the team has added. "new" and "disconnected" aren't call results.
+function callResultStatuses() {
+  const preferred = ["called", "voicemail", "interested", "not interested", "do not call"];
+  const all = (state.statuses && state.statuses.length ? state.statuses : DEFAULT_RESULT_STATUSES)
+    .filter((s) => !["new", "disconnected"].includes(String(s).toLowerCase()));
+  const rank = (s) => { const i = preferred.indexOf(String(s).toLowerCase()); return i === -1 ? preferred.length : i; };
+  return [...new Set(all)].sort((a, b) => rank(a) - rank(b));
+}
+const DEFAULT_RESULT_STATUSES = ["called", "voicemail", "interested", "not interested", "do not call"];
+
+// Keeps the table row's status pill in step when the status is changed from the card.
+function syncRowStatusSelect(idx, status) {
+  const select = document.querySelector(`#claimedBody .status-select[data-index="${idx}"]`);
+  if (!select) return;
+  if (![...select.options].some((o) => o.value === status)) {
+    const sentinel = select.querySelector(`option[value="${CSS.escape(ADD_STATUS_SENTINEL)}"]`);
+    const html = statusOptionHtml(status, true);
+    if (sentinel) sentinel.insertAdjacentHTML("beforebegin", html);
+    else select.insertAdjacentHTML("beforeend", html);
+  }
+  select.value = status;
+  select.className = `status-select status-${status.replace(/\s+/g, "-")}`;
+}
+
+// "+ New" chip: same custom-status flow as the table's "Add new status…".
+function addStatusFromCard(root) {
+  const custom = (prompt("New status name (e.g. \"follow-up 2wk\"):") || "").trim();
+  if (!custom) return;
+  const existing = [...root.querySelectorAll(".status-chip")].find((c) => c.dataset.status.toLowerCase() === custom.toLowerCase());
+  if (existing) { root.querySelectorAll(".status-chip").forEach((c) => c.classList.remove("active")); existing.classList.add("active"); return; }
+  if (!state.statuses.includes(custom)) {
+    state.statuses.push(custom);
+    populateStatusFilterOptions();
+  }
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "choice-chip status-chip";
+  chip.dataset.status = custom;
+  chip.textContent = custom;
+  root.querySelector("[data-add-status]").insertAdjacentElement("beforebegin", chip);
+  chip.addEventListener("click", (e) => { e.stopPropagation(); pickChip(root, ".status-chip", chip); });
+  pickChip(root, ".status-chip", chip);
+}
+
+function pickChip(root, selector, chip) {
+  const wasActive = chip.classList.contains("active");
+  root.querySelectorAll(selector).forEach((c) => c.classList.remove("active"));
+  if (!wasActive) chip.classList.add("active"); // clicking the active chip again clears it
+}
+
+function wireCallLog(idx) {
+  const root = document.querySelector(`.call-log[data-claimed-index="${idx}"]`);
+  if (!root) return;
+  root.querySelectorAll(".status-chip").forEach((chip) => chip.addEventListener("click", (e) => {
+    e.stopPropagation();
+    pickChip(root, ".status-chip", chip);
+  }));
+  root.querySelector("[data-add-status]")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    addStatusFromCard(root);
+  });
+  root.querySelectorAll(".remind-chip").forEach((chip) => chip.addEventListener("click", (e) => {
+    e.stopPropagation();
+    pickChip(root, ".remind-chip", chip);
+  }));
+  root.querySelector("[data-call-custom-reminder]")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openReminderModal(idx);
+  });
+  root.querySelector("[data-call-save]")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    saveCallLog(idx);
+  });
+  root.querySelector(".call-note")?.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveCallLog(idx); }
+  });
+  document.querySelectorAll(`[data-meeting-open="${idx}"]`).forEach((btn) => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openMeetingModal(idx);
+  }));
+  document.querySelector(`[data-meeting-cancel="${idx}"]`)?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    cancelMeeting(idx);
+  });
+  document.querySelector(`[data-clear-reminder="${idx}"]`)?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    saveReminder(idx, "");
+  });
+}
 
 /* ---------- Lead detail card helpers ---------- */
 
@@ -2498,6 +2678,147 @@ function formatReminder(reminderAt) {
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+/* ---------- Meetings (sql/020_lead_meetings.sql) ---------- */
+
+const REMIND_BEFORE_LABELS = { 15: "15 minutes", 30: "30 minutes", 60: "1 hour", 120: "2 hours", 1440: "1 day", 2880: "2 days" };
+
+function formatMeeting(meetingAt) {
+  const d = new Date(meetingAt);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function meetingIsPast(lead) {
+  const start = Date.parse(lead.meetingAt);
+  return !isNaN(start) && start + (Number(lead.meetingDurationMin) || 30) * 60000 < Date.now();
+}
+
+function meetingBadgeHtml(lead) {
+  if (!lead.meetingAt || !formatMeeting(lead.meetingAt)) return "";
+  const past = meetingIsPast(lead);
+  return `<span class="reminder-badge meeting-badge ${past ? "is-past" : ""}" title="${past ? "Past meeting" : "Booked meeting"}">📅 ${escapeHtml(formatMeeting(lead.meetingAt))}</span>`;
+}
+
+// The Reminder column shows the callback badge and, below it, any booked meeting.
+function reminderCellHtml(lead) {
+  return reminderBadgeHtml(lead.reminderAt) + meetingBadgeHtml(lead);
+}
+
+function meetingMailto(lead) {
+  const when = formatMeeting(lead.meetingAt);
+  const subject = `Meeting with ${getSession()?.displayName || "our team"}: ${when}`;
+  const body = `Hi${lead.contactName ? " " + lead.contactName.split(" ")[0] : ""},\n\nConfirming our meeting on ${when} (${lead.meetingDurationMin || 30} minutes).\n\nTalk soon,\n${getSession()?.displayName || ""}`;
+  return `mailto:${encodeURIComponent(lead.meetingEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+// The Meeting section of the work-mode card.
+function meetingSectionHtml(lead, index) {
+  if (!lead.meetingAt) {
+    return `<span class="muted-note">Nothing booked</span>
+      <div class="callback-actions"><button type="button" class="text-action" data-meeting-open="${index}">Book a meeting</button></div>`;
+  }
+  const past = meetingIsPast(lead);
+  const remind = lead.meetingRemindBeforeMin ? `Reminder ${REMIND_BEFORE_LABELS[lead.meetingRemindBeforeMin] || lead.meetingRemindBeforeMin + " min"} before` : "No reminder";
+  return `
+    <div class="meeting-when ${past ? "is-past" : ""}">📅 ${escapeHtml(formatMeeting(lead.meetingAt))}${past ? " · past" : ""}</div>
+    <div class="who-sub">${escapeHtml(String(lead.meetingDurationMin || 30))} min · ${escapeHtml(remind)}</div>
+    ${lead.meetingEmail ? `<div class="who-sub"><a href="mailto:${escapeHtml(lead.meetingEmail)}">${escapeHtml(lead.meetingEmail)}</a></div>` : ""}
+    ${lead.meetingOpenerNotes ? `<div class="opener-notes"><div class="opener-label">Your opener</div><div class="opener-text">${escapeHtml(lead.meetingOpenerNotes)}</div></div>` : ""}
+    <div class="callback-actions">
+      <button type="button" class="text-action" data-meeting-open="${index}">${past ? "Book next" : "Edit"}</button>
+      ${lead.meetingEmail ? `<a class="text-action" href="${meetingMailto(lead)}">Email confirmation</a>` : ""}
+      <button type="button" class="text-action" data-meeting-cancel="${index}">Cancel meeting</button>
+    </div>`;
+}
+
+function openMeetingModal(idx) {
+  const lead = state.claimedLeads[idx];
+  if (!lead) return;
+  state.meetingTargetIndex = idx;
+  const booked = Boolean(lead.meetingAt) && !meetingIsPast(lead);
+  document.getElementById("meetingTitle").textContent = booked ? "Edit meeting" : "Book a meeting";
+  document.getElementById("meetingContext").textContent = lead.name;
+  const base = booked ? new Date(lead.meetingAt) : new Date(Date.now() + 24 * 3600000);
+  if (!booked) base.setHours(10, 0, 0, 0);
+  document.getElementById("meetingAtInput").value = toDatetimeLocalValue(base.toISOString());
+  document.getElementById("meetingDuration").value = String(booked && lead.meetingDurationMin ? lead.meetingDurationMin : 30);
+  document.getElementById("meetingRemind").value = String(booked ? (lead.meetingRemindBeforeMin || 0) : 60);
+  document.getElementById("meetingEmail").value = (booked && lead.meetingEmail) || lead.email || "";
+  document.getElementById("meetingOpener").value = (booked && lead.meetingOpenerNotes) || "";
+  document.getElementById("meetingMarkStatus").checked = !booked && lead.status !== "meeting booked";
+  els.meetingOverlay.hidden = false;
+  document.getElementById("meetingAtInput").focus();
+}
+
+function closeMeetingModal() {
+  els.meetingOverlay.hidden = true;
+  state.meetingTargetIndex = null;
+}
+
+function applyMeetingToLead(lead, data) {
+  lead.meetingAt = data.meetingAt;
+  lead.meetingDurationMin = data.meetingDurationMin;
+  lead.meetingRemindBeforeMin = data.meetingRemindBeforeMin;
+  lead.meetingEmail = data.meetingEmail;
+  lead.meetingOpenerNotes = data.meetingOpenerNotes;
+  lead.notes = data.notes;
+}
+
+async function handleMeetingSubmit(evt) {
+  evt.preventDefault();
+  const idx = state.meetingTargetIndex;
+  const lead = state.claimedLeads[idx];
+  const when = document.getElementById("meetingAtInput").value;
+  if (!lead || !when) return;
+  const start = new Date(when);
+  const saveBtn = document.getElementById("meetingSaveBtn");
+  saveBtn.disabled = true;
+  try {
+    const data = await apiPost("leads/meeting", {
+      npi: lead.npi,
+      meetingAt: start.toISOString(),
+      durationMinutes: Number(document.getElementById("meetingDuration").value),
+      remindBeforeMinutes: Number(document.getElementById("meetingRemind").value),
+      email: document.getElementById("meetingEmail").value.trim(),
+      openerNotes: document.getElementById("meetingOpener").value.trim(),
+      noteLabel: formatMeeting(start.toISOString()),
+    });
+    applyMeetingToLead(lead, data);
+    updateNotesPreview(idx, data.notes);
+    if (document.getElementById("meetingMarkStatus").checked && lead.status !== "meeting booked") {
+      try {
+        await apiPost("leads/status", { npi: lead.npi, status: "meeting booked" });
+        lead.status = "meeting booked";
+        if (!state.statuses.includes("meeting booked")) { state.statuses.push("meeting booked"); populateStatusFilterOptions(); }
+        syncRowStatusSelect(idx, "meeting booked");
+      } catch (err) {
+        showToast("Meeting saved, but the status didn't update: " + err.message, true);
+      }
+    }
+    closeMeetingModal();
+    refreshClaimedRowReminderBadge(idx);
+    showToast("Meeting saved");
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+async function cancelMeeting(idx) {
+  const lead = state.claimedLeads[idx];
+  if (!lead || !confirm(`Cancel your meeting with ${lead.name}? Your opener notes for it will be deleted.`)) return;
+  try {
+    const data = await apiPost("leads/meeting", { npi: lead.npi, meetingAt: "", noteLabel: "" });
+    applyMeetingToLead(lead, data);
+    updateNotesPreview(idx, data.notes);
+    refreshClaimedRowReminderBadge(idx);
+    showToast("Meeting cancelled");
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
 function reminderBadgeHtml(reminderAt) {
   const urgency = reminderUrgency(reminderAt);
   if (!urgency) return "";
@@ -2545,7 +2866,7 @@ function closeReminderModal() {
 // same "touch only what changed" approach used elsewhere in this view.
 function refreshClaimedRowReminderBadge(idx) {
   const cell = document.querySelector(`#claimedBody .lead-row[data-claimed-index="${idx}"] .reminder-cell`);
-  if (cell) cell.innerHTML = reminderBadgeHtml(state.claimedLeads[idx].reminderAt);
+  if (cell) cell.innerHTML = reminderCellHtml(state.claimedLeads[idx]);
   refreshClaimedDetailIfExpanded(idx);
 }
 
@@ -2634,17 +2955,35 @@ function checkDueReminders() {
   if (!myName) return;
   const now = Date.now();
   state.claimedLeads.forEach((lead) => {
-    if (!lead.reminderAt) return;
     if (lead.claimedBy !== myName) return;
-    const t = Date.parse(lead.reminderAt);
-    if (isNaN(t) || t > now) return;
-    if (state.notifiedReminders.get(lead.npi) === lead.reminderAt) return;
-    state.notifiedReminders.set(lead.npi, lead.reminderAt);
-    const notification = new Notification(`Callback due: ${lead.name}`, {
-      body: `Reminder was set for ${formatReminder(lead.reminderAt)}`,
-      tag: `dme-reminder-${lead.npi}`,
-    });
-    notification.onclick = () => window.focus();
+
+    if (lead.reminderAt) {
+      const t = Date.parse(lead.reminderAt);
+      if (!isNaN(t) && t <= now && state.notifiedReminders.get(lead.npi) !== lead.reminderAt) {
+        state.notifiedReminders.set(lead.npi, lead.reminderAt);
+        const notification = new Notification(`Callback due: ${lead.name}`, {
+          body: `Reminder was set for ${formatReminder(lead.reminderAt)}`,
+          tag: `dme-reminder-${lead.npi}`,
+        });
+        notification.onclick = () => window.focus();
+      }
+    }
+
+    // Meeting reminder: fires once the "remind me N minutes before" moment
+    // arrives, until the meeting has started.
+    if (lead.meetingAt && lead.meetingRemindBeforeMin) {
+      const start = Date.parse(lead.meetingAt);
+      const remindAt = start - Number(lead.meetingRemindBeforeMin) * 60000;
+      const key = `meeting:${lead.npi}`;
+      if (!isNaN(start) && remindAt <= now && now < start && state.notifiedReminders.get(key) !== lead.meetingAt) {
+        state.notifiedReminders.set(key, lead.meetingAt);
+        const notification = new Notification(`Meeting soon: ${lead.name}`, {
+          body: `${formatMeeting(lead.meetingAt)}${lead.meetingOpenerNotes ? " — your opener notes are in the lead card" : ""}`,
+          tag: `dme-meeting-${lead.npi}`,
+        });
+        notification.onclick = () => window.focus();
+      }
+    }
   });
 }
 
@@ -2974,7 +3313,7 @@ function claimedLeadRowHtml(lead, index) {
           <option value="${ADD_STATUS_SENTINEL}">+ Add new status…</option>
         </select>
       </td>
-      <td class="reminder-cell">${reminderBadgeHtml(lead.reminderAt)}</td>
+      <td class="reminder-cell">${reminderCellHtml(lead)}</td>
       <td onclick="event.stopPropagation()">
         <input type="text" class="notes-input" data-npi="${escapeHtml(lead.npi)}" data-index="${index}" placeholder="Add a note…">
         ${latestNoteLine(lead.notes) ? `<div class="notes-preview" title="${escapeHtml(latestNoteLine(lead.notes))}">${escapeHtml(latestNoteLine(lead.notes))}</div>` : ""}
@@ -3182,9 +3521,11 @@ function claimedDetailRowHtml(lead, index) {
       (lead.medicareBeneficiaries !== "" ? `, ${Number(lead.medicareBeneficiaries).toLocaleString()} beneficiaries` : "") +
       (lead.medicarePayment !== "" ? `, $${Math.round(Number(lead.medicarePayment)).toLocaleString()} paid` : "")
     : "No CMS claims data found";
+  const cityLine = [lead.city, lead.state].filter(Boolean).join(", ");
+  const fullAddress = [lead.addressLine1, cityLine, lead.postalCode].filter(Boolean).join(", ");
+  const callPhone = (lead.contactPhone || lead.companyPhone || "").trim();
+  const urgency = lead.reminderAt ? reminderUrgency(lead.reminderAt) : null;
 
-  const headPhone = (lead.contactPhone || lead.companyPhone || "").trim();
-  const subline = [lead.taxonomy, [lead.city, lead.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
   return `
     <tr class="detail-row">
       <td colspan="10">
@@ -3193,64 +3534,83 @@ function claimedDetailRowHtml(lead, index) {
             <div class="lead-avatar" aria-hidden="true">${escapeHtml(leadInitials(lead.name))}</div>
             <div class="lead-card-title">
               <div class="lead-card-name">${escapeHtml(lead.name)}</div>
-              <div class="lead-card-sub">${escapeHtml(subline)}</div>
+              <div class="lead-card-sub">${escapeHtml([lead.taxonomy, cityLine].filter(Boolean).join(" · "))}</div>
             </div>
-            <div class="lead-card-actions">
-              ${headPhone ? `<a class="btn btn-ghost btn-small" href="tel:${escapeHtml(headPhone)}">Call ${escapeHtml(headPhone)}</a>` : ""}
-              ${lead.website ? `<a class="btn btn-ghost btn-small" href="${escapeHtml(lead.website)}" target="_blank" rel="noopener">Website</a>` : ""}
-              <button class="btn btn-primary btn-small" data-claimed-brief-index="${index}">Generate call brief</button>
-            </div>
+            ${scoreBadgeHtml(lead.scorePercentage === "" ? null : Number(lead.scorePercentage))}
           </div>
-          <div class="detail-grid">
-            <div class="detail-block">
-              <h4>Details</h4>
-              ${factsHtml([
-                ["NPI", `<span class="mono">${escapeHtml(lead.npi || "—")}</span>`],
-                ["Address", `${escapeHtml(lead.addressLine1 || "")}<br>${escapeHtml(lead.city || "")}, ${escapeHtml(lead.state || "")} ${escapeHtml(lead.postalCode || "")}`],
-                ["Company phone", escapeHtml(lead.companyPhone || "—")],
-                ["Website", websiteLink(lead.website)],
-                ["Specialty", escapeHtml(lead.taxonomy || "—")],
-                ["Score", escapeHtml(scoreLine)],
-                ["Medicare (CMS)", escapeHtml(medicareLine)],
-                ["NPPES updated", escapeHtml(lead.nppesLastUpdated || "—")],
-                ["Data sources", escapeHtml(sourcesList || "NPPES only")],
-              ])}
+          <div class="detail-grid detail-grid-work">
+            <div class="detail-block call-log" data-claimed-index="${index}">
+              <h4>Log this call</h4>
+              <div class="chip-row" role="group" aria-label="What happened. Also sets the lead's status.">
+                ${callResultStatuses().map((s) => `<button type="button" class="choice-chip status-chip ${s === lead.status ? "is-current" : ""}" data-status="${escapeHtml(s)}" title="${s === lead.status ? "Current status" : "Sets the lead's status to this"}">${escapeHtml(s)}</button>`).join("")}
+                <button type="button" class="choice-chip choice-chip-add" data-add-status title="Add a new status">+ New</button>
+              </div>
+              <div class="muted-note chip-hint">Picking a result also updates the lead's status${lead.status ? ` (now: ${escapeHtml(lead.status)})` : ""}.</div>
+              <textarea class="call-note" rows="2" placeholder="Add a note about the call…" aria-label="Call note"></textarea>
+              <div class="call-log-foot">
+                <div class="chip-row" role="group" aria-label="Remind me">
+                  <span class="muted-note">Remind me</span>
+                  <button type="button" class="choice-chip remind-chip" data-remind="1">Tomorrow</button>
+                  <button type="button" class="choice-chip remind-chip" data-remind="3">3 days</button>
+                  <button type="button" class="choice-chip remind-chip" data-remind="7">1 week</button>
+                  <button type="button" class="choice-chip" data-call-custom-reminder>Pick a time…</button>
+                </div>
+                <button type="button" class="btn btn-primary btn-small" data-call-save>Save</button>
+              </div>
+              <div class="reasons-title">History</div>
+              ${notesHistoryHtml(lead.notes, index)}
             </div>
             <div class="detail-block">
               <h4>Contact</h4>
               ${lead.contactName ? `
-                <div class="contact-item contact-card">
+                <div class="who-row">
                   <div class="lead-avatar lead-avatar-sm" aria-hidden="true">${escapeHtml(leadInitials(lead.contactName))}</div>
-                  <div class="contact-card-body">
-                    <div>${escapeHtml(lead.contactName)}${lead.contactRole ? `<span class="contact-role">${escapeHtml(lead.contactRole)}</span>` : ""}</div>
-                    ${lead.contactTitle ? `<div class="contact-phone">${escapeHtml(lead.contactTitle)}</div>` : ""}
-                    ${lead.contactPhone ? `<div class="mono contact-phone"><a href="tel:${escapeHtml(lead.contactPhone)}">${escapeHtml(lead.contactPhone)}</a></div>` : ""}
+                  <div class="who-main">
+                    <div class="who-name">${escapeHtml(lead.contactName)}${lead.contactRole ? `<span class="contact-role">${escapeHtml(lead.contactRole)}</span>` : ""}</div>
+                    ${lead.contactTitle ? `<div class="who-sub">${escapeHtml(lead.contactTitle)}</div>` : ""}
                   </div>
-                </div>
-              ` : '<span class="muted-note">None identified</span>'}
+                </div>` : '<span class="muted-note">No decision maker identified.</span>'}
+              ${callPhone ? `
+                <a class="btn btn-primary call-wide" href="tel:${escapeHtml(callPhone)}">${SIGNAL_ICONS.phone}Call ${escapeHtml(callPhone)}</a>
+                <button type="button" class="text-action" data-copy-phone="${escapeHtml(callPhone)}">${SIGNAL_ICONS.copy}Copy number</button>` : ""}
               ${Number(lead.additionalContacts) > 0 ? `<div class="muted-note" style="margin-top:8px;">+${escapeHtml(lead.additionalContacts)} other contact(s) found (see Sheet)</div>` : ""}
-            </div>
-            <div class="detail-block reminder-block">
-              <h4>Callback reminder</h4>
-              ${lead.reminderAt
-                ? `<div class="reminder-current reminder-${reminderUrgency(lead.reminderAt)}">🔔 ${escapeHtml(formatReminder(lead.reminderAt))}</div>`
-                : '<span class="muted-note">No reminder set</span>'}
-              <button type="button" class="btn btn-ghost btn-small" data-reminder-index="${index}">${lead.reminderAt ? "Edit reminder" : "Set reminder"}</button>
-            </div>
-            <div class="detail-block">
-              <h4>Meeting</h4>
-              ${lead.email
-                ? `<button type="button" class="btn btn-ghost btn-small" data-book-meeting-index="${index}">Book meeting</button>
-                   <div id="booking-result-${index}" style="margin-top:8px; font-size:13px;"></div>`
-                : '<span class="muted-note">No lead email available for booking</span>'}
-            </div>
-            ${claimedBranchesHtml(lead.branches)}
-            ${providerChangeDetailHtml(lead.providerChange)}
-            <div class="detail-block notes-history-block detail-block-wide">
-              <h4>Call log</h4>
-              ${notesHistoryHtml(lead.notes, index)}
+              <div class="reminder-block next-callback">
+                <div class="reasons-title">Next callback</div>
+                ${lead.reminderAt
+                  ? `<div class="reminder-current reminder-${urgency}">🔔 ${escapeHtml(formatReminder(lead.reminderAt))}${urgency === "overdue" ? " · overdue" : ""}</div>
+                     <div class="callback-actions"><button type="button" class="text-action" data-reminder-index="${index}">Change</button><button type="button" class="text-action" data-clear-reminder="${index}">Clear</button></div>`
+                  : `<span class="muted-note">None set</span>
+                     <div class="callback-actions"><button type="button" class="text-action" data-reminder-index="${index}">Set a reminder</button></div>`}
+              </div>
+              <div class="reminder-block next-callback meeting-block">
+                <div class="reasons-title">Meeting</div>
+                ${meetingSectionHtml(lead, index)}
+              </div>
+              <div class="sep-line"></div>
+              <div class="who-sub">${escapeHtml(fullAddress)}</div>
+              ${fullAddress ? `<a class="text-action" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}" target="_blank" rel="noopener">Open in Maps</a>` : ""}
+              <div class="brief-link-row"><button type="button" class="text-action" data-claimed-brief-index="${index}">${SPARK_ICON}Prep a call brief</button></div>
             </div>
           </div>
+          <details class="more-details more-details-card">
+            <summary>Company details, branches and sources</summary>
+            <div class="detail-grid">
+              <div class="detail-block">
+                <h4>Details</h4>
+                ${factsHtml([
+                  ["NPI", `<span class="mono">${escapeHtml(lead.npi || "—")}</span>`],
+                  ["Company phone", escapeHtml(lead.companyPhone || "—")],
+                  ["Website", websiteLink(lead.website)],
+                  ["Score", escapeHtml(scoreLine)],
+                  ["Medicare (CMS)", escapeHtml(medicareLine)],
+                  ["NPPES updated", escapeHtml(lead.nppesLastUpdated || "—")],
+                  ["Data sources", escapeHtml(sourcesList || "NPPES only")],
+                ])}
+              </div>
+              ${claimedBranchesHtml(lead.branches)}
+              ${providerChangeDetailHtml(lead.providerChange)}
+            </div>
+          </details>
           <div class="brief-box">
             <div class="brief-output" id="claimed-brief-${index}"></div>
           </div>
@@ -3418,6 +3778,7 @@ function toggleClaimedRowDetail(idx) {
     bookClaimedMeeting(idx);
   });
   wireNotesHistoryHandlers(idx);
+  wireCallLog(idx);
 }
 
 function attachClaimedRowHandlers() {
@@ -3929,6 +4290,10 @@ els.reminderForm.addEventListener("submit", handleReminderSubmit);
 els.reminderCancelBtn.addEventListener("click", closeReminderModal);
 els.reminderClearBtn.addEventListener("click", handleReminderClear);
 els.reminderOverlay.addEventListener("click", (e) => { if (e.target === els.reminderOverlay) closeReminderModal(); });
+document.getElementById("meetingForm").addEventListener("submit", handleMeetingSubmit);
+document.getElementById("meetingCancelBtn").addEventListener("click", closeMeetingModal);
+els.meetingOverlay.addEventListener("click", (e) => { if (e.target === els.meetingOverlay) closeMeetingModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !els.meetingOverlay.hidden) closeMeetingModal(); });
 // Two toggle buttons exist (header + login card, so theme can be changed
 // even before signing in) -- both share the .theme-toggle class.
 document.querySelectorAll(".theme-toggle").forEach((btn) => btn.addEventListener("click", toggleTheme));

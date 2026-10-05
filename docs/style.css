@@ -1914,3 +1914,117 @@ body { animation: pageIn 0.35s ease both; }
    built-in [hidden] { display:none } -- so the Admin tab (hidden for non-admins
    by app.js) showed for everyone. Restore hiding explicitly. */
 .view-tabs .tab[hidden], .view-tabs .nav-action[hidden], .view-tabs .nav-collapse[hidden] { display: none; }
+
+/* ======================================================================
+   Lead cards v2: "Who to call + Company" (Prospect) and "Log this call"
+   work mode (Claimed). One filled button per card (Call); everything else
+   is quiet. Score lives in the header as a small badge.
+   ====================================================================== */
+
+.lead-card-head .score-badge { margin-left: auto; }
+.score-badge {
+  display: inline-flex; align-items: center; white-space: nowrap;
+  font-size: 12px; font-weight: 650; padding: 4px 11px; border-radius: 999px;
+  border: 1px solid transparent;
+}
+.score-badge.tier-high { color: var(--score-high); background: color-mix(in srgb, var(--score-high) 13%, transparent); border-color: color-mix(in srgb, var(--score-high) 35%, transparent); }
+.score-badge.tier-mid { color: var(--score-mid); background: color-mix(in srgb, var(--score-mid) 13%, transparent); border-color: color-mix(in srgb, var(--score-mid) 35%, transparent); }
+.score-badge.tier-low { color: var(--score-low); background: color-mix(in srgb, var(--score-low) 13%, transparent); border-color: color-mix(in srgb, var(--score-low) 35%, transparent); }
+
+.detail-grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.detail-grid-work { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+@media (max-width: 860px) { .detail-grid-work { grid-template-columns: minmax(0, 1fr); } }
+
+/* People */
+.who-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.who-row:first-of-type { padding-top: 2px; }
+.who-row:last-of-type { border-bottom: none; }
+.who-main { flex: 1; min-width: 150px; }
+.who-name { font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
+.who-sub { font-size: 12.5px; color: var(--muted); margin-top: 1px; overflow-wrap: anywhere; }
+.who-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.who-actions .btn { text-decoration: none; }
+.who-actions .btn svg, .call-wide svg, .text-action svg { width: 14px; height: 14px; flex: none; }
+.who-actions .btn-primary, .call-wide { margin-left: 0; }
+.call-wide { display: flex; justify-content: center; width: 100%; margin: 12px 0 6px; padding: 11px 16px; border-radius: 10px; text-decoration: none; font-size: 14px; }
+
+/* "Why this lead" tags */
+.reasons-title { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
+.reasons { display: flex; flex-wrap: wrap; gap: 6px; }
+.reason { font-size: 12px; font-weight: 550; padding: 3px 10px; border-radius: 999px; }
+.reason.yes { color: var(--accent-ink); background: var(--accent-soft); }
+.reason.no { color: var(--muted); background: var(--surface-2); }
+
+/* Quiet secondary actions */
+.text-action {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; background: none; border: none;
+  font-family: var(--font-ui); font-size: 13px; font-weight: 600; color: var(--accent-ink);
+  cursor: pointer; text-decoration: none;
+}
+.text-action:hover { text-decoration: underline; text-underline-offset: 3px; }
+.brief-link-row { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+
+.more-details { margin-top: 10px; }
+.more-details summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 4px 0; list-style: none; }
+.more-details summary::-webkit-details-marker { display: none; }
+.more-details summary::before { content: "\25B8  "; }
+.more-details[open] > summary::before { content: "\25BE  "; }
+.more-details summary:hover { color: var(--ink); }
+.more-details-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 10px 16px 14px; }
+.more-details-card[open] > summary { margin-bottom: 10px; }
+
+/* Work mode */
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.choice-chip {
+  font-family: var(--font-ui); font-size: 12.5px; font-weight: 550; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--input-line, var(--hairline)); border-radius: 999px;
+  padding: 5px 12px; cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.choice-chip:hover { border-color: var(--accent); color: var(--accent-ink); }
+.choice-chip.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.call-note {
+  display: block; width: 100%; margin: 10px 0; resize: vertical; min-height: 56px;
+  font-family: var(--font-ui); font-size: 14px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--input-line, var(--hairline)); border-radius: 10px; padding: 9px 12px;
+}
+.call-note:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.call-log-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.call-log-foot .btn-primary { margin-left: 0; padding: 8px 20px; }
+.callback-actions { display: flex; gap: 14px; margin-top: 2px; }
+.next-callback { margin-top: 6px; }
+.next-callback .reasons-title { margin-top: 12px; }
+.sep-line { border-top: 1px solid var(--line); margin: 14px 0 10px; }
+
+/* History rows inside the call log card */
+.call-log .notes-history { max-height: 260px; }
+
+:root[data-theme="dark"] .choice-chip { background: var(--field-bg); }
+:root[data-theme="dark"] .call-note { background: var(--field-bg); }
+:root[data-theme="dark"] .more-details-card { background: var(--surface-2); }
+
+/* ---------- Call-log status chips and meetings ---------- */
+
+.status-chip.is-current { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.status-chip.is-current:not(.active)::after { content: " \2022"; color: var(--accent-ink); }
+.choice-chip-add { border-style: dashed; color: var(--muted); }
+.chip-hint { margin-top: 8px; font-size: 12px; }
+
+.meeting-block { margin-top: 10px; }
+.meeting-when { font-size: 14.5px; font-weight: 650; letter-spacing: -0.01em; }
+.meeting-when.is-past { color: var(--muted); }
+.meeting-badge { margin-top: 4px; color: var(--accent-ink); background: var(--accent-soft); }
+.meeting-badge.is-past { color: var(--muted); background: var(--surface-2); }
+.reminder-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.opener-notes {
+  margin: 10px 0 4px; padding: 10px 12px; border-radius: 10px;
+  background: var(--accent-soft); border: 1px solid var(--selection-chip-border);
+}
+.opener-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-ink); margin-bottom: 4px; }
+.opener-text { font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.meeting-card { width: min(560px, 100%); max-height: 92vh; overflow-y: auto; }
+.meeting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+@media (max-width: 560px) { .meeting-grid { grid-template-columns: 1fr; } }
+.field-optional { font-style: normal; font-weight: 500; font-size: 11px; color: var(--muted-2); margin-left: 4px; }
+.meeting-card textarea { min-height: 110px; line-height: 1.5; }
+.meeting-status-check { font-size: 13px; }

@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Plus+Jakarta+Sans:wght@600..800&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=44">
+<link rel="stylesheet" href="style.css?v=46">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -663,6 +663,58 @@
     </form>
   </div>
 
+  <div id="meetingOverlay" class="suggestion-overlay" hidden>
+    <form id="meetingForm" class="suggestion-card meeting-card">
+      <h3 id="meetingTitle">Book a meeting</h3>
+      <p class="suggestion-hint">With <strong id="meetingContext"></strong>. This is your own plan for the lead: nothing is sent to them and no calendar invite is created.</p>
+      <div class="meeting-grid">
+        <label class="field">
+          <span>Date and time</span>
+          <input type="datetime-local" id="meetingAtInput" required>
+        </label>
+        <label class="field">
+          <span>Length</span>
+          <select id="meetingDuration">
+            <option value="15">15 minutes</option>
+            <option value="30" selected>30 minutes</option>
+            <option value="45">45 minutes</option>
+            <option value="60">1 hour</option>
+            <option value="90">1.5 hours</option>
+            <option value="120">2 hours</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Remind me</span>
+          <select id="meetingRemind">
+            <option value="0">No reminder</option>
+            <option value="15">15 minutes before</option>
+            <option value="30">30 minutes before</option>
+            <option value="60" selected>1 hour before</option>
+            <option value="120">2 hours before</option>
+            <option value="1440">1 day before</option>
+            <option value="2880">2 days before</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Their email <em class="field-optional">optional</em></span>
+          <input type="email" id="meetingEmail" maxlength="254" placeholder="name@company.com" autocomplete="off">
+        </label>
+      </div>
+      <label class="field">
+        <span>Opener notes <em class="field-optional">only you see these</em></span>
+        <textarea id="meetingOpener" maxlength="2000" rows="5" placeholder="Opening line, what you know about them, questions to ask. e.g. Congrats on 10 years in Pembroke Pines. Who handles Medicare billing today?"></textarea>
+      </label>
+      <label class="checkbox meeting-status-check">
+        <input type="checkbox" id="meetingMarkStatus" checked>
+        <span>Set the lead's status to "meeting booked"</span>
+      </label>
+      <div class="suggestion-actions reminder-actions">
+        <button type="button" class="btn btn-ghost" id="meetingCancelBtn">Close</button>
+        <button type="submit" class="btn btn-primary" id="meetingSaveBtn">Save meeting</button>
+      </div>
+    </form>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <div class="selection-bar" id="selectionBar" hidden>
@@ -681,6 +733,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=43"></script>
+  <script src="app.js?v=45"></script>
 </body>
 </html>
