@@ -6,6 +6,7 @@
 import { createCompany } from "../lib/companyModel.js";
 import { classifyRole } from "../lib/roleClassifier.js";
 import { findUserByUsernameExact } from "../lib/users.js";
+import { normalizeMeetingInput } from "../lib/meetings.js";
 
 const DEFAULT_STATUSES = ["new", "called", "voicemail", "interested", "not interested", "do not call"];
 const MAX_STATUS_LENGTH = 40;
@@ -62,6 +63,11 @@ function toLeadDTO(row, claimedByDisplayName) {
     lastUpdated: statusUpdatedAt || claimedAt,
     notes: row.notes || "",
     reminderAt: row.reminder_at || "",
+    meetingAt: row.meeting_at || "",
+    meetingDurationMin: row.meeting_duration_min ?? "",
+    meetingRemindBeforeMin: row.meeting_remind_before_min ?? "",
+    meetingEmail: row.meeting_email || "",
+    meetingOpenerNotes: row.meeting_opener_notes || "",
   };
 }
 
@@ -721,6 +727,60 @@ export async function setLeadReminder(supabase, npi, reminderAt, session) {
   if (error) throw httpError(500, "Failed to set reminder: " + error.message);
 
   return { npi: String(npi), reminderAt: trimmed, rowsUpdated: 1 };
+}
+
+// PostgREST answers PGRST204 for a column it doesn't know; Postgres itself
+// answers 42703. Either way it means sql/020 hasn't been run yet.
+function isMissingColumn(error) {
+  if (!error) return false;
+  return error.code === "PGRST204" || error.code === "42703" || /column .*meeting_.* does not exist|Could not find the 'meeting_/i.test(error.message || "");
+}
+
+// Books, changes or cancels the caller's one upcoming meeting with a lead
+// (sql/020_lead_meetings.sql). A blank meetingAt cancels. Each change is also
+// written into the call log so a rescheduled meeting leaves a trail.
+export async function setLeadMeeting(supabase, npi, input, session) {
+  if (!npi) throw httpError(400, "npi is required");
+  const parsed = normalizeMeetingInput(input);
+  const existing = await requireOwnLead(supabase, npi, session);
+
+  const columns = parsed.clear
+    ? { meeting_at: null, meeting_duration_min: null, meeting_remind_before_min: null, meeting_email: null, meeting_opener_notes: null }
+    : {
+        meeting_at: parsed.meetingAt,
+        meeting_duration_min: parsed.durationMin,
+        meeting_remind_before_min: parsed.remindBeforeMin,
+        meeting_email: parsed.email,
+        meeting_opener_notes: parsed.openerNotes,
+      };
+
+  const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+  const what = parsed.clear ? "Meeting cancelled" : "Meeting booked" + (parsed.label ? " for " + parsed.label : "");
+  const entry = stamp + (session.displayName ? " — " + session.displayName : "") + ": " + what;
+  const notes = String(existing.notes || "").trim() ? entry + "\n" + existing.notes.trim() : entry;
+
+  const { error } = await supabase
+    .from("leads")
+    .update({ ...columns, notes })
+    .eq("claimed_by", session.id)
+    .eq("npi", String(npi));
+  if (error) {
+    if (isMissingColumn(error)) {
+      throw httpError(503, "Meetings aren't installed yet. Run sql/020_lead_meetings.sql in Supabase, then try again.");
+    }
+    throw httpError(500, "Failed to save meeting: " + error.message);
+  }
+
+  return {
+    npi: String(npi),
+    meetingAt: parsed.clear ? "" : parsed.meetingAt,
+    meetingDurationMin: parsed.clear ? "" : parsed.durationMin,
+    meetingRemindBeforeMin: parsed.clear ? "" : (parsed.remindBeforeMin ?? ""),
+    meetingEmail: parsed.clear ? "" : (parsed.email || ""),
+    meetingOpenerNotes: parsed.clear ? "" : (parsed.openerNotes || ""),
+    notes,
+    rowsUpdated: 1,
+  };
 }
 
 export { DEFAULT_STATUSES };

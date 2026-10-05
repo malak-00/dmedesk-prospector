@@ -1,5 +1,50 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-05 — Lead cards v2, status/call-log merge, meetings (first slice)
+
+### Objective
+
+Make the expanded lead card useful on a call, stop status and "log call" from
+repeating each other, and let reps book a meeting with a reminder, a contact
+email and private opener notes.
+
+### Actions Completed
+
+- Prospect card: "Who to call" + "Company" with one filled Call button, the
+  score as a small header badge, plain-language "why this lead" tags.
+- Claimed card: "Log this call" work mode. The result chips are the lead's
+  statuses, so one Save sets the status, writes the call-log entry, and can
+  set a callback reminder; the table's status dropdown stays in sync.
+- Meetings: `sql/020_lead_meetings.sql` (new, **not run**), Worker route
+  `POST /leads/meeting`, `worker/src/lib/meetings.js` with tests, a booking
+  modal, card section, Reminder-column badge, and notification. See
+  `documentation/plans/MEETINGS_PLAN.md`.
+- Fixed a regression from the sidebar CSS that showed the Admin tab to
+  non-admins (the Worker already refused their admin requests).
+
+### Database / System Result
+
+- **SQL not yet run.** `020` is additive (five nullable columns, check
+  constraints, one trigger). An attempt to run it through the Supabase
+  connector was stopped: the only project that connector can see
+  (`saleooperations`, ref `gnhwfulkkogtwqygmekg`) is a different application
+  (no `leads`, `app_users`, or `lead_ownership_events` tables), so nothing was
+  executed there. It still needs to be run in the Supabase project the Worker
+  uses (its `SUPABASE_URL` secret), via the SQL Editor.
+- **Worker deployed 2026-10-05** (`dmedesk-prospector-api`, version
+  `cabe0ccd-2edb-4668-9dbc-16e59889d338`). Until `020` is run, `POST
+  /leads/meeting` answers 503 "Meetings aren't installed yet". Unauthenticated
+  calls return 401 like the other lead routes.
+- Worker tests: 23 pass (7 new for meeting validation).
+
+### Safety Status
+
+- No append-only table, claim, or ownership rule touched. Meeting data is
+  cleared by trigger when ownership changes. No secrets involved.
+- Frontend for cards v2 / status merge / meetings is **not pushed yet**: held
+  until `020` is run so the Book a meeting button does not error in production.
+  Manual browser verification pending.
+
 ## 2026-10-02 — Frontend UI refresh (sidebar dashboard + expanding lead cards)
 
 ### Objective

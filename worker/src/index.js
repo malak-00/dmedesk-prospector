@@ -359,6 +359,14 @@ app.post("/leads/reminder", async (c) => {
   return c.json(ok(data));
 });
 
+// The rep's own meeting plan for a lead: time, reminder lead time, contact
+// email and private opener notes. Blank meetingAt cancels it.
+app.post("/leads/meeting", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const data = await leadsRepo.setLeadMeeting(supabaseFor(c), body.npi, body, c.get("session"));
+  return c.json(ok(data));
+});
+
 app.post("/leads/book-meeting", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const session = c.get("session");
