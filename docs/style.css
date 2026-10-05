@@ -1909,3 +1909,8 @@ body { animation: pageIn 0.35s ease both; }
   .row-quick { transition: none; }
   #refreshClaimedBtn.is-spinning .icon { animation: none; }
 }
+
+/* The sidebar rules above set display:flex on .tab, which beats the browser's
+   built-in [hidden] { display:none } -- so the Admin tab (hidden for non-admins
+   by app.js) showed for everyone. Restore hiding explicitly. */
+.view-tabs .tab[hidden], .view-tabs .nav-action[hidden], .view-tabs .nav-collapse[hidden] { display: none; }
