@@ -49,6 +49,10 @@ await db.exec(`
 
 // Run the real file; only the grant/revoke lines need the roles created above.
 await db.exec(fs.readFileSync(sqlFile, "utf8"));
+// 022 replaces three of 021's functions with cheaper versions; everything below
+// must hold with both installed, exactly as in production.
+const sqlFile022 = process.env.SQL_FILE_022 || new URL("../022_search_speed.sql", import.meta.url);
+if (fs.existsSync(sqlFile022)) await db.exec(fs.readFileSync(sqlFile022, "utf8"));
 
 let failed = 0;
 const check = (label, actual, expected) => {
@@ -120,6 +124,18 @@ check("territory grid", terr, [
   { state: "FL", taxonomy_code: "333600000X", total: 1, unclaimed: 1 },
   { state: "TX", taxonomy_code: "332B00000X", total: 1, unclaimed: 1 },
 ]);
+
+// 022: quick counts in one call, and no per-row specialty-name lookup.
+const quick = (await one("select public.search_quick_counts($1::jsonb) as r", [JSON.stringify([
+  { id: "phone", criteria: { states: ["FL"], taxonomyCodes: ["332B00000X"], hasPhone: true } },
+  { id: "score", criteria: { states: ["FL"], taxonomyCodes: ["332B00000X"], minScore: 100, scoreWeights: { hasPhone: 25, completeAddress: 20, hasDecisionMaker: 30, medicareActive: 25 } } },
+  { id: "none", criteria: { states: ["TX"], taxonomyCodes: ["333600000X"] } },
+])]))[0].r;
+check("quick counts (unclaimed only, one call)", quick.map((q) => [q.id, Number(q.unclaimed), q.capped]), [["phone", 2, false], ["score", 1, false], ["none", 0, false]]);
+check("search rows carry the stored specialty name (the Worker fills blanks in)",
+  (await one("select taxonomy_description from public.search_providers_v2($1::jsonb, 1, 0)", [JSON.stringify({ npi: "1000000001" })]))[0].taxonomy_description, null);
+r = await insights({ states: ["FL"], taxonomyCodes: ["332B00000X"] }, ["1000000001", "1000000002", "1000000003"]);
+check("single-pass insights: everything seen and claimed", [Number(r.matched), Number(r.unclaimed), Number(r.left)], [4, 3, 0]);
 
 // A hostile value must be quoted, not executed.
 check("sql injection attempt is inert", (await npis({ states: ["FL'; drop table public.leads; --"] })).length, 0);

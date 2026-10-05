@@ -16,6 +16,25 @@ including that a non-admin's header is ignored) and only for that request.
 Nobody else is affected and nothing is stored on the server. Trial searches keep
 their own paging bookmarks, so they never disturb a rep's mirror bookmarks.
 
+## Layout and speed follow-up (2026-10-05)
+
+- The search panel is no longer sticky. A tall form covered the results table,
+  and the table header jumped whenever the panel changed height. The results bar
+  and table header still stick under the app header, and the results bar has a
+  **Filters** button that scrolls back up to the panel. The sticky-offset code
+  only counts the panel's height if it is actually sticky.
+- Lead quality, sort order and quick picks live in one collapsible section
+  (closed by default, with an "N active" badge). Quick picks are only fetched
+  when it is open, and only re-counted when the state or specialty changes.
+- The admin source switch moved to the app header; filter chips have their own
+  row and disappear when there are none.
+- Territory: "Best bets" cards (the five richest state-and-specialty pairs), a
+  state filter, a legend, and a sticky-header grid.
+- `sql/022_search_speed.sql` (optional, not yet run): single-pass counts, a
+  one-call quick-picks count, and no per-row specialty-name lookup in the sorted
+  search. Counts above 5,000 matches are lower bounds and are shown with a "+".
+  The Worker caches identical count questions for 30 seconds.
+
 ## Findings from the first comparison (2026-10-05)
 
 - Coverage: 100% of the mirror's sampled results are in DME Desk (VA and NY).

@@ -69,14 +69,32 @@ function shapeInsights(raw) {
   const matched = count(raw && raw.matched);
   const unclaimed = count(raw && raw.unclaimed);
   const left = count(raw && raw.left);
-  return { matched, unclaimed, left, cap, capped: { matched: matched >= cap, unclaimed: unclaimed >= cap, left: left >= cap } };
+  // All three figures come from one scan that stops at the cap, so once the
+  // matches hit it the other two are "at least" figures too, not exact ones.
+  const atCap = matched >= cap;
+  return { matched, unclaimed, left, cap, capped: { matched: atCap, unclaimed: atCap || unclaimed >= cap, left: atCap || left >= cap } };
 }
+
+const INSIGHTS_CACHE_MS = 30_000;
+const INSIGHTS_CACHE_MAX = 200;
 
 export async function getInsights(supabase, userId, criteria) {
   // Memory of what this rep has already been shown for exactly these filters.
   const progress = userId ? await searchProgressRepo.getProgress(supabase, userId, criteria) : null;
   const seen = (progress && progress.seenNpis) || [];
 
+  // The same question asked again within a moment (toggling a filter off and
+  // on, two tabs) gets the same answer without another round of counting.
+  const cacheKey = `${userId}|${seen.length}|${JSON.stringify(toFilterPayload(criteria, { collapsed: true }))}`;
+  const hit = cache.get(cacheKey);
+  if (hit && Date.now() - hit.at < INSIGHTS_CACHE_MS) return hit.value;
+  const value = await computeInsights(supabase, criteria, seen);
+  if (cache.size >= INSIGHTS_CACHE_MAX) cache.delete(cache.keys().next().value);
+  cache.set(cacheKey, { at: Date.now(), value });
+  return value;
+}
+
+async function computeInsights(supabase, criteria, seen) {
   const base = shapeInsights(await callRpc(supabase, "search_insights", {
     p_criteria: toFilterPayload(criteria, { collapsed: true }),
     p_seen: seen,
@@ -107,7 +125,25 @@ export async function getInsights(supabase, userId, criteria) {
 
 export async function getQuickPicks(supabase, criteria) {
   const base = baseLocationCriteria(criteria);
-  return Promise.all(quickPickDefinitions().map(async (pick) => {
+  const definitions = quickPickDefinitions();
+
+  // sql/022 counts all the picks in one call. Before it is installed, fall
+  // back to one call per pick, which gives the same numbers more slowly.
+  const { data, error } = await supabase.rpc("search_quick_counts", {
+    p_picks: definitions.map((pick) => ({ id: pick.id, criteria: toFilterPayload({ ...base, ...pick.criteria }, { collapsed: true }) })),
+  });
+  if (!error && Array.isArray(data)) {
+    const byId = new Map(data.map((row) => [row.id, row]));
+    return definitions.map((pick) => {
+      const row = byId.get(pick.id);
+      return { id: pick.id, label: pick.label, patch: pick.patch, unclaimed: row ? count(row.unclaimed) : null, capped: Boolean(row && row.capped) };
+    });
+  }
+  if (error && !isMissingFunction(error)) {
+    return definitions.map((pick) => ({ id: pick.id, label: pick.label, patch: pick.patch, unclaimed: null, capped: false }));
+  }
+
+  return Promise.all(definitions.map(async (pick) => {
     try {
       const raw = shapeInsights(await callRpc(supabase, "search_insights", {
         p_criteria: toFilterPayload({ ...base, ...pick.criteria }, { collapsed: true }),

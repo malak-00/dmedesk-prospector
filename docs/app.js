@@ -156,6 +156,7 @@ const state = {
   meetingTargetIndex: null,
   // What this deployment can do for search: { advanced: bool, reason? }; null until asked.
   searchCaps: null,
+  quickPickCache: null,
   insightsTimer: null,
   insightsSeq: 0,
   // Which single call-log entry (if any) is currently showing its inline
@@ -4599,7 +4600,8 @@ function renderFilterChips() {
   scheduleInsights();
   host.innerHTML = chips.length
     ? chips.map((c) => `<span class="filter-chip">${escapeHtml(c.label)}<button type="button" class="filter-chip-x" data-chip="${c.key}" aria-label="Remove filter: ${escapeHtml(c.label)}">×</button></span>`).join("")
-    : '<span class="muted-note">No filters applied</span>';
+    : "";
+  updateAdvancedSummary();
 }
 
 function removeFilterChip(key) {
@@ -4754,11 +4756,11 @@ async function runInsights() {
   try {
     const [insights, picks] = await Promise.all([
       apiGet("search/insights", params),
-      apiGet("search/quickpicks", params).catch(() => null),
+      loadQuickPicks(params),
     ]);
     if (seq !== state.insightsSeq) return; // a newer question is already on its way
     renderAvailability(insights);
-    renderQuickPicks(picks && picks.picks, insights);
+    renderQuickPicks(picks, insights);
     renderSearchProgress(insights);
   } catch (err) {
     if (seq !== state.insightsSeq) return;
@@ -4768,6 +4770,49 @@ async function runInsights() {
     box.hidden = true;
   }
 }
+
+// Quick picks are counted on top of the location and specialty only, so they
+// only change when those do. They also live inside the (collapsed by default)
+// quality section, so nothing is fetched until someone opens it.
+async function loadQuickPicks(params) {
+  const section = document.getElementById("advancedFilters");
+  if (!section.open) return null;
+  const key = [params.states, params.city, params.taxonomyDescriptions].join("|");
+  const cache = state.quickPickCache;
+  if (cache && cache.key === key && Date.now() - cache.at < 2 * 60000) return cache.picks;
+  const data = await apiGet("search/quickpicks", params).catch(() => null);
+  const picks = data && data.picks;
+  if (picks) state.quickPickCache = { key, at: Date.now(), picks };
+  return picks || null;
+}
+
+// "3 active" on the collapsed quality section, so it never hides a setting.
+function updateAdvancedSummary() {
+  const badge = document.getElementById("advancedSummary");
+  if (!badge) return;
+  const f = els.form.elements;
+  const active = [
+    f.minScore && f.minScore.value, f.zip && f.zip.value.trim(),
+    f.hasPhone && f.hasPhone.checked, f.hasDecisionMaker && f.hasDecisionMaker.checked, f.activeMedicare && f.activeMedicare.checked,
+  ].filter(Boolean).length;
+  const sortLabel = f.sortBy && f.sortBy.selectedOptions[0] ? f.sortBy.selectedOptions[0].textContent : "";
+  badge.textContent = active ? `${active} active \u00b7 ${sortLabel}` : sortLabel;
+  badge.classList.toggle("has-active", active > 0);
+}
+
+document.getElementById("advancedFilters").addEventListener("toggle", (e) => {
+  try { localStorage.setItem("dmeProspectorAdvancedOpen", e.target.open ? "1" : "0"); } catch { /* storage blocked: the section just starts closed next time */ }
+  if (e.target.open) scheduleInsights(0); // fetch the quick picks now that they can be seen
+});
+try { if (localStorage.getItem("dmeProspectorAdvancedOpen") === "1") document.getElementById("advancedFilters").open = true; } catch { /* ignore */ }
+
+// The panel scrolls away with the page now, so the results bar offers a way back to it.
+document.getElementById("editFiltersBtn").addEventListener("click", () => {
+  setFiltersCollapsed(false);
+  const panel = document.getElementById("searchPanel");
+  const headerH = document.querySelector(".app-header").getBoundingClientRect().height;
+  window.scrollTo({ top: Math.max(0, panel.getBoundingClientRect().top + window.scrollY - headerH - 12), behavior: "smooth" });
+});
 
 function renderAvailability(ins) {
   const box = document.getElementById("availability");
@@ -4889,21 +4934,64 @@ function renderTerritory(data) {
     territory.body.innerHTML = '<span class="muted-note">No enabled specialties with leads yet.</span>';
     return;
   }
+
+  // The five richest state-and-specialty pairs, as shortcuts.
+  const best = [];
+  data.states.forEach((st) => data.specialties.forEach((sp) => {
+    const cell = st.cells[sp.code];
+    if (cell && cell.unclaimed) best.push({ st, sp, cell });
+  }));
+  best.sort((a, b) => b.cell.unclaimed - a.cell.unclaimed);
+  const top = best.slice(0, 5);
+  const topMax = top.length ? top[0].cell.unclaimed : 1;
+  const bestHtml = top.map(({ st, sp, cell }) => `
+    <button type="button" class="best-card" data-state="${escapeHtml(st.state)}" data-desc="${escapeHtml(sp.description || sp.label)}"
+      title="${escapeHtml(`${st.state} · ${sp.label}: ${cell.unclaimed.toLocaleString()} unclaimed of ${cell.total.toLocaleString()}`)}">
+      <span class="best-where">${escapeHtml(st.state)}</span>
+      <span class="best-what">${escapeHtml(sp.label)}</span>
+      <span class="best-count">${cell.unclaimed.toLocaleString()}</span>
+      <span class="best-bar"><i style="width:${Math.max(8, Math.round((cell.unclaimed / topMax) * 100))}%"></i></span>
+    </button>`).join("");
+
+  territory.body.innerHTML = `
+    <div class="territory-best">
+      <div class="territory-label">Best bets</div>
+      <div class="best-row">${bestHtml}</div>
+    </div>
+    <div class="territory-tools">
+      <input type="search" id="territorySearch" placeholder="Filter states…" aria-label="Filter states" autocomplete="off">
+      <div class="territory-legend" aria-hidden="true"><span>Fewer</span><i class="legend-bar"></i><span>More leads</span></div>
+    </div>
+    <div class="territory-scroll"><table class="territory-table"><thead></thead><tbody></tbody></table></div>
+    <p class="muted-note territory-foot">Active organizations nobody has claimed or disconnected. Updated ${escapeHtml(new Date(data.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}.</p>`;
+
+  drawTerritoryTable("");
+  document.getElementById("territorySearch").addEventListener("input", (e) => drawTerritoryTable(e.target.value));
+}
+
+function drawTerritoryTable(filterText) {
+  const data = territory.data;
+  const table = territory.body.querySelector(".territory-table");
+  if (!data || !table) return;
+  const needle = String(filterText || "").trim().toLowerCase();
+  const nameOf = (code) => (typeof US_STATE_NAMES !== "undefined" && US_STATE_NAMES[code]) || code;
+  const states = data.states.filter((st) => !needle || st.state.toLowerCase().includes(needle) || nameOf(st.state).toLowerCase().includes(needle));
   const max = Math.max(1, ...data.states.flatMap((st) => data.specialties.map((sp) => (st.cells[sp.code] || {}).unclaimed || 0)));
-  const head = data.specialties.map((sp) => `<th scope="col" title="${escapeHtml(sp.label)}"><span>${escapeHtml(sp.label)}</span></th>`).join("");
-  const rows = data.states.map((st) => {
+
+  table.querySelector("thead").innerHTML = `<tr><th scope="col" class="terr-corner">State</th>${data.specialties.map((sp) =>
+    `<th scope="col" title="${escapeHtml(sp.label)}"><span>${escapeHtml(sp.label)}</span></th>`).join("")}</tr>`;
+
+  table.querySelector("tbody").innerHTML = states.length ? states.map((st) => {
     const cells = data.specialties.map((sp) => {
       const cell = st.cells[sp.code];
-      if (!cell || !cell.unclaimed) return '<td><span class="heat-empty">·</span></td>';
-      const heat = Math.max(0.12, cell.unclaimed / max).toFixed(2);
+      if (!cell || !cell.unclaimed) return '<td><span class="heat-empty">–</span></td>';
+      const heat = Math.max(0.1, cell.unclaimed / max).toFixed(2);
       return `<td><button type="button" class="heat-cell${heat >= 0.55 ? " is-hot" : ""}" style="--heat:${heat}" data-state="${escapeHtml(st.state)}" data-desc="${escapeHtml(sp.description || sp.label)}"
         title="${escapeHtml(`${st.state} · ${sp.label}: ${cell.unclaimed.toLocaleString()} unclaimed of ${cell.total.toLocaleString()}`)}">${cell.unclaimed.toLocaleString()}</button></td>`;
     }).join("");
-    const name = (typeof US_STATE_NAMES !== "undefined" && US_STATE_NAMES[st.state]) || st.state;
-    return `<tr><th scope="row"><button type="button" class="heat-state" data-state="${escapeHtml(st.state)}" title="Search all of ${escapeHtml(name)}">${escapeHtml(st.state)}<span>${st.unclaimed.toLocaleString()}</span></button></th>${cells}</tr>`;
-  }).join("");
-  territory.body.innerHTML = `<div class="territory-scroll"><table class="territory-table"><thead><tr><th scope="col"></th>${head}</tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="muted-note territory-foot">Counts are active organizations nobody has claimed or disconnected. Updated ${escapeHtml(new Date(data.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}.</p>`;
+    return `<tr><th scope="row"><button type="button" class="heat-state" data-state="${escapeHtml(st.state)}" title="Search all of ${escapeHtml(nameOf(st.state))}">
+      <b>${escapeHtml(st.state)}</b><em>${escapeHtml(nameOf(st.state))}</em><span>${st.unclaimed.toLocaleString()}</span></button></th>${cells}</tr>`;
+  }).join("") : `<tr><td colspan="${data.specialties.length + 1}" class="terr-none">No state matches "${escapeHtml(filterText)}".</td></tr>`;
 }
 
 function applyTerritorySelection(stateCode, description) {
@@ -5310,7 +5398,13 @@ document.addEventListener("keydown", (e) => {
     // whichever view isn't active) makes getBoundingClientRect() report 0
     // height -- exactly the "not currently relevant" value this stack
     // wants, so no per-view branching is needed here at all.
-    if (searchPanel) root.style.setProperty("--search-panel-h", `${searchPanel.getBoundingClientRect().height}px`);
+    // The panel scrolls with the page (a tall form must never cover the
+    // results), so it only pushes the toolbar and table header down if it has
+    // been made sticky again.
+    if (searchPanel) {
+      const stuck = getComputedStyle(searchPanel).position === "sticky";
+      root.style.setProperty("--search-panel-h", stuck ? `${searchPanel.getBoundingClientRect().height}px` : "0px");
+    }
     let toolbarH = 0;
     toolbars.forEach((el) => { toolbarH = Math.max(toolbarH, el.getBoundingClientRect().height); });
     root.style.setProperty("--toolbar-h", `${toolbarH}px`);

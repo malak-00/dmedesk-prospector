@@ -2,6 +2,18 @@
 
 ## 2026-10-05 — Smarter Prospect search (counts, quality filters, sorting, lookups) — live for admins (trial)
 
+### Update 2 (same day): layout, Territory and speed
+
+- Search panel decluttered and made non-sticky (it covered the results table);
+  quality filters, sort and quick picks in one collapsible section; source switch
+  moved to the header; Territory redesigned with "Best bets".
+- Added `sql/022_search_speed.sql` (**not run**; optional) and Worker changes that
+  work with or without it: one-call quick-pick counts with a fallback, "at least"
+  flags on capped counts, and a 30-second cache for identical count questions.
+- SQL test: 39 checks with 021 and 022 installed on a throwaway Postgres.
+  Worker tests: 48 pass.
+- No data was changed.
+
 ### Update (same day)
 
 - `sql/021` was run by the project owner. Worker deployed as version

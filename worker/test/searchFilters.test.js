@@ -170,3 +170,40 @@ test('quick picks count on top of the location only', async () => {
   assert.deepEqual(highFit.states, ['FL']);
   assert.deepEqual(highFit.taxonomyCodes, ['x']);
 });
+
+test('quick picks use the one-call count when sql/022 is installed', async () => {
+  const calls = [];
+  const supabase = fakeSupabase({
+    search_quick_counts: async ({ p_picks }) => ({
+      data: p_picks.map((pick, i) => ({ id: pick.id, unclaimed: (i + 1) * 100, capped: i === 3 })),
+      error: null,
+    }),
+  }, calls);
+  const picks = await getQuickPicks(supabase, { states: ['FL'], minScore: 40 });
+  assert.deepEqual(picks.map((p) => [p.id, p.unclaimed, p.capped]),
+    [['high-fit', 100, false], ['medicare', 200, false], ['reachable', 300, false], ['fresh', 400, true]]);
+  assert.equal(calls.length, 1, 'one database call for all four picks');
+  assert.equal(calls[0].args.p_picks[0].criteria.minScore, 75);
+  assert.equal('hasPhone' in calls[0].args.p_picks[0].criteria, false); // the form's own filters are not carried in
+});
+
+test('counts that hit the cap are all reported as "at least"', async () => {
+  const supabase = fakeSupabase({
+    search_insights: async () => ({ data: { matched: 5000, unclaimed: 4120, left: 3900, cap: 5000 }, error: null }),
+  });
+  const result = await getInsights(supabase, 'user-cap', { states: ['TX'] });
+  assert.deepEqual(result.capped, { matched: true, unclaimed: true, left: true });
+  assert.equal(result.unclaimed, 4120);
+});
+
+test('the same question asked twice in a moment is counted once', async () => {
+  const calls = [];
+  const supabase = fakeSupabase({
+    search_insights: async () => ({ data: { matched: 10, unclaimed: 8, left: 8, cap: 5000 }, error: null }),
+  }, calls);
+  await getInsights(supabase, 'user-cache', { states: ['OH'] });
+  await getInsights(supabase, 'user-cache', { states: ['OH'] });
+  assert.equal(calls.filter((c) => c.name === 'search_insights').length, 1);
+  await getInsights(supabase, 'user-cache', { states: ['OH'], hasPhone: true }); // a different question is counted
+  assert.equal(calls.filter((c) => c.name === 'search_insights').length, 2);
+});
