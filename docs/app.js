@@ -1593,6 +1593,27 @@ function buildSearchParams(formData) {
   if (!formData.get("enrich")) params.enrich = "false";
   if (formData.get("scrape")) params.scrape = "true";
   if (formData.get("resetProgress")) params.resetProgress = "true";
+  return applyLookupField(params);
+}
+
+// The first field takes either a 10-digit NPI (exact match -- the Worker
+// ignores every other filter for it) or a company name. A name is sent as a
+// name-contains search with the other filters dropped, so "lookup" means the
+// same thing for both: find this one business, wherever it is.
+const LOOKUP_IGNORED_PARAMS = ["nameContainsTerms", "excludeKeywords", "states", "taxonomyDescriptions", "lastUpdatedYears", "city", "minMedicareClaims"];
+
+function isNpiLookupValue(value) {
+  return /^\d{10}$/.test(String(value || "").trim());
+}
+
+function applyLookupField(params) {
+  const lookup = String(params.npi || "").trim();
+  if (!lookup) return params;
+  if (isNpiLookupValue(lookup)) { params.npi = lookup; return params; }
+  LOOKUP_IGNORED_PARAMS.forEach((key) => { delete params[key]; });
+  delete params.npi;
+  // The server splits this list on commas, so a comma inside a name ("Smith, LLC") would become two terms.
+  params.nameContainsTerms = lookup.replace(/,/g, " ").replace(/\s+/g, " ").trim();
   return params;
 }
 
@@ -4484,7 +4505,7 @@ function renderFilterChips() {
   const summarize = (items, noun) => (items.length <= 3 ? items.join(", ") : `${items.length} ${noun}`);
   const chips = [];
 
-  if (value("npi")) chips.push({ key: "npi", label: `NPI ${value("npi")}` });
+  if (value("npi")) chips.push({ key: "npi", label: isNpiLookupValue(value("npi")) ? `NPI ${value("npi")}` : `Name lookup: ${value("npi")}` });
   const states = checked("states").map((cb) => cb.value);
   if (states.length) chips.push({ key: "states", label: `State: ${summarize(states, "states")}` });
   if (value("city")) chips.push({ key: "city", label: `City: ${value("city")}` });
@@ -4750,7 +4771,7 @@ function paletteCommands() {
   if (!els.adminTab.hidden) cmds.push({ label: "Go to Admin", hint: "View", run: () => switchView("admin") });
   cmds.push(
     { label: "Run search with current filters", hint: "Prospect", run: () => { switchView("search"); els.form.requestSubmit(); } },
-    { label: "Look up an NPI", hint: "Prospect", run: () => { switchView("search"); setFiltersCollapsed(false); els.form.elements.npi.focus(); } },
+    { label: "Look up an NPI or company name", hint: "Prospect", run: () => { switchView("search"); setFiltersCollapsed(false); els.form.elements.npi.focus(); } },
     { label: document.getElementById("searchPanel").classList.contains("is-collapsed") ? "Show filters" : "Hide filters", hint: "Prospect", run: () => document.getElementById("filtersToggle").click() },
     { label: "Switch light/dark theme", hint: "Appearance", run: toggleTheme },
     { label: document.documentElement.classList.contains("density-compact") ? "Use comfortable rows" : "Use compact rows", hint: "Appearance", run: toggleDensity },

@@ -129,9 +129,9 @@
         </div>
         <form id="searchForm">
           <div class="field-grid">
-            <label class="field" title="Looks up this exact NPI directly and ignores every other filter below">
-              <span>NPI (exact lookup)</span>
-              <input type="text" name="npi" placeholder="1234567890" inputmode="numeric" pattern="\d{10}" maxlength="10" title="NPI is exactly 10 digits">
+            <label class="field" title="Type a 10-digit NPI for an exact match, or a company name to find it by name. Either way, every other filter below is ignored for this search.">
+              <span>NPI or company name (lookup)</span>
+              <input type="text" name="npi" placeholder="1234567890 or company name" maxlength="100" autocomplete="off">
             </label>
             <div class="field" title="Matches any company whose name contains at least one of these (case-insensitive). Press Enter after each one. Only remembered for this browser tab -- not saved to your account.">
               <label for="nameContainsEntry">Company name (contains)</label>
@@ -281,7 +281,7 @@
                 <div class="empty-state">
                   <div class="empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
                   <div class="empty-title">Start your first search</div>
-                  <p class="empty-body">Pick a state, specialty or NPI above, then search to see scored leads here.</p>
+                  <p class="empty-body">Pick a state or specialty, or look up an NPI or company name above, then search to see scored leads here.</p>
                   <button type="button" class="btn btn-primary" data-empty-action="focus-search">Set up a search</button>
                   <div class="empty-saved" id="emptySavedSearches"></div>
                 </div>
@@ -733,6 +733,6 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=45"></script>
+  <script src="app.js?v=46"></script>
 </body>
 </html>
