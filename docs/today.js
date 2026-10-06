@@ -202,7 +202,7 @@
         const m = NOTE_LINE.exec(raw.trim());
         if (!m) continue;
         if (m[3] && me && m[3].trim().toLowerCase() !== me) continue;
-        out.push({ date: m[1], time: m[2], text: m[4], lead });
+        out.push({ date: m[1], time: m[2], text: m[4], lead, at: new Date(`${m[1]}T${m[2]}:00Z`) });
       }
     }
     return out.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
@@ -211,15 +211,17 @@
   function insights() {
     const lines = myNoteLines();
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
-    const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - ((now.getUTCDay() + 6) % 7))).toISOString().slice(0, 10);
+    const today = localDay(now);
+    const mondayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+    const monday = localDay(mondayDate);
     const isCall = (l) => !/^Meeting (booked|held|no-show|cancelled)/i.test(l.text);
+    lines.forEach((l) => { l.day = localDay(l.at); });
     return {
       lines,
       streak: callStreak(lines.filter(isCall), today),
-      callsToday: lines.filter((l) => l.date === today && isCall(l)).length,
-      callsWeek: lines.filter((l) => l.date >= monday && isCall(l)).length,
-      heldWeek: lines.filter((l) => l.date >= monday && /^Meeting held/i.test(l.text)).length,
+      callsToday: lines.filter((l) => l.day === today && isCall(l)).length,
+      callsWeek: lines.filter((l) => l.day >= monday && isCall(l)).length,
+      heldWeek: lines.filter((l) => l.day >= monday && /^Meeting held/i.test(l.text)).length,
       touched: state.claimedLeadsAll.filter((l) => !isNewStatus(l) || String(l.notes || "").trim()).length,
     };
   }
@@ -240,12 +242,18 @@
   // Days in a row with at least one call, counting back from today (or from
   // yesterday, so the streak is not lost before the first call of the day).
   function callStreak(callLines, today) {
-    const days = new Set(callLines.map((l) => l.date));
-    const day = new Date(`${today}T00:00:00Z`);
-    if (!days.has(today)) day.setUTCDate(day.getUTCDate() - 1);
+    const days = new Set(callLines.map((l) => l.day));
+    const day = new Date(`${today}T12:00:00`);
+    if (!days.has(today)) day.setDate(day.getDate() - 1);
     let n = 0;
-    while (days.has(day.toISOString().slice(0, 10))) { n += 1; day.setUTCDate(day.getUTCDate() - 1); }
+    while (days.has(localDay(day))) { n += 1; day.setDate(day.getDate() - 1); }
     return n;
+  }
+
+  // YYYY-MM-DD on the rep's own clock (call-log stamps are UTC).
+  function localDay(date) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   }
 
   function goalMessage(done, goal) {
@@ -285,7 +293,7 @@
   function celebrate() {
     const card = document.getElementById("goalCard");
     if (!card || !card.classList.contains("is-hit")) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDay(new Date());
     try {
       if (localStorage.getItem(CELEBRATED_KEY) === today) return;
       localStorage.setItem(CELEBRATED_KEY, today);
@@ -346,7 +354,7 @@
     return rows.map((r) => `
       <button type="button" class="act-row" data-today="open" data-npi="${escapeHtml(r.lead.npi)}">
         <span class="act-text">${escapeHtml(r.text.length > 90 ? r.text.slice(0, 89) + "…" : r.text)}</span>
-        <span class="act-meta">${escapeHtml(r.lead.name)} · ${escapeHtml(r.date.slice(5))}</span>
+        <span class="act-meta">${escapeHtml(r.lead.name)} · ${escapeHtml(r.at.toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</span>
       </button>`).join("");
   }
 
@@ -593,7 +601,8 @@
     else stopTimer();
   };
   hooks.onClaimedLoaded = () => { updateBadge(); if (state.view === "today") render(); };
-  hooks.onClaimedChanged = () => { updateBadge(); if (state.view === "today") render(); };
+  const previousChanged = hooks.onClaimedChanged;
+  hooks.onClaimedChanged = () => { previousChanged?.(); updateBadge(); if (state.view === "today") render(); };
   hooks.onSignedIn = () => {
     // Land on Today after signing in, whatever the tab was before.
     switchView("today");

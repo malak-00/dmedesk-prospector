@@ -119,3 +119,51 @@ test('asking the database for a function that is not installed is a clear 503', 
   assert.equal(result.companies.length, 0);
   assert.match(result.rejectedVariants[0].message, /sql\/021_search_insights\.sql/);
 });
+
+// ---- paging: "Search more" must not lose rows --------------------------------
+
+// A table of 450 providers served in the database's order, honouring p_limit / p_skip
+// the way search_providers_v2 does.
+const table = Array.from({ length: 450 }, (_, i) => row(String(1000000000 + i), `CO ${i}`));
+const pagedDb = () => fakeDb({
+  search_providers_v2: async ({ p_limit, p_skip }) => ({ data: table.slice(p_skip, p_skip + p_limit), error: null }),
+});
+
+test('paging with Search more reaches every provider exactly once', async () => {
+  const db = pagedDb();
+  const seen = [];
+  let variantSkips = {};
+  let exhausted = false;
+  for (let click = 0; click < 40 && !exhausted; click++) {
+    const result = await searchCompanies(dmedesk, db, {
+      states: ['FL'], taxonomyDescriptions: ['DME'], taxonomyCodes: ['332B00000X'], limit: 20, source: 'dmedesk',
+      variantSkips, excludeNpis: seen,
+    }, { userId: 'user-1', clientProvidedVariantSkips: click > 0 });
+    result.companies.forEach((c) => seen.push(String(c.npi)));
+    variantSkips = result.variantSkips;
+    exhausted = result.exhaustedRegistry;
+  }
+  assert.equal(new Set(seen).size, seen.length, 'no provider is shown twice');
+  assert.equal(seen.length, 450, 'every provider in the table was reachable');
+});
+
+test('a page that is only partly used is not marked as done', async () => {
+  const db = pagedDb();
+  const result = await searchCompanies(dmedesk, db, {
+    states: ['FL'], taxonomyDescriptions: ['DME'], taxonomyCodes: ['332B00000X'], limit: 20, source: 'dmedesk',
+  }, { userId: 'user-1' });
+  assert.equal(result.companies.length, 20);
+  assert.equal(result.exhaustedRegistry, false);
+  assert.equal(Object.values(result.variantSkips)[0], 20, 'the bookmark moves by what was shown, not by the page size');
+});
+
+// ---- saved bookmarks from before the paging fix --------------------------------
+
+import { readPositions } from '../src/repos/searchProgressRepo.js';
+
+test('an old bookmark loses its position but is otherwise left alone; a new one keeps it', () => {
+  assert.deepEqual(readPositions({ '*|': 400 }), {}, 'no marker: the position may be past unseen rows');
+  assert.deepEqual(readPositions({ 'FL|DME': -1 }), {}, '"done" from the old code cannot be trusted either');
+  assert.deepEqual(readPositions({ '*|': 40, _v: 2 }), { '*|': 40 }, 'stamped bookmarks keep their position, without the marker');
+  assert.deepEqual(readPositions(null), {});
+});

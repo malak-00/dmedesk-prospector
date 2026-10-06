@@ -29,6 +29,9 @@ import * as CsvExport from "./lib/csvExport.js";
 import * as GoogleSheets from "./services/googleSheets.js";
 import * as GoogleCalendar from "./services/googleCalendar.js";
 import * as SearchInsights from "./services/searchInsights.js";
+import * as userAdminRepo from "./repos/userAdminRepo.js";
+import * as SystemInfo from "./services/systemInfo.js";
+import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
 import { applySourceTrial, SOURCE_HEADER } from "./lib/sourceTrial.js";
 
@@ -55,11 +58,16 @@ app.use("*", async (c, next) => {
   if (!session) {
     return c.json({ success: false, status: 401, error: "Not signed in (or session expired)" }, 401);
   }
-  c.set("session", session);
+  // A removed user stops working within seconds, and a changed admin flag applies
+  // at once, instead of waiting for the sign-in token to expire.
+  const gate = applyUserFlags(session, await loadUserFlags(getSupabase(c.get("config"))));
+  if (!gate.ok) return c.json({ success: false, status: 401, error: gate.reason }, 401);
+  const live = gate.session;
+  c.set("session", live);
 
   // An admin can opt in to searching DME Desk's own provider table while
   // everyone else stays on the configured source. See lib/sourceTrial.js.
-  const trial = applySourceTrial(c.get("config"), session, c.req.header(SOURCE_HEADER));
+  const trial = applySourceTrial(c.get("config"), live, c.req.header(SOURCE_HEADER));
   c.set("config", trial.config);
   c.set("sourceTrial", trial.trial);
   return next();
@@ -498,6 +506,31 @@ app.get("/admin/overview", async (c) => {
     adminRepo.getAggregateStats(supabase),
   ]);
   return c.json(ok({ users, suggestions, stats }));
+});
+
+// ---- admin controls: users and system -----------------------------------
+
+app.get("/admin/users", async (c) => {
+  requireAdmin(c.get("session"));
+  return c.json(ok(await userAdminRepo.listUsers(supabaseFor(c))));
+});
+
+app.post("/admin/users", async (c) => {
+  requireAdmin(c.get("session"));
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await userAdminRepo.createUser(supabaseFor(c), body)));
+});
+
+app.post("/admin/users/update", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await userAdminRepo.updateUser(supabaseFor(c), session, body)));
+});
+
+app.get("/admin/system", async (c) => {
+  requireAdmin(c.get("session"));
+  return c.json(ok(await SystemInfo.getSystemInfo(c.get("config"), supabaseFor(c))));
 });
 
 // Calls, meetings and claims per rep, by week. Admin only.

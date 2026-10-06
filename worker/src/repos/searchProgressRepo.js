@@ -52,6 +52,17 @@ export function fingerprint(criteria = {}) {
 
 const MAX_SEEN_NPIS = 4000;
 
+// Bookmarks saved before this version moved by a whole page even when only part
+// of it had been shown, so they sit past rows nobody ever saw. They carry no
+// marker; on first use their position is dropped (what was SEEN is kept, so
+// nothing is shown twice) and the search re-reads from the top, skipping the
+// seen rows. New bookmarks are stamped so this happens once.
+const POSITION_VERSION = 2;
+export function readPositions(stored) {
+  const { _v, ...rest } = stored || {};
+  return _v === POSITION_VERSION ? rest : {};
+}
+
 // Never throws -- a resume/persist hiccup should never break an otherwise-
 // working search, same guarantee CompanyService relied on from the Sheets version.
 export async function getProgress(supabase, userId, criteria) {
@@ -65,7 +76,7 @@ export async function getProgress(supabase, userId, criteria) {
       .maybeSingle();
 
     const { data, error } = await lookup(fingerprint(criteria));
-    if (!error && data) return { variantSkips: data.variant_skips || {}, seenNpis: data.seen_npis || [] };
+    if (!error && data) return { variantSkips: readPositions(data.variant_skips), seenNpis: data.seen_npis || [] };
 
     // First time this rep runs this search against DME Desk's own table: their
     // old bookmark counts positions in the mirror's ordering, which would skip or
@@ -91,7 +102,7 @@ export async function saveProgress(supabase, userId, criteria, variantSkips, see
       {
         user_id: userId,
         filter_fingerprint: fp,
-        variant_skips: variantSkips || {},
+        variant_skips: { ...(variantSkips || {}), _v: POSITION_VERSION },
         seen_npis: capped,
         updated_at: new Date().toISOString(),
       },

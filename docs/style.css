@@ -2614,3 +2614,88 @@ html.call-open .toast { z-index: 70; }
 .results-toolbar.has-collapse .results-count { cursor: pointer; }
 .admin-folded { display: none !important; }
 @media (prefers-reduced-motion: reduce) { .confetti-bit { display: none; } }
+
+/* ---- Expanded lead: the row becomes the big card ---- */
+.lead-row.is-open { display: none; }
+.detail-row { scroll-margin-top: calc(var(--header-h) + var(--toolbar-h) + 16px); }
+.detail-row .lead-card { animation: card-open 0.18s ease-out; }
+@keyframes card-open { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .detail-row .lead-card { animation: none; } }
+.lead-card-head[data-collapse] { cursor: pointer; align-items: center; border-radius: var(--radius-md); }
+.lead-card-head[data-collapse]:hover { background: var(--accent-soft); }
+.lead-card-head[data-collapse]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lead-card-select { display: inline-flex; align-items: center; padding: 6px; margin-right: 2px; cursor: pointer; }
+.lead-card-select input { width: 16px; height: 16px; cursor: pointer; }
+.lead-card-collapse {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none;
+  font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 6px 10px; border-radius: 999px;
+}
+.lead-card-head[data-collapse]:hover .lead-card-collapse { color: var(--accent-ink); }
+.lead-card-collapse .icon { width: 14px; height: 14px; }
+@media (max-width: 640px) { .lead-card-collapse span { display: none; } }
+
+/* ---- Call mode, round two ---- */
+html.call-open .suggestion-overlay { z-index: 60; }
+.cm-head { flex-wrap: wrap; }
+.cm-head > div:first-child { flex: 1; min-width: 0; }
+.cm-head-meta { display: flex; gap: 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cm-facts { display: flex; flex-wrap: wrap; gap: 6px; }
+.cm-facts-center { justify-content: center; margin-top: 10px; }
+.cm-fact {
+  font-size: 12px; font-weight: 600; color: var(--muted); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; text-decoration: none;
+}
+.cm-fact-link { color: var(--accent-ink); }
+.cm-fact-link:hover { border-color: var(--accent); }
+.cm-fact.is-meeting { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--selection-chip-border); }
+.cm-others { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.cm-other { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cm-other-label { flex: 1 1 140px; min-width: 0; font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-more { margin-top: 2px; }
+.cm-next { display: flex; flex-direction: column; gap: 2px; }
+.cm-next-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px; width: 100%;
+  border: 0; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+  padding: 7px 8px; margin: 0 -8px; border-radius: var(--radius-sm);
+}
+.cm-next-row:hover { background: var(--accent-soft); }
+.cm-next-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cm-next-sub { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.cm-keys { padding: 0 20px 12px; font-size: 11.5px; color: var(--muted-2); text-align: center; }
+.cm-foot .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* ---- Admin > Controls ---- */
+.ctl-h { margin: 0 0 10px; font-size: 15px; font-weight: 650; }
+.ctl-summary { margin: 0 0 8px; font-size: 12.5px; color: var(--muted); }
+.ctl-table .ctl-actions { text-align: right; width: 1%; white-space: nowrap; }
+.ctl-name { font-weight: 600; }
+.ctl-sub { font-size: 12px; color: var(--muted); }
+.ctl-table tr.is-removed td { opacity: 0.55; }
+.ctl-table tr.is-removed td.ctl-actions { opacity: 1; }
+.role-badge {
+  display: inline-block; font-size: 11.5px; font-weight: 650; color: var(--muted); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; margin: 1px 2px 1px 0; white-space: nowrap;
+}
+.role-badge.is-admin { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--selection-chip-border); }
+.status-pill { font-size: 12px; font-weight: 650; border-radius: 999px; padding: 1px 10px; }
+.status-pill.is-active { color: var(--score-high); background: var(--glow-high); }
+.status-pill.is-removed { color: var(--score-low); background: var(--glow-low); }
+.ctl-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.sys-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.sys-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.sys-row:first-child { border-top: 0; }
+.sys-dot { width: 9px; height: 9px; border-radius: 50%; }
+.sys-dot.is-on { background: var(--score-high); }
+.sys-dot.is-off { background: var(--score-low); }
+.sys-note { font-size: 12px; color: var(--muted); text-align: right; }
+.ctl-card { width: min(460px, 100%); }
+.ctl-pw { display: flex; gap: 8px; }
+.ctl-pw input { flex: 1; min-width: 0; font-family: var(--font-mono); }
+.ctl-creds { display: grid; gap: 10px; padding: 14px; border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--line); }
+.ctl-creds span { display: block; font-size: 11.5px; color: var(--muted); }
+.ctl-creds strong { font-size: 16px; user-select: all; }
+.ctl-edit-actions { justify-content: space-between; align-items: center; }
+.ctl-edit-actions > div { display: inline-flex; gap: 8px; }
+.btn-danger { color: var(--score-low); border-color: var(--score-low); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 900px) { .ctl-grid { grid-template-columns: minmax(0, 1fr); } }

@@ -28,6 +28,8 @@ Required manual sequence:
 021_search_insights.sql           (before lead counts, quality filters and sorting work; needs 018)
 022_search_speed.sql              (after 021: cheaper counts, one-call quick picks, no per-row specialty lookup)
 024_remove_scoring.sql           (after 022: leads are no longer scored; replaces two search functions, drops the score function)
+025_territory_cache.sql           (after 021: the Territory map counts one specialty at a time into a small table, so it stops timing out)
+026_user_controls.sql            (adds app_users.disabled_at so an admin can remove and restore users from Admin > Controls)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -77,6 +79,8 @@ in `003`); save their output with the run.
 | `021_search_insights.sql` | Read-only: `search_insights()` (matched / unclaimed / left for you), `search_territory()`, `search_providers_v2()` (quality filters, ZIP, phone and text lookup, sort before paging) and their helpers. Leaves `search_providers()` untouched | **Not yet run — required for the smarter Prospect search.** See `documentation/plans/SEARCH_INSIGHTS_PLAN.md` |
 | `022_search_speed.sql` | Replaces three of 021's functions with cheaper versions: `search_insights()` counts in one pass, new `search_quick_counts()`, and `search_providers_v2()` drops the per-row specialty-name lookup. Read-only, rerun-safe | **Not yet run — optional speed-up; the Worker works without it** |
 | `024_remove_scoring.sql` | Removes fit scoring from search: `provider_filter_sql()` loses the minimum-score filter, `search_providers_v2()` loses the score (default order is NPI order; `sortBy` is `medicare`, `updated` or `name`), and `provider_score_sql()` is dropped. Functions only: no table or data changes; `leads.score_value` / `score_percentage` are left in place, unused | **Not yet run — recommended; the Worker works without it, but the old score sort and filter stay in the database until it is run** |
+| `025_territory_cache.sql` | Territory map without the timeout: new small table `territory_totals` (a few thousand rows), `refresh_territory_code()` recounts one specialty, `territory_stale_codes()` says which need it, and `search_territory()` now reads the table and subtracts claimed/disconnected leads live. Rerun-safe. Nothing else is touched | **Not yet run — recommended; the Territory map still times out until it is run (the Worker falls back to the old count)** |
+| `026_user_controls.sql` | Adds one nullable column, `app_users.disabled_at`. A removed user keeps their row (leads and the append-only history point at it) but cannot sign in, and an open session ends within about 30 seconds. Rerun-safe, no data changes | **Not yet run. Only Remove / Restore needs it; adding users, roles and password resets work without it** |
 
 ## Notes on individual files
 

@@ -40,6 +40,13 @@ export async function login(config, username, password) {
     throw httpError(401, "Wrong username or password");
   }
 
+  // A removed user (sql/026) can't sign in. Looked up on its own so sign-in keeps
+  // working before that column exists.
+  const status = await supabase.from("app_users").select("disabled_at").eq("id", user.id).maybeSingle();
+  if (!status.error && status.data && status.data.disabled_at) {
+    throw httpError(401, "This account has been removed. Ask an admin if that's a mistake.");
+  }
+
   const token = await new SignJWT({
     username: user.username,
     displayName: user.display_name,

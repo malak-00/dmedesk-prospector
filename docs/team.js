@@ -8,6 +8,7 @@
 
   const panel = document.getElementById("teamPanel");
   const queues = document.getElementById("adminQueuesPanel");
+  const controls = document.getElementById("controlsPanel");
   const SEG_KEY = "dmeProspectorAdminSeg"; // "team" | "queues"
   const RANGE_KEY = "dmeProspectorTeamWeeks";
   const RANGES = [4, 8, 12];
@@ -19,7 +20,8 @@
   let error = "";
 
   try {
-    if (localStorage.getItem(SEG_KEY) === "team") seg = "team";
+    const savedSeg = localStorage.getItem(SEG_KEY);
+    if (savedSeg === "team" || savedSeg === "controls") seg = savedSeg;
     const saved = Number(localStorage.getItem(RANGE_KEY));
     if (RANGES.includes(saved)) weeks = saved;
   } catch { /* storage blocked: defaults apply for this page view */ }
@@ -35,7 +37,9 @@
     });
     if (panel) panel.hidden = seg !== "team";
     if (queues) queues.hidden = seg !== "queues";
+    if (controls) controls.hidden = seg !== "controls";
     if (seg === "team" && state.view === "admin") load();
+    if (seg === "controls" && state.view === "admin") window.dmeHooks.onControlsShown?.();
   }
 
   async function load() {

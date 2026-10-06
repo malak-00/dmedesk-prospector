@@ -397,10 +397,11 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
       } else {
         totalScanned += fetched;
         const acceptedBeforeThisTurn = acceptedCount();
-        for (let i = 0; i < results.length; i++) {
+        let consumed = 0; // rows of this page that were actually looked at
+        for (; consumed < results.length; consumed++) {
           if (acceptedCount() >= desiredLimit) break;
           if (acceptedCount() - acceptedBeforeThisTurn >= roundQuota) break;
-          const provider = results[i];
+          const provider = results[consumed];
           if (provider.npi && Object.prototype.hasOwnProperty.call(seenNpis, String(provider.npi))) continue;
 
           const isClaimed = provider.npi && (claimedThisRound.has(String(provider.npi)) || ownedThisRound.has(String(provider.npi)));
@@ -413,7 +414,13 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
           if (provider.npi) seenNpis[String(provider.npi)] = true;
         }
 
-        if (fetched < NPPES_PAGE_SIZE) {
+        if (consumed < results.length) {
+          // Enough leads were found before the page ran out. The bookmark moves
+          // by what was looked at, so the rest of the page is still there for
+          // the next "Search more" (moving it by the whole page would silently
+          // drop the unread rows from every later click).
+          skip += consumed;
+        } else if (fetched < NPPES_PAGE_SIZE) {
           variantExhausted[pr.v] = true;
           skip = EXHAUSTED_SKIP;
         } else {
@@ -431,6 +438,7 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
     excludedAsClaimed,
     variantSkips,
     hitScanBudget,
+    allVariantsExhausted: variantExhausted.every(Boolean),
     allSeenNpis: Object.keys(seenNpis),
     rejectedVariants,
   };
@@ -506,7 +514,9 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
     count: companies.length,
     scannedFromRegistry: totalScanned,
     excludedAsClaimed,
-    exhaustedRegistry: companies.length < desiredLimit && !fetchResult.hitScanBudget,
+    // Done only when every query has run out of rows. (Counting the leads shown
+    // would call a search finished whenever a filter trimmed a page.)
+    exhaustedRegistry: fetchResult.allVariantsExhausted && !fetchResult.hitScanBudget,
     variantSkips: fetchResult.variantSkips,
     rejectedVariants: fetchResult.rejectedVariants,
     companies,

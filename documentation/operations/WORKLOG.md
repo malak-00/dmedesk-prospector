@@ -1,5 +1,104 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-06 — Admin Controls: add, edit and remove users, system panel
+
+### Objective
+
+Let an admin add users, change roles, reset passwords and remove users from the app, and
+see what the app is connected to, instead of editing the `app_users` table by hand.
+
+### Actions Completed
+
+- **Admin > Controls** (`docs/controls.js`, third switch next to Team activity and Review
+  queues): a users table (role, status, claimed leads, date added) with Add user and Edit
+  dialogs, and a read-only System panel (which services are configured, which SQL files are
+  installed, where leads are searched from). Keys and secrets are never shown, only whether
+  they are set.
+- **Worker routes** (admin only): `GET/POST /admin/users`, `POST /admin/users/update`,
+  `GET /admin/system` (`repos/userAdminRepo.js`, `services/systemInfo.js`).
+- **Adding a user:** username (3 to 40 letters, numbers, dot, dash, underscore), name,
+  temporary password (generated, shown once), optional admin and claim-for-others roles.
+  Passwords are stored as bcrypt hashes. Names must be unique and may not contain a colon or
+  a long dash, because the call log is written as "time — name: text" and the team view
+  reads the name back out of it. Names can't be changed afterwards for the same reason.
+- **Removing a user is reversible, not a delete:** claimed leads and the append-only
+  ownership history point at `app_users(id)`. Removal sets `disabled_at` (sql/026); the
+  person can't sign in, and an open session stops working within about 30 seconds. Their
+  leads stay assigned to them. Guards: you can't remove or demote yourself, and the last
+  active admin can't be removed or demoted.
+- **Fresh permissions on every request** (`lib/userGate.js`): the admin flag and removal are
+  read from the database (cached 30 seconds per Worker instance) instead of the sign-in token,
+  so demoting an admin takes effect in seconds, not at token expiry. If that lookup fails,
+  requests carry on as the token says rather than locking everyone out.
+
+### Database / System Result
+
+- **SQL to run (optional):** `sql/026_user_controls.sql` adds one nullable column. Without it,
+  everything except Remove / Restore works, and Remove explains what to run.
+- Worker tests: 75 pass (new: user validation, duplicates, self and last-admin guards,
+  remove/restore, role and password changes, the pre-026 behaviour, the per-request gate).
+- Not deployed or pushed by this entry.
+
+### Safety Status
+
+- No production data touched, no secrets or `.env` changed; passwords are never logged or stored in clear.
+- Ownership rules and the audit trail are unchanged; no user row is ever deleted.
+- Manual browser testing is still required.
+
+## 2026-10-06 — "Search more" lost leads, Territory timeout, call mode and expanded-row redesign
+
+### Objective
+
+Find why a search said "451 left" and then "no more leads" on Search more, make the lead
+counts shown in the app trustworthy, stop the Territory map timing out, improve call mode,
+and make an opened lead replace its small row instead of repeating the company name.
+
+### Actions Completed
+
+- **Root cause of "451 left, then no more leads"** (`worker/src/services/companyService.js`):
+  each fetch reads a page of 200 providers, but after showing the requested 20 the saved
+  position still advanced by the whole page, so the other ~180 rows were never shown by any
+  later "Search more". "Left" counts every unseen provider, so it stayed high while paging
+  ran off the end. Reproduced with a test (450 providers, only 60 reachable); the position
+  now advances by the rows actually looked at, and "done" is reported only when every query
+  has run out of rows (it used to be inferred from how many leads were shown).
+- **Saved positions from before the fix** are discarded once (`searchProgressRepo.js`,
+  stamped `_v: 2` in `search_progress.variant_skips`). What a rep has already SEEN is kept, so
+  nothing is shown twice; the search simply re-reads from the top, skipping seen rows, and
+  reaches the rows the old paging dropped.
+- **Counts shown in the app:** Prospect cards now total every page fetched (the sub-line says
+  how many are on the current page); the Claimed "Reminders due" card counts everything due by
+  the end of today (it used to mean "within 24 hours" while the label said "today");
+  Today's calls, week and streak follow the rep's own clock (call-log stamps are UTC); the
+  "left for you" figure explains that a business a teammate owns through another location is
+  only spotted as you page, so it can read a little high.
+- **Territory timeout:** `search_territory()` counted every enabled specialty in one statement,
+  visiting the table for each provider to read its state. New `sql/025_territory_cache.sql`:
+  a small `territory_totals` table recounted one specialty at a time (`refresh_territory_code`),
+  and `search_territory()` reads it and subtracts claimed/disconnected leads live. The Worker
+  refreshes missing or week-old specialties two at a time within 20 seconds and reports
+  `pending` for the rest; the dialog says to reopen it. Without 025 the old count is used.
+- **Call mode:** Back, an "Up next" list to jump around in, every phone number on file for a
+  lead, Medicare claims / website / booked-meeting chips, Book a meeting (Claimed), keyboard
+  shortcuts (left/right, Ctrl+Enter, Esc), live logged/skipped/left counts, a summary that
+  breaks results down by status, and "Go through skipped".
+- **Expanded lead:** the small row is hidden while its card is open; the card header (big
+  name) collapses it again, carries a select checkbox, and returns focus to the row.
+
+### Database / System Result
+
+- **SQL to run:** `sql/025_territory_cache.sql` (creates one tiny table and replaces
+  `search_territory()`; reviewed against an in-memory Postgres test, not run on Supabase).
+- Worker tests: 66 pass (new: paging reaches every provider, bookmark migration, territory
+  refresh and fallback). SQL test: 50 pass.
+- Not deployed or pushed by this entry.
+
+### Safety Status
+
+- No production data touched, no `.env` or secrets changed.
+- 025 writes only its own derived table; claim and ownership rules and the audit trail are unchanged.
+- Manual browser testing is still required.
+
 ## 2026-10-05 — Today screen, call mode, "How did it go?", contacted-before warnings, Team activity
 
 ### Objective

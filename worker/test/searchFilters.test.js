@@ -134,7 +134,7 @@ function progressDb(rows) {
 
 test('moving to DME Desk keeps what a rep has seen but restarts their position', async () => {
   const criteria = { states: ['FL'] };
-  const mirrorRow = { variant_skips: { 'FL|': 400 }, seen_npis: ['1', '2', '3'] };
+  const mirrorRow = { variant_skips: { 'FL|': 400, _v: 2 }, seen_npis: ['1', '2', '3'] };
   const db = progressDb({ [fingerprint(criteria)]: mirrorRow });
 
   // On the mirror, nothing changes.
@@ -145,7 +145,7 @@ test('moving to DME Desk keeps what a rep has seen but restarts their position',
   // Once they have a DME Desk bookmark of their own, that one is used.
   const both = progressDb({
     [fingerprint(criteria)]: mirrorRow,
-    [fingerprint({ ...criteria, source: 'dmedesk' })]: { variant_skips: { '*|': 200 }, seen_npis: ['9'] },
+    [fingerprint({ ...criteria, source: 'dmedesk' })]: { variant_skips: { '*|': 200, _v: 2 }, seen_npis: ['9'] },
   });
   assert.deepEqual(await getProgress(both, 'u1', { ...criteria, source: 'dmedesk' }), { variantSkips: { '*|': 200 }, seenNpis: ['9'] });
   // The old bookmark was never touched, so switching back loses nothing.

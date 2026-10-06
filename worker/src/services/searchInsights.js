@@ -156,32 +156,76 @@ export async function getQuickPicks(supabase, criteria) {
   }));
 }
 
-export async function getTerritory(supabase) {
-  return cached("territory", 10 * 60_000, async () => {
-    const specialties = (await taxonomiesRepo.listEnabled(supabase)).filter((t) => t.code);
-    const codes = [...new Set(specialties.map((t) => String(t.code).trim()).filter(Boolean))];
-    if (codes.length === 0) return { specialties: [], states: [], generatedAt: new Date().toISOString() };
+// The grid is read from a small table of per-specialty totals (sql/025) that is
+// recounted one specialty at a time, so no single statement runs long. Missing or
+// week-old specialties are recounted here, a couple at a time, for a bounded time;
+// whatever is still waiting is reported as `pending` and picked up on the next
+// open. Before sql/025 is installed the old one-statement count is used instead.
+const TERRITORY_REFRESH_BUDGET_MS = 20_000;
+const TERRITORY_REFRESH_CONCURRENCY = 2;
+const TERRITORY_MAX_AGE_HOURS = 168;
+const TERRITORY_TTL_MS = 10 * 60_000;
+const TERRITORY_PARTIAL_TTL_MS = 15_000;
 
-    const rows = await callRpc(supabase, "search_territory", { p_codes: codes });
-    const byState = new Map();
-    for (const row of rows || []) {
-      const entry = byState.get(row.state) || { state: row.state, total: 0, unclaimed: 0, cells: {} };
-      entry.total += count(row.total);
-      entry.unclaimed += count(row.unclaimed);
-      entry.cells[row.taxonomy_code] = { total: count(row.total), unclaimed: count(row.unclaimed) };
-      byState.set(row.state, entry);
+let territoryCache = null;
+
+async function refreshStaleTerritory(supabase, codes, now = Date.now) {
+  const { data, error } = await supabase.rpc("territory_stale_codes", { p_codes: codes, p_max_age_hours: TERRITORY_MAX_AGE_HOURS });
+  if (error) {
+    if (isMissingFunction(error)) return null; // sql/025 not installed
+    throw httpError(502, `territory_stale_codes failed: ${error.message}`);
+  }
+  const queue = [...(data || [])];
+  const deadline = now() + TERRITORY_REFRESH_BUDGET_MS;
+  const failed = [];
+  const worker = async () => {
+    while (queue.length && now() < deadline) {
+      const code = queue.shift();
+      const { error: refreshError } = await supabase.rpc("refresh_territory_code", { p_code: code });
+      if (refreshError) failed.push(code);
     }
-    const states = [...byState.values()].sort((a, b) => b.unclaimed - a.unclaimed).slice(0, TERRITORY_STATES_SHOWN);
+  };
+  await Promise.all(Array.from({ length: TERRITORY_REFRESH_CONCURRENCY }, worker));
+  return queue.length + failed.length; // how many are still waiting
+}
 
-    // Only specialties that exist somewhere in the grid, richest first.
-    const totalByCode = new Map();
-    states.forEach((s) => Object.entries(s.cells).forEach(([code, cell]) => totalByCode.set(code, (totalByCode.get(code) || 0) + cell.unclaimed)));
-    const seenCodes = new Set();
-    const columns = specialties
-      .filter((t) => totalByCode.has(String(t.code).trim()) && !seenCodes.has(String(t.code).trim()) && seenCodes.add(String(t.code).trim()))
-      .map((t) => ({ code: String(t.code).trim(), label: t.facilityType || t.description, description: t.description, unclaimed: totalByCode.get(String(t.code).trim()) }))
-      .sort((a, b) => b.unclaimed - a.unclaimed);
+export async function getTerritory(supabase, { now = Date.now } = {}) {
+  if (territoryCache && now() - territoryCache.at < territoryCache.ttl) return territoryCache.value;
 
-    return { specialties: columns, states, generatedAt: new Date().toISOString() };
-  });
+  const specialties = (await taxonomiesRepo.listEnabled(supabase)).filter((t) => t.code);
+  const codes = [...new Set(specialties.map((t) => String(t.code).trim()).filter(Boolean))];
+  if (codes.length === 0) return { specialties: [], states: [], pending: 0, generatedAt: new Date().toISOString() };
+
+  const waiting = await refreshStaleTerritory(supabase, codes, now);
+  const rows = await callRpc(supabase, "search_territory", { p_codes: codes });
+  const pending = waiting || 0;
+
+  const byState = new Map();
+  for (const row of rows || []) {
+    const entry = byState.get(row.state) || { state: row.state, total: 0, unclaimed: 0, cells: {} };
+    entry.total += count(row.total);
+    entry.unclaimed += count(row.unclaimed);
+    entry.cells[row.taxonomy_code] = { total: count(row.total), unclaimed: count(row.unclaimed) };
+    byState.set(row.state, entry);
+  }
+  const states = [...byState.values()].sort((a, b) => b.unclaimed - a.unclaimed).slice(0, TERRITORY_STATES_SHOWN);
+
+  // Only specialties that exist somewhere in the grid, richest first.
+  const totalByCode = new Map();
+  states.forEach((s) => Object.entries(s.cells).forEach(([code, cell]) => totalByCode.set(code, (totalByCode.get(code) || 0) + cell.unclaimed)));
+  const seenCodes = new Set();
+  const columns = specialties
+    .filter((t) => totalByCode.has(String(t.code).trim()) && !seenCodes.has(String(t.code).trim()) && seenCodes.add(String(t.code).trim()))
+    .map((t) => ({ code: String(t.code).trim(), label: t.facilityType || t.description, description: t.description, unclaimed: totalByCode.get(String(t.code).trim()) }))
+    .sort((a, b) => b.unclaimed - a.unclaimed);
+
+  const value = { specialties: columns, states, pending, generatedAt: new Date().toISOString() };
+  // A grid that is still missing specialties is only kept briefly, so the next
+  // open carries on counting instead of showing the partial picture for ten minutes.
+  territoryCache = { at: now(), ttl: pending > 0 ? TERRITORY_PARTIAL_TTL_MS : TERRITORY_TTL_MS, value };
+  return value;
+}
+
+export function resetTerritoryCacheForTests() {
+  territoryCache = null;
 }

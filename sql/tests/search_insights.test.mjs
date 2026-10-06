@@ -55,6 +55,7 @@ await db.exec(`
 await db.exec(read("021_search_insights.sql"));
 await db.exec(read("022_search_speed.sql"));
 await db.exec(read("024_remove_scoring.sql"));
+await db.exec(read("025_territory_cache.sql"));
 
 let failed = 0;
 let passed = 0;
@@ -130,12 +131,26 @@ const quick = (await one("select public.search_quick_counts($1::jsonb) as r", [J
 ])]))[0].r;
 check("quick counts (unclaimed only, one call)", quick.map((q) => [q.id, Number(q.unclaimed), q.capped]), [["phone", 2, false], ["medicare", 1, false], ["none", 0, false]]);
 
-const terr = await one("select state, taxonomy_code, total::int as total, unclaimed::int as unclaimed from public.search_territory($1::text[]) order by 1, 2", [["332B00000X", "333600000X"]]);
+// Territory is counted one specialty at a time into a small table, then read from it.
+const CODES = ["332B00000X", "333600000X"];
+check("nothing counted yet: every specialty is stale", (await one("select public.territory_stale_codes($1::text[], 168) as r", [CODES]))[0].r, CODES);
+check("before counting, the grid is empty", (await one("select count(*)::int as n from public.search_territory($1::text[])", [CODES]))[0].n, 0);
+for (const code of CODES) await one("select public.refresh_territory_code($1)", [code]);
+check("after counting, nothing is stale", (await one("select public.territory_stale_codes($1::text[], 168) as r", [CODES]))[0].r, []);
+await one("select public.refresh_territory_code('999999999X')");
+check("a specialty with no providers is remembered, not recounted", (await one("select public.territory_stale_codes($1::text[], 168) as r", [["999999999X"]]))[0].r, []);
+check("and it adds no row to the grid", (await one("select count(*)::int as n from public.search_territory($1::text[])", [["999999999X"]]))[0].n, 0);
+const terr = await one("select state, taxonomy_code, total::int as total, unclaimed::int as unclaimed from public.search_territory($1::text[]) order by 1, 2", [CODES]);
 check("territory grid", terr, [
   { state: "FL", taxonomy_code: "332B00000X", total: 4, unclaimed: 3 },
   { state: "FL", taxonomy_code: "333600000X", total: 1, unclaimed: 1 },
   { state: "TX", taxonomy_code: "332B00000X", total: 1, unclaimed: 1 },
 ]);
+
+await db.exec("insert into public.leads values ('1000000001', gen_random_uuid(), false)");
+check("a new claim lowers 'unclaimed' at once, without recounting",
+  (await one("select unclaimed::int as u from public.search_territory($1::text[]) where state = 'FL' and taxonomy_code = '332B00000X'", [CODES]))[0].u, 2);
+await db.exec("delete from public.leads where npi = '1000000001'");
 
 check("rows carry the stored specialty name (the Worker fills blanks in)",
   (await one("select taxonomy_description from public.search_providers_v2($1::jsonb, 1, 0)", [JSON.stringify({ npi: "1000000001" })]))[0].taxonomy_description, null);

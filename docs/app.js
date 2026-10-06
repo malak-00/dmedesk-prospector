@@ -2400,6 +2400,65 @@ function websiteLink(url) {
   return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>` : "—";
 }
 
+// An opened lead is ONE thing: the small row is hidden and the big card, with the
+// company's name as its header, takes its place. The header collapses it again,
+// and carries a checkbox so the lead can still be ticked while it is open.
+const CHEVRON_UP = '<svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 10 8 5.5 12.5 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function openCardInPlace(row) {
+  const detail = row.nextElementSibling;
+  const head = detail && detail.querySelector(".lead-card-head");
+  if (!head) return;
+  const box = row.querySelector(".row-check, .claimed-row-check");
+  row.classList.add("is-open");
+  head.setAttribute("role", "button");
+  head.setAttribute("tabindex", "0");
+  head.setAttribute("aria-expanded", "true");
+  head.title = "Click to collapse";
+  head.dataset.collapse = "1";
+  head.insertAdjacentHTML("afterbegin",
+    `<label class="lead-card-select" title="Select this lead"><input type="checkbox" data-card-select ${box && box.checked ? "checked" : ""}></label>`);
+  head.insertAdjacentHTML("beforeend", `<span class="lead-card-collapse" aria-hidden="true">${CHEVRON_UP}<span>Collapse</span></span>`);
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  detail.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+  head.focus({ preventScroll: true });
+}
+
+// One delegated listener per table (the rows are rebuilt often).
+function wireCardCollapse(tbody, rowIndexOf, toggle, selector) {
+  tbody.addEventListener("click", (e) => {
+    const head = e.target.closest("[data-collapse]");
+    if (!head || e.target.closest("a, button, input, textarea, select, label")) return;
+    const row = head.closest(".detail-row")?.previousElementSibling;
+    if (row) closeCard(row, rowIndexOf(row), toggle, selector);
+  });
+  tbody.addEventListener("keydown", (e) => {
+    const head = e.target.closest("[data-collapse]");
+    if (!head || e.target !== head) return;
+    if (e.key !== "Enter" && e.key !== " " && e.key !== "Escape") return;
+    e.preventDefault();
+    const row = head.closest(".detail-row")?.previousElementSibling;
+    if (row) closeCard(row, rowIndexOf(row), toggle, selector);
+  });
+  tbody.addEventListener("change", (e) => {
+    if (!e.target.matches("[data-card-select]")) return;
+    const row = e.target.closest(".detail-row")?.previousElementSibling;
+    const box = row && row.querySelector(".row-check, .claimed-row-check");
+    if (!box) return;
+    box.checked = e.target.checked;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+function closeCard(row, idx, toggle, selector) {
+  toggle(idx);
+  const back = document.querySelector(selector.replace("%i", idx));
+  if (back) {
+    back.focus({ preventScroll: true });
+    back.scrollIntoView({ block: "nearest" });
+  }
+}
+
 function attachRowHandlers() {
   // Scoped to #resultsBody -- the Claimed Leads table also uses ".lead-row"
   // (for shared hover/selection styling) and stays in the DOM under
@@ -2435,6 +2494,7 @@ function collapseRow(idx) {
   const row = document.querySelector(`.lead-row[data-index="${idx}"]`);
   row?.querySelector(".chevron")?.classList.remove("open");
   row?.setAttribute("aria-expanded", "false");
+  row?.classList.remove("is-open");
   const detail = row?.nextElementSibling;
   if (detail && detail.classList.contains("detail-row")) detail.remove();
 }
@@ -2455,6 +2515,7 @@ function toggleRowDetail(idx) {
   row.querySelector(".chevron")?.classList.add("open");
   row.setAttribute("aria-expanded", "true");
   row.insertAdjacentHTML("afterend", detailRowHtml(state.companies[idx], idx));
+  openCardInPlace(row);
   document.querySelector(`[data-brief-index="${idx}"]`)?.addEventListener("click", (e) => {
     e.stopPropagation();
     generateBrief(idx);
@@ -3789,6 +3850,7 @@ function collapseClaimedRow(idx) {
   const row = document.querySelector(`#claimedBody .lead-row[data-claimed-index="${idx}"]`);
   row?.querySelector(".chevron")?.classList.remove("open");
   row?.setAttribute("aria-expanded", "false");
+  row?.classList.remove("is-open");
   const detail = row?.nextElementSibling;
   if (detail && detail.classList.contains("detail-row")) detail.remove();
 }
@@ -3813,6 +3875,7 @@ function toggleClaimedRowDetail(idx) {
   row.querySelector(".chevron")?.classList.add("open");
   row.setAttribute("aria-expanded", "true");
   row.insertAdjacentHTML("afterend", claimedDetailRowHtml(state.claimedLeads[idx], idx));
+  openCardInPlace(row);
   document.querySelector(`[data-claimed-brief-index="${idx}"]`)?.addEventListener("click", (e) => {
     e.stopPropagation();
     generateClaimedBrief(idx);
@@ -4241,6 +4304,8 @@ els.selectAll.addEventListener("change", (e) => {
   updateSelectionUI();
 });
 els.clearSelectionBtn.addEventListener("click", clearSelection);
+wireCardCollapse(els.resultsBody, (row) => Number(row.dataset.index), toggleRowDetail, '.lead-row[data-index="%i"]');
+wireCardCollapse(els.claimedBody, (row) => Number(row.dataset.claimedIndex), toggleClaimedRowDetail, '#claimedBody .lead-row[data-claimed-index="%i"]');
 els.searchMoreBtn.addEventListener("click", searchMore);
 els.pagePrevBtn.addEventListener("click", () => goToPage(state.currentPage - 1));
 els.pageNextBtn.addEventListener("click", () => goToPage(state.currentPage + 1));
@@ -4428,15 +4493,18 @@ function setText(id, value) {
 function updateProspectKpis() {
   const strip = document.getElementById("kpiSearch");
   if (!strip) return;
-  const list = state.companies || [];
+  // Totals cover every page fetched in this search ("Search more" adds pages);
+  // the sub-line says how many are on the page being viewed.
+  const list = state.resultPages.length ? state.resultPages.flatMap((p) => p.companies) : (state.companies || []);
   strip.hidden = state.resultPages.length === 0 && !strip.classList.contains("is-loading");
   const withPhone = list.filter((c) => (c.phone || "").trim() || (c.decisionMakers || []).some((dm) => (dm.phone || "").trim())).length;
   const medicareActive = list.filter((c) => typeof c.medicare?.totalClaims === "number" && c.medicare.totalClaims > 0).length;
   const share = (n) => (list.length ? `${Math.round((n / list.length) * 100)}% of results` : "\u00a0");
   setKpi("kpiFound", list.length);
+  const hiddenTotal = state.resultPages.reduce((n, p) => n + (p.excludedAsClaimed || 0), 0);
   setText("kpiFoundSub", state.resultPages.length > 1
-    ? `page ${state.currentPage + 1} of ${state.resultPages.length}`
-    : (state.excludedAsClaimed > 0 ? `${state.excludedAsClaimed} already claimed, hidden` : "this search"));
+    ? `${(state.companies || []).length} on page ${state.currentPage + 1} of ${state.resultPages.length}`
+    : (hiddenTotal > 0 ? `${hiddenTotal} already claimed, hidden` : "this search"));
   setKpi("kpiPhone", withPhone);
   setText("kpiPhoneSub", share(withPhone));
   setKpi("kpiMedicare", medicareActive);
@@ -4471,7 +4539,9 @@ function setKpi(id, target) {
 
 function updateClaimedKpis() {
   const all = state.claimedLeadsAll || [];
-  const due = all.filter((l) => ["overdue", "today"].includes(reminderUrgency(l.reminderAt))).length;
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+  const due = all.filter((l) => l.reminderAt && Date.parse(l.reminderAt) <= endOfToday.getTime()).length;
   const withReminder = all.filter((l) => reminderUrgency(l.reminderAt)).length;
   document.getElementById("kpiClaimed")?.classList.remove("is-loading");
   setKpi("kpiClaimedTotal", all.length);
@@ -4764,6 +4834,7 @@ function renderAvailability(ins) {
   box.classList.remove("is-stale");
   if (ins.lookup) { box.hidden = true; return; }
   box.hidden = false;
+  box.title = "Counted by provider. A business a teammate already owns through another location is only spotted as you page through, so this can read a little high until you have.";
   if (ins.empty) {
     box.className = "availability is-hint";
     box.innerHTML = '<span class="avail-main">Pick a state, city or specialty to see how many leads are available.</span>';
@@ -4860,7 +4931,7 @@ const territory = {
 
 async function openTerritory() {
   territory.overlay.hidden = false;
-  if (territory.data && Date.now() - territory.loadedAt < 5 * 60000) { renderTerritory(territory.data); return; }
+  if (territory.data && !territory.data.pending && Date.now() - territory.loadedAt < 5 * 60000) { renderTerritory(territory.data); return; }
   territory.body.innerHTML = '<span class="muted-note">Counting leads…</span>';
   try {
     territory.data = await apiGet("search/territory");
@@ -4873,7 +4944,9 @@ async function openTerritory() {
 
 function renderTerritory(data) {
   if (!data.states.length || !data.specialties.length) {
-    territory.body.innerHTML = '<span class="muted-note">No enabled specialties with leads yet.</span>';
+    territory.body.innerHTML = data.pending
+      ? `<span class="muted-note">Counting ${data.pending} specialt${data.pending === 1 ? "y" : "ies"} for the first time. Close this and open it again in a minute.</span>`
+      : '<span class="muted-note">No enabled specialties with leads yet.</span>';
     return;
   }
 
@@ -4905,7 +4978,7 @@ function renderTerritory(data) {
       <div class="territory-legend" aria-hidden="true"><span>Fewer</span><i class="legend-bar"></i><span>More leads</span></div>
     </div>
     <div class="territory-scroll"><table class="territory-table"><thead></thead><tbody></tbody></table></div>
-    <p class="muted-note territory-foot">Active organizations nobody has claimed or disconnected. Updated ${escapeHtml(new Date(data.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}.</p>`;
+    <p class="muted-note territory-foot">Active organizations nobody has claimed or disconnected. Updated ${escapeHtml(new Date(data.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}.${data.pending ? ` Still counting ${data.pending} specialt${data.pending === 1 ? "y" : "ies"}: close this and open it again in a minute to see them.` : ""}</p>`;
 
   drawTerritoryTable("");
   document.getElementById("territorySearch").addEventListener("input", (e) => drawTerritoryTable(e.target.value));

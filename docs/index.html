@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Plus+Jakarta+Sans:wght@600..800&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/dmedesk-logo2.png">
-<link rel="stylesheet" href="style.css?v=55">
+<link rel="stylesheet" href="style.css?v=57">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -349,7 +349,7 @@
     <div id="viewClaimed" hidden>
       <div class="kpi-strip" id="kpiClaimed">
         <div class="kpi-card"><span class="kpi-label">Claimed leads</span><span class="kpi-value" id="kpiClaimedTotal">0</span><span class="kpi-sub">owned by you</span></div>
-        <div class="kpi-card"><span class="kpi-label">Reminders due</span><span class="kpi-value" id="kpiClaimedDue">0</span><span class="kpi-sub">overdue or today</span></div>
+        <div class="kpi-card"><span class="kpi-label">Reminders due</span><span class="kpi-value" id="kpiClaimedDue">0</span><span class="kpi-sub">due by end of today</span></div>
         <div class="kpi-card"><span class="kpi-label">With a reminder</span><span class="kpi-value" id="kpiClaimedReminders">0</span><span class="kpi-sub">callbacks scheduled</span></div>
         <div class="kpi-card"><span class="kpi-label">Selected</span><span class="kpi-value" id="kpiClaimedSelected">0</span><span class="kpi-sub">for bulk actions</span></div>
       </div>
@@ -455,8 +455,10 @@
       <div class="admin-seg" role="tablist" aria-label="Admin sections">
         <button type="button" class="admin-seg-btn" role="tab" id="adminSegTeam" data-admin-seg="team" aria-selected="false">Team activity</button>
         <button type="button" class="admin-seg-btn is-active" role="tab" id="adminSegQueues" data-admin-seg="queues" aria-selected="true">Review queues</button>
+        <button type="button" class="admin-seg-btn" role="tab" id="adminSegControls" data-admin-seg="controls" aria-selected="false">Controls</button>
       </div>
       <section class="results-panel team-panel" id="teamPanel" aria-label="Team activity" hidden></section>
+      <section class="results-panel team-panel" id="controlsPanel" aria-label="Controls" hidden></section>
       <section class="results-panel admin-panel" id="adminQueuesPanel">
         <div class="admin-stats" id="adminStats">
           <div class="stat-card"><span class="stat-value" id="statTotalUsers">—</span><span class="stat-label">Users</span></div>
@@ -803,9 +805,10 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=54"></script>
-  <script src="callmode.js?v=1"></script>
-  <script src="today.js?v=3"></script>
-  <script src="team.js?v=2"></script>
+  <script src="app.js?v=55"></script>
+  <script src="callmode.js?v=2"></script>
+  <script src="today.js?v=4"></script>
+  <script src="team.js?v=3"></script>
+  <script src="controls.js?v=1"></script>
 </body>
 </html>
