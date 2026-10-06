@@ -30,6 +30,7 @@ Required manual sequence:
 024_remove_scoring.sql           (after 022: leads are no longer scored; replaces two search functions, drops the score function)
 025_territory_cache.sql           (after 021: the Territory map counts one specialty at a time into a small table, so it stops timing out)
 026_user_controls.sql            (adds app_users.disabled_at so an admin can remove and restore users from Admin > Controls)
+027_account_security.sql         (adds app_users.failed_logins, locked_until, must_change_password: sign-in lockout and forced password change)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -81,6 +82,7 @@ in `003`); save their output with the run.
 | `024_remove_scoring.sql` | Removes fit scoring from search: `provider_filter_sql()` loses the minimum-score filter, `search_providers_v2()` loses the score (default order is NPI order; `sortBy` is `medicare`, `updated` or `name`), and `provider_score_sql()` is dropped. Functions only: no table or data changes; `leads.score_value` / `score_percentage` are left in place, unused | **Not yet run — recommended; the Worker works without it, but the old score sort and filter stay in the database until it is run** |
 | `025_territory_cache.sql` | Territory map without the timeout: new small table `territory_totals` (a few thousand rows), `refresh_territory_code()` recounts one specialty, `territory_stale_codes()` says which need it, and `search_territory()` now reads the table and subtracts claimed/disconnected leads live. Rerun-safe. Nothing else is touched | **Not yet run — recommended; the Territory map still times out until it is run (the Worker falls back to the old count)** |
 | `026_user_controls.sql` | Adds one nullable column, `app_users.disabled_at`. A removed user keeps their row (leads and the append-only history point at it) but cannot sign in, and an open session ends within about 30 seconds. Rerun-safe, no data changes | **Not yet run. Only Remove / Restore needs it; adding users, roles and password resets work without it** |
+| `027_account_security.sql` | Adds three columns to `app_users`: `failed_logins`, `locked_until`, `must_change_password`. After 5 wrong passwords an account is locked for 15 minutes (an admin can unlock it); a temporary password set by an admin must be replaced at first sign-in. Rerun-safe, no data changes | **Not yet run. Without it sign-in works as before, with no lockout and no forced change; people can still change their own password** |
 
 ## Notes on individual files
 

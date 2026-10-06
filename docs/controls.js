@@ -48,7 +48,7 @@
         <td><div class="ctl-name">${escapeHtml(u.displayName)}${isMe(u) ? ' <span class="muted-note">(you)</span>' : ""}</div>
           <div class="ctl-sub mono">${escapeHtml(u.username)}</div></td>
         <td>${roleBadges(u)}</td>
-        <td>${u.disabled ? `<span class="status-pill is-removed" title="Removed ${escapeHtml(when(u.disabledAt))}">Removed</span>` : '<span class="status-pill is-active">Active</span>'}</td>
+        <td>${u.disabled ? `<span class="status-pill is-removed" title="Removed ${escapeHtml(when(u.disabledAt))}">Removed</span>` : '<span class="status-pill is-active">Active</span>'}${u.lockedUntil ? ' <span class="status-pill is-removed" title="Too many wrong passwords. Open Edit to unlock.">Locked</span>' : ""}${u.mustChangePassword ? ' <span class="role-badge" title="Still on the temporary password you gave them">Temp password</span>' : ""}</td>
         <td class="mono">${u.claimedCount}</td>
         <td class="mono">${escapeHtml(when(u.createdAt))}</td>
         <td class="ctl-actions"><button type="button" class="btn btn-ghost btn-small" data-ctl="edit" data-id="${escapeHtml(u.id)}">Edit</button></td>
@@ -135,6 +135,7 @@
       <label class="field"><span>Name</span><input type="text" id="ctlName" maxlength="60" autocomplete="off" placeholder="Ana Lopez"></label>
       <label class="field"><span>Username</span><input type="text" id="ctlUsername" maxlength="40" autocomplete="off" placeholder="ana.lopez"></label>
       ${passwordField("ctlPassword", "Temporary password")}
+      <label class="checkbox"><input type="checkbox" id="ctlMustChange" checked><span>Make them choose their own password at first sign-in</span></label>
       <label class="checkbox"><input type="checkbox" id="ctlAdmin"><span>Admin (can open this Admin tab)</span></label>
       ${features.claimForOthers ? '<label class="checkbox"><input type="checkbox" id="ctlClaimOthers"><span>Can claim leads for a teammate</span></label>' : ""}
       <div class="login-error" id="ctlError" hidden></div>
@@ -169,6 +170,7 @@
         password,
         isAdmin: card.querySelector("#ctlAdmin").checked,
         canClaimForOthers: Boolean(card.querySelector("#ctlClaimOthers")?.checked),
+        mustChangePassword: card.querySelector("#ctlMustChange").checked,
       });
       showCreated(result, password);
       load();
@@ -188,7 +190,9 @@
       <p class="suggestion-hint mono">${escapeHtml(u.username)}${u.disabled ? " · removed" : ""}</p>
       <label class="checkbox"><input type="checkbox" id="ctlAdmin" ${u.isAdmin ? "checked" : ""} ${mine ? "disabled" : ""}><span>Admin${mine ? " (you can't change your own)" : ""}</span></label>
       ${features.claimForOthers ? `<label class="checkbox"><input type="checkbox" id="ctlClaimOthers" ${u.canClaimForOthers ? "checked" : ""}><span>Can claim leads for a teammate</span></label>` : ""}
+      ${u.lockedUntil ? `<div class="ctl-locked">Locked after too many wrong passwords until ${escapeHtml(new Date(u.lockedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}. <button type="button" class="link-btn" data-ctl="unlock">Unlock now</button></div>` : ""}
       ${passwordField("ctlPassword", "Reset password <em class=\"field-optional\">leave blank to keep</em>")}
+      <label class="checkbox"><input type="checkbox" id="ctlMustChange" checked><span>Make them choose their own after this</span></label>
       <div class="login-error" id="ctlError" hidden></div>
       <div class="suggestion-actions ctl-edit-actions">
         ${mine ? "<span></span>" : (u.disabled
@@ -227,7 +231,7 @@
     const claim = card.querySelector("#ctlClaimOthers");
     if (claim && claim.checked !== u.canClaimForOthers) patch.canClaimForOthers = claim.checked;
     const password = card.querySelector("#ctlPassword").value;
-    if (password) patch.password = password;
+    if (password) { patch.password = password; patch.mustChangePassword = card.querySelector("#ctlMustChange").checked; }
     if (!Object.keys(patch).length) { closeDialog(); return; }
     update(patch, password ? "Saved. Give them the new password." : "Saved");
   }
@@ -263,6 +267,7 @@
     else if (act === "save") save();
     else if (act === "remove") remove();
     else if (act === "restore") update({ disabled: false }, "Access restored");
+    else if (act === "unlock") update({ unlock: true }, "Account unlocked");
     else if (act === "copycreds") {
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(btn.dataset.text).then(() => showToast("Copied"), () => showToast("Couldn't copy: select it by hand", true));
       else showToast("Couldn't copy: select it by hand", true);

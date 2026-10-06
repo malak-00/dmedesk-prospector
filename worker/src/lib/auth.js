@@ -9,6 +9,9 @@ import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { getSupabase } from "./supabase.js";
 import { findUserByUsernameExact } from "./users.js";
+import { afterFailedLogin, lockedMessage, lockMinutesLeft, LOCK_MINUTES } from "./loginGuard.js";
+import { clearUserGate } from "./userGate.js";
+import { validatePassword } from "../repos/userAdminRepo.js";
 
 const SESSION_TTL_SECONDS = 6 * 60 * 60; // 6h, same as the old CacheService TTL
 const MAX_EXCLUDE_KEYWORDS_LENGTH = 500;
@@ -29,22 +32,46 @@ function findUserByUsername(supabase, username) {
   return findUserByUsernameExact(supabase, username, "id, username, password_hash, display_name, exclude_keywords, is_admin");
 }
 
-export async function login(config, username, password) {
+export function login(config, username, password) {
+  return loginWith(getSupabase(config), config, username, password);
+}
+
+// The security columns (removed: sql/026; lockout and must-change: sql/027) are read
+// on their own, newest set first, so sign-in keeps working before they exist.
+async function readSecurity(supabase, userId) {
+  for (const columns of ["disabled_at, failed_logins, locked_until, must_change_password", "disabled_at"]) {
+    const res = await supabase.from("app_users").select(columns).eq("id", userId).maybeSingle();
+    if (!res.error) return res.data || null;
+  }
+  return null;
+}
+
+export async function loginWith(supabase, config, username, password, { now = Date.now, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
   if (!username || !password) throw httpError(400, "Username and password are required");
 
-  const supabase = getSupabase(config);
   const user = await findUserByUsername(supabase, username);
+  const security = user ? await readSecurity(supabase, user.id) : null;
+
+  // Locked after repeated wrong passwords: refused even with the right one.
+  const minutes = lockMinutesLeft(security, now());
+  if (minutes) throw httpError(429, lockedMessage(minutes));
 
   if (!user || !(await bcrypt.compare(String(password), user.password_hash))) {
-    await new Promise((resolve) => setTimeout(resolve, 400)); // slow down brute-force attempts a little
+    await wait(400); // slow down brute-force attempts a little
+    if (user && security && "failed_logins" in security) {
+      const next = afterFailedLogin(security, now());
+      await supabase.from("app_users").update({ failed_logins: next.failed_logins, locked_until: next.locked_until }).eq("id", user.id);
+      if (next.locked) throw httpError(429, lockedMessage(LOCK_MINUTES));
+    }
     throw httpError(401, "Wrong username or password");
   }
 
-  // A removed user (sql/026) can't sign in. Looked up on its own so sign-in keeps
-  // working before that column exists.
-  const status = await supabase.from("app_users").select("disabled_at").eq("id", user.id).maybeSingle();
-  if (!status.error && status.data && status.data.disabled_at) {
+  // A removed user (sql/026) can't sign in.
+  if (security && security.disabled_at) {
     throw httpError(401, "This account has been removed. Ask an admin if that's a mistake.");
+  }
+  if (security && (Number(security.failed_logins) > 0 || security.locked_until)) {
+    await supabase.from("app_users").update({ failed_logins: 0, locked_until: null }).eq("id", user.id);
   }
 
   const token = await new SignJWT({
@@ -65,7 +92,28 @@ export async function login(config, username, password) {
     displayName: user.display_name,
     excludeKeywords: user.exclude_keywords || "",
     isAdmin: Boolean(user.is_admin),
+    mustChangePassword: Boolean(security && security.must_change_password),
   };
+}
+
+// A signed-in person choosing their own password. Wrong current password is a 400,
+// not a 401, because the app treats a 401 as "your session ended" and signs out.
+export async function changePassword(supabase, session, currentPassword, newPassword, { hash = (pw) => bcrypt.hash(pw, 10), wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
+  const { data: user, error } = await supabase.from("app_users").select("id, password_hash").eq("id", session.id).maybeSingle();
+  if (error || !user) throw httpError(404, "Account not found");
+  if (!(await bcrypt.compare(String(currentPassword ?? ""), user.password_hash))) {
+    await wait(400);
+    throw httpError(400, "Your current password isn't right");
+  }
+  validatePassword(newPassword);
+  if (String(newPassword) === String(currentPassword)) throw httpError(400, "Choose a password you haven't used just now");
+
+  const password_hash = await hash(String(newPassword));
+  let res = await supabase.from("app_users").update({ password_hash, must_change_password: false }).eq("id", session.id);
+  if (res.error) res = await supabase.from("app_users").update({ password_hash }).eq("id", session.id); // before sql/027
+  if (res.error) throw httpError(500, "Failed to save the new password: " + res.error.message);
+  clearUserGate();
+  return { changed: true };
 }
 
 // Returns { id, username, displayName, excludeKeywords } or null. Never

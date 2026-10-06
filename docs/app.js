@@ -93,6 +93,8 @@ function unwrap(payload) {
       clearSession();
       showLogin();
     }
+    // A temporary password has to be replaced before anything else works.
+    if (payload.status === 403 && /^Change your password first/.test(payload.error || "")) window.dmeHooks.onPasswordRequired?.();
     throw new Error(payload.error || "Request failed");
   }
   return payload.data;
@@ -570,7 +572,7 @@ async function handleLogin(evt) {
       username: formData.get("username"),
       password: formData.get("password"),
     });
-    saveSession({ token: data.token, username: data.username, displayName: data.displayName, excludeKeywords: data.excludeKeywords, isAdmin: data.isAdmin });
+    saveSession({ token: data.token, username: data.username, displayName: data.displayName, excludeKeywords: data.excludeKeywords, isAdmin: data.isAdmin, mustChangePassword: Boolean(data.mustChangePassword) });
     // Unconditionally resets to THIS user's own saved value (never "only if
     // blank" -- a fresh login is a hard boundary) -- otherwise, signing out
     // and signing back in as someone else in the same tab would leave the
@@ -581,6 +583,7 @@ async function handleLogin(evt) {
     els.loginForm.reset();
     hideLogin();
     loadTaxonomyOptions();
+    window.dmeHooks.onLoginResult?.(data);
     showToast(`Welcome, ${data.displayName}`);
   } catch (err) {
     els.loginError.textContent = err.message;

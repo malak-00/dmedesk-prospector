@@ -604,6 +604,8 @@
   const previousChanged = hooks.onClaimedChanged;
   hooks.onClaimedChanged = () => { previousChanged?.(); updateBadge(); if (state.view === "today") render(); };
   hooks.onSignedIn = () => {
+    // Nothing loads for a temporary password until it has been changed.
+    if (getSession()?.mustChangePassword) return;
     // Land on Today after signing in, whatever the tab was before.
     switchView("today");
   };

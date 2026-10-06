@@ -1986,16 +1986,6 @@ body { animation: pageIn 0.35s ease both; }
 .lookup-hint:empty { display: none; }
 
 /* Quality and sort controls */
-.advanced-filters {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px 18px; align-items: end;
-  margin: 18px 0 0; padding: 14px 16px 16px; min-width: 0;
-  border: 1px dashed var(--line); border-radius: var(--radius-md); background: transparent;
-}
-.advanced-filters[hidden] { display: none; }
-.advanced-filters legend { padding: 0 8px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.advanced-checks { display: flex; flex-direction: column; gap: 8px; grid-column: span 2; }
-@media (max-width: 640px) { .advanced-checks { grid-column: auto; } }
-#searchForm.is-loading .advanced-filters { opacity: 0.55; pointer-events: none; }
 
 /* "412 match, 137 not yet claimed, 96 left for you" */
 .availability {
@@ -2082,7 +2072,6 @@ body { animation: pageIn 0.35s ease both; }
 .saved-badge.is-new { color: var(--score-high); }
 .saved-badge.is-down { color: var(--score-mid); }
 
-:root[data-theme="dark"] .advanced-filters { border-color: rgba(255, 255, 255, 0.1); }
 :root[data-theme="dark"] .suggest-btn, :root[data-theme="dark"] .pick-chip { background: var(--field-bg); }
 :root[data-theme="dark"] .pick-chip.is-active { background: var(--accent); }
 :root[data-theme="dark"] .territory-table thead th, :root[data-theme="dark"] .territory-table tbody th { background: #1C232D; }
@@ -2133,37 +2122,6 @@ body { animation: pageIn 0.35s ease both; }
 .source-trial.is-on .source-dot { background: var(--score-high); box-shadow: 0 0 0 3px var(--glow-high); }
 .source-trial[hidden] { display: none; }
 @media (max-width: 960px) { .source-trial #sourceTrialLabel { display: none; } }
-
-/* Lead quality and order: collapsed by default. */
-details.advanced-filters {
-  display: block; margin: 16px 0 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-md);
-  background: transparent;
-}
-details.advanced-filters[hidden] { display: none; }
-details.advanced-filters > summary {
-  display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; cursor: pointer; list-style: none;
-  padding: 11px 14px; border-radius: var(--radius-md); user-select: none;
-}
-details.advanced-filters > summary::-webkit-details-marker { display: none; }
-details.advanced-filters > summary::before { content: "\25B8"; color: var(--muted); transition: transform 0.15s ease; }
-details.advanced-filters[open] > summary::before { transform: rotate(90deg); }
-details.advanced-filters > summary:hover { background: var(--accent-soft); }
-.adv-title { font-size: 13px; font-weight: 650; color: var(--ink); }
-.adv-badge {
-  font-size: 11.5px; font-weight: 600; color: var(--muted); background: var(--surface-2);
-  border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px;
-}
-.adv-badge.has-active { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--selection-chip-border); }
-.adv-hint { margin-left: auto; font-size: 12px; color: var(--muted); }
-details.advanced-filters[open] .adv-hint { display: none; }
-details.advanced-filters > .quick-picks { margin: 0; padding: 4px 14px 12px; }
-.advanced-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px 18px; align-items: end;
-  padding: 4px 14px 16px;
-}
-.advanced-grid .advanced-checks { grid-column: span 2; }
-@media (max-width: 640px) { .adv-hint { display: none; } .advanced-grid .advanced-checks { grid-column: auto; } }
-#searchForm.is-loading details.advanced-filters { opacity: 0.55; pointer-events: none; }
 
 /* Territory explorer */
 .territory-card { width: min(1040px, 100%); padding: 22px 24px; gap: 16px; }
@@ -2218,7 +2176,6 @@ details.advanced-filters > .quick-picks { margin: 0; padding: 4px 14px 12px; }
 .terr-none { padding: 24px; text-align: center; color: var(--muted); }
 .territory-foot { margin: 0; font-size: 12px; }
 
-:root[data-theme="dark"] details.advanced-filters { border-color: rgba(255, 255, 255, 0.09); }
 :root[data-theme="dark"] .best-card { background: #1C232D; }
 :root[data-theme="dark"] .territory-tools input[type="search"] { background: var(--field-bg); }
 
@@ -2336,8 +2293,6 @@ details.advanced-filters > .quick-picks { margin: 0; padding: 4px 14px 12px; }
 :root[data-theme="light"] .availability { background: rgba(11, 114, 133, 0.08); border-color: var(--selection-chip-border); }
 :root[data-theme="light"] .availability.is-hint { background: transparent; border-color: var(--hairline); }
 :root[data-theme="light"] .availability.is-empty { background: var(--login-error-bg); border-color: var(--login-error-border); }
-:root[data-theme="light"] details.advanced-filters { border-color: var(--hairline); background: #FFFFFF; }
-:root[data-theme="light"] .adv-badge { background: var(--surface-2); border-color: var(--hairline); }
 :root[data-theme="light"] .status,
 :root[data-theme="light"] .user-chip { background: #FFFFFF; border-color: var(--line); }
 :root[data-theme="light"] .source-badge { background: var(--surface-2); border-color: var(--hairline); color: var(--muted); }
@@ -2370,7 +2325,6 @@ details.advanced-filters > .quick-picks { margin: 0; padding: 4px 14px 12px; }
 .claimed-table .specialty-pill { display: block; width: fit-content; margin-top: 5px; }
 .claimed-table .company-taxonomy { margin-bottom: 0; }
 
-
 /* ---- Results refine row: sort + "only show" (replaces the collapsible quality section) ---- */
 .results-refine {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
@@ -2392,8 +2346,6 @@ details.advanced-filters > .quick-picks { margin: 0; padding: 4px 14px 12px; }
 
 /* ---- Today ---- */
 .today-panel { max-width: 900px; margin: 0 auto; padding: 4px 0 40px; display: flex; flex-direction: column; gap: 16px; }
-.today-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 8px 2px 4px; }
-.today-head h2 { margin: 0; font-size: 26px; letter-spacing: -0.02em; font-weight: 700; }
 .today-date { margin-top: 2px; font-size: 13.5px; color: var(--muted); }
 .today-loading { display: flex; align-items: center; gap: 10px; justify-content: center; padding: 70px 0; color: var(--muted); }
 .today-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); overflow: hidden; }
@@ -2427,7 +2379,6 @@ details.advanced-filters > .quick-picks { margin: 0; padding: 4px 14px 12px; }
   .today-row { grid-template-columns: minmax(0, 1fr) auto; padding: 11px 14px; }
   .today-row .today-actions { grid-column: 1 / -1; justify-content: flex-start; }
   .today-card-head { padding: 12px 14px 8px; }
-  .today-head h2 { font-size: 22px; }
 }
 
 /* ---- "How did it go?" ---- */
@@ -2716,3 +2667,9 @@ html.call-open .suggestion-overlay { z-index: 60; }
   :root:not([data-theme="light"]) .for-dark.brand-icon,
   :root[data-theme="light"] .for-light.brand-icon { display: block; }
 }
+
+/* ---- Account: change password, lock notice ---- */
+.account-overlay { z-index: 70; }
+.account-card { width: min(420px, 100%); }
+.ctl-locked { padding: 10px 12px; border-radius: var(--radius-md); background: var(--glow-low); border: 1px solid var(--score-low); font-size: 13px; }
+.user-chip .link-btn + .link-btn { margin-left: 4px; }
