@@ -73,7 +73,13 @@
     }
   }
 
-  const pct = (x) => `${Math.round((x || 0) * 100)}%`;
+  // A whole percent from 10% up, one decimal below that, so a small but real rate never reads as 0%.
+  const pct = (x) => {
+    const v = (x || 0) * 100;
+    if (v === 0) return "0%";
+    if (v >= 10) return `${Math.round(v)}%`;
+    return `${v < 0.1 ? "<0.1" : v.toFixed(1)}%`;
+  };
 
   function funnelHtml() {
     const options = [[30, "Claimed in the last 30 days"], [90, "Claimed in the last 90 days"], [0, "All time"]]
@@ -98,7 +104,7 @@
         .map(([k, label]) => `<button type="button" class="admin-seg-btn${funnelBy === k ? " is-active" : ""}" data-funnel-by="${k}">${label}</button>`).join("");
       body = `
         <div class="funnel-bars">${bars}</div>
-        <p class="funnel-sum"><strong>${pct(won.ofClaimed)}</strong> of ${funnel.total.toLocaleString()} claimed leads reached Onboarded.</p>
+        <p class="funnel-sum"><strong>${won.count.toLocaleString()}</strong> of ${funnel.total.toLocaleString()} claimed leads (<strong>${pct(won.ofClaimed)}</strong>) reached Onboarded.</p>
         <div class="admin-seg funnel-tabs">${tabs}</div>
         <div class="table-wrap"><table class="results-table team-table"><thead><tr>
           <th>${funnelBy === "reps" ? "Rep" : funnelBy === "specialties" ? "Specialty" : "State"}</th><th>Claimed</th><th>Contacted</th><th>Booked</th><th>Held</th><th>Onboarded</th><th title="Claimed to Onboarded">Win rate</th>
