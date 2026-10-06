@@ -2699,3 +2699,20 @@ html.call-open .suggestion-overlay { z-index: 60; }
 .btn-danger { color: var(--score-low); border-color: var(--score-low); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 900px) { .ctl-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- Brand: the new BD Lead Prospector logo and icon, one set per theme ----
+   Trimmed PNGs (no transparent padding), so the size below is the size you see.
+   Dark is the default; light shows when data-theme="light". Last in the file on purpose:
+   it replaces the older logo sizing and cropping rules above. */
+.app-header .brand, .login-brand { height: auto; overflow: visible; padding: 0; background: none; border-radius: 0; }
+.brand-logo, .brand-icon { display: none; max-width: none; flex: none; object-fit: contain; }
+:root:not([data-theme="light"]) .for-dark.brand-logo,
+:root[data-theme="light"] .for-light.brand-logo { display: block; }
+.app-header .brand-logo { height: 46px; width: auto; }
+.login-brand .brand-logo { height: 96px; width: auto; max-width: 100%; }
+.brand-icon { height: 38px; width: auto; }
+@media (max-width: 480px) {
+  .app-header .brand-logo { display: none !important; }
+  :root:not([data-theme="light"]) .for-dark.brand-icon,
+  :root[data-theme="light"] .for-light.brand-icon { display: block; }
+}
