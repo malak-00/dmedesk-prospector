@@ -231,9 +231,9 @@ If the summary matches `accept: 1, duplicate: 1, invalid: 1` — grouping logic 
 
 | File | Purpose |
 |---|---|
-| [`scripts/nppes_ingest/insert_new.py`](file:///C:/Users/ben.arthur/Desktop/dmedesk-prospector/scripts/nppes_ingest/insert_new.py) | NPPES ingest script |
-| [`scripts/tests/test_ingest.py`](file:///C:/Users/ben.arthur/Desktop/dmedesk-prospector/scripts/tests/test_ingest.py) | Python unit tests (24 tests) |
-| [`worker/src/services/leadPreflight.js`](file:///C:/Users/ben.arthur/Desktop/dmedesk-prospector/worker/src/services/leadPreflight.js) | Grouping/preflight logic |
-| [`scripts/lead-intake/preflight.mjs`](file:///C:/Users/ben.arthur/Desktop/dmedesk-prospector/scripts/lead-intake/preflight.mjs) | Node CLI wrapper for preflight |
-| [`scripts/.env`](file:///C:/Users/ben.arthur/Desktop/dmedesk-prospector/scripts/.env) | Supabase credentials (gitignored) |
-| [`temp/supabase-backup-2026-09-08/`](file:///C:/Users/ben.arthur/Desktop/dmedesk-prospector/temp/supabase-backup-2026-09-08/) | Backup destination |
+| [`scripts/nppes_ingest/insert_new.py`](../scripts/nppes_ingest/insert_new.py) | NPPES ingest script |
+| [`scripts/tests/test_ingest.py`](../scripts/tests/test_ingest.py) | Python unit tests (24 tests) |
+| [`worker/src/services/leadPreflight.js`](../worker/src/services/leadPreflight.js) | Grouping/preflight logic |
+| [`scripts/lead-intake/preflight.mjs`](../scripts/lead-intake/preflight.mjs) | Node CLI wrapper for preflight |
+| [`scripts/.env`](../scripts/.env) | Supabase credentials (gitignored) |
+| [`temp/supabase-backup-2026-09-08/`](supabase-backup-2026-09-08/) | Backup destination |
