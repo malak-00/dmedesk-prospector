@@ -632,7 +632,16 @@ export async function getTeamActivity(supabase, { weeks = 8 } = {}) {
   } catch {
     leads = await fetchAllRows(() => supabase.from("leads").select("claimed_by, is_disconnected, notes, reminder_at"), "leads");
   }
-  return buildTeamActivity({ users: usersRes.data || [], events, leads, weeks: span });
+  const result = buildTeamActivity({ users: usersRes.data || [], events, leads, weeks: span });
+  // The per-person totals the Review queues tab calls "User activity", shown here too:
+  // claimed, disconnected, suggestions sent and distinct searches run. Best effort.
+  try {
+    result.userActivity = await getUserActivitySummary(supabase);
+  } catch (err) {
+    console.log("[adminRepo] user activity unavailable: " + err.message);
+    result.userActivity = [];
+  }
+  return result;
 }
 
 // How far claimed leads get: claimed, contacted, meeting booked, meeting held, onboarded.

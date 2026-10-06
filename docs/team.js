@@ -172,6 +172,19 @@
     </table></div>`;
   }
 
+  function userActivityHtml(d) {
+    const rows = (d.userActivity || []).map((u) => `
+      <tr><td><span class="team-rep">${escapeHtml(u.displayName || u.username)}</span>${u.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}
+          <div class="ctl-sub mono">${escapeHtml(u.username || "")}</div></td>
+        <td class="mono">${num(u.claimedCount)}</td><td class="mono">${num(u.disconnectedCount)}</td>
+        <td class="mono">${num(u.suggestionsCount)}</td><td class="mono">${num(u.distinctSearches)}</td>
+        <td><button type="button" class="link-btn" data-admin-view-leads data-user-id="${escapeHtml(u.id)}" data-display-name="${escapeHtml(u.displayName || "")}">View leads</button></td></tr>`).join("");
+    return `<div class="team-block team-block-table team-userblock"><h4>User activity</h4>
+      <div class="table-wrap"><table class="results-table team-table"><thead><tr>
+        <th>Person</th><th title="Active claimed leads">Claimed</th><th title="Leads sent to Disconnected">Disconnected</th><th title="Suggestions sent">Suggestions</th><th title="Different searches run (each filter combination counts once)">Searches</th><th></th>
+      </tr></thead><tbody>${rows || '<tr class="empty-row"><td colspan="6">No users yet.</td></tr>'}</tbody></table></div></div>`;
+  }
+
   function render() {
     if (!panel) return;
     const rangeOptions = RANGES.map((n) => `<option value="${n}"${n === weeks ? " selected" : ""}>Last ${n} weeks</option>`).join("");
@@ -193,6 +206,7 @@
           <div class="team-block team-block-table"><h4>By rep</h4>${tableHtml(data)}</div>
         </div>
         ${funnelHtml()}
+        ${userActivityHtml(data)}
         <p class="team-foot">Calls are the dated lines in each lead's call log, so they count what was written down. Claims come from the ownership history. Weeks start on Monday (UTC). Open leads, overdue and meetings ahead are as of now.</p>`;
     }
     panel.innerHTML = `
@@ -222,6 +236,8 @@
 
   panel?.addEventListener("click", (e) => {
     if (e.target.closest('[data-team="reload"]')) load();
+    const view = e.target.closest("[data-admin-view-leads]");
+    if (view) openAdminUserLeads(view.dataset.userId, view.dataset.displayName);
     const by = e.target.closest("[data-funnel-by]");
     if (by) { funnelBy = by.dataset.funnelBy; render(); }
   });
