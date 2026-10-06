@@ -3,6 +3,8 @@
 // in this file re-checks it, same trust boundary as leadsRepo's
 // listClaimedLeadsForUser.
 import { buildTeamActivity } from "../lib/teamActivity.js";
+import { buildFunnel } from "../lib/funnel.js";
+import { toLeadDTO } from "./leadsRepo.js";
 
 function httpError(status, message) {
   const err = new Error(message);
@@ -631,4 +633,35 @@ export async function getTeamActivity(supabase, { weeks = 8 } = {}) {
     leads = await fetchAllRows(() => supabase.from("leads").select("claimed_by, is_disconnected, notes, reminder_at"), "leads");
   }
   return buildTeamActivity({ users: usersRes.data || [], events, leads, weeks: span });
+}
+
+// How far claimed leads get: claimed, contacted, meeting booked, meeting held, onboarded.
+// `days` limits it to leads claimed in the last N days (0 = all time). See lib/funnel.js.
+export async function getFunnel(supabase, { days = 90 } = {}) {
+  const span = Math.min(Math.max(Math.round(Number(days)) || 0, 0), 3650);
+  const usersRes = await supabase.from("app_users").select("id, username, display_name");
+  if (usersRes.error) throw httpError(500, "Failed to load users: " + usersRes.error.message);
+
+  const columns = "claimed_by, claimed_at, status, notes, specialty, state";
+  let leads;
+  try {
+    leads = await fetchAllRows(() => supabase.from("leads").select(columns + ", meeting_at").not("claimed_by", "is", null), "leads");
+  } catch {
+    leads = await fetchAllRows(() => supabase.from("leads").select(columns).not("claimed_by", "is", null), "leads"); // before sql/020
+  }
+  return buildFunnel({ leads, users: usersRes.data || [], sinceMs: span ? Date.now() - span * 86_400_000 : 0 });
+}
+
+// Every active claimed lead, optionally one rep's, in the same shape the Claimed view uses,
+// for the admin "Export CSV". The browser builds the file.
+export async function getLeadsForExport(supabase, { userId = "" } = {}) {
+  const users = await supabase.from("app_users").select("id, display_name");
+  if (users.error) throw httpError(500, "Failed to load users: " + users.error.message);
+  const names = new Map((users.data || []).map((u) => [u.id, u.display_name]));
+  const rows = await fetchAllRows(() => {
+    let q = supabase.from("leads").select("*").eq("is_disconnected", false).not("claimed_by", "is", null).order("claimed_at", { ascending: false }).order("id");
+    if (userId) q = q.eq("claimed_by", userId);
+    return q;
+  }, "leads");
+  return rows.map((row) => toLeadDTO(row, names.get(row.claimed_by) || ""));
 }

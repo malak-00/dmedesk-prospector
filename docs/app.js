@@ -1934,6 +1934,7 @@ function goToPage(index) {
 }
 
 function applyCurrentPage() {
+  window.dmeHooks.beforeRender?.(); // may reorder this page ("Keep related together")
   const page = state.resultPages[state.currentPage];
   state.companies = page ? page.companies : [];
   renderResults(page ? page.excludedAsClaimed : 0);
@@ -2026,7 +2027,7 @@ function leadRowHtml(company, index) {
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}" tabindex="0" aria-expanded="false" style="--i:${Math.min(index, 12)}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
-        <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}${priorContactBadgeHtml(company.priorContact)}</div>
+        <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}${priorContactBadgeHtml(company.priorContact)}${window.dmeHooks.relatedChip?.("prospect", index) || ""}</div>
         ${sourceBadges(company.sources)}
         ${leadSignalsHtml({
           phone: primaryContact?.phone || company.phone,
@@ -2133,6 +2134,7 @@ function detailRowHtml(company, index) {
             </div>
           </div>
           ${priorContactBannerHtml(company.priorContact)}
+          ${window.dmeHooks.relatedBlock?.("prospect", index) || ""}
           <div class="detail-grid detail-grid-2">
             <div class="detail-block">
               <h4>Who to call</h4>
@@ -3413,7 +3415,7 @@ function claimedLeadRowHtml(lead, index) {
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-claimed-index="${index}" tabindex="0" aria-expanded="false" style="--i:${Math.min(index, 12)}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="claimed-row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
-        <div class="company-name">${escapeHtml(lead.name)}${claimedBranchesBadge(lead.branches)}${providerChangeBadge(lead.providerChange)}</div>
+        <div class="company-name">${escapeHtml(lead.name)}${claimedBranchesBadge(lead.branches)}${providerChangeBadge(lead.providerChange)}${window.dmeHooks.relatedChip?.("claimed", index) || ""}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
         ${lead.taxonomy ? specialtyPillHtml(lead.taxonomy) : ""}
         ${leadSignalsHtml({
@@ -3651,6 +3653,7 @@ function claimedDetailRowHtml(lead, index) {
               <div class="lead-card-sub">${escapeHtml([lead.taxonomy, cityLine].filter(Boolean).join(" · "))}</div>
             </div>
           </div>
+          ${window.dmeHooks.relatedBlock?.("claimed", index) || ""}
           <div class="detail-grid detail-grid-work">
             <div class="detail-block call-log" data-claimed-index="${index}">
               <h4>Log this call</h4>

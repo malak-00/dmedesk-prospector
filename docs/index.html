@@ -25,7 +25,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Plus+Jakarta+Sans:wght@600..800&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/bd-icon-light.png" media="(prefers-color-scheme: light)">
 <link rel="icon" type="image/png" href="icons/bd-icon-dark.png" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="style.css?v=59">
+<link rel="stylesheet" href="style.css?v=60">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -315,6 +315,7 @@
           <label class="refine-check"><input form="searchForm" type="checkbox" name="hasPhone"><span>Phone number</span></label>
           <label class="refine-check"><input form="searchForm" type="checkbox" name="hasDecisionMaker"><span>Decision maker</span></label>
           <label class="refine-check"><input form="searchForm" type="checkbox" name="activeMedicare"><span>Active Medicare biller</span></label>
+          <label class="refine-check refine-right" title="Puts leads that look like the same business (same phone or owner) next to each other"><input type="checkbox" id="relatedTogether"><span>Keep related together</span></label>
         </div>
 
         <div class="table-wrap">
@@ -419,6 +420,10 @@
             <button class="btn btn-ghost" id="claimedExportGoogleSheetBtn" disabled title="Pastes a copy of the checked leads into your Claimed tab in the shared Google Sheet. Check at least one lead first.">
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 6.5h12M2 10.5h12M6.5 2v12" stroke="currentColor" stroke-width="1.4"/></svg>
               <span id="claimedExportGoogleSheetLabel">Export to Sheet</span>
+            </button>
+            <button class="btn btn-ghost" id="claimedExportCsvBtn" title="Downloads all of your claimed leads as a CSV file you can open in Excel or Google Sheets">
+              <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8M4.5 6.8 8 10.3l3.5-3.5M3 13h10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Export CSV</span>
             </button>
             <button class="btn btn-ghost" id="refreshClaimedBtn">
               <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -811,11 +816,13 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=55"></script>
+  <script src="app.js?v=56"></script>
   <script src="callmode.js?v=2"></script>
   <script src="today.js?v=4"></script>
-  <script src="team.js?v=3"></script>
-  <script src="controls.js?v=2"></script>
+  <script src="team.js?v=4"></script>
+  <script src="sheetlib.js?v=1"></script>
+  <script src="related.js?v=1"></script>
+  <script src="controls.js?v=3"></script>
   <script src="account.js?v=1"></script>
 </body>
 </html>

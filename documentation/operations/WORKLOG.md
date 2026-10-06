@@ -37,6 +37,60 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-06 — Related businesses, pipeline funnel, sheet import and export
+
+### Objective
+
+Three product features: stop branches of one business being worked as separate leads
+(related businesses), show where claimed leads get to (pipeline funnel), and give admins an
+in-app version of the BD MEETINGS import plus CSV exports.
+
+### Actions Completed
+
+- **Related businesses** (`docs/related.js`): leads in the list on screen that share a phone
+  number, or an owner's name in the same state, are marked "Related x N". The opened card lists
+  the others and why (same phone, same owner); in Prospect "Select all N together" ticks them for
+  one claim, and "Keep related together" (results toolbar) puts their rows side by side. Same
+  marker in Claimed. It only looks at what is already loaded, so no extra searches. A number
+  shared by more than 6 rows is treated as a switchboard, a one-word name is too weak to join on,
+  and the existing branch merge and claim rules are unchanged.
+- **Pipeline funnel** (Admin > Team activity, `GET /admin/funnel?days=`): claimed, contacted,
+  meeting booked, meeting held, onboarded, with the step-to-step rate, by rep, specialty and
+  state, for leads claimed in the last 30 or 90 days or all time. A lead counts at every stage it
+  has reached (so an onboarded lead also counts as having had a meeting), from its status, its
+  booked meeting and its call log (`lib/funnel.js`). "Onboarded" = status says onboarded, closed
+  won, or signed.
+- **Sheet import** (Admin > Controls): choose a CSV exported from a BD MEETINGS tab; rows are
+  qualified by the import protocol (10-digit NPI, SUB and "mentions" exclusions as editable
+  settings, optional skip of rows already marked SYNC, repeats), openers are mapped to reps, a
+  dry run shows what would happen (imported, already theirs, blocked and by whom, held for
+  review), then the import claims 5 at a time on behalf of each rep through the existing
+  `POST /admin/claim-for-user`. A result CSV (with a SYNC column) can be pasted back into the sheet.
+- **Worker, claim-for-user:** now carries a `status`, `notes` and `meetingOpenerNotes` into the lead
+  (Section 5 of the BD MEETINGS sync plan), fills name, address, owner and specialty from
+  `npi_records` for rows that only have an NPI, and supports `dryRun`. A normal claim from the search
+  results is unchanged (status "new", no notes). Imported context is written as one call-log line
+  starting "Imported from BD MEETINGS", which the team view and funnel do not count as a call.
+- **CSV export:** admin export of all or one rep's claimed leads (`GET /admin/export/leads`), and an
+  Export CSV button in Claimed for your own. Cells that start like a formula are neutralised.
+
+### Database / System Result
+
+- No SQL to run. Everything reads existing tables; the import writes through the same `claim_leads`
+  function as every other claim.
+- Worker tests: 99 pass (new: funnel stages and rates, status/notes carry-through, registry fill-in,
+  dry run, CSV parsing and qualifying, export safety, related-business clustering).
+- **Effect on the BD MEETINGS Apps Script:** once this Worker is deployed, any `status` and `notes` it
+  already sends are stored on the lead instead of being dropped. The script itself lives in the
+  BD MEETINGS repo and is not changed here.
+- Not deployed or pushed by this entry.
+
+### Safety Status
+
+- No production data touched, no secrets or `.env` changed. Importing never takes over a lead someone
+  else owns, and every claim records the importing admin as the actor.
+- Manual browser testing is still required (use "Check what would happen" before a real import).
+
 ## 2026-10-06 — Password change, sign-in lockout, tidy-ups
 
 ### Objective
