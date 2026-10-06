@@ -1,41 +1,46 @@
-# DME Desk Prospector documentation
+# DME Desk Prospector Documentation
 
-This is the documentation index for the live DME Desk Prospector system.
+This is the canonical documentation index for DME Desk Prospector.
 
-## Which folder to use
+## 1. Multi-Agent & Multi-Contributor Collaboration System
 
-| Folder | Use it for | Authority |
+Multiple human engineers and AI assistants actively develop and maintain this codebase:
+- **Engineers**: Ben Arthur, Malak Adam
+- **AI Systems**: Antigravity, Claude, OpenAI Codex
+
+To prevent context drift, hallucinations, and conflicting implementations, **all contributors must follow this strict file tree division**:
+
+| Directory | Purpose | Lifecycle & Authority |
 |---|---|---|
-| `plans/` | Stable roadmaps, feature specifications, and design decisions | Current target behavior; check status headers |
-| `planning/` | Active working notes, investigation checklists, and temporary implementation planning | Working material; may be superseded |
-| `operations/` | Chronological worklog, deployment handoffs, and database-change history | Evidence of what was actually done |
-| `architecture/` | Current live-system architecture | Current implementation boundary |
-| `reference/` | Historical migration/design references | Background only unless explicitly marked current |
-| `reviews/` | Completed implementation and compatibility reviews | Historical evidence and guardrails |
+| [`architecture/`](architecture/) | Current live-system architecture as built | **Authoritative (Live State)**: Describes active boundaries, models, and APIs. |
+| [`plans/`](plans/) | Stable roadmaps, feature specifications, and system integration designs | **Authoritative (Target State)**: Approved architectural blueprints and protocols. |
+| [`planning/`](planning/) | Active working checklists, scratch investigation notes, and task boards | **Ephemeral (WIP)**: Working material; safe to draft and iterate on. |
+| [`operations/`](operations/) | Chronological worklog, live database migration logs, and deployment handoffs | **Authoritative (Historical Evidence)**: Exact record of what was executed and deployed. |
+| [`reference/`](reference/) | Historical migration docs and legacy designs | **Reference Only**: Background context; do not assume active. |
+| [`reviews/`](reviews/) | Audit reports, test sweeps, and compatibility reviews | **Guardrails**: Lessons learned and regression checks. |
 
-## Start here
+---
 
-1. [Architecture](architecture/ARCHITECTURE.md) — what is live now.
-2. [Master plan](plans/MASTER_PLAN.md) — canonical roadmap and phase status.
-3. [Worklog](operations/WORKLOG.md) — dated record of completed work.
-4. [Internal provider-search handoff](operations/INTERNAL_PROVIDER_SEARCH_CUTOVER_HANDOFF.md) — current search-source cutover status.
-5. [Active working checklist](planning/task_plan.md) — implementation details not yet folded into the master plan.
+## 2. Quick Links: Where to Start
 
-## Current status snapshot — 2026-09-22
+1. **System Map**: [Architecture](architecture/ARCHITECTURE.md) — live Worker + Supabase + static frontend boundaries.
+2. **Current Master Roadmap**: [Master Plan](plans/MASTER_PLAN.md) — canonical roadmap and phase statuses.
+3. **Execution History**: [Worklog](operations/WORKLOG.md) — dated record of every completed deployment and database migration.
+4. **Lead Intake & Grouping**: [Lead Intake Guide](plans/LEAD_INTAKE_AND_GROUPING_GUIDE.md) — business grouping rules and duplicate detection.
+5. **Sheet Import Protocol**: [Sheet Lead Import Protocol](plans/SHEET_LEAD_IMPORT_PROTOCOL.md) — standardized protocol for qualifying, enriching, and claiming sheet leads.
+6. **Sheet Sync Bridge**: [BD Meetings Sync Bridge Plan](plans/BD_MEETINGS_SYNC_BRIDGE_PLAN.md) — live automated connection between Google Sheets and Prospector.
 
-- Live application path: `worker/` API + `docs/` frontend + Supabase.
-- Apps Script and `backend/` are historical/reference implementations.
-- Internal provider search is implemented in code but production cutover remains a separately verified operation.
-- Taxonomy lookup fallback for legacy blank descriptions is implemented; see the dated worklog entry.
-- Search-more repetition is an open audit item; it is not marked fixed.
+---
 
-## Document status vocabulary
+## 3. Core Operational Invariants for AI Agents
 
-- **Current:** safe starting point for implementation or operations.
-- **Working:** active notes that may change as the investigation continues.
-- **Historical:** retained for context; do not treat its unchecked statements as current.
-- **Superseded:** retained because it records an earlier decision, but another document is authoritative.
-
-When a document makes a claim about production, confirm it against
-`operations/WORKLOG.md` and the relevant deployment handoff. Do not infer
-production state from a plan alone.
+Whenever any agent (Antigravity, Claude, or Codex) works in this repository:
+1. **Never write docs to `docs/`**: `docs/` is the deployed client-side web application frontend. Documentation belongs strictly under `documentation/`.
+2. **Consult `operations/WORKLOG.md` before assuming state**: Never infer production status solely from a plan in `plans/` or `planning/`. If it is not logged in `WORKLOG.md`, it has not been deployed.
+3. **Document live changes**: Whenever a schema modification, migration, or critical pipeline run is executed, append a dated entry to [`operations/WORKLOG.md`](operations/WORKLOG.md).
+4. **Respect repository boundaries**:
+   - Live API & Auth: `worker/`
+   - Live Frontend: `docs/`
+   - Migrations: `sql/`
+   - Supporting / External Tools: `scripts/` and `C:\Users\ben.arthur\Desktop\BD MEETINGS 2026`
+   - Legacy: `backend/` and `appscript/`

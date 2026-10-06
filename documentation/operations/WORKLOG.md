@@ -1,5 +1,42 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-06 — Onboarded Sheet Leads Import: Qualification, Preservation, and Claim Execution
+
+### Objective
+
+Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv` into DME Desk Prospector (`public.leads`), assigning each lead to the respective opener while preserving existing rep claims, skipping solar and George-affiliated records, and maintaining complete business grouping and audit logs.
+
+### Actions Completed
+
+- **Filtering & Deduplication Analysis:** Evaluated all 58 rows from the Onboarded sheet.
+  - Skipped 10 blank/divider rows lacking valid 10-digit NPIs.
+  - Skipped 3 rows under campaign `SUB: Solar`.
+  - Skipped 8 rows opened by George or mentioning George in meeting notes/closer comments.
+  - Checked live database (`public.leads`): 24 candidate NPIs were already claimed in Prospector; preserved their existing ownership without modification.
+- **Opener Resolution & Enriched Payload Assembly:**
+  - Mapped Opener `Ben` -> Ben Arthur (`ben.arthur.wiz@gmail.com`).
+  - Mapped Opener `Jimmy` -> Jimmy Pearson (`jimmy.pearson.wiz@gmail.com`).
+  - Mapped Opener `Jane` -> Kaity James (`kaity.james.wiz@gmail.com`).
+  - Assigned 5 unassigned/blank opener leads to admin Ben Arthur.
+  - Enriched provider details (address, official legal name, taxonomy, authorized official) via `public.npi_records`.
+  - Preserved Opener Summaries and Closer Notes in `lead.notes`.
+- **Sequential Atomic Claiming:**
+  - Executed claims 1-by-1 via `public.claim_leads(p_user_id, p_leads, p_actor_id, p_dry_run => false)` using Ben Arthur's admin identity as actor.
+  - Avoided PostgREST statement timeouts while automatically linking identity groups (`group_id`).
+
+### Database / System Result
+
+- **13 new leads inserted and claimed** in `public.leads` with `status = 'Onboarded'`:
+  - 11 claimed by Ben Arthur (`1134722390`, `1184202699`, `1255067385`, `1407691694`, `1497529606`, `1760247704`, `1114282688`, `1134620537`, `1396208633`, `1174356141`, `1598486631`).
+  - 1 claimed by Jimmy Pearson (`1356024087`).
+  - 1 claimed by Kaity James (`1679248447`).
+- All 13 verified live in `public.leads`.
+
+### Safety Status
+
+- No data deleted or truncated. Existing reps' claims were left untouched.
+- Group-aware constraints and audit trail (`claim_for_user`) respected.
+
 ## 2026-10-06 — Admin Controls: add, edit and remove users, system panel
 
 ### Objective
