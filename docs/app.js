@@ -281,7 +281,6 @@ const els = {
   statClaimedLeads: document.getElementById("statClaimedLeads"),
   statDisconnectedLeads: document.getElementById("statDisconnectedLeads"),
   statSuggestions: document.getElementById("statSuggestions"),
-  adminUsersBody: document.getElementById("adminUsersBody"),
   adminSuggestionsBody: document.getElementById("adminSuggestionsBody"),
   refreshAdminBtn: document.getElementById("refreshAdminBtn"),
   adminUserLeadsOverlay: document.getElementById("adminUserLeadsOverlay"),
@@ -639,27 +638,6 @@ function renderAdminStats(stats) {
   els.statClaimedLeads.textContent = stats.totalClaimedLeads;
   els.statDisconnectedLeads.textContent = stats.totalDisconnectedLeads;
   els.statSuggestions.textContent = stats.totalSuggestions;
-}
-
-function renderAdminUsers(users) {
-  if (users.length === 0) {
-    els.adminUsersBody.innerHTML = `<tr class="empty-row"><td colspan="7">No users found.</td></tr>`;
-    return;
-  }
-  els.adminUsersBody.innerHTML = users
-    .map(
-      (u) => `
-    <tr>
-      <td>${escapeHtml(u.displayName || "")}${u.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}</td>
-      <td>${escapeHtml(u.username || "")}</td>
-      <td class="mono">${u.claimedCount}</td>
-      <td class="mono">${u.disconnectedCount}</td>
-      <td class="mono">${u.suggestionsCount}</td>
-      <td class="mono">${u.distinctSearches}</td>
-      <td><button type="button" class="link-btn" data-admin-view-leads data-user-id="${escapeHtml(u.id)}" data-display-name="${escapeHtml(u.displayName || "")}">View leads</button></td>
-    </tr>`
-    )
-    .join("");
 }
 
 function renderAdminSuggestions(suggestions) {
@@ -1344,7 +1322,6 @@ async function handleMatchReviewSubmit(event) {
 // throwing an error toast every 30s.
 async function loadAdminOverview(silent = false) {
   if (!silent) {
-    els.adminUsersBody.innerHTML = skeletonRows(4, 7);
     els.adminSuggestionsBody.innerHTML = skeletonRows(3, 3);
   }
   // Conflicts load in parallel and own their own error handling, so a
@@ -1359,7 +1336,6 @@ async function loadAdminOverview(silent = false) {
   try {
     const data = await apiGet("admin/overview");
     renderAdminStats(data.stats);
-    renderAdminUsers(data.users);
     renderAdminSuggestions(data.suggestions);
     state.adminLoaded = true;
   } catch (err) {
@@ -1368,7 +1344,6 @@ async function loadAdminOverview(silent = false) {
       return;
     }
     showToast(err.message, true);
-    els.adminUsersBody.innerHTML = `<tr class="empty-row"><td colspan="7">Failed to load.</td></tr>`;
     els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">Failed to load.</td></tr>`;
   } finally {
     await Promise.all([conflictsLoaded, reviewsLoaded, providerChangesLoaded]);
@@ -4421,11 +4396,9 @@ els.adminUserLeadsSearchInput.addEventListener("input", () => {
   renderAdminUserLeadsRows();
 });
 wireSortableHeaders(els.adminUserLeadsTable, ADMIN_LEADS_DEFAULT_SORT_DIR, sortAdminUserLeads);
-// Event delegation, not a per-row listener -- adminUsersBody is fully
-// re-rendered on every load, same reasoning as the taxonomy checkboxes
-// (see renderTaxonomyOptions' comment).
-// Same event-delegation reasoning as adminUsersBody -- the conflict list is
-// fully re-rendered on every load and after every resolution.
+// Event delegation, not a per-row listener -- the conflict list is fully
+// re-rendered on every load and after every resolution, same reasoning as the
+// taxonomy checkboxes (see renderTaxonomyOptions' comment).
 els.conflictsList.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-resolve-conflict]");
   if (!btn) return;
@@ -4486,11 +4459,6 @@ els.matchReviewForm.addEventListener("submit", handleMatchReviewSubmit);
 els.matchReviewCancelBtn.addEventListener("click", closeMatchReview);
 els.matchReviewOverlay.addEventListener("click", (e) => {
   if (e.target === els.matchReviewOverlay) closeMatchReview();
-});
-els.adminUsersBody.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-admin-view-leads]");
-  if (!btn) return;
-  openAdminUserLeads(btn.dataset.userId, btn.dataset.displayName);
 });
 els.reminderForm.addEventListener("submit", handleReminderSubmit);
 els.reminderCancelBtn.addEventListener("click", closeReminderModal);

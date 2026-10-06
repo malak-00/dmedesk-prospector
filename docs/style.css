@@ -2757,3 +2757,10 @@ html.call-open .suggestion-overlay { z-index: 60; }
 .status-select.status-no-answer, .status-select.status-gatekeeper, .status-select.status-callback, .status-select.status-follow-up { border-color: var(--score-mid); color: var(--score-mid); }
 .status-select.status-meeting-booked, .status-select.status-meeting-held, .status-select.status-contract-sent, .status-select.status-invoice-sent { border-color: var(--accent); color: var(--accent-ink); }
 .status-select.status-onboarded { border-color: var(--score-high); color: var(--score-high); }
+
+/* ---- Team activity and Controls: table headers stay above their rows ----
+   The shared table header sticks below the page header, with an offset that suits a full-page table.
+   Inside these panels (whose tables sit in their own scrolling box) that offset pushed the header down
+   over the first rows, so here it stays in place. */
+.team-panel .results-table thead th { position: static; top: auto; z-index: auto; background: var(--surface-2); }
+.team-panel .results-table th, .team-panel .results-table td { padding-left: 16px; padding-right: 16px; }
