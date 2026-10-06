@@ -32,10 +32,38 @@ export function noteKind(text) {
   if (/^Meeting no-show/i.test(t)) return "noShow";
   if (/^Meeting cancelled/i.test(t)) return "cancelled";
   if (/^Imported from/i.test(t)) return "import"; // context copied in from a sheet, not something the rep did
+  if (/^Dialed\b/i.test(t)) return "dial"; // a tap on the lead's phone number
   return "call";
 }
 
 const DAY_MS = 86_400_000;
+
+// A result written within this long after the rep tapped the number is the same call, not a second one.
+export const SAME_CALL_MS = 30 * 60_000;
+
+// The calls in one lead's call log. A tap on a phone number ("Dialed ...") is a call; so is a
+// call-log result ("Voicemail", "Spoke to the owner"); a result shortly after a tap by the same
+// person is that tap's outcome and is not counted again. Lines carry date, time, by and text.
+export function callEvents(lines) {
+  const items = (lines || [])
+    .map((l) => ({ ...l, at: l.at ?? Date.parse(`${l.date}T${l.time}:00Z`), kind: l.kind || noteKind(l.text) }))
+    .filter((l) => l.kind === "call" || l.kind === "dial")
+    .sort((a, b) => a.at - b.at);
+  const lastDial = new Map();
+  const counted = [];
+  for (const line of items) {
+    const who = String(line.by || "").trim().toLowerCase();
+    if (line.kind === "dial") {
+      lastDial.set(who, line.at);
+      counted.push(line);
+    } else {
+      const dialed = lastDial.get(who);
+      if (dialed !== undefined && line.at - dialed <= SAME_CALL_MS) { lastDial.delete(who); continue; }
+      counted.push(line);
+    }
+  }
+  return counted;
+}
 
 // Monday (UTC) of the week containing `date`, as YYYY-MM-DD.
 export function weekStartOf(date) {
@@ -93,11 +121,13 @@ export function buildTeamActivity({ users = [], events = [], leads = [], weeks =
         if (lead.meeting_at && Date.parse(lead.meeting_at) >= nowMs) owner.upcomingMeetings += 1;
       }
     }
-    for (const line of parseNoteLines(lead.notes)) {
-      const rep = byName.get(line.by.trim().toLowerCase()) || other;
+    const parsed = parseNoteLines(lead.notes);
+    const repFor = (by) => byName.get(String(by || "").trim().toLowerCase()) || other;
+    callEvents(parsed).forEach((line) => bump(repFor(line.by), "calls", line.date));
+    for (const line of parsed) {
+      const rep = repFor(line.by);
       const kind = noteKind(line.text);
-      if (kind === "call") bump(rep, "calls", line.date);
-      else if (kind === "booked") bump(rep, "meetingsBooked", line.date);
+      if (kind === "booked") bump(rep, "meetingsBooked", line.date);
       else if (kind === "held") bump(rep, "meetingsHeld", line.date);
       else if (kind === "noShow") bump(rep, "noShows", line.date);
     }

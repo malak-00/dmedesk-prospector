@@ -471,6 +471,12 @@ app.post("/leads/status", async (c) => {
   return c.json(ok(data));
 });
 
+// A tap on the lead's phone number: logged as a call. Body: { npi, number }.
+app.post("/leads/dial", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await leadsRepo.logDial(supabaseFor(c), body.npi, body.number, c.get("session"))));
+});
+
 app.post("/leads/notes", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const data = await leadsRepo.addLeadNote(supabaseFor(c), body.npi, body.note, c.get("session"));

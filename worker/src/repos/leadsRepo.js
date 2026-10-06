@@ -985,3 +985,22 @@ export async function getDueLeads(supabase, session, nowMs = Date.now()) {
     meetingOpenerNotes: r.meeting_opener_notes || "",
   }));
 }
+
+// A tap on a phone number is recorded as a call-log line ("Dialed (404) 808-5118") on the rep's own
+// lead, so it counts as a call whether or not they then log a result. Two taps within two minutes
+// are one (a double click, or the same number tapped from two places).
+export async function logDial(supabase, npi, number, session) {
+  const digits = String(number || "").replace(/[^\d+*#]/g, "").slice(0, 20);
+  if (!digits) throw httpError(400, "number is required");
+  const existing = await requireOwnLead(supabase, npi, session);
+
+  const me = String(session.displayName || "").trim().toLowerCase();
+  const latest = parseNoteLines(existing.notes).find((l) => /^Dialed\b/i.test(l.text) && (!l.by || l.by.trim().toLowerCase() === me));
+  if (latest && Date.now() - Date.parse(`${latest.date}T${latest.time}:00Z`) < 120_000) {
+    return { npi: String(npi), logged: false, notes: existing.notes };
+  }
+  const national = digits.replace(/^\+?1(?=\d{10}$)/, "");
+  const shown = /^\d{10}$/.test(national) ? `(${national.slice(0, 3)}) ${national.slice(3, 6)}-${national.slice(6)}` : digits;
+  const saved = await addLeadNote(supabase, npi, `Dialed ${shown}`, session);
+  return { ...saved, logged: true };
+}

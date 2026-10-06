@@ -3,7 +3,7 @@
 //
 //   parseListParams   the query string of GET /leads/page -> a safe, clamped description
 //   buildTodayView    the lists, numbers and nudges of the Today screen from a rep's leads
-import { noteKind, parseNoteLines } from "./teamActivity.js";
+import { callEvents, noteKind, parseNoteLines } from "./teamActivity.js";
 
 const DAY = 86_400_000;
 
@@ -108,14 +108,16 @@ export function buildTodayView(leads, opts) {
 
   // The rep's own call-log lines (lines with no name are older ones and count as theirs).
   const lines = [];
+  const calls = [];
   for (const lead of leads) {
-    for (const line of parseNoteLines(lead.notes)) {
-      if (line.by && meLower && line.by.trim().toLowerCase() !== meLower) continue;
+    const mine = parseNoteLines(lead.notes).filter((line) => !(line.by && meLower && line.by.trim().toLowerCase() !== meLower));
+    for (const line of mine) {
       lines.push({ at: Date.parse(`${line.date}T${line.time}:00Z`), text: line.text, kind: noteKind(line.text), npi: lead.npi, name: lead.name });
     }
+    // A tap on a phone number is a call; a result logged soon after it is the same call.
+    callEvents(mine).forEach((line) => calls.push({ at: line.at }));
   }
   lines.sort((a, b) => b.at - a.at);
-  const calls = lines.filter((l) => l.kind === "call");
   const localDay = (ms) => Math.floor((ms - tzOffsetMin * 60000) / DAY);
   const days = new Set(calls.map((l) => localDay(l.at)));
 

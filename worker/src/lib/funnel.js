@@ -29,7 +29,7 @@ export function leadStages(lead) {
   const won = WON.test(status);
   const held = won || HELD.test(status) || kinds.includes("held");
   const booked = held || Boolean(lead.meeting_at) || BOOKED.test(status) || kinds.some((k) => k === "booked" || k === "noShow");
-  const contacted = booked || kinds.includes("call") || (status !== "" && status.toLowerCase() !== "new");
+  const contacted = booked || kinds.some((k) => k === "call" || k === "dial") || (status !== "" && status.toLowerCase() !== "new");
   return { claimed: true, contacted, booked, held, won };
 }
 

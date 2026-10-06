@@ -37,6 +37,37 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-08 — A tap on a phone number counts as a call
+
+### Objective
+
+Reps don't always press the Call button; tapping the number itself opens the phone app the same way,
+but nothing was recorded, so those calls were missing from the call counts.
+
+### Actions Completed
+
+- **Any phone link on one of your claimed leads is recorded** (`docs/dialtrack.js`, `POST /leads/dial`):
+  numbers in the Claimed rows and opened cards, on Today, and in call mode. It adds a call-log line
+  "Dialed (404) 808-5118" to the lead. Two taps on one lead within two minutes are one call. It never
+  delays or blocks the call: the phone app opens at once and a failure to record is only logged.
+- **Counting rule** (`callEvents` in `lib/teamActivity.js`): a tap is a call; a call-log result is a call;
+  a result written within 30 minutes after the same person's tap is that tap's outcome and is not counted
+  again; a later result, a second tap more than two minutes later, or someone else's result each count.
+  Used by Today (calls today and this week, streak), Team activity (calls per rep per week) and the funnel
+  ("contacted").
+- Leads in **Prospect** are not claimed, so there is no lead to record on; those taps are not counted.
+
+### Database / System Result
+
+- No SQL. Worker tests: all pass (new: the counting rule, the three consumers, recording a tap with its
+  number format, two-minute de-duplication, and refusing a lead that is not yours).
+- Existing call counts are unchanged (they only gain the new "Dialed" lines).
+
+### Safety Status
+
+- Writes one line to the rep's own lead, the same kind of line as any note. No other data touched.
+- Manual browser testing required.
+
 ## 2026-10-08 — Search more: failed pages and a Rescan for unseen leads
 
 ### Objective

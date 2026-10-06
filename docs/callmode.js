@@ -596,5 +596,8 @@
   };
   syncStartButtons();
 
-  window.dmeCall = { start, close };
+  // The lead on screen (claimed mode), so a tap on its phone number can be recorded against it.
+  const current = () => (isOpen() && run.mode === "claimed" && run.pos < run.queue.length ? run.queue[run.pos] : null);
+
+  window.dmeCall = { start, close, current };
 })();

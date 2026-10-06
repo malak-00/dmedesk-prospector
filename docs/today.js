@@ -607,5 +607,6 @@
 
   // The page may have been reloaded while already signed in; app.js ran its
   // sign-in step before this file existed.
+  window.dmeToday = { refresh };
   if (getSession()) hooks.onSignedIn();
 })();
