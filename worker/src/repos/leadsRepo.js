@@ -8,6 +8,7 @@ import { classifyRole } from "../lib/roleClassifier.js";
 import { findUserByUsernameExact } from "../lib/users.js";
 import { normalizeMeetingInput } from "../lib/meetings.js";
 import { parseNoteLines } from "../lib/teamActivity.js";
+import { SORTS, buildTodayView } from "../lib/leadView.js";
 
 const DEFAULT_STATUSES = ["new", "called", "voicemail", "interested", "not interested", "do not call"];
 const MAX_STATUS_LENGTH = 40;
@@ -884,3 +885,107 @@ export async function getPriorContactAmong(supabase, npis) {
 }
 
 export { DEFAULT_STATUSES };
+
+// ---- paged and summarised views of a rep's claimed leads --------------------------
+// The Claimed table asks for one page at a time (filtered and sorted here, not in the
+// browser) and Today asks for ready-made lists, so neither has to hold every lead.
+
+const COUNT_FILTERS = {
+  total: (q) => q,
+  due: (q, p) => q.not("reminder_at", "is", null).lte("reminder_at", new Date(p.endOfDayMs).toISOString()),
+  withReminder: (q) => q.not("reminder_at", "is", null),
+  overdue: (q, p) => q.not("reminder_at", "is", null).lt("reminder_at", new Date(p.nowMs).toISOString()),
+};
+
+async function claimedCounts(supabase, session, params) {
+  const entries = await Promise.all(Object.entries(COUNT_FILTERS).map(async ([key, narrow]) => {
+    const base = supabase.from("leads").select("id", { count: "exact", head: true }).eq("claimed_by", session.id).eq("is_disconnected", false);
+    const { count, error } = await narrow(base, params);
+    if (error) throw httpError(500, "Failed to count claimed leads: " + error.message);
+    return [key, count || 0];
+  }));
+  return Object.fromEntries(entries);
+}
+
+// A search for a 10-digit NPI also finds the lead whose business holds that NPI as another
+// location (the same thing the browser search used to do over the full list).
+async function groupIdsForNpi(supabase, npi) {
+  try {
+    const { data } = await supabase.from("leads").select("group_id").eq("npi", npi).not("group_id", "is", null).limit(5);
+    return [...new Set((data || []).map((r) => r.group_id).filter(Boolean))];
+  } catch {
+    return [];
+  }
+}
+
+export async function listClaimedPage(supabase, session, params) {
+  let query = supabase.from("leads").select("*", { count: "exact" }).eq("claimed_by", session.id).eq("is_disconnected", false);
+  // Case-insensitive, so "Voicemail" and "voicemail" are one status (Today groups them that way too).
+  if (params.status) query = /[%_]/.test(params.status) ? query.eq("status", params.status) : query.ilike("status", params.status);
+  if (params.overdueOnly) query = query.not("reminder_at", "is", null).lt("reminder_at", new Date(params.nowMs).toISOString());
+  if (params.states.length) query = query.in("state", params.states);
+  if (params.term) {
+    const like = `%${params.term}%`;
+    const clauses = ["company_name", "npi", "city", "state", "contact_name"].map((c) => `${c}.ilike.${like}`);
+    if (/^\d{10}$/.test(params.term)) {
+      const groups = await groupIdsForNpi(supabase, params.term);
+      if (groups.length) clauses.push(`group_id.in.(${groups.join(",")})`);
+    }
+    query = query.or(clauses.join(","));
+  }
+
+  const sort = SORTS[params.sortKey];
+  if (sort) {
+    sort.columns.forEach((column) => {
+      query = query.order(column, { ascending: params.dir === "asc", nullsFirst: !sort.nullsLast });
+    });
+  } else {
+    query = query.order("status_updated_at", { ascending: false, nullsFirst: false }).order("claimed_at", { ascending: false });
+  }
+  query = query.order("id"); // a unique last key, so a row is never skipped or repeated between pages
+
+  const from = (params.page - 1) * params.pageSize;
+  const [{ data, error, count }, counts, statuses] = await Promise.all([
+    query.range(from, from + params.pageSize - 1),
+    claimedCounts(supabase, session, params),
+    getKnownStatuses(supabase),
+  ]);
+  if (error) throw httpError(500, "Failed to load claimed leads: " + error.message);
+
+  const rows = data || [];
+  const leads = rows.map((row) => toLeadDTO(row, session.displayName));
+  await attachGroupBranches(supabase, rows, leads, session.id);
+  await attachProviderChanges(supabase, leads, session.id);
+  const total = count ?? leads.length;
+  return { leads, total, page: params.page, pageSize: params.pageSize, pages: Math.max(1, Math.ceil(total / params.pageSize)), counts, statuses };
+}
+
+// The Today screen, built here from all of the rep's leads and sent as just the lists it shows.
+export async function getTodayView(supabase, session, opts) {
+  const rows = await fetchAllClaimedRows(supabase, "claimed_by", session.id);
+  const leads = rows.map((row) => toLeadDTO(row, session.displayName));
+  return buildTodayView(leads, { ...opts, me: session.displayName });
+}
+
+// Just enough to notify about: callbacks that are due and meetings starting soon.
+const DUE_COLUMNS = "npi, company_name, reminder_at, meeting_at, meeting_duration_min, meeting_remind_before_min, meeting_opener_notes";
+export async function getDueLeads(supabase, session, nowMs = Date.now()) {
+  const base = () => supabase.from("leads").select(DUE_COLUMNS).eq("claimed_by", session.id).eq("is_disconnected", false);
+  const [reminders, meetings] = await Promise.all([
+    base().not("reminder_at", "is", null).lte("reminder_at", new Date(nowMs).toISOString()).order("reminder_at", { ascending: false }).limit(200),
+    // The longest "remind me before" is 2 days.
+    base().not("meeting_at", "is", null).gte("meeting_at", new Date(nowMs).toISOString()).lte("meeting_at", new Date(nowMs + 3 * 86_400_000).toISOString()).limit(200),
+  ]);
+  if (reminders.error) throw httpError(500, "Failed to load due callbacks: " + reminders.error.message);
+  const meetingRows = meetings.error ? [] : meetings.data || []; // before sql/020 there are no meetings
+  const seen = new Set();
+  return [...(reminders.data || []), ...meetingRows].filter((r) => !seen.has(r.npi) && seen.add(r.npi)).map((r) => ({
+    npi: r.npi,
+    name: r.company_name,
+    reminderAt: r.reminder_at || "",
+    meetingAt: r.meeting_at || "",
+    meetingDurationMin: r.meeting_duration_min ?? "",
+    meetingRemindBeforeMin: r.meeting_remind_before_min ?? "",
+    meetingOpenerNotes: r.meeting_opener_notes || "",
+  }));
+}

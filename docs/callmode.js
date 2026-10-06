@@ -87,6 +87,7 @@
         name: item.name,
         contact: dm ? [dm.name, dm.title].filter(Boolean).join(" — ") : "",
         place: [addr.city, addr.state].filter(Boolean).join(", "),
+        stateCode: addr.state || "",
         specialty: item.taxonomy && item.taxonomy.description,
         website: item.website || "",
         claims,
@@ -102,6 +103,7 @@
       name: item.name,
       contact: [item.contactName, item.contactTitle].filter(Boolean).join(" — "),
       place: [item.city, item.state].filter(Boolean).join(", "),
+      stateCode: item.state || "",
       specialty: item.taxonomy,
       website: item.website || "",
       claims,
@@ -209,7 +211,7 @@
       <div class="cm-body">
         <div class="cm-name">${escapeHtml(info.name)}</div>
         ${info.contact ? `<div class="cm-sub">${escapeHtml(info.contact)}</div>` : ""}
-        <div class="cm-sub cm-muted">${escapeHtml([info.place, info.specialty].filter(Boolean).join(" · "))}</div>
+        <div class="cm-sub cm-muted">${escapeHtml([info.place, info.specialty].filter(Boolean).join(" · "))} ${window.dmeHooks.localTime?.(info.stateCode) || ""}</div>
         ${facts ? `<div class="cm-facts">${facts}</div>` : ""}
         ${callBlockHtml(phoneOptions(item))}
         ${context}
@@ -346,29 +348,10 @@
     goTo(0);
   }
 
-  // The meeting dialog addresses a lead by its row in the Claimed table.
-  function claimedRowIndex(item) {
-    let idx = state.claimedLeads.findIndex((l) => l.npi === item.npi);
-    if (idx >= 0) return idx;
-    state.statusFilter = "";
-    state.claimedSearchQuery = "";
-    state.claimedDueOnly = false;
-    els.claimedSearchInput.value = "";
-    const statusSelect = document.getElementById("statusFilter");
-    if (statusSelect) statusSelect.value = "";
-    renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
-    idx = state.claimedLeads.findIndex((l) => l.npi === item.npi);
-    return idx;
-  }
-
   function bookMeeting() {
     const item = run.queue[run.pos];
-    const idx = claimedRowIndex(item);
-    if (idx < 0) { showToast("Open this lead in Claimed leads to book a meeting", true); return; }
-    // Keep the lead object in step with the row the dialog edits.
-    const row = state.claimedLeads[idx];
-    if (row !== item) run.queue[run.pos] = row;
-    openMeetingModal(idx);
+    // The dialog edits a lead by its row on the Claimed page; one that isn't on this page is kept alongside it.
+    openMeetingModal(claimedIndexFor(item));
   }
 
   function onClick(e) {
@@ -443,7 +426,7 @@
     backdrop.hidden = true;
     document.documentElement.classList.remove("call-open");
     const saved = counts().saved;
-    if (run.mode === "claimed" && saved > 0 && state.claimedLoaded) {
+    if (run.mode === "claimed" && saved > 0) {
       // Fresh from the server, not the queue's copies, which may be stale by now.
       loadClaimedLeads(true).then(() => window.dmeHooks.onClaimedChanged?.());
     } else if (saved > 0) {

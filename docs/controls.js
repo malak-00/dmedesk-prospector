@@ -465,11 +465,15 @@
   });
 
   // Your own claimed leads, from the Claimed view (no server call: they are already loaded).
-  document.getElementById("claimedExportCsvBtn")?.addEventListener("click", () => {
-    const leads = state.claimedLeadsAll || [];
-    if (!leads.length) { showToast("You have no claimed leads to export", true); return; }
-    download(`my-leads-${today()}.csv`, sheetLib.leadsToCsv(leads));
-    showToast(`Exported ${leads.length} lead${leads.length === 1 ? "" : "s"}`);
+  document.getElementById("claimedExportCsvBtn")?.addEventListener("click", async () => {
+    try {
+      const { leads } = await apiGet("leads/list");
+      if (!leads.length) { showToast("You have no claimed leads to export", true); return; }
+      download(`my-leads-${today()}.csv`, sheetLib.leadsToCsv(leads));
+      showToast(`Exported ${leads.length} lead${leads.length === 1 ? "" : "s"}`);
+    } catch (err) {
+      showToast(err.message, true);
+    }
   });
 
   /* ---------- wiring ---------- */

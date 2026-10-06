@@ -157,6 +157,15 @@ const state = {
   claimedDueOnly: false,
   claimedSortKey: null,
   claimedSortDir: 1,
+  // The Claimed table is one server page at a time (sorted and filtered there).
+  claimedPage: 1,
+  claimedPageSize: 50,
+  claimedTotal: 0,      // leads matching the current filters
+  claimedPages: 1,
+  claimedCounts: { total: 0, due: 0, withReminder: 0, overdue: 0 }, // whole-list figures, whatever the filters
+  claimedOpenNow: false,
+  claimedSeq: 0,
+  dueLeads: [],         // callbacks due and meetings soon, for notifications
   statuses: [],
   reminderTargetIndex: null,
   meetingTargetIndex: null,
@@ -218,24 +227,14 @@ function sortProspectResults(key, defaultDir) {
   renderResults();
 }
 
-const CLAIMED_SORT_COMPARATORS = {
-  company: (a, b) => (a.name || "").localeCompare(b.name || ""),
-  location: (a, b) => `${a.state || ""}|${a.city || ""}`.localeCompare(`${b.state || ""}|${b.city || ""}`),
-  claimedBy: (a, b) => (a.claimedBy || "").localeCompare(b.claimedBy || ""),
-  updated: (a, b) => (Date.parse(a.lastUpdated) || 0) - (Date.parse(b.lastUpdated) || 0),
-  status: (a, b) => (a.status || "").localeCompare(b.status || ""),
-  // Leads with no reminder sort last in the default (ascending/soonest-first)
-  // direction, since Date.parse("") is NaN and falls back to Infinity.
-  reminder: (a, b) => (Date.parse(a.reminderAt) || Infinity) - (Date.parse(b.reminderAt) || Infinity),
-};
 const CLAIMED_DEFAULT_SORT_DIR = { company: 1, location: 1, claimedBy: 1, updated: -1, status: 1, reminder: 1 };
 
 function sortClaimedLeads(key, defaultDir) {
   state.claimedSortDir = state.claimedSortKey === key ? state.claimedSortDir * -1 : defaultDir;
   state.claimedSortKey = key;
-  state.claimedLeads.sort((a, b) => CLAIMED_SORT_COMPARATORS[key](a, b) * state.claimedSortDir);
+  state.claimedPage = 1;
   updateSortIndicators(els.claimedTable, state.claimedSortKey, state.claimedSortDir);
-  renderClaimedLeads(state.claimedLeads);
+  loadClaimedLeads();
 }
 
 const els = {
@@ -408,6 +407,7 @@ function hideLogin() {
     applySourceTrialUi();
     loadSearchCapabilities();
     window.dmeHooks.onSignedIn?.();
+    loadDueLeads();
   }
 }
 
@@ -2036,7 +2036,7 @@ function leadRowHtml(company, index) {
         })}
       </td>
       <td class="specialty-cell">${specialtyPillHtml(company.taxonomy?.description)}</td>
-      <td class="mono">${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")}</td>
+      <td class="mono">${escapeHtml(company.address?.city || "")}, ${escapeHtml(company.address?.state || "")}${window.dmeHooks.localTime ? `<div class="tz-line">${window.dmeHooks.localTime(company.address?.state)}</div>` : ""}</td>
       <td>${primaryContact ? escapeHtml(primaryContact.name) : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="mono">${phoneCell(primaryContact?.phone, company.phone)}</td>
       <td><span class="chevron">▸</span></td>
@@ -3054,7 +3054,7 @@ async function handleNotificationToggle(e) {
   }
   localStorage.setItem(NOTIFY_PREF_KEY, "true");
   showToast("You'll get a notification when a callback reminder comes due");
-  checkDueReminders();
+  loadDueLeads();
 }
 
 // Scans whatever's currently loaded in memory (no extra network request) for
@@ -3069,12 +3069,8 @@ async function handleNotificationToggle(e) {
 function checkDueReminders() {
   if (!notificationsSupported() || Notification.permission !== "granted") return;
   if (localStorage.getItem(NOTIFY_PREF_KEY) !== "true") return;
-  const myName = getSession()?.displayName;
-  if (!myName) return;
   const now = Date.now();
-  state.claimedLeads.forEach((lead) => {
-    if (lead.claimedBy !== myName) return;
-
+  (state.dueLeads || []).forEach((lead) => {
     if (lead.reminderAt) {
       const t = Date.parse(lead.reminderAt);
       if (!isNaN(t) && t <= now && state.notifiedReminders.get(lead.npi) !== lead.reminderAt) {
@@ -3105,11 +3101,24 @@ function checkDueReminders() {
   });
 }
 
+// The server's short list of callbacks that are due and meetings starting soon (scoped to
+// the signed-in rep), fetched only when notifications are on.
+async function loadDueLeads() {
+  if (!notificationsSupported() || Notification.permission !== "granted") return;
+  if (localStorage.getItem(NOTIFY_PREF_KEY) !== "true" || !getSession()) return;
+  try {
+    state.dueLeads = (await apiGet("leads/due")).leads || [];
+    checkDueReminders();
+  } catch (err) {
+    console.log("[due] " + err.message);
+  }
+}
+
 // Keeps the current selection if it's still a known status; otherwise falls
 // back to "All statuses" -- a custom status could in principle disappear if
 // no lead uses it anymore between loads.
 function populateStatusFilterOptions() {
-  const current = els.statusFilter.value;
+  const current = state.statusFilter || els.statusFilter.value;
   els.statusFilter.innerHTML =
     `<option value="">All statuses</option>` +
     state.statuses.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
@@ -3117,37 +3126,55 @@ function populateStatusFilterOptions() {
   state.statusFilter = els.statusFilter.value;
 }
 
-function applyStatusFilter(leads) {
-  return state.statusFilter ? leads.filter((lead) => lead.status === state.statusFilter) : leads;
+// What the Claimed table asks the server for: one page, already filtered and sorted.
+function endOfTodayIso() {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d.toISOString();
 }
 
-// Plain client-side substring match (no server round-trip) across the
-// fields a rep would actually recall a claimed lead by -- name, NPI, city,
-// state -- since the full set is already loaded in state.claimedLeadsAll.
-function applyClaimedSearchFilter(leads) {
-  const term = state.claimedSearchQuery.trim().toLowerCase();
-  if (!term) return leads;
-  return leads.filter((lead) => {
-    return (
-      (lead.name || "").toLowerCase().includes(term) ||
-      (lead.npi || "").toLowerCase().includes(term) ||
-      (lead.city || "").toLowerCase().includes(term) ||
-      (lead.state || "").toLowerCase().includes(term) ||
-      // Searching a branch NPI or city finds the lead it belongs to, so a
-      // rep looking up one location lands on the business they hold.
-      (lead.branches || []).some((branch) =>
-        (branch.npi || "").toLowerCase().includes(term) ||
-        (branch.city || "").toLowerCase().includes(term)
-      )
-    );
-  });
+function claimedQuery() {
+  const query = {
+    page: state.claimedPage,
+    pageSize: state.claimedPageSize,
+    status: state.statusFilter,
+    q: state.claimedSearchQuery.trim(),
+    overdue: state.claimedDueOnly ? "1" : "",
+    endOfDay: endOfTodayIso(),
+  };
+  // Every claimed lead is yours, so sorting by "claimed by" can't change the order.
+  if (state.claimedSortKey && state.claimedSortKey !== "claimedBy") {
+    query.sort = state.claimedSortKey;
+    query.dir = state.claimedSortDir > 0 ? "asc" : "desc";
+  }
+  if (state.claimedOpenNow && window.dmeTime) query.states = window.dmeTime.openStates().join(",");
+  return query;
 }
 
-function applyClaimedFilters(leads) {
-  const dueFiltered = state.claimedDueOnly
-    ? leads.filter((lead) => reminderUrgency(lead.reminderAt) === "overdue")
-    : leads;
-  return applyClaimedSearchFilter(applyStatusFilter(dueFiltered));
+// Back to page one with a fresh sort, then load: used whenever a filter changes.
+function reloadClaimedFromStart() {
+  state.claimedPage = 1;
+  state.claimedSortKey = null;
+  state.claimedSortDir = 1;
+  updateSortIndicators(els.claimedTable, null, 1);
+  loadClaimedLeads();
+}
+
+// A lead from outside the table (Today, call mode) that a dialog needs by row index: use its
+// row when it is on this page, otherwise keep it alongside the page (it has no row to update).
+function claimedIndexFor(lead) {
+  let idx = state.claimedLeads.findIndex((l) => l.npi === lead.npi);
+  if (idx < 0) { state.claimedLeads.push(lead); idx = state.claimedLeads.length - 1; }
+  return idx;
+}
+
+function updateClaimedPager() {
+  const nav = document.getElementById("claimedPageNav");
+  if (!nav) return;
+  nav.hidden = state.claimedPages <= 1;
+  setText("claimedPageInfo", `Page ${state.claimedPage} of ${state.claimedPages} \u00b7 ${state.claimedTotal.toLocaleString()} leads`);
+  document.getElementById("claimedPagePrev").disabled = state.claimedPage <= 1;
+  document.getElementById("claimedPageNext").disabled = state.claimedPage >= state.claimedPages;
 }
 
 function clearClaimedSelection() {
@@ -3281,18 +3308,26 @@ async function loadClaimedLeads(silent = false) {
   }
   els.refreshClaimedBtn.classList.add("is-spinning");
   try {
-    // Always scoped server-side to the signed-in user's own claimed leads --
-    // no params needed, there's no team-wide view to opt into anymore.
-    const data = await apiGet("leads/list");
+    // Always scoped server-side to the signed-in user's own claimed leads.
+    const seq = ++state.claimedSeq;
+    let data = await apiGet("leads/page", claimedQuery());
+    // Leads left this view (moved, returned) and the page we were on no longer exists.
+    if (data.leads.length === 0 && data.page > 1 && data.pages < data.page) {
+      state.claimedPage = data.pages;
+      data = await apiGet("leads/page", claimedQuery());
+    }
+    if (seq !== state.claimedSeq) return; // a newer request has been made since; its answer is the one to show
     state.statuses = data.statuses || [];
     populateStatusFilterOptions();
     state.claimedLoaded = true;
     state.claimedLoadedAt = Date.now();
-    state.claimedSortKey = null; // fresh data starts in the server's own order (last updated desc)
-    state.claimedSortDir = 1;
-    updateSortIndicators(els.claimedTable, null, 1);
-    state.claimedLeadsAll = data.leads || [];
-    renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
+    state.claimedPage = data.page;
+    state.claimedPages = data.pages;
+    state.claimedTotal = data.total;
+    state.claimedCounts = data.counts;
+    state.claimedLeadsAll = data.leads || []; // this page; the full list is no longer held in the browser
+    renderClaimedLeads(state.claimedLeadsAll);
+    updateClaimedPager();
     els.refreshClaimedBtn.classList.remove("is-spinning");
     updateClaimedUpdatedLabel();
     window.dmeHooks.onClaimedLoaded?.();
@@ -3315,11 +3350,15 @@ function renderClaimedLeads(leads) {
   // would silently point at the wrong rows otherwise (e.g. after a reload,
   // sort, or status-filter change).
   state.claimedSelected.clear();
-  els.claimedCount.textContent = `${leads.length} claimed lead${leads.length === 1 ? "" : "s"}`;
+  const total = state.claimedTotal;
+  const everything = state.claimedCounts.total;
+  els.claimedCount.textContent = total === everything
+    ? `${total.toLocaleString()} claimed lead${total === 1 ? "" : "s"}`
+    : `${total.toLocaleString()} of ${everything.toLocaleString()} claimed leads`;
   checkDueReminders();
 
   if (leads.length === 0) {
-    const filtered = state.claimedLeadsAll.length > 0;
+    const filtered = everything > 0;
     els.claimedBody.innerHTML = filtered
       ? emptyRowHtml(10, "filter", "No claimed leads match", "Clear the search box, status filter or overdue filter to see everything.")
       : emptyRowHtml(10, "bookmark", "No claimed leads yet", "Search in Prospect, check the leads you want, and claim them. They'll show up here.", { action: "go-prospect", label: "Go to Prospect" });
@@ -3424,7 +3463,7 @@ function claimedLeadRowHtml(lead, index) {
           hasContact: Boolean(lead.contactName),
         })}
       </td>
-      <td class="mono">${escapeHtml(lead.city)}, ${escapeHtml(lead.state)}</td>
+      <td class="mono">${escapeHtml(lead.city)}, ${escapeHtml(lead.state)}${window.dmeHooks.localTime ? `<div class="tz-line">${window.dmeHooks.localTime(lead.state)}</div>` : ""}</td>
       <td class="mono">${phoneCell(lead.contactPhone, lead.companyPhone)}</td>
       <td>${escapeHtml(lead.claimedBy || "—")}</td>
       <td class="mono">${escapeHtml((lead.lastUpdated || "").slice(0, 10))}</td>
@@ -4422,20 +4461,24 @@ document.querySelectorAll(".view-tabs .tab").forEach((tab) => {
 // Both the search box and the status dropdown filter client-side over the
 // already-fetched list -- no new server round-trip needed, since the whole
 // (already user-scoped) set is loaded once by loadClaimedLeads.
+// The search and the filters are answered by the server (one page of results), so the
+// search waits a moment for typing to pause.
+let claimedSearchTimer = null;
 els.claimedSearchInput.addEventListener("input", () => {
   state.claimedSearchQuery = els.claimedSearchInput.value;
-  state.claimedSortKey = null; // matches the status filter's "fresh view resets sort" behavior
-  state.claimedSortDir = 1;
-  updateSortIndicators(els.claimedTable, null, 1);
-  renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
+  clearTimeout(claimedSearchTimer);
+  claimedSearchTimer = setTimeout(reloadClaimedFromStart, 300);
 });
 els.statusFilter.addEventListener("change", () => {
   state.statusFilter = els.statusFilter.value;
-  state.claimedSortKey = null; // matches the other filters' "fresh view resets sort" behavior
-  state.claimedSortDir = 1;
-  updateSortIndicators(els.claimedTable, null, 1);
-  renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
+  reloadClaimedFromStart();
 });
+document.getElementById("claimedOpenNow")?.addEventListener("change", (e) => {
+  state.claimedOpenNow = e.target.checked;
+  reloadClaimedFromStart();
+});
+document.getElementById("claimedPagePrev")?.addEventListener("click", () => { state.claimedPage = Math.max(1, state.claimedPage - 1); loadClaimedLeads(); });
+document.getElementById("claimedPageNext")?.addEventListener("click", () => { state.claimedPage = Math.min(state.claimedPages, state.claimedPage + 1); loadClaimedLeads(); });
 els.refreshClaimedBtn.addEventListener("click", loadClaimedLeads);
 els.staleNudge.addEventListener("click", loadClaimedLeads);
 els.claimedSelectAll.addEventListener("change", (e) => {
@@ -4468,10 +4511,13 @@ setInterval(() => {
   // memory once loaded once, so a reminder can still notify while you're
   // working the Prospect tab in the same browser session.
   checkDueReminders();
+  if (++dueTick % 4 === 0) loadDueLeads();
 }, 15000);
+let dueTick = 0;
 
 els.enableNotifications.addEventListener("change", handleNotificationToggle);
 initNotificationToggle();
+loadDueLeads();
 
 // One-off diagnostic, not part of the UI -- callable from the browser
 // console (F12) when a search comes back with no Foursquare/Places data, to
@@ -4543,23 +4589,22 @@ function setKpi(id, target) {
   el.dataset.raf = String(requestAnimationFrame(step));
 }
 
+function setClaimedBadge(total) {
+  const badge = document.getElementById("claimedTabBadge");
+  if (!badge) return;
+  badge.hidden = !total;
+  badge.textContent = total;
+}
+
 function updateClaimedKpis() {
-  const all = state.claimedLeadsAll || [];
-  const endOfToday = new Date();
-  endOfToday.setHours(23, 59, 59, 999);
-  const due = all.filter((l) => l.reminderAt && Date.parse(l.reminderAt) <= endOfToday.getTime()).length;
-  const withReminder = all.filter((l) => reminderUrgency(l.reminderAt)).length;
+  const c = state.claimedCounts;
   document.getElementById("kpiClaimed")?.classList.remove("is-loading");
-  setKpi("kpiClaimedTotal", all.length);
-  setKpi("kpiClaimedDue", due);
-  setKpi("kpiClaimedReminders", withReminder);
+  setKpi("kpiClaimedTotal", c.total);
+  setKpi("kpiClaimedDue", c.due);
+  setKpi("kpiClaimedReminders", c.withReminder);
   setKpi("kpiClaimedSelected", state.claimedSelected.size);
   updateReminderStrip();
-  const badge = document.getElementById("claimedTabBadge");
-  if (badge) {
-    badge.hidden = !state.claimedLoaded || all.length === 0;
-    badge.textContent = all.length;
-  }
+  if (state.claimedLoaded) setClaimedBadge(c.total);
 }
 
 function updateSelectionBar() {
@@ -4575,7 +4620,7 @@ function updateSelectionBar() {
 function updateReminderStrip() {
   const strip = document.getElementById("reminderStrip");
   if (!strip) return;
-  const overdue = (state.claimedLeadsAll || []).filter((l) => reminderUrgency(l.reminderAt) === "overdue").length;
+  const overdue = state.claimedCounts.overdue;
   strip.hidden = overdue === 0 && !state.claimedDueOnly;
   setText("reminderStripText", overdue === 0
     ? "No overdue callbacks."
@@ -4585,10 +4630,7 @@ function updateReminderStrip() {
 
 document.getElementById("reminderStripBtn").addEventListener("click", () => {
   state.claimedDueOnly = !state.claimedDueOnly;
-  state.claimedSortKey = null;
-  state.claimedSortDir = 1;
-  updateSortIndicators(els.claimedTable, null, 1);
-  renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
+  reloadClaimedFromStart();
 });
 
 document.getElementById("selectionBarClaim").addEventListener("click", () => els.exportSheetsBtn.click());
@@ -5327,9 +5369,8 @@ function paletteCommands() {
 function paletteMatches(query) {
   const q = query.trim().toLowerCase();
   const items = paletteCommands().filter((c) => !q || c.label.toLowerCase().includes(q));
-  if (q.length >= 2 && state.claimedLoaded) {
-    state.claimedLeadsAll
-      .filter((l) => [l.name, l.npi, l.city].some((v) => String(v || "").toLowerCase().includes(q)))
+  if (q.length >= 2 && state.paletteQuery === q) {
+    (state.paletteHits || [])
       .slice(0, 6)
       .forEach((lead) => items.push({
         label: lead.name,
@@ -5373,7 +5414,22 @@ function runPaletteItem(i) {
 }
 
 document.getElementById("paletteBtn").addEventListener("click", openPalette);
-palette.input.addEventListener("input", () => { palette.index = 0; renderPalette(); });
+let paletteSearchTimer = null;
+palette.input.addEventListener("input", () => {
+  palette.index = 0;
+  renderPalette();
+  const q = palette.input.value.trim().toLowerCase();
+  clearTimeout(paletteSearchTimer);
+  if (q.length < 2) { state.paletteHits = []; state.paletteQuery = ""; return; }
+  paletteSearchTimer = setTimeout(async () => {
+    try {
+      const data = await apiGet("leads/page", { q, pageSize: 10, endOfDay: endOfTodayIso() });
+      state.paletteHits = data.leads || [];
+      state.paletteQuery = q;
+      if (palette.input.value.trim().toLowerCase() === q) renderPalette();
+    } catch { /* the quick actions still work without lead results */ }
+  }, 250);
+});
 palette.list.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-palette-index]");
   if (btn) runPaletteItem(Number(btn.dataset.paletteIndex));

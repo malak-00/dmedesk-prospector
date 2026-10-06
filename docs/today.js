@@ -24,33 +24,59 @@
   let outcomeOverlay = null;
   const outcome = { npi: "", kind: "", status: "", days: null, busy: false };
 
-  /* ---------- sorting the claimed leads into today's lists ---------- */
+  /* ---------- the server's view of today ---------- */
+  // The lists, numbers and nudges are built by GET /leads/today from all of the rep's leads, so
+  // the browser holds only what this screen shows, however many leads they have.
 
+  let view = null;
+  const STALE_KEY = "dmeStaleDays";
   const time = (iso) => Date.parse(iso) || 0;
-  const byNpi = (npi) => state.claimedLeadsAll.find((l) => l.npi === npi);
   const phoneOf = (l) => (l.contactPhone || l.companyPhone || "").trim();
-  const isNewStatus = (l) => !l.status || String(l.status).toLowerCase() === "new";
+
+  function staleDays() {
+    try {
+      const n = Number(localStorage.getItem(STALE_KEY));
+      if (n >= 3 && n <= 90) return Math.round(n);
+    } catch { /* the default applies */ }
+    return 14;
+  }
+
+  // The rep's own day and week, as the server needs them (call-log stamps are UTC).
+  function todayQuery() {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = new Date(start);
+    end.setHours(23, 59, 59, 999);
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+    return { start: start.toISOString(), end: end.toISOString(), week: monday.toISOString(), tz: now.getTimezoneOffset(), staleDays: staleDays() };
+  }
+
+  const allLeads = () => (view ? [...view.review, ...view.meetingsToday, ...view.callbacks, ...view.firstCalls.items, ...view.stale.items] : []);
+  const byNpi = (npi) => allLeads().find((l) => l.npi === npi);
 
   function buckets() {
-    const leads = state.claimedLoaded ? state.claimedLeadsAll : [];
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
-
-    const review = leads.filter((l) => l.meetingAt && meetingIsPast(l)).sort((a, b) => time(a.meetingAt) - time(b.meetingAt));
-    const reviewing = new Set(review.map((l) => l.npi));
-    const meetingsToday = leads
-      .filter((l) => l.meetingAt && !meetingIsPast(l) && time(l.meetingAt) <= endOfToday.getTime())
-      .sort((a, b) => time(a.meetingAt) - time(b.meetingAt));
-    const callbacks = leads
-      .filter((l) => l.reminderAt && time(l.reminderAt) <= endOfToday.getTime() && !reviewing.has(l.npi))
-      .sort((a, b) => time(a.reminderAt) - time(b.reminderAt));
-    const queued = new Set(callbacks.map((l) => l.npi));
-    const firstCalls = leads.filter((l) => isNewStatus(l) && !String(l.notes || "").trim() && !l.meetingAt && !queued.has(l.npi));
-    const nextMeeting = leads
-      .filter((l) => l.meetingAt && !meetingIsPast(l) && time(l.meetingAt) > endOfToday.getTime())
-      .sort((a, b) => time(a.meetingAt) - time(b.meetingAt))[0] || null;
-    return { review, meetingsToday, callbacks, firstCalls, nextMeeting, total: leads.length };
+    if (!view) return { review: [], meetingsToday: [], callbacks: [], callbacksTotal: 0, firstCalls: [], firstTotal: 0, stale: [], staleTotal: 0, staleDays: staleDays(), nextMeeting: null, total: 0 };
+    return {
+      review: view.review,
+      meetingsToday: view.meetingsToday,
+      callbacks: view.callbacks,
+      callbacksTotal: view.callbacksTotal,
+      firstCalls: view.firstCalls.items,
+      firstTotal: view.firstCalls.total,
+      stale: view.stale.items,
+      staleTotal: view.stale.total,
+      staleDays: view.stale.days,
+      nextMeeting: view.nextMeeting,
+      total: view.totals.claimed,
+    };
   }
+
+  // Leads whose local time is a good time to call come first; the rest keep their order.
+  function openFirst(list) {
+    const good = (l) => (window.dmeTime && window.dmeTime.localInfo(l.state)?.good ? 0 : 1);
+    return list.map((l, i) => ({ l, i })).sort((a, b) => good(a.l) - good(b.l) || a.i - b.i).map((x) => x.l);
+  }
+  const unique = (list) => list.filter((l, i, all) => all.findIndex((x) => x.npi === l.npi) === i);
 
   /* ---------- rendering ---------- */
 
@@ -83,7 +109,8 @@
 
   function whoHtml(l) {
     const sub = [l.contactName, [l.city, l.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
-    return `<div class="today-who"><div class="today-name">${escapeHtml(l.name)}</div>${sub ? `<div class="today-sub">${escapeHtml(sub)}</div>` : ""}</div>`;
+    const tz = window.dmeHooks.localTime?.(l.state) || "";
+    return `<div class="today-who"><div class="today-name">${escapeHtml(l.name)}</div>${sub || tz ? `<div class="today-sub">${escapeHtml(sub)} ${tz}</div>` : ""}</div>`;
   }
 
   function section(title, count, bodyHtml, { hint = "", action = "", tone = "" } = {}) {
@@ -99,7 +126,7 @@
 
   function render() {
     if (!panel) return;
-    if (!state.claimedLoaded) {
+    if (!view) {
       panel.innerHTML = loadFailed
         ? `<div class="today-empty"><div class="today-empty-title">Couldn't load your leads</div>
              <button type="button" class="btn btn-primary" data-today="reload">Try again</button></div>`
@@ -107,15 +134,16 @@
       return;
     }
     const b = buckets();
-    const calling = [...b.callbacks, ...b.firstCalls].filter((l, i, all) => all.findIndex((x) => x.npi === l.npi) === i);
+    const calling = openFirst(unique([...b.callbacks, ...b.firstCalls]));
     const dateLine = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 
     const ins = insights(b);
     const bits = [
       b.review.length ? `${b.review.length} meeting${b.review.length === 1 ? "" : "s"} to wrap up` : "",
       b.meetingsToday.length ? `${b.meetingsToday.length} meeting${b.meetingsToday.length === 1 ? "" : "s"} today` : "",
-      b.callbacks.length ? `${b.callbacks.length} callback${b.callbacks.length === 1 ? "" : "s"} due` : "",
-      b.firstCalls.length ? `${b.firstCalls.length} waiting for a first call` : "",
+      b.callbacksTotal ? `${b.callbacksTotal} callback${b.callbacksTotal === 1 ? "" : "s"} due` : "",
+      b.staleTotal ? `${b.staleTotal} going cold` : "",
+      b.firstTotal ? `${b.firstTotal} waiting for a first call` : "",
     ].filter(Boolean);
     const hero = `<div class="today-hero">
       <div class="today-hero-text">
@@ -158,7 +186,7 @@
     }
 
     if (b.callbacks.length) {
-      html += section("Callbacks due", b.callbacks.length, b.callbacks.map((l) => `
+      html += section("Callbacks due", b.callbacksTotal, b.callbacks.map((l) => `
         <div class="today-row">
           ${whoHtml(l)}
           <span class="today-when">${reminderBadgeHtml(l.reminderAt)}</span>
@@ -166,18 +194,30 @@
         </div>`).join(""), { hint: "Overdue first." });
     }
 
+    if (b.stale.length) {
+      const shown = b.stale.slice(0, FIRST_CALLS_SHOWN);
+      const more = b.staleTotal - shown.length;
+      html += section("Going cold", b.staleTotal, shown.map((l) => `
+        <div class="today-row">
+          ${whoHtml(l)}
+          <span class="today-when"><span class="stale-days" title="No call, note or status change since">${l.quietDays} days quiet</span></span>
+          ${actionsHtml(l)}
+        </div>`).join("") + (more > 0 ? `<div class="today-more">+ ${more} more. <button type="button" class="link-btn" data-today="start-stale">Call the coldest ${b.stale.length}</button></div>` : ""),
+      { hint: `Nothing for ${b.staleDays}+ days and nothing scheduled.`, tone: "is-cold", action: `<button type="button" class="link-btn today-card-link" data-today="stale-days" title="How many quiet days count as cold">Change</button>` });
+    }
+
     if (b.firstCalls.length) {
       const shown = b.firstCalls.slice(0, FIRST_CALLS_SHOWN);
-      const more = b.firstCalls.length - shown.length;
-      html += section("Ready for a first call", b.firstCalls.length, shown.map((l) => `
+      const more = b.firstTotal - shown.length;
+      html += section("Ready for a first call", b.firstTotal, shown.map((l) => `
         <div class="today-row">
           ${whoHtml(l)}
           <span class="today-when"><span class="muted-note">Claimed ${escapeHtml((l.claimedAt || l.lastUpdated || "").slice(0, 10))}</span></span>
           ${actionsHtml(l)}
-        </div>`).join("") + (more > 0 ? `<div class="today-more">+ ${more} more. <button type="button" class="link-btn" data-today="start-first">Call all ${b.firstCalls.length}</button></div>` : ""));
+        </div>`).join("") + (more > 0 ? `<div class="today-more">+ ${more} more. <button type="button" class="link-btn" data-today="start-first">Call ${b.firstTotal > b.firstCalls.length ? "the first" : "all"} ${b.firstCalls.length}</button></div>` : ""));
     }
 
-    if (!b.review.length && !b.meetingsToday.length && !b.callbacks.length && !b.firstCalls.length) {
+    if (!b.review.length && !b.meetingsToday.length && !b.callbacks.length && !b.stale.length && !b.firstCalls.length) {
       html += `<div class="today-empty">
         <div class="today-empty-title">${b.total ? "You're all caught up" : "No claimed leads yet"}</div>
         <p>${b.total
@@ -192,38 +232,9 @@
 
   /* ---------- weekly numbers, pipeline, coming up, recent activity ---------- */
 
-  const NOTE_LINE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(?: — (.+?))?: (.*)$/;
-
-  function myNoteLines() {
-    const me = String(getSession()?.displayName || "").trim().toLowerCase();
-    const out = [];
-    for (const lead of state.claimedLeadsAll) {
-      for (const raw of String(lead.notes || "").split("\n")) {
-        const m = NOTE_LINE.exec(raw.trim());
-        if (!m) continue;
-        if (m[3] && me && m[3].trim().toLowerCase() !== me) continue;
-        out.push({ date: m[1], time: m[2], text: m[4], lead, at: new Date(`${m[1]}T${m[2]}:00Z`) });
-      }
-    }
-    return out.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
-  }
-
   function insights() {
-    const lines = myNoteLines();
-    const now = new Date();
-    const today = localDay(now);
-    const mondayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
-    const monday = localDay(mondayDate);
-    const isCall = (l) => !/^Meeting (booked|held|no-show|cancelled)/i.test(l.text);
-    lines.forEach((l) => { l.day = localDay(l.at); });
-    return {
-      lines,
-      streak: callStreak(lines.filter(isCall), today),
-      callsToday: lines.filter((l) => l.day === today && isCall(l)).length,
-      callsWeek: lines.filter((l) => l.day >= monday && isCall(l)).length,
-      heldWeek: lines.filter((l) => l.day >= monday && /^Meeting held/i.test(l.text)).length,
-      touched: state.claimedLeadsAll.filter((l) => !isNewStatus(l) || String(l.notes || "").trim()).length,
-    };
+    const stats = view ? view.stats : { callsToday: 0, callsWeek: 0, heldWeek: 0, streak: 0 };
+    return { ...stats, touched: view ? view.totals.touched : 0 };
   }
 
   /* ---------- daily goal (the fun part) ---------- */
@@ -237,17 +248,6 @@
       if (n >= 1 && n <= 200) return Math.round(n);
     } catch { /* storage blocked: the default applies */ }
     return 15;
-  }
-
-  // Days in a row with at least one call, counting back from today (or from
-  // yesterday, so the streak is not lost before the first call of the day).
-  function callStreak(callLines, today) {
-    const days = new Set(callLines.map((l) => l.day));
-    const day = new Date(`${today}T12:00:00`);
-    if (!days.has(today)) day.setDate(day.getDate() - 1);
-    let n = 0;
-    while (days.has(localDay(day))) { n += 1; day.setDate(day.getDate() - 1); }
-    return n;
   }
 
   // YYYY-MM-DD on the rep's own clock (call-log stamps are UTC).
@@ -314,68 +314,60 @@
   }
 
   function pipelineHtml() {
-    const counts = new Map();
-    for (const l of state.claimedLeadsAll) {
-      const key = isNewStatus(l) ? "new" : String(l.status).toLowerCase();
-      counts.set(key, (counts.get(key) || 0) + 1);
-    }
-    const rows = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 7);
+    const rows = view ? view.pipeline : [];
     if (!rows.length) return '<span class="muted-note">Claim some leads to see your pipeline.</span>';
-    const max = rows[0][1];
-    return rows.map(([status, n]) => `
+    const max = rows[0].count;
+    return rows.map(({ status, count }) => `
       <button type="button" class="pipe-row" data-today="status" data-status="${escapeHtml(status)}" title="Show these in Claimed leads">
         <span class="pipe-label">${escapeHtml(status)}</span>
-        <span class="pipe-track"><span class="pipe-fill" style="width:${Math.max(6, Math.round((n / max) * 100))}%"></span></span>
-        <span class="pipe-n">${n}</span>
+        <span class="pipe-track"><span class="pipe-fill" style="width:${Math.max(6, Math.round((count / max) * 100))}%"></span></span>
+        <span class="pipe-n">${count}</span>
       </button>`).join("");
   }
 
   function comingUpHtml() {
-    const start = new Date();
-    start.setHours(23, 59, 59, 999);
-    const end = start.getTime() + 7 * 86400000;
-    const items = [];
-    for (const l of state.claimedLeadsAll) {
-      if (l.meetingAt && !meetingIsPast(l) && time(l.meetingAt) > start.getTime() && time(l.meetingAt) <= end) items.push({ l, at: time(l.meetingAt), kind: "Meeting" });
-      if (l.reminderAt && time(l.reminderAt) > start.getTime() && time(l.reminderAt) <= end) items.push({ l, at: time(l.reminderAt), kind: "Callback" });
-    }
-    items.sort((a, b) => a.at - b.at);
+    const items = view ? view.comingUp : [];
     if (!items.length) return '<span class="muted-note">Nothing scheduled in the next 7 days.</span>';
-    return items.slice(0, 6).map((it) => `
-      <button type="button" class="up-row" data-today="open" data-npi="${escapeHtml(it.l.npi)}">
+    return items.map((it) => `
+      <button type="button" class="up-row" data-today="open" data-npi="${escapeHtml(it.npi)}">
         <span class="up-day">${escapeHtml(new Date(it.at).toLocaleDateString(undefined, { weekday: "short", day: "numeric" }))}</span>
-        <span class="up-main"><span class="up-name">${escapeHtml(it.l.name)}</span><span class="up-kind">${it.kind} · ${escapeHtml(clock(new Date(it.at).toISOString()))}</span></span>
+        <span class="up-main"><span class="up-name">${escapeHtml(it.name)}</span><span class="up-kind">${it.kind} · ${escapeHtml(clock(it.at))}</span></span>
       </button>`).join("");
   }
 
-  function activityHtml(ins) {
-    const rows = ins.lines.slice(0, 6);
+  function activityHtml() {
+    const rows = view ? view.recent : [];
     if (!rows.length) return '<span class="muted-note">Calls you log will show up here.</span>';
     return rows.map((r) => `
-      <button type="button" class="act-row" data-today="open" data-npi="${escapeHtml(r.lead.npi)}">
+      <button type="button" class="act-row" data-today="open" data-npi="${escapeHtml(r.npi)}">
         <span class="act-text">${escapeHtml(r.text.length > 90 ? r.text.slice(0, 89) + "…" : r.text)}</span>
-        <span class="act-meta">${escapeHtml(r.lead.name)} · ${escapeHtml(r.at.toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</span>
+        <span class="act-meta">${escapeHtml(r.name)} · ${escapeHtml(new Date(r.at).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</span>
       </button>`).join("");
   }
 
   function sideHtml(b, ins) {
     const card = (title, body) => `<section class="today-card side-card"><header class="today-card-head"><h3>${title}</h3></header><div class="side-body">${body}</div></section>`;
-    return goalCardHtml(ins) + card("Your pipeline", pipelineHtml()) + card("Coming up", comingUpHtml()) + card("Recent activity", activityHtml(ins));
+    return goalCardHtml(ins) + card("Your pipeline", pipelineHtml()) + card("Coming up", comingUpHtml()) + card("Recent activity", activityHtml());
   }
 
   function updateBadge() {
     if (!badge) return;
-    if (!state.claimedLoaded) { badge.hidden = true; return; }
-    const b = buckets();
-    const n = b.review.length + b.meetingsToday.length + b.callbacks.length;
+    if (!view) { badge.hidden = true; return; }
+    const n = view.review.length + view.meetingsToday.length + view.callbacksTotal;
     badge.textContent = n > 99 ? "99+" : String(n);
     badge.hidden = n === 0;
+    setClaimedBadge(view.totals.claimed); // the Claimed tab's count, known as soon as Today has loaded
   }
 
   async function refresh({ showSpinner = false } = {}) {
-    if (showSpinner || !state.claimedLoaded) { loadFailed = false; render(); }
-    await loadClaimedLeads(true);
-    loadFailed = !state.claimedLoaded;
+    if (showSpinner || !view) { loadFailed = false; render(); }
+    try {
+      view = await apiGet("leads/today", todayQuery());
+      loadFailed = false;
+    } catch (err) {
+      console.log("[today] " + err.message);
+      if (!view) loadFailed = true;
+    }
     updateBadge();
     if (state.view === "today") render();
   }
@@ -383,25 +375,17 @@
   /* ---------- actions ---------- */
 
   function openInClaimed(lead) {
-    switchView("claimed");
+    state.claimedSearchQuery = lead.name;
     els.claimedSearchInput.value = lead.name;
-    els.claimedSearchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    state.claimedPage = 1;
+    switchView("claimed"); // loads the Claimed table with that search
   }
 
-  // The meeting and reminder dialogs address a lead by its row in the Claimed
-  // table, so make sure that row is showing (clearing filters if it isn't).
+  // The meeting dialog addresses a lead by its row in the Claimed table; a lead from Today may
+  // not be on the page showing, so it is kept alongside it (see claimedIndexFor).
   function claimedRowIndex(npi) {
-    let idx = state.claimedLeads.findIndex((l) => l.npi === npi);
-    if (idx >= 0) return idx;
-    state.statusFilter = "";
-    state.claimedSearchQuery = "";
-    state.claimedDueOnly = false;
-    els.claimedSearchInput.value = "";
-    const statusSelect = document.getElementById("statusFilter");
-    if (statusSelect) statusSelect.value = "";
-    renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
-    idx = state.claimedLeads.findIndex((l) => l.npi === npi);
-    return idx;
+    const lead = byNpi(npi);
+    return lead ? claimedIndexFor(lead) : -1;
   }
 
   function onPanelClick(e) {
@@ -421,22 +405,27 @@
       }
     }
     else if (act === "status") {
+      state.statusFilter = btn.dataset.status;
+      state.claimedSearchQuery = "";
+      els.claimedSearchInput.value = "";
+      state.claimedPage = 1;
       switchView("claimed");
-      const select = document.getElementById("statusFilter");
-      if (select) {
-        const want = btn.dataset.status;
-        const option = [...select.options].find((o) => o.value.toLowerCase() === want);
-        select.value = option ? option.value : "";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    else if (act === "stale-days") {
+      const answer = prompt("Call a lead cold after how many quiet days?", String(staleDays()));
+      const n = Math.round(Number(answer));
+      if (answer !== null && n >= 3 && n <= 90) {
+        try { localStorage.setItem(STALE_KEY, String(n)); } catch { /* not remembered */ }
+        refresh();
       }
     }
     else if (act === "open" && lead) openInClaimed(lead);
     else if (act === "log" && lead) window.dmeCall.start([lead], "claimed");
     else if (act === "review" && lead) openOutcome(lead);
-    else if (act === "start-all" || act === "start-first") {
+    else if (act === "start-all" || act === "start-first" || act === "start-stale") {
       const b = buckets();
-      const list = act === "start-first" ? b.firstCalls : [...b.callbacks, ...b.firstCalls];
-      window.dmeCall.start(list.filter((l, i, all) => all.findIndex((x) => x.npi === l.npi) === i), "claimed");
+      const list = act === "start-first" ? b.firstCalls : act === "start-stale" ? b.stale : [...b.callbacks, ...b.firstCalls];
+      window.dmeCall.start(openFirst(unique(list)), "claimed");
     }
   }
 
@@ -536,14 +525,13 @@
       }
       closeOutcome();
       showToast(outcome.kind === "held" ? "Logged: meeting held" : "Logged: no-show");
-      if (state.claimedLoaded) renderClaimedLeads(applyClaimedFilters(state.claimedLeadsAll));
+      if (state.claimedLoaded) loadClaimedLeads(true);
     } catch (err) {
       showToast(`${err.message}${step === "meeting" ? "" : " (the meeting result was saved; finish the rest from Claimed leads)"}`, true);
       if (step !== "meeting") closeOutcome();
     } finally {
       outcome.busy = false;
-      updateBadge();
-      if (state.view === "today") render();
+      refresh();
     }
   }
 
@@ -600,9 +588,8 @@
     if (view === "today") { refresh(); startTimer(); }
     else stopTimer();
   };
-  hooks.onClaimedLoaded = () => { updateBadge(); if (state.view === "today") render(); };
   const previousChanged = hooks.onClaimedChanged;
-  hooks.onClaimedChanged = () => { previousChanged?.(); updateBadge(); if (state.view === "today") render(); };
+  hooks.onClaimedChanged = () => { previousChanged?.(); refresh(); };
   hooks.onSignedIn = () => {
     // Nothing loads for a temporary password until it has been changed.
     if (getSession()?.mustChangePassword) return;
@@ -614,6 +601,7 @@
     previousSignedOut?.();
     stopTimer();
     closeOutcome();
+    view = null;
     if (badge) badge.hidden = true;
     if (panel) panel.innerHTML = "";
   };

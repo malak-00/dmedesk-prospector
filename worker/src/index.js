@@ -33,6 +33,7 @@ import * as userAdminRepo from "./repos/userAdminRepo.js";
 import * as SystemInfo from "./services/systemInfo.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
+import { parseListParams } from "./lib/leadView.js";
 import { applySourceTrial, SOURCE_HEADER } from "./lib/sourceTrial.js";
 
 const app = new Hono();
@@ -434,6 +435,34 @@ app.get("/leads/list", async (c) => {
   const [leads, statuses] = await Promise.all([leadsRepo.listClaimedLeads(supabase, session), leadsRepo.getKnownStatuses(supabase)]);
   return c.json(ok({ leads, statuses }));
 });
+
+// One page of the rep's claimed leads, filtered and sorted here. Query: page, pageSize, status,
+// q (search), overdue=1, states=FL,GA, sort (company|location|status|reminder|updated), dir, endOfDay.
+app.get("/leads/page", async (c) => {
+  const params = parseListParams(c.req.query());
+  return c.json(ok(await leadsRepo.listClaimedPage(supabaseFor(c), c.get("session"), params)));
+});
+
+// The Today screen's lists and numbers. Query: start, end, week (ISO instants of the rep's own
+// day and week), tz (the browser's getTimezoneOffset), staleDays.
+app.get("/leads/today", async (c) => {
+  const q = c.req.query();
+  const now = Date.now();
+  const at = (value, fallback) => (Number.isFinite(Date.parse(value)) ? Date.parse(value) : fallback);
+  const days = Math.min(Math.max(Math.round(Number(q.staleDays)) || 14, 3), 90);
+  const data = await leadsRepo.getTodayView(supabaseFor(c), c.get("session"), {
+    nowMs: now,
+    startOfDayMs: at(q.start, now - (now % 86_400_000)),
+    endOfDayMs: at(q.end, now + 86_400_000),
+    startOfWeekMs: at(q.week, now - 7 * 86_400_000),
+    tzOffsetMin: Number.isFinite(Number(q.tz)) ? Number(q.tz) : 0,
+    staleDays: days,
+  });
+  return c.json(ok(data));
+});
+
+// Callbacks that are due and meetings starting soon, for the browser's notifications.
+app.get("/leads/due", async (c) => c.json(ok({ leads: await leadsRepo.getDueLeads(supabaseFor(c), c.get("session")) })));
 
 app.post("/leads/status", async (c) => {
   const body = await c.req.json().catch(() => ({}));

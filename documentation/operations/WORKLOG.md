@@ -37,6 +37,57 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-07 — Server-side paging and filtering, going-cold nudges, local time
+
+### Objective
+
+Stop the browser holding every claimed lead (it slows down as a rep's list grows), nudge reps
+about leads that have gone quiet, and show each lead's local time and whether it is a good
+time to call.
+
+### Actions Completed
+
+- **Server-side paging and filtering** (`GET /leads/page`): the Claimed table loads one page
+  (50 by default) at a time; status, search, "overdue only", "good time to call" and every sort
+  are applied in the database, with a stable tie-break so no row is skipped or repeated between
+  pages. The cards and tab badge use whole-list counts from the same call, so they stay exact.
+  The search covers company, NPI, city, state and contact, and a 10-digit NPI also finds the lead
+  whose business holds it as another location. A page navigator sits under the table; the 30 second
+  refresh keeps your page.
+- **Today is built on the server** (`GET /leads/today`, `lib/leadView.js`): the lists (How did it go,
+  meetings today, callbacks, going cold, first calls), the numbers (calls today and this week,
+  meetings held, streak), the pipeline, coming up and recent activity come from all of the rep's
+  leads and are sent as just what the screen shows (lists are capped). The rep's own day, week and
+  time-zone offset are sent so "today" and the streak follow their clock.
+- **Notifications** read a short list (`GET /leads/due`: callbacks that are due and meetings in the next
+  3 days), fetched once a minute only when notifications are on, instead of the whole list.
+- **The quick-actions palette** and **Export CSV** ask the server when used (a search of 10 results;
+  the full `leads/list`) instead of reading a list held in the browser.
+- **Going cold** (Today): a lead with no call, note or status change for 14 days (changeable, 3 to 90),
+  nothing scheduled, and not onboarded, refused or lost. Oldest first, with Call and Log result,
+  "Call the coldest N", and a count in the hero line.
+- **Local time and good time to call** (`docs/localtime.js`): each state's main time zone; calling
+  hours 8 AM to 5 PM on weekdays (lunch hour marked as a poor time). A small coloured time sits in the
+  Prospect, Claimed, Today and call mode locations, refreshes every minute, and its tooltip says when
+  the lead's day opens. Claimed has a "Good time to call" filter; Today's "Start calling" puts leads
+  that are open now first. A few states are split between zones (for example the Florida panhandle, west
+  Texas), so those can be an hour off.
+
+### Database / System Result
+
+- No SQL to run. Reads only existing tables; no new indexes. (If Claimed ever feels slow for a rep with
+  tens of thousands of leads, an index on `leads (claimed_by, is_disconnected)` would be the next step.)
+- Worker tests: 111 pass (new: list parameters, the page query's filters, sort and range, due leads,
+  Today's lists, going-cold rules, streak and day boundaries across time zones, local time rules).
+- Not deployed or pushed by this entry.
+
+### Safety Status
+
+- No production data touched, no secrets or `.env` changed. Every query is scoped to the signed-in rep's
+  own leads; the search text is stripped of wildcard and filter characters before it reaches the database.
+- Manual browser testing is required: this changes how the Claimed table, Today, notifications and the
+  quick-actions palette get their data.
+
 ## 2026-10-06 — Related businesses, pipeline funnel, sheet import and export
 
 ### Objective

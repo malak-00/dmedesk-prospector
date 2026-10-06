@@ -25,7 +25,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Plus+Jakarta+Sans:wght@600..800&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/bd-icon-light.png" media="(prefers-color-scheme: light)">
 <link rel="icon" type="image/png" href="icons/bd-icon-dark.png" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="style.css?v=61">
+<link rel="stylesheet" href="style.css?v=62">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -383,6 +383,10 @@
                 <option value="">All statuses</option>
               </select>
             </label>
+            <label class="checkbox" title="Only leads where it is a good time to call right now: 8 AM to 5 PM on a weekday in their own time zone, not the lunch hour">
+              <input type="checkbox" id="claimedOpenNow">
+              <span>Good time to call</span>
+            </label>
             <label class="checkbox" title="Shows a browser notification the moment a callback reminder comes due -- works as long as you have this app open in a tab, even a different one">
               <input type="checkbox" id="enableNotifications">
               <span>Notify me for due reminders</span>
@@ -458,6 +462,11 @@
               </td></tr>
             </tbody>
           </table>
+        </div>
+        <div class="page-nav" id="claimedPageNav" hidden>
+          <button type="button" class="btn btn-ghost" id="claimedPagePrev" aria-label="Previous page">‹ Prev</button>
+          <span id="claimedPageInfo">Page 1 of 1</span>
+          <button type="button" class="btn btn-ghost" id="claimedPageNext" aria-label="Next page">Next ›</button>
         </div>
       </section>
     </div>
@@ -816,13 +825,14 @@
 
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
-  <script src="app.js?v=56"></script>
-  <script src="callmode.js?v=2"></script>
-  <script src="today.js?v=4"></script>
+  <script src="app.js?v=57"></script>
+  <script src="localtime.js?v=1"></script>
+  <script src="callmode.js?v=3"></script>
+  <script src="today.js?v=5"></script>
   <script src="team.js?v=5"></script>
   <script src="sheetlib.js?v=1"></script>
   <script src="related.js?v=1"></script>
-  <script src="controls.js?v=3"></script>
+  <script src="controls.js?v=4"></script>
   <script src="account.js?v=1"></script>
 </body>
 </html>
