@@ -168,3 +168,6 @@ scripts/out/
 .test-tmp/
 __pycache__/
 *.pyc
+
+# CSV
+BD MEETINGS 2026 - Onboarded (2).csv
