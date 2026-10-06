@@ -16,6 +16,15 @@
 
 const LINE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(?: — (.+?))?: (.*)$/;
 
+// A tap kept in call_taps ({ user_id, npi, tapped_at }) as a call-log style line, so it can be paired
+// with the same person's results exactly like a "Dialed" note. nameOf(user_id) is their display name.
+export function tapsToLines(taps, nameOf) {
+  return (taps || []).filter((t) => t && t.npi && t.tapped_at).map((t) => {
+    const iso = new Date(t.tapped_at).toISOString();
+    return { npi: String(t.npi), by: nameOf(t.user_id) || "", date: iso.slice(0, 10), time: iso.slice(11, 16), text: "Dialed", at: Date.parse(iso), kind: "dial" };
+  });
+}
+
 export function parseNoteLines(notes) {
   return String(notes || "")
     .split("\n")
@@ -37,6 +46,22 @@ export function noteKind(text) {
 }
 
 const DAY_MS = 86_400_000;
+
+// Every call across a set of leads: each lead's call-log lines together with the taps on it, so a tap
+// and the result written after it are one call. Taps on leads that are not in the list (never claimed,
+// or not loaded) still count, one lead at a time. entries: [{ npi, lines }]; tapLines from tapsToLines.
+export function allCallEvents(entries, tapLines = []) {
+  const byNpi = new Map();
+  for (const t of tapLines) byNpi.set(t.npi, [...(byNpi.get(t.npi) || []), t]);
+  const out = [];
+  for (const { npi, lines } of entries) {
+    const extra = byNpi.get(String(npi)) || [];
+    byNpi.delete(String(npi));
+    out.push(...callEvents(extra.length ? lines.concat(extra) : lines));
+  }
+  for (const extra of byNpi.values()) out.push(...callEvents(extra));
+  return out;
+}
 
 // A result written within this long after the rep tapped the number is the same call, not a second one.
 export const SAME_CALL_MS = 30 * 60_000;
@@ -82,13 +107,14 @@ const labelOf = (iso) => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.sl
 
 const zeros = (n) => Array.from({ length: n }, () => 0);
 
-export function buildTeamActivity({ users = [], events = [], leads = [], weeks = 8, now = new Date() } = {}) {
+export function buildTeamActivity({ users = [], events = [], leads = [], taps = [], weeks = 8, now = new Date() } = {}) {
   const starts = weekStartsEndingAt(now, weeks);
   const indexOfWeek = new Map(starts.map((s, i) => [s, i]));
   const nowMs = now.getTime();
 
   const reps = new Map();
   const byName = new Map();
+  const repFor = (by) => byName.get(String(by || "").trim().toLowerCase()) || other;
   const blank = (id, name, isAdmin) => ({
     id, name, isAdmin: Boolean(isAdmin),
     claims: zeros(weeks), calls: zeros(weeks), meetingsBooked: zeros(weeks), meetingsHeld: zeros(weeks), noShows: zeros(weeks),
@@ -122,8 +148,6 @@ export function buildTeamActivity({ users = [], events = [], leads = [], weeks =
       }
     }
     const parsed = parseNoteLines(lead.notes);
-    const repFor = (by) => byName.get(String(by || "").trim().toLowerCase()) || other;
-    callEvents(parsed).forEach((line) => bump(repFor(line.by), "calls", line.date));
     for (const line of parsed) {
       const rep = repFor(line.by);
       const kind = noteKind(line.text);
@@ -132,6 +156,11 @@ export function buildTeamActivity({ users = [], events = [], leads = [], weeks =
       else if (kind === "noShow") bump(rep, "noShows", line.date);
     }
   }
+
+  // Calls: call-log results and taps on a phone number, a tap and its result counting once.
+  const idToName = new Map(users.map((u) => [u.id, u.display_name || u.username || ""]));
+  const entries = leads.map((lead) => ({ npi: lead.npi, lines: parseNoteLines(lead.notes) }));
+  allCallEvents(entries, tapsToLines(taps, (id) => idToName.get(id))).forEach((line) => bump(repFor(line.by), "calls", line.date));
 
   const sum = (list) => list.reduce((a, b) => a + b, 0);
   const activity = (r) => sum(r.claims) + sum(r.calls) + sum(r.meetingsBooked) + sum(r.meetingsHeld);

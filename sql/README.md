@@ -32,6 +32,7 @@ Required manual sequence:
 026_user_controls.sql            (adds app_users.disabled_at so an admin can remove and restore users from Admin > Controls)
 027_account_security.sql         (adds app_users.failed_logins, locked_until, must_change_password: sign-in lockout and forced password change)
 028_default_taxonomy.sql          (adds taxonomies.default_for_search so an admin can choose the specialty the search form starts with)
+029_call_taps.sql                (a small table remembering every tap on a phone number, claimed or not, so it counts as a call)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -85,6 +86,7 @@ in `003`); save their output with the run.
 | `026_user_controls.sql` | Adds one nullable column, `app_users.disabled_at`. A removed user keeps their row (leads and the append-only history point at it) but cannot sign in, and an open session ends within about 30 seconds. Rerun-safe, no data changes | **Run (live)** |
 | `027_account_security.sql` | Adds three columns to `app_users`: `failed_logins`, `locked_until`, `must_change_password`. After 5 wrong passwords an account is locked for 15 minutes (an admin can unlock it); a temporary password set by an admin must be replaced at first sign-in. Rerun-safe, no data changes | **Run (live)** |
 | `028_default_taxonomy.sql` | Adds `taxonomies.default_for_search` (and a unique index so at most one specialty is the default). Rerun-safe, no data changes | **Not yet run. Only the starting-specialty setting in Admin > Controls needs it; search works without it** |
+| `029_call_taps.sql` | Creates `call_taps` (who tapped which NPI's number, and when; about 100 bytes a tap). Today and Team activity count a tap as a call, and a result logged soon after is the same call. Rerun-safe, touches nothing existing | **Not yet run. Until it is, taps on your own claimed leads are still counted (written to the lead's call log); taps on leads you have not claimed are not kept** |
 
 ## Notes on individual files
 

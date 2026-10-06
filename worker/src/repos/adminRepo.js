@@ -629,11 +629,16 @@ export async function getTeamActivity(supabase, { weeks = 8 } = {}) {
   // meeting_at only exists once sql/020 has been run; the view still works without it.
   let leads;
   try {
-    leads = await fetchAllRows(() => supabase.from("leads").select("claimed_by, is_disconnected, notes, reminder_at, meeting_at"), "leads");
+    leads = await fetchAllRows(() => supabase.from("leads").select("npi, claimed_by, is_disconnected, notes, reminder_at, meeting_at"), "leads");
   } catch {
-    leads = await fetchAllRows(() => supabase.from("leads").select("claimed_by, is_disconnected, notes, reminder_at"), "leads");
+    leads = await fetchAllRows(() => supabase.from("leads").select("npi, claimed_by, is_disconnected, notes, reminder_at"), "leads");
   }
-  const result = buildTeamActivity({ users: usersRes.data || [], events, leads, weeks: span });
+  // Taps on phone numbers (sql/029), claimed or not; none before it is installed.
+  let taps = [];
+  try {
+    taps = await fetchAllRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at").gte("tapped_at", since), "phone taps");
+  } catch { /* the counts simply have no taps */ }
+  const result = buildTeamActivity({ users: usersRes.data || [], events, leads, taps, weeks: span });
   // The per-person totals the Review queues tab calls "User activity", shown here too:
   // claimed, disconnected, suggestions sent and distinct searches run. Best effort.
   try {

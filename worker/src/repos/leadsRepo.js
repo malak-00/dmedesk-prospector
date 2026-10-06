@@ -958,9 +958,9 @@ export async function listClaimedPage(supabase, session, params) {
 
 // The Today screen, built here from all of the rep's leads and sent as just the lists it shows.
 export async function getTodayView(supabase, session, opts) {
-  const rows = await fetchAllClaimedRows(supabase, "claimed_by", session.id);
+  const [rows, taps] = await Promise.all([fetchAllClaimedRows(supabase, "claimed_by", session.id), getRecentTaps(supabase, session.id)]);
   const leads = rows.map((row) => toLeadDTO(row, session.displayName));
-  return buildTodayView(leads, { ...opts, me: session.displayName });
+  return buildTodayView(leads, { ...opts, me: session.displayName, taps });
 }
 
 // Just enough to notify about: callbacks that are due and meetings starting soon.
@@ -986,21 +986,36 @@ export async function getDueLeads(supabase, session, nowMs = Date.now()) {
   }));
 }
 
-// A tap on a phone number is recorded as a call-log line ("Dialed (404) 808-5118") on the rep's own
-// lead, so it counts as a call whether or not they then log a result. Two taps within two minutes
-// are one (a double click, or the same number tapped from two places).
+// A tap on a phone number, on any lead (claimed or not): kept in call_taps (sql/029) so it counts as a
+// call even when there is no lead row to write a note on. Two taps on one lead within two minutes are one.
+// Before sql/029, a tap on one of your own claimed leads is written to its call log instead.
 export async function logDial(supabase, npi, number, session) {
   const digits = String(number || "").replace(/[^\d+*#]/g, "").slice(0, 20);
   if (!digits) throw httpError(400, "number is required");
-  const existing = await requireOwnLead(supabase, npi, session);
+  const lead = String(npi || "").trim();
+  if (!/^\d{10}$/.test(lead)) throw httpError(400, "a 10-digit NPI is required");
 
-  const me = String(session.displayName || "").trim().toLowerCase();
-  const latest = parseNoteLines(existing.notes).find((l) => /^Dialed\b/i.test(l.text) && (!l.by || l.by.trim().toLowerCase() === me));
-  if (latest && Date.now() - Date.parse(`${latest.date}T${latest.time}:00Z`) < 120_000) {
-    return { npi: String(npi), logged: false, notes: existing.notes };
-  }
+  const missing = (error) => /call_taps/.test(error.message || "") || error.code === "42P01" || error.code === "PGRST205";
+  const since = new Date(Date.now() - 120_000).toISOString();
+  const recent = await supabase.from("call_taps").select("id").eq("user_id", session.id).eq("npi", lead).gte("tapped_at", since).limit(1);
+  if (!recent.error && (recent.data || []).length) return { npi: lead, logged: false };
+
+  const inserted = await supabase.from("call_taps").insert({ user_id: session.id, npi: lead, number: digits });
+  if (!inserted.error) return { npi: lead, logged: true };
+  if (!missing(inserted.error) && !missing(recent.error || {})) throw httpError(500, "Failed to record the call: " + inserted.error.message);
+
+  // sql/029 isn't installed: record it on the lead if it is one of yours, otherwise it can't be kept.
+  const owned = await supabase.from("leads").select("npi, notes").eq("claimed_by", session.id).eq("npi", lead).maybeSingle();
+  if (owned.error || !owned.data) return { npi: lead, logged: false, unavailable: true };
   const national = digits.replace(/^\+?1(?=\d{10}$)/, "");
   const shown = /^\d{10}$/.test(national) ? `(${national.slice(0, 3)}) ${national.slice(3, 6)}-${national.slice(6)}` : digits;
-  const saved = await addLeadNote(supabase, npi, `Dialed ${shown}`, session);
+  const saved = await addLeadNote(supabase, lead, `Dialed ${shown}`, session);
   return { ...saved, logged: true };
+}
+
+// This rep's recent taps, for Today's call counts and streak. Empty before sql/029.
+export async function getRecentTaps(supabase, userId, days = 120) {
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const { data, error } = await supabase.from("call_taps").select("user_id, npi, tapped_at").eq("user_id", userId).gte("tapped_at", since).order("tapped_at", { ascending: false }).limit(5000);
+  return error ? [] : data || [];
 }

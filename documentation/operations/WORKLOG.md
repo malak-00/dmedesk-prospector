@@ -37,36 +37,40 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
-## 2026-10-08 — A tap on a phone number counts as a call
+## 2026-10-08 — A tap on a phone number counts as a call (claimed or not)
 
 ### Objective
 
 Reps don't always press the Call button; tapping the number itself opens the phone app the same way,
-but nothing was recorded, so those calls were missing from the call counts.
+but nothing was recorded, so those calls were missing from the counts. This includes numbers in
+Prospect, before a lead is claimed.
 
 ### Actions Completed
 
-- **Any phone link on one of your claimed leads is recorded** (`docs/dialtrack.js`, `POST /leads/dial`):
-  numbers in the Claimed rows and opened cards, on Today, and in call mode. It adds a call-log line
-  "Dialed (404) 808-5118" to the lead. Two taps on one lead within two minutes are one call. It never
-  delays or blocks the call: the phone app opens at once and a failure to record is only logged.
-- **Counting rule** (`callEvents` in `lib/teamActivity.js`): a tap is a call; a call-log result is a call;
-  a result written within 30 minutes after the same person's tap is that tap's outcome and is not counted
-  again; a later result, a second tap more than two minutes later, or someone else's result each count.
-  Used by Today (calls today and this week, streak), Team activity (calls per rep per week) and the funnel
-  ("contacted").
-- Leads in **Prospect** are not claimed, so there is no lead to record on; those taps are not counted.
+- **Every tap on a phone link is recorded** (`docs/dialtrack.js`, `POST /leads/dial`): numbers in
+  Prospect rows and opened cards, Claimed rows and cards, Today and call mode. Each tap is kept by
+  person and NPI in `call_taps` (`sql/029_call_taps.sql`), so a lead that is not claimed (no row to
+  write a note on) is still counted, and the tap is still there when the lead is claimed later. Two
+  taps on one lead within two minutes are one call. The phone app opens at once; a failure to record is
+  only logged.
+- **Counting rule** (`callEvents` / `allCallEvents` in `lib/teamActivity.js`): a tap is a call; a call-log
+  result is a call; a result written within 30 minutes after the same person's tap on the same lead
+  is that tap's outcome and is not counted again; a later result, a second tap more than two minutes
+  later, or someone else's result each count. Used by Today (calls today and this week, streak) and
+  Team activity (calls per rep per week). The funnel's "contacted" stage still reads statuses and
+  call-log lines only.
+- **Before sql/029 is run:** a tap on your own claimed lead is written to its call log ("Dialed ..."),
+  as in the first version; a tap on any other lead cannot be kept.
 
 ### Database / System Result
 
-- No SQL. Worker tests: all pass (new: the counting rule, the three consumers, recording a tap with its
-  number format, two-minute de-duplication, and refusing a lead that is not yours).
-- Existing call counts are unchanged (they only gain the new "Dialed" lines).
+- **SQL to run:** `sql/029_call_taps.sql` (one small table, about 100 bytes a tap).
+- Worker tests: all pass (new: unclaimed taps count, a tap pairs with the result after claiming, other
+  people's taps are not mine, once-per-two-minutes, the fallback before 029).
 
 ### Safety Status
 
-- Writes one line to the rep's own lead, the same kind of line as any note. No other data touched.
-- Manual browser testing required.
+- Adds rows to its own table only; no lead data is changed. Manual browser testing required.
 
 ## 2026-10-08 — Search more: failed pages and a Rescan for unseen leads
 

@@ -68,20 +68,68 @@ test('a lead that was only dialed counts as contacted in the funnel', () => {
   assert.equal(leadStages({ status: 'new', notes: line(T('2026-10-07T14:00:00Z'), 'Ana', 'Dialed (404) 808-5118') }).contacted, true);
 });
 
-// ---- recording a tap ----------------------------------------------------------------------
+// ---- taps kept in their own table: claimed or not ---------------------------------------------
 
-function leadsDb(row) {
-  const state = { row: { ...row } };
-  const from = () => {
+import { tapsToLines, allCallEvents, parseNoteLines } from '../src/lib/teamActivity.js';
+
+test('a tap on a lead nobody has claimed still counts, and pairs with the result once it is claimed', () => {
+  const base = T('2026-10-07T14:00:00Z');
+  const users = [{ id: 'a', display_name: 'Ana Lopez' }];
+  const nameOf = (id) => (id === 'a' ? 'Ana Lopez' : '');
+  const taps = [
+    { user_id: 'a', npi: '1111111111', tapped_at: new Date(base).toISOString() },           // claimed afterwards, result logged 5 minutes later
+    { user_id: 'a', npi: '2222222222', tapped_at: new Date(base + 20 * MIN).toISOString() }, // never claimed
+  ];
+  const lead = { npi: '1111111111', claimed_by: 'a', is_disconnected: false, notes: line(base + 5 * MIN, 'Ana Lopez', 'Voicemail') };
+
+  const events = allCallEvents([{ npi: lead.npi, lines: parseNoteLines(lead.notes) }], tapsToLines(taps, nameOf));
+  assert.equal(events.length, 2, 'one call for the claimed lead (tap + result), one for the unclaimed lead');
+
+  const team = buildTeamActivity({ users, events: [], leads: [lead], taps, weeks: 1, now: new Date('2026-10-07T18:00:00Z') });
+  assert.equal(team.reps.find((r) => r.id === 'a').calls[0], 2);
+
+  const view = buildTodayView([{ npi: lead.npi, name: 'Co', status: 'voicemail', notes: lead.notes, claimedAt: '2026-09-01T00:00:00Z', lastUpdated: '2026-09-01T00:00:00Z' }], {
+    nowMs: T('2026-10-07T18:00:00Z'), startOfDayMs: T('2026-10-07T00:00:00Z'), endOfDayMs: T('2026-10-07T23:59:59Z'),
+    startOfWeekMs: T('2026-10-05T00:00:00Z'), tzOffsetMin: 0, staleDays: 14, me: 'Ana Lopez', taps,
+  });
+  assert.equal(view.stats.callsToday, 2);
+});
+
+test('taps by other people are not mine, and a different lead is a different call', () => {
+  const base = T('2026-10-07T14:00:00Z');
+  const nameOf = (id) => ({ a: 'Ana Lopez', b: 'Ben Arthur' }[id]);
+  const taps = [
+    { user_id: 'a', npi: '1111111111', tapped_at: new Date(base).toISOString() },
+    { user_id: 'b', npi: '1111111111', tapped_at: new Date(base + MIN).toISOString() },
+    { user_id: 'a', npi: '3333333333', tapped_at: new Date(base + 2 * MIN).toISOString() },
+  ];
+  const events = allCallEvents([], tapsToLines(taps, nameOf));
+  assert.equal(events.length, 3);
+  assert.deepEqual(events.map((e) => e.by).sort(), ['Ana Lopez', 'Ana Lopez', 'Ben Arthur']);
+});
+
+function tapDb({ tableMissing = false, owned = false } = {}) {
+  const state = { taps: [], notes: '' };
+  const from = (table) => {
     let patch = null;
-    let owner = null;
+    let inserted = null;
+    let wantRecent = false;
     const q = {
-      select: () => q, maybeSingle: () => q,
-      eq(col, value) { if (col === 'claimed_by') owner = value; return q; },
+      select: () => q, eq: () => q, maybeSingle: () => q, limit: () => q,
+      gte() { wantRecent = true; return q; },
+      insert(row) { inserted = row; return q; },
       update(p) { patch = p; return q; },
       then(resolve) {
-        if (patch) { Object.assign(state.row, patch); return resolve({ data: null, error: null }); }
-        return resolve({ data: state.row.claimed_by === owner ? { npi: state.row.npi, notes: state.row.notes } : null, error: null });
+        if (table === 'call_taps') {
+          if (tableMissing) return resolve({ data: null, error: { code: '42P01', message: 'relation "public.call_taps" does not exist' } });
+          if (inserted) { state.taps.push({ ...inserted, tapped_at: new Date().toISOString() }); return resolve({ data: null, error: null }); }
+          if (wantRecent) return resolve({ data: state.taps.filter((t) => Date.now() - Date.parse(t.tapped_at) < 120_000).map((t) => ({ id: 1 })), error: null });
+        }
+        if (table === 'leads') {
+          if (patch) { state.notes = patch.notes; return resolve({ data: null, error: null }); }
+          return resolve({ data: owned ? { npi: '1', notes: state.notes } : null, error: null });
+        }
+        return resolve({ data: [], error: null });
       },
     };
     return q;
@@ -89,15 +137,24 @@ function leadsDb(row) {
   return { state, from };
 }
 
-test('a tap is saved as a "Dialed" line, formatted, once per two minutes', async () => {
-  const db = leadsDb({ npi: '1', claimed_by: 'a', notes: '' });
+test('a tap on any lead is recorded once per two minutes', async () => {
+  const db = tapDb();
   const session = { id: 'a', displayName: 'Ana Lopez' };
-  const first = await logDial(db, '1', 'tel:+14048085118'.replace('tel:', ''), session);
-  assert.equal(first.logged, true);
-  assert.match(db.state.row.notes, /Ana Lopez: Dialed \(404\) 808-5118$/);
-  const again = await logDial(db, '1', '4048085118', session);
-  assert.equal(again.logged, false, 'a second tap straight after is the same call');
-  assert.equal(db.state.row.notes.split('\n').length, 1);
-  await assert.rejects(logDial(db, '1', '', session), /number is required/);
-  await assert.rejects(logDial(db, '1', '4048085118', { id: 'someone-else', displayName: 'Ben' }), { status: 404 });
+  assert.equal((await logDial(db, '1111111111', '+14048085118', session)).logged, true);
+  assert.equal(db.state.taps[0].number, '+14048085118');
+  assert.equal((await logDial(db, '1111111111', '4048085118', session)).logged, false, 'a second tap straight after is the same call');
+  assert.equal(db.state.taps.length, 1);
+  await assert.rejects(logDial(db, '1111111111', '', session), /number is required/);
+  await assert.rejects(logDial(db, '12', '4048085118', session), /10-digit NPI/);
+});
+
+test('before sql/029 a tap on your own lead goes in its call log; on any other lead it cannot be kept', async () => {
+  const mine = tapDb({ tableMissing: true, owned: true });
+  const saved = await logDial(mine, '1234567890', '4048085118', { id: 'a', displayName: 'Ana Lopez' });
+  assert.equal(saved.logged, true);
+  assert.match(mine.state.notes, /Ana Lopez: Dialed \(404\) 808-5118$/);
+
+  const notMine = tapDb({ tableMissing: true, owned: false });
+  const result = await logDial(notMine, '1234567890', '4048085118', { id: 'a', displayName: 'Ana Lopez' });
+  assert.deepEqual([result.logged, result.unavailable], [false, true]);
 });
