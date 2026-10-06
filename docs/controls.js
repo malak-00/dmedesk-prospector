@@ -300,7 +300,7 @@
       if (picked && !list.includes(picked)) list.push(picked);
       return `<option value="">Leave as it is</option>${list.map((c) => `<option value="${escapeHtml(c)}" ${picked === c ? "selected" : ""}>${escapeHtml(c)}</option>`).join("")}`;
     };
-    const note = (r) => ({ "same meaning": "Same as", "tidy spelling": "Tidier as", meaningless: "Says nothing", disconnected: "Use Send to Disconnected", custom: "Custom" }[r.why] || "");
+    const note = (r) => ({ "same meaning": "Same as", "tidy spelling": "Tidier as", meaningless: "Says nothing: back to new", disconnected: "Use Send to Disconnected", custom: "Custom" }[r.why] || "");
 
     return `<div class="team-block">
       <h4>Tidy the statuses</h4>

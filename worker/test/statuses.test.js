@@ -51,7 +51,9 @@ test('the cleanup screen proposes what each stored spelling should become', () =
   assert.equal(suggestMerge('Site Visit').target, 'site visit');
   assert.equal(suggestMerge('site visit').target, null, 'a clean custom status is left as it is');
   assert.equal(suggestMerge('asdf').junk, true);
-  assert.equal(suggestMerge('asdf').target, null, 'a meaningless one needs a person to choose');
+  assert.equal(suggestMerge('asdf').target, 'new', 'a meaningless one goes back to new');
+  assert.equal(suggestMerge('46253.0').target, 'new', 'a spreadsheet date number is not a status');
+  assert.equal(suggestMerge('46253.0').junk, true);
   assert.equal(suggestMerge('Disconnected').why, 'disconnected');
   const rows = statusCleanupRows(new Map([['Voicemail', 5], ['voicemail', 40], ['VM', 3], ['', 9], ['zzz', 1]]));
   assert.deepEqual(rows.map((r) => [r.status, r.count]), [['voicemail', 40], ['Voicemail', 5], ['VM', 3], ['zzz', 1]], 'blank statuses are skipped, the biggest first');

@@ -75,7 +75,8 @@ export function suggestMerge(raw) {
   const canonical = canonicalStatus(stored);
   if (canonical) return { target: canonical, why: canonical === stored ? "ok" : "same meaning", junk: false };
   if (cleanStatus(stored) === "disconnected") return { target: null, why: "disconnected", junk: false };
-  if (isJunkStatus(stored)) return { target: null, why: "meaningless", junk: true };
+  // Nothing to keep: back to "new" (a bare number is usually a spreadsheet date that landed in the status column).
+  if (isJunkStatus(stored)) return { target: "new", why: "meaningless", junk: true };
   const tidy = normalizeStatus(stored);
   return { target: tidy !== stored ? tidy : null, why: tidy !== stored ? "tidy spelling" : "custom", junk: false };
 }
