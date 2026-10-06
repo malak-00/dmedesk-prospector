@@ -47,6 +47,8 @@ function ok(data) {
 // anything not in PUBLIC_PATHS below (same gate Code.js's requireSession_
 // applied before the switch statement).
 const PUBLIC_PATHS = new Set(["/health", "/auth/login"]);
+// All a person with a temporary password may do until they pick their own.
+const PASSWORD_CHANGE_PATHS = new Set(["/auth/change-password", "/auth/logout"]);
 
 app.use("*", async (c, next) => {
   c.set("config", makeConfig(c.env));
@@ -62,7 +64,15 @@ app.use("*", async (c, next) => {
   // at once, instead of waiting for the sign-in token to expire.
   const gate = applyUserFlags(session, await loadUserFlags(getSupabase(c.get("config"))));
   if (!gate.ok) return c.json({ success: false, status: 401, error: gate.reason }, 401);
-  const live = gate.session;
+  let live = gate.session;
+  if (live.mustChangePassword && !PASSWORD_CHANGE_PATHS.has(new URL(c.req.url).pathname)) {
+    // The flag may have been cleared in another Worker instance a moment ago: look again, fresh.
+    const again = applyUserFlags(session, await loadUserFlags(getSupabase(c.get("config")), Date.now, { fresh: true }));
+    if (again.ok) live = again.session;
+    if (live.mustChangePassword) {
+      return c.json({ success: false, status: 403, error: "Change your password first: you are using a temporary one." }, 403);
+    }
+  }
   c.set("session", live);
 
   // An admin can opt in to searching DME Desk's own provider table while
@@ -99,6 +109,12 @@ app.post("/auth/login", async (c) => {
 });
 
 app.post("/auth/logout", (c) => c.json(ok(Auth.logout())));
+
+app.post("/auth/change-password", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const data = await Auth.changePassword(supabaseFor(c), c.get("session"), body.currentPassword, body.newPassword);
+  return c.json(ok(data));
+});
 
 app.post("/auth/exclude-keywords", async (c) => {
   const body = await c.req.json().catch(() => ({}));

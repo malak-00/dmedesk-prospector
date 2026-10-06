@@ -41,6 +41,7 @@ export function validatePassword(password) {
 }
 
 const COLUMN_SETS = [
+  "id, username, display_name, is_admin, can_claim_for_others, disabled_at, created_at, locked_until, must_change_password",
   "id, username, display_name, is_admin, can_claim_for_others, disabled_at, created_at",
   "id, username, display_name, is_admin, can_claim_for_others, created_at",
   "id, username, display_name, is_admin, created_at",
@@ -68,6 +69,8 @@ function toDTO(row, claimedCounts = {}) {
     canClaimForOthers: Boolean(row.can_claim_for_others),
     disabled: Boolean(row.disabled_at),
     disabledAt: row.disabled_at || null,
+    lockedUntil: row.locked_until && Date.parse(row.locked_until) > Date.now() ? row.locked_until : null,
+    mustChangePassword: Boolean(row.must_change_password),
     createdAt: row.created_at || null,
     claimedCount: claimedCounts[row.id] || 0,
   };
@@ -107,8 +110,11 @@ export async function createUser(supabase, input, { hash = (pw) => bcrypt.hash(p
     exclude_keywords: "",
   };
   if (user.canClaimForOthers) row.can_claim_for_others = true;
-
-  const { data, error } = await supabase.from("app_users").insert(row).select("id").single();
+  const mustChange = input.mustChangePassword !== false; // a temporary password: they choose their own
+  let { data, error } = await supabase.from("app_users").insert(mustChange ? { ...row, must_change_password: true } : row).select("id").single();
+  if (error && mustChange && missingColumn(error, "must_change_password")) {
+    ({ data, error } = await supabase.from("app_users").insert(row).select("id").single()); // before sql/027
+  }
   if (error) {
     if (missingColumn(error, "can_claim_for_others")) throw httpError(503, "Claiming for other people isn't installed yet. Run sql/011_claim_for_user.sql in Supabase, then try again.");
     if (error.code === "23505") throw httpError(409, "That username is already taken");
@@ -147,10 +153,24 @@ export async function updateUser(supabase, actor, input, { hash = (pw) => bcrypt
   if (input.password !== undefined && input.password !== "") {
     validatePassword(input.password);
     patch.password_hash = await hash(String(input.password));
+    if (input.mustChangePassword !== false) patch.must_change_password = true;
+  }
+  if (input.unlock === true) {
+    patch.failed_logins = 0;
+    patch.locked_until = null;
   }
   if (Object.keys(patch).length === 0) throw httpError(400, "Nothing to change");
 
-  const { error } = await supabase.from("app_users").update(patch).eq("id", id);
+  let { error } = await supabase.from("app_users").update(patch).eq("id", id);
+  const securityColumns = ["must_change_password", "failed_logins", "locked_until"];
+  if (error && securityColumns.some((c) => missingColumn(error, c))) {
+    // sql/027 isn't installed: do the rest, drop what needs it.
+    const { must_change_password, failed_logins, locked_until, ...rest } = patch;
+    if (input.unlock === true && Object.keys(rest).length === 0) throw httpError(503, "Unlocking needs sql/027_account_security.sql run in Supabase first.");
+    if (Object.keys(rest).length === 0) throw httpError(400, "Nothing to change");
+    Object.keys(patch).forEach((k) => { if (!(k in rest)) delete patch[k]; });
+    ({ error } = await supabase.from("app_users").update(rest).eq("id", id));
+  }
   if (error) {
     if (missingColumn(error, "can_claim_for_others")) throw httpError(503, "Claiming for other people isn't installed yet. Run sql/011_claim_for_user.sql in Supabase, then try again.");
     throw httpError(500, "Failed to update the user: " + error.message);

@@ -1,4 +1,4 @@
-# DME Desk Prospector Worklog
+﻿# DME Desk Prospector Worklog
 
 ## 2026-10-06 — Onboarded Sheet Leads Import: Qualification, Preservation, and Claim Execution
 
@@ -36,6 +36,49 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
+
+## 2026-10-06 — Password change, sign-in lockout, tidy-ups
+
+### Objective
+
+Now that admins create accounts with temporary passwords, let people choose their own,
+slow down password guessing, and clear out leftovers from the earlier redesigns.
+
+### Actions Completed
+
+- **Change your own password:** `POST /auth/change-password` (current password, then a new
+  one of at least 8 characters that differs from it). A "Password" link next to Sign out
+  opens the dialog (`docs/account.js`). A wrong current password is a 400, not a 401, because
+  the app treats a 401 as "your session ended" and signs out.
+- **Temporary passwords must be replaced:** accounts an admin adds, or whose password an admin
+  resets, are flagged `must_change_password` (the admin can untick it). Sign-in returns the
+  flag, the app opens a dialog that can't be dismissed, and the Worker refuses every other
+  request with a 403 until the password is changed (only change-password and logout are
+  allowed), so it is not just a front-end rule.
+- **Sign-in lockout:** 5 wrong passwords in a row lock the account for 15 minutes, even
+  against the right password; a good sign-in resets the count; the lock lifts by itself. Admins
+  see a Locked badge and can Unlock from Admin > Controls. Unknown usernames can't be locked
+  (there is nothing to store it on); the existing 400 ms delay still applies to every failure.
+- **Tidy-ups:** removed the dead CSS for the old "Lead quality and order" section and the old
+  Today header (31 rules); deleted the unused DMEdesk logo files; moved
+  `docs/bd-main-migration-plan.md` to `documentation/plans/` (docs/ is the published site).
+- Left alone on purpose: internal names (repo, Worker URL, `dmedesk` source setting); the 4,000
+  seen-leads cap per search (raising it grows `search_progress` on a size-limited plan); the
+  uncommitted wrangler 3 to 4 change in `worker/package*.json`.
+
+### Database / System Result
+
+- **SQL to run (optional):** `sql/027_account_security.sql` adds three columns. Before it is
+  run everything keeps working; there is just no lockout and no forced change.
+- Worker tests: 82 pass (new: lockout rules, counting and reset, the lock lifting, flagged
+  temporary passwords, removed accounts, behaviour before 027, password change rules).
+- Not deployed or pushed by this entry.
+
+### Safety Status
+
+- No production data touched, no `.env` or secrets changed; passwords are only ever stored hashed.
+- Ownership rules and the audit trail are unchanged.
+- Manual browser testing is still required.
 
 ## 2026-10-06 — Admin Controls: add, edit and remove users, system panel
 
