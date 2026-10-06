@@ -287,7 +287,8 @@ app.get("/search/companies", async (c) => {
     scrapeWebsites: c.req.query("scrape") === "true",
     requireCmsClaims: c.req.query("requireCmsClaims") === "true" || c.req.query("requireCmsClaims") === "on",
     userId: session.id,
-    clientProvidedVariantSkips: Boolean(c.req.query("variantSkips")),
+    clientProvidedVariantSkips: Boolean(c.req.query("variantSkips")) && c.req.query("rescan") !== "true",
+    rescan: c.req.query("rescan") === "true",
     resetProgress: c.req.query("resetProgress") === "true",
   });
   return c.json(ok(data));

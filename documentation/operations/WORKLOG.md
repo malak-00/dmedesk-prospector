@@ -37,6 +37,35 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-08 — Search more: failed pages and a Rescan for unseen leads
+
+### Objective
+
+A search showed "266 left" but Search more said "No more leads found".
+
+### Actions Completed
+
+- **A page the database fails to return is no longer read as the end of the list**
+  (`companyService.js`). It used to mark the whole search finished; now the position stays where it
+  was, the failure is reported in the response (`searchErrors`) and in a message, and the next click
+  retries. Setup errors (a SQL file not installed) are reported as before.
+- **Rescan:** when the list says it has ended but the count still shows unseen leads, the button
+  becomes "Rescan for N unseen". It reads the list again from the top (`rescan=true`), skipping every
+  lead already seen, so a position that can no longer be trusted cannot strand leads. One rescan per
+  search: if nothing turns up, the message says the rest belong to businesses already claimed through
+  another location or owned by a teammate, and the count then settles.
+- The response also reports how many rows the search scanned (`scanned`).
+
+### Database / System Result
+
+- No SQL. Worker tests: 126 pass (new: a failed page is not the end; Rescan skips the seen and ignores a stale "done" position).
+- The exact cause of the reported case could not be confirmed from the data available; the two changes
+  above cover both likely causes (a failed page lookup, a stale position) and make the next occurrence visible.
+
+### Safety Status
+
+- No data changed. Manual browser testing required.
+
 ## 2026-10-08 — Status clean-up, call mode results, default specialty, plan docs
 
 ### Objective

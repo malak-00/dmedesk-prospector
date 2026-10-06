@@ -167,3 +167,50 @@ test('an old bookmark loses its position but is otherwise left alone; a new one 
   assert.deepEqual(readPositions({ '*|': 40, _v: 2 }), { '*|': 40 }, 'stamped bookmarks keep their position, without the marker');
   assert.deepEqual(readPositions(null), {});
 });
+
+// ---- a failed page is not "no more leads"; Rescan finds what was never shown ----------
+
+const baseCriteria = { states: ['FL'], taxonomyDescriptions: ['DME'], taxonomyCodes: ['332B00000X'], source: 'dmedesk' };
+
+test('a page that fails is reported and retried, never mistaken for the end of the results', async () => {
+  const failing = fakeDb({ search_providers_v2: async () => ({ data: null, error: { message: 'canceling statement due to statement timeout' } }) });
+  const none = await searchCompanies(dmedesk, failing, { ...baseCriteria, limit: 20 }, { userId: 'user-1' });
+  assert.equal(none.companies.length, 0);
+  assert.equal(none.exhaustedRegistry, false, 'a timeout is not the end of the list');
+  assert.equal(none.searchErrors.length, 1);
+  assert.match(none.searchErrors[0].message, /timeout/);
+
+  // The first page works, the second one times out: keep what was found, stay where we were.
+  const flaky = fakeDb({
+    search_providers_v2: async ({ p_skip, p_limit }) => (p_skip >= 200
+      ? { data: null, error: { message: 'canceling statement due to statement timeout' } }
+      : { data: table.slice(p_skip, p_skip + p_limit), error: null }),
+  });
+  const partial = await searchCompanies(dmedesk, flaky, { ...baseCriteria, limit: 250 }, { userId: 'user-1' });
+  assert.equal(partial.companies.length, 200);
+  assert.equal(partial.exhaustedRegistry, false);
+  assert.equal(Object.values(partial.variantSkips)[0], 200, 'the position stops at the last page that was read');
+  assert.equal(partial.searchErrors.length, 1);
+});
+
+test('Rescan starts from the top again and skips what was already seen, even when the saved position says "done"', async () => {
+  const seen = table.slice(0, 100).map((r) => r.npi);
+  const db = {
+    calls: [],
+    from(name) {
+      const q = new Proxy(function () {}, {
+        get(_, prop) {
+          if (prop === 'then') return (resolve) => resolve({ data: [], error: null });
+          if (prop === 'maybeSingle') return () => Promise.resolve({ data: name === 'search_progress' ? { variant_skips: { 'FL|DME': -1, _v: 2 }, seen_npis: seen } : null, error: null });
+          return () => q;
+        },
+      });
+      return q;
+    },
+    rpc: async (fn, args) => ({ data: table.slice(args.p_skip, args.p_skip + args.p_limit), error: null }),
+  };
+  const result = await searchCompanies(dmedesk, db, { ...baseCriteria, limit: 20 }, { userId: 'user-1', rescan: true });
+  assert.equal(result.companies.length, 20);
+  assert.equal(result.companies[0].npi, table[100].npi, 'the first 100 were seen already, so the rescan starts at the 101st');
+  assert.equal(result.exhaustedRegistry, false);
+});

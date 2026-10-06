@@ -305,14 +305,19 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
   let fetchesUsed = 0;
   let hitScanBudget = false;
   const rejectedVariants = [];
+  // A page that could not be fetched (a database timeout, say) is NOT the end of the results: its
+  // position is left where it was so the next "Search more" retries it, and the failure is reported.
+  const searchErrors = [];
+  const paused = variants.map(() => false);
+  const ownDatabase = ProviderSource.resolveSource(config) === ProviderSource.DME_DESK;
 
   const acceptedCount = () => (mergeBranches ? merger.length : fresh.length);
 
   const variantExhausted = variants.map((variant) => variantSkips[variantKey(variant)] === EXHAUSTED_SKIP);
-  const anyVariantLeft = () => variantExhausted.some((done) => !done);
+  const anyVariantLeft = () => variantExhausted.some((done, i) => !done && !paused[i]);
 
   while (acceptedCount() < desiredLimit && !hitScanBudget && anyVariantLeft()) {
-    const remainingVariants = variantExhausted.filter((done) => !done).length;
+    const remainingVariants = variantExhausted.filter((done, i) => !done && !paused[i]).length;
     const roundQuota = Math.max(1, Math.ceil((desiredLimit - acceptedCount()) / remainingVariants));
 
     // Every not-yet-exhausted variant this round is an independent NPPES
@@ -325,7 +330,7 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
     // earlier ones satisfy the quota), which is a fine trade.
     const roundVariantIndices = [];
     for (let v = 0; v < variants.length; v++) {
-      if (variantExhausted[v]) continue;
+      if (variantExhausted[v] || paused[v]) continue;
       if (fetchesUsed + roundVariantIndices.length >= MAX_NPPES_FETCHES_PER_REQUEST) break;
       roundVariantIndices.push(v);
     }
@@ -382,6 +387,11 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
 
       if (!pr.ok) {
         console.log("[companyService] NPPES query variant failed, skipping it: " + key + " -- " + pr.err.message);
+        if (ownDatabase && pr.err.status !== 503) { // 503 = a SQL file is not installed (a setup problem, reported as before); anything else is a failed read
+          searchErrors.push({ key, message: pr.err.message });
+          paused[pr.v] = true;
+          continue;
+        }
         rejectedVariants.push({ state: variant.state || null, taxonomyDescription: variant.taxonomyDescription || null, message: pr.err.message });
         variantExhausted[pr.v] = true;
         continue;
@@ -439,6 +449,7 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
     variantSkips,
     hitScanBudget,
     allVariantsExhausted: variantExhausted.every(Boolean),
+    searchErrors,
     allSeenNpis: Object.keys(seenNpis),
     rejectedVariants,
   };
@@ -467,6 +478,14 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   let effectiveCriteria = criteria;
   if (options.clientProvidedVariantSkips) {
     effectiveCriteria = criteria;
+  } else if (options.rescan && trackProgress) {
+    // A position that can no longer be trusted: read the list again from the top, skipping every
+    // lead already seen, so only the ones never shown come back.
+    const progress = await getSearchProgressSafe(supabase, options.userId, criteria);
+    effectiveCriteria = Object.assign({}, criteria, {
+      variantSkips: {},
+      excludeNpis: (criteria.excludeNpis || []).concat((progress && progress.seenNpis) || []),
+    });
   } else if (resetProgress) {
     effectiveCriteria = Object.assign({}, criteria, { variantSkips: {}, excludeNpis: [] });
   } else if (trackProgress) {
@@ -519,6 +538,8 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
     exhaustedRegistry: fetchResult.allVariantsExhausted && !fetchResult.hitScanBudget,
     variantSkips: fetchResult.variantSkips,
     rejectedVariants: fetchResult.rejectedVariants,
+    searchErrors: fetchResult.searchErrors,
+    scanned: totalScanned,
     companies,
   };
 }

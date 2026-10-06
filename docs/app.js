@@ -1770,12 +1770,26 @@ function collectNpisFromCompanies(companies) {
 }
 
 function updateSearchMoreButton(exhausted) {
+  state.searchExhausted = exhausted;
   els.searchMoreBtn.hidden = false;
-  els.searchMoreBtn.disabled = exhausted;
-  els.searchMoreLabel.textContent = exhausted ? "No more leads found" : "Search more";
-  els.searchMoreBtn.title = exhausted
-    ? "This search has no more unclaimed leads left in the registry"
-    : "Keeps the same filters and pages deeper into the registry, skipping every lead you've already seen for this search";
+  syncSearchMoreButton();
+}
+
+// The list ran out, yet the count above says leads are still unseen: read the whole list again from
+// the top, skipping what was already shown, rather than leaving a button that says "no more".
+function syncSearchMoreButton() {
+  if (els.searchMoreBtn.hidden) return; // nothing searched yet, or a search that found nothing
+  const exhausted = Boolean(state.searchExhausted);
+  const left = Number(state.insightsLeft || 0);
+  const rescan = exhausted && left > 0 && !state.rescanTried;
+  els.searchMoreBtn.dataset.mode = rescan ? "rescan" : "more";
+  els.searchMoreBtn.disabled = exhausted && !rescan;
+  els.searchMoreLabel.textContent = rescan ? `Rescan for ${left.toLocaleString()} unseen` : exhausted ? "No more leads found" : "Search more";
+  els.searchMoreBtn.title = rescan
+    ? "The list reached its end but the count says leads are still unseen. Reads it again from the top, skipping everything you have already seen."
+    : exhausted
+      ? "This search has no more unclaimed leads left in the registry"
+      : "Keeps the same filters and pages deeper into the registry, skipping every lead you've already seen for this search";
 }
 
 // Locks every filter/control in the search form (text inputs, all the
@@ -1803,7 +1817,8 @@ function setSearchFormDisabled(disabled) {
   }
 }
 
-async function executeSearch(params, { isMore = false } = {}) {
+async function executeSearch(params, { isMore: more = false, isRescan = false } = {}) {
+  const isMore = more || isRescan; // both add a page to the ones already on screen
   setSearchFormDisabled(true);
   els.searchMoreBtn.disabled = true;
   setStatus("busy", isMore ? "Searching more…" : "Searching…");
@@ -1818,7 +1833,9 @@ async function executeSearch(params, { isMore = false } = {}) {
 
   try {
     const requestParams = { ...params };
-    if (isMore) {
+    if (isRescan) {
+      requestParams.rescan = "true"; // the server starts from the top and skips what this rep has seen
+    } else if (isMore) {
       if (Object.keys(state.searchMoreVariantSkips).length) requestParams.variantSkips = JSON.stringify(state.searchMoreVariantSkips);
       if (state.searchMoreSeenNpis.length) requestParams.excludeNpis = state.searchMoreSeenNpis.join(",");
     }
@@ -1828,10 +1845,19 @@ async function executeSearch(params, { isMore = false } = {}) {
     state.searchMoreVariantSkips = data.variantSkips || {};
     state.searchMoreSeenNpis = state.searchMoreSeenNpis.concat(collectNpisFromCompanies(data.companies));
 
+    const failedPages = data.searchErrors || [];
+    if (failedPages.length) {
+      // A page the database didn't answer is not the end of the list: nothing is skipped, the next click retries it.
+      showToast(`The database didn't answer part of this search (${failedPages[0].message}). Nothing was skipped: press ${isRescan ? "Rescan" : "Search more"} to carry on.`, true);
+    }
     if (isMore && data.companies.length === 0) {
       // Nothing new to show -- leave the current table exactly as it was
       // instead of replacing it with an empty state.
-      showToast("No more leads found for this search");
+      if (!failedPages.length) {
+        showToast(isRescan
+          ? `Nothing new turned up. The ${Number(state.insightsLeft || 0).toLocaleString()} still counted belong to businesses already claimed through another location or owned by a teammate, so they can't be shown.`
+          : "No more leads found for this search");
+      }
     } else {
       const page = { companies: data.companies, excludedAsClaimed: data.excludedAsClaimed || 0 };
       if (isMore) {
@@ -1852,7 +1878,7 @@ async function executeSearch(params, { isMore = false } = {}) {
     if (!isMore && data.companies.length === 0) {
       els.searchMoreBtn.hidden = true; // nothing was found at all -- no point offering to page deeper
     } else {
-      updateSearchMoreButton(data.exhaustedRegistry);
+      updateSearchMoreButton(Boolean(data.exhaustedRegistry) && !failedPages.length);
     }
 
     state.lastSearchParams = params;
@@ -1898,6 +1924,11 @@ async function executeSearch(params, { isMore = false } = {}) {
 
 async function searchMore() {
   if (!state.lastSearchParams) return;
+  if (els.searchMoreBtn.dataset.mode === "rescan") {
+    state.rescanTried = true; // one rescan per search: if nothing turns up, the rest really can't be shown
+    await executeSearch(state.lastSearchParams, { isRescan: true });
+    return;
+  }
   await executeSearch(state.lastSearchParams, { isMore: true });
 }
 
@@ -1917,6 +1948,8 @@ async function runSearch(evt) {
   // top-of-registry leads.
   state.searchMoreVariantSkips = {};
   state.searchMoreSeenNpis = [];
+  state.rescanTried = false;
+  state.searchExhausted = false;
 
   await executeSearch(params);
 }
@@ -4854,6 +4887,8 @@ async function runInsights() {
     renderAvailability(insights);
     renderQuickPicks(picks, insights);
     renderSearchProgress(insights);
+    state.insightsLeft = insights.lookup || insights.empty ? 0 : insights.left;
+    syncSearchMoreButton();
   } catch (err) {
     if (seq !== state.insightsSeq) return;
     console.log("[insights] " + err.message);
