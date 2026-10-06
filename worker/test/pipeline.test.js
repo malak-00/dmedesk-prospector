@@ -115,7 +115,7 @@ test('claiming for a rep writes the sheet status and notes into the lead', async
   assert.equal(sent.p_user_id, 'u1');
   assert.equal(sent.p_actor_id, 'bot', 'the caller is recorded as the actor');
   const leadRow = sent.p_leads[0].lead;
-  assert.equal(leadRow.status, 'Onboarded');
+  assert.equal(leadRow.status, 'onboarded', 'the sheet status is tidied to the standard spelling');
   assert.match(leadRow.notes, /Imported from BD MEETINGS/);
   assert.equal(leadRow.meeting_opener_notes, 'Ask about billing');
   assert.equal(leadRow.state, 'GA');

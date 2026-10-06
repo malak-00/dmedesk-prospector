@@ -27,7 +27,18 @@
     remind: "",
     note: "",
     startedAt: 0,
+    shuffle: false,
+    order: null, // each lead's place in the list as it was handed over, to undo a shuffle
+    undo: null,  // { npi, name, pos }: the claim that can still be taken back
   };
+  const SHUFFLE_KEY = "dmeProspectorCallShuffle";
+  const UNDO_MS = 10000;
+  // What a rep can tap on a prospect: each claims the lead with that result and moves on.
+  const PROSPECT_RESULTS = [
+    ["voicemail", "Voicemail"], ["no answer", "No answer"], ["gatekeeper", "Gatekeeper"],
+    ["interested", "Interested"], ["not interested", "Not interested"], ["disconnected", "Disconnected"],
+  ];
+  let undoTimer = null;
 
   let backdrop = null;
   let drawer = null;
@@ -161,6 +172,61 @@
       }).join("")}${more > 0 ? `<div class="cm-hint">+ ${more} more</div>` : ""}</div>`;
   }
 
+  function undoHtml() {
+    if (!run.undo) return "";
+    return `<div class="cm-undo" role="status"><span>Claimed <strong>${escapeHtml(run.undo.name)}</strong>${run.undo.status ? ` as ${escapeHtml(run.undo.status)}` : ""}.</span>
+      <button type="button" class="link-btn" data-cm="undo">Undo</button></div>`;
+  }
+
+  function offerUndo(item, status) {
+    clearTimeout(undoTimer);
+    run.undo = { npi: String(item.npi), name: item.name, status, pos: run.pos };
+    undoTimer = setTimeout(() => { run.undo = null; drawer?.querySelector(".cm-undo")?.remove(); }, UNDO_MS);
+  }
+
+  // Takes the last claim back (returns the lead to Prospect) and goes back to that lead.
+  async function undoClaim() {
+    const u = run.undo;
+    if (!u || run.busy) return;
+    run.busy = true;
+    try {
+      await apiPost("leads/return-to-prospect", { npis: [u.npi] });
+      clearTimeout(undoTimer);
+      run.undo = null;
+      state.claimedLoaded = false;
+      run.outcome[u.pos] = null;
+      showToast(`${u.name} is back in Prospect`);
+      goTo(u.pos);
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      run.busy = false;
+    }
+  }
+
+  // Random order for the leads still to call; turning it off puts them back as they were given.
+  function reorderRest() {
+    const slots = [];
+    for (let i = run.pos + 1; i < run.queue.length; i++) if (!run.outcome[i]) slots.push(i);
+    const items = slots.map((i) => run.queue[i]);
+    if (run.shuffle) {
+      for (let i = items.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [items[i], items[j]] = [items[j], items[i]];
+      }
+    } else {
+      items.sort((a, b) => run.order.get(a) - run.order.get(b));
+    }
+    slots.forEach((slot, k) => { run.queue[slot] = items[k]; });
+  }
+
+  function toggleShuffle() {
+    run.shuffle = !run.shuffle;
+    try { localStorage.setItem(SHUFFLE_KEY, run.shuffle ? "1" : "0"); } catch { /* not remembered */ }
+    reorderRest();
+    render();
+  }
+
   function render() {
     if (!drawer) return;
     if (run.pos >= run.queue.length) { renderDone(); return; }
@@ -194,8 +260,12 @@
         </div>
         <div class="cm-more"><button type="button" class="text-action" data-cm="meeting">📅 ${item.meetingAt && !meetingIsPast(item) ? "Edit meeting" : "Book a meeting"}</button></div>`;
     } else {
-      primaryLabel = "Claim & next";
-      work = '<div class="cm-hint">Claiming puts this lead under your name so you can log the call in Claimed leads.</div>';
+      primaryLabel = "";
+      work = `
+        <div class="cm-label">How did it go? <span class="cm-hint-inline">Tap a result to claim this lead and move on</span></div>
+        <div class="cm-chips">${PROSPECT_RESULTS.map(([value, label]) => `<button type="button" class="choice-chip cm-status${value === "disconnected" ? " is-danger" : ""}" data-value="${value}">${label}</button>`).join("")}</div>
+        <textarea class="cm-note" rows="3" maxlength="500" placeholder="Add a note first (optional)">${escapeHtml(run.note)}</textarea>
+        <div class="cm-more"><button type="button" class="text-action" data-cm="primary">Claim without a result</button></div>`;
     }
 
     drawer.innerHTML = `
@@ -205,10 +275,12 @@
           <div class="cm-count">${run.pos + 1} of ${total}</div>
         </div>
         <div class="cm-head-meta"><span>${c.saved} ${run.mode === "claimed" ? "logged" : "claimed"}</span><span>${c.skipped} skipped</span><span>${c.left} left</span></div>
+        ${total > 1 ? `<button type="button" class="btn btn-ghost btn-small cm-shuffle${run.shuffle ? " is-on" : ""}" data-cm="shuffle" aria-pressed="${run.shuffle}" title="Take the leads still to call in a random order">Shuffle</button>` : ""}
         <button type="button" class="btn btn-ghost btn-small" data-cm="close">Close</button>
       </div>
       <div class="cm-progress" aria-hidden="true"><span style="width:${pct}%"></span></div>
       <div class="cm-body">
+        ${undoHtml()}
         <div class="cm-name">${escapeHtml(info.name)}</div>
         ${info.contact ? `<div class="cm-sub">${escapeHtml(info.contact)}</div>` : ""}
         <div class="cm-sub cm-muted">${escapeHtml([info.place, info.specialty].filter(Boolean).join(" · "))} ${window.dmeHooks.localTime?.(info.stateCode) || ""}</div>
@@ -221,9 +293,9 @@
       <div class="cm-foot">
         <button type="button" class="btn btn-ghost" data-cm="back" ${run.pos === 0 ? "disabled" : ""} title="Previous lead (←)">Back</button>
         <button type="button" class="btn btn-ghost" data-cm="skip" title="Skip this lead (→)">Skip</button>
-        <button type="button" class="btn btn-primary" data-cm="primary" title="Ctrl+Enter">${primaryLabel}</button>
+        ${primaryLabel ? `<button type="button" class="btn btn-primary" data-cm="primary" title="Ctrl+Enter">${primaryLabel}</button>` : ""}
       </div>
-      <div class="cm-keys">← back · → skip · Ctrl+Enter ${run.mode === "claimed" ? "save" : "claim"} · Esc close</div>`;
+      <div class="cm-keys">← back · → skip · ${run.mode === "claimed" ? "Ctrl+Enter save · " : "Ctrl+Enter claim without a result · "}Esc close</div>`;
   }
 
   function renderDone() {
@@ -243,6 +315,7 @@
       </div>
       <div class="cm-progress" aria-hidden="true"><span style="width:100%"></span></div>
       <div class="cm-body cm-done">
+        ${undoHtml()}
         <div class="cm-done-num">${c.saved}</div>
         <div class="cm-sub">${c.saved === 1 ? "lead" : "leads"} ${run.mode === "claimed" ? "logged" : "claimed"}${skippedAny ? `, ${c.skipped} skipped` : ""}.</div>
         ${breakdown ? `<div class="cm-facts cm-facts-center">${breakdown}</div>` : ""}
@@ -278,8 +351,7 @@
     }
     // Same three calls as the call log on a claimed lead's card.
     if (status && status !== item.status) {
-      await apiPost("leads/status", { npi: item.npi, status });
-      item.status = status;
+      item.status = (await apiPost("leads/status", { npi: item.npi, status })).status;
     }
     if (status || note) {
       const data = await apiPost("leads/notes", { npi: item.npi, note: [status, note].filter(Boolean).join(" — ") });
@@ -305,14 +377,62 @@
     return already ? "already yours" : "claimed";
   }
 
+  // The result and note go on the lead once it is claimed (they need a claimed lead to be written to).
+  async function recordOnClaimed(npi, status, note) {
+    try {
+      if (status) await apiPost("leads/status", { npi, status });
+      if (status || note) await apiPost("leads/notes", { npi, note: [status, note].filter(Boolean).join(" \u2014 ") });
+    } catch (err) {
+      showToast(`Claimed, but the result didn't save: ${err.message}`, true);
+    }
+  }
+
+  // A tap on a result chip in prospect mode: claim, record the result, move on.
+  async function prospectResult(status) {
+    if (run.busy) return;
+    const item = run.queue[run.pos];
+    const note = run.note.trim();
+    run.busy = true;
+    drawer.querySelectorAll(".cm-status").forEach((b) => { b.disabled = true; });
+    try {
+      if (status === "disconnected") {
+        // Not a claim: the lead goes to the shared Disconnected list, which can't be undone.
+        if (!confirm(`Send ${item.name} to Disconnected? It leaves Prospect for everyone and can't be undone.`)) return;
+        await apiPost("export/disconnected", { companies: [item] });
+        removeCompaniesFromProspect([item]);
+        run.outcome[run.pos] = { kind: "saved", label: "disconnected" };
+        run.undo = null;
+        goTo(nextOpen(run.pos + 1));
+        return;
+      }
+      const label = await claimProspect(item);
+      if (!label) return;
+      await recordOnClaimed(String(item.npi), status, note);
+      run.outcome[run.pos] = { kind: "saved", label: status };
+      if (label === "claimed") offerUndo(item, status); else run.undo = null; // a lead that was already yours isn't undone
+      goTo(nextOpen(run.pos + 1));
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      run.busy = false;
+      drawer.querySelectorAll(".cm-status").forEach((b) => { b.disabled = false; });
+    }
+  }
+
   async function primary() {
     if (run.busy) return;
     const item = run.queue[run.pos];
-    const btn = drawer.querySelector('[data-cm="primary"]');
     run.busy = true;
-    if (btn) btn.disabled = true;
+    drawer.querySelectorAll('[data-cm="primary"]').forEach((b) => { b.disabled = true; });
     try {
-      const label = run.mode === "claimed" ? await saveClaimed(item) : await claimProspect(item);
+      let label;
+      if (run.mode === "claimed") {
+        label = await saveClaimed(item);
+      } else {
+        label = await claimProspect(item); // a claim with no result
+        if (label && run.note.trim()) await recordOnClaimed(String(item.npi), "", run.note.trim());
+        if (label === "claimed") offerUndo(item, ""); else run.undo = null;
+      }
       if (label) {
         run.outcome[run.pos] = { kind: "saved", label };
         goTo(nextOpen(run.pos + 1));
@@ -321,8 +441,7 @@
       showToast(err.message, true);
     } finally {
       run.busy = false;
-      const again = drawer.querySelector('[data-cm="primary"]');
-      if (again) again.disabled = false;
+      drawer.querySelectorAll('[data-cm="primary"]').forEach((b) => { b.disabled = false; });
     }
   }
 
@@ -364,6 +483,8 @@
       else if (act === "skip") skip();
       else if (act === "back") back();
       else if (act === "primary") primary();
+      else if (act === "undo") undoClaim();
+      else if (act === "shuffle") toggleShuffle();
       else if (act === "meeting") bookMeeting();
       else if (act === "redo") redoSkipped();
       // "called" is a plain tel: link; nothing to do beyond letting it dial.
@@ -371,6 +492,7 @@
     }
     const chip = e.target.closest(".cm-status, .cm-remind");
     if (!chip) return;
+    if (run.mode === "prospect" && chip.classList.contains("cm-status")) { prospectResult(chip.dataset.value); return; }
     const isStatus = chip.classList.contains("cm-status");
     const was = chip.classList.contains("active");
     drawer.querySelectorAll(isStatus ? ".cm-status" : ".cm-remind").forEach((c) => c.classList.remove("active"));
@@ -410,9 +532,15 @@
     const list = (items || []).filter(Boolean);
     if (!list.length) { showToast("Nothing to call yet", true); return; }
     build();
+    let shuffle = false;
+    try { shuffle = localStorage.getItem(SHUFFLE_KEY) === "1"; } catch { /* not remembered */ }
+    clearTimeout(undoTimer);
     Object.assign(run, {
-      mode, queue: list, outcome: list.map(() => null), pos: 0, busy: false, status: "", remind: "", note: "", startedAt: Date.now(),
+      mode, queue: list, outcome: list.map(() => null), pos: -1, busy: false, status: "", remind: "", note: "", startedAt: Date.now(),
+      shuffle, order: new Map(list.map((item, i) => [item, i])), undo: null,
     });
+    if (shuffle) reorderRest(); // pos -1: every lead is still to call
+    run.pos = 0;
     backdrop.hidden = false;
     drawer.hidden = false;
     document.documentElement.classList.add("call-open");
@@ -424,6 +552,8 @@
     if (!isOpen()) return;
     drawer.hidden = true;
     backdrop.hidden = true;
+    clearTimeout(undoTimer);
+    run.undo = null;
     document.documentElement.classList.remove("call-open");
     const saved = counts().saved;
     if (run.mode === "claimed" && saved > 0) {

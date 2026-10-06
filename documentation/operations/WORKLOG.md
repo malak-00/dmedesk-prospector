@@ -37,6 +37,52 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-08 — Status clean-up, call mode results, default specialty, plan docs
+
+### Objective
+
+Make statuses meaningful (one short list instead of many spellings and throwaway values),
+finish the approved dialer features, and correct the plan documents.
+
+### Actions Completed
+
+- **Status normalization** (`worker/src/lib/statuses.js`): a canonical list (new, called, voicemail,
+  no answer, gatekeeper, callback, interested, follow up, not interested, do not call, plus the
+  pipeline stages meeting booked, meeting held, contract sent, invoice sent, onboarded). Typed
+  variants map onto it ("VM", "Voice mail", "left vm" all become voicemail; "NI", "DNC", "CBK",
+  "Signed", "Closed Won" and so on). Every status a rep writes is tidied the same way; a status
+  that says nothing ("x", "asdf", "test") is refused, and a typed "disconnected" is refused (use
+  Send to Disconnected). Dropdowns and result chips list each meaning once.
+- **Admin > Controls > Statuses**: every spelling in use with its lead count and a suggested
+  target; pick what each becomes, apply, and an undo file (npi, old status, new status) downloads.
+  `GET /admin/statuses`, `POST /admin/statuses/merge`. It changes only the status text, not the
+  owner or last-updated time, and never merges anything into "disconnected". Existing data is
+  changed only when an admin applies it; nothing was changed by this release.
+- **Feature 1, call mode on Prospect:** result chips (Voicemail, No answer, Gatekeeper, Interested,
+  Not interested, Disconnected) claim the lead, record the result and note, and move on; a 10 second
+  Undo returns the lead to Prospect; Disconnected is confirmed and uses the existing disconnect path.
+- **Feature 3, shuffle** in the call drawer (remembered; only the leads still to call are reordered).
+- **Feature 4, default specialty** (`sql/028_default_taxonomy.sql`, `POST /admin/taxonomies/default`,
+  Admin > Controls > Search defaults): ticked in a brand-new session only.
+- **Feature 5**, a dot on the states where it is a good time to call (same rule as the filter).
+- **Plan documents:** 106 machine-specific `file:///c:/Users/ben.arthur/...` links in 6 files are
+  now relative links (every target checked); `FEATURE_PLAN.md`, `checklist.md` and the plans
+  `README.md` corrected and updated; `sql/README.md` marks 020 to 027 as run and adds 028.
+
+### Database / System Result
+
+- **SQL to run (optional):** `sql/028_default_taxonomy.sql` for the starting-specialty setting.
+  (025, 026 and 027 were run.)
+- Worker tests: all pass (new: status rules, cleanup list, merge safety and undo data, status writes,
+  default specialty).
+- Not deployed or pushed by this entry.
+
+### Safety Status
+
+- No production data changed by the release itself; the status merge is an explicit admin action
+  with a confirmation and a downloadable undo file.
+- Manual browser testing is still required.
+
 ## 2026-10-07 — Server-side paging and filtering, going-cold nudges, local time
 
 ### Objective

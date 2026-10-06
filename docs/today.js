@@ -507,8 +507,7 @@
       applyMeetingToLead(lead, data);
       step = "status";
       if (outcome.status && outcome.status !== lead.status) {
-        await apiPost("leads/status", { npi: lead.npi, status: outcome.status });
-        lead.status = outcome.status;
+        lead.status = (await apiPost("leads/status", { npi: lead.npi, status: outcome.status })).status;
       }
       step = "note";
       if (note) {

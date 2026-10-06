@@ -4,6 +4,7 @@
 // listClaimedLeadsForUser.
 import { buildTeamActivity } from "../lib/teamActivity.js";
 import { buildFunnel } from "../lib/funnel.js";
+import { cleanStatus, isJunkStatus, normalizeStatus, statusCleanupRows, CANONICAL_STATUSES } from "../lib/statuses.js";
 import { toLeadDTO } from "./leadsRepo.js";
 
 function httpError(status, message) {
@@ -673,4 +674,47 @@ export async function getLeadsForExport(supabase, { userId = "" } = {}) {
     return q;
   }, "leads");
   return rows.map((row) => toLeadDTO(row, names.get(row.claimed_by) || ""));
+}
+
+// ---- status cleanup ---------------------------------------------------------------------
+// Every distinct spelling of a status in use, with how many leads carry it and what it should
+// probably become (see lib/statuses.js). Read-only.
+export async function getStatusCleanup(supabase) {
+  const rows = await fetchAllRows(() => supabase.from("leads").select("status"), "statuses");
+  const counts = new Map();
+  rows.forEach((r) => { const s = String(r.status ?? "").trim(); if (s) counts.set(s, (counts.get(s) || 0) + 1); });
+  return { statuses: statusCleanupRows(counts), canonical: CANONICAL_STATUSES, totalLeads: rows.length };
+}
+
+const MAX_MERGES = 100;
+const MAX_UNDO_ROWS = 20000;
+
+// merges: [{ from: "<status exactly as stored>", to: "<status it becomes>" }].
+// Changes only the status text of the leads that carry `from` (not who owns them, not their
+// last-updated time) and returns every lead changed with its old status, so it can be undone.
+export async function applyStatusMerges(supabase, merges) {
+  if (!Array.isArray(merges) || merges.length === 0) throw httpError(400, "Nothing to change");
+  if (merges.length > MAX_MERGES) throw httpError(400, `At most ${MAX_MERGES} changes at a time`);
+
+  const plan = merges.map((m) => {
+    const from = String(m && m.from != null ? m.from : "");
+    const to = normalizeStatus(m && m.to);
+    if (!from.trim()) throw httpError(400, "A change is missing the status to change");
+    if (cleanStatus(from) === "disconnected" || cleanStatus(to) === "disconnected") throw httpError(400, "Disconnected is a move, not a status: use Send to Disconnected");
+    if (!to || isJunkStatus(to)) throw httpError(400, `"${m && m.to}" isn't a usable status to change "${from}" into`);
+    return { from, to };
+  });
+
+  const changed = [];
+  const summary = [];
+  for (const { from, to } of plan) {
+    if (from === to) continue;
+    const affected = await fetchAllRows(() => supabase.from("leads").select("npi").eq("status", from), `leads with status "${from}"`);
+    if (affected.length === 0) { summary.push({ from, to, leads: 0 }); continue; }
+    const { error } = await supabase.from("leads").update({ status: to }).eq("status", from);
+    if (error) throw httpError(500, `Failed to change "${from}" to "${to}": ` + error.message);
+    summary.push({ from, to, leads: affected.length });
+    affected.forEach((r) => { if (changed.length < MAX_UNDO_ROWS) changed.push({ npi: String(r.npi), from, to }); });
+  }
+  return { summary, changed, leadsChanged: summary.reduce((n, s) => n + s.leads, 0) };
 }

@@ -12,6 +12,11 @@
   let features = { remove: true, claimForOthers: true };
   let system = null;
   let systemError = "";
+  let taxonomies = null;
+  let statusData = null;
+  let statusError = "";
+  const statusPick = {}; // stored spelling -> the status it should become ("" = leave it)
+  let statusResult = null;
   let loading = false;
   let error = "";
   let dialog = null; // the open dialog's overlay element
@@ -26,9 +31,11 @@
     loading = true;
     error = "";
     render();
-    const [u, s] = await Promise.allSettled([apiGet("admin/users"), apiGet("admin/system")]);
+    const [u, s, t, st] = await Promise.allSettled([apiGet("admin/users"), apiGet("admin/system"), apiGet("taxonomies/list"), apiGet("admin/statuses")]);
     if (u.status === "fulfilled") { users = u.value.users; features = u.value.features; } else { error = u.reason.message; }
     if (s.status === "fulfilled") { system = s.value; systemError = ""; } else { systemError = s.reason.message; }
+    if (t.status === "fulfilled") taxonomies = t.value.taxonomies || [];
+    if (st.status === "fulfilled") { statusData = st.value; statusError = ""; } else { statusError = st.reason.message; }
     loading = false;
     render();
   }
@@ -97,6 +104,8 @@
       <div class="team-body${loading && users ? " is-stale" : ""}">
         <section><h3 class="ctl-h">Users</h3>${usersBody}</section>
         <section><h3 class="ctl-h">System</h3>${systemHtml()}</section>
+        <section><h3 class="ctl-h">Search defaults</h3>${defaultsHtml()}</section>
+        <section><h3 class="ctl-h">Statuses</h3>${statusesHtml()}</section>
         <section><h3 class="ctl-h">Sheet import &amp; export</h3><div id="ctlSheetHost">${users ? sheetHtml() : ""}</div></section>
       </div>`;
   }
@@ -244,6 +253,86 @@
     if (!features.remove) { showToast("Removing users needs sql/026_user_controls.sql run in Supabase first", true); return; }
     if (!confirm(`Remove ${u.displayName}? They won't be able to sign in, and any open session ends within about 30 seconds.${leads} You can restore them later.`)) return;
     update({ disabled: true }, `${u.displayName} was removed`);
+  }
+
+  /* ---------- search defaults and status cleanup ---------- */
+
+  function defaultsHtml() {
+    if (!taxonomies) return '<div class="team-block"><span class="muted-note">Loading\u2026</span></div>';
+    const current = taxonomies.find((t) => t.defaultForSearch);
+    return `<div class="team-block">
+      <h4>Starting specialty</h4>
+      <p class="ctl-help">The specialty ticked for people when they open the search form in a new session. They can change it freely; a saved search or an earlier choice in the same tab always wins.</p>
+      <div class="ctl-run"><select id="ctlDefaultTaxonomy" aria-label="Starting specialty">
+        <option value="">None (all specialties)</option>
+        ${taxonomies.map((t) => `<option value="${escapeHtml(t.rowNumber)}" ${current && current.rowNumber === t.rowNumber ? "selected" : ""}>${escapeHtml(t.facilityType || t.description)}</option>`).join("")}
+      </select></div>
+    </div>`;
+  }
+
+  async function saveDefaultTaxonomy(rowNumber) {
+    try {
+      const data = await apiPost("admin/taxonomies/default", { rowNumber });
+      taxonomies = data.taxonomies || taxonomies;
+      showToast(rowNumber ? "Starting specialty saved" : "Starting specialty cleared");
+    } catch (err) {
+      showToast(err.message, true);
+      load();
+    }
+  }
+
+  const wanted = (row) => (row.status in statusPick ? statusPick[row.status] : (row.target && row.target !== row.status ? row.target : ""));
+  const pendingChanges = () => (statusData ? statusData.statuses.filter((r) => r.why !== "disconnected" && wanted(r) && wanted(r) !== r.status) : []);
+
+  function statusesHtml() {
+    if (statusError) return `<div class="team-block"><div class="team-state">${escapeHtml(statusError)}</div></div>`;
+    if (!statusData) return '<div class="team-block"><span class="muted-note">Loading\u2026</span></div>';
+    const rows = statusData.statuses;
+    const clean = rows.filter((r) => r.why === "ok");
+    const todo = rows.filter((r) => r.why !== "ok");
+    const rank = (r) => (r.target && r.target !== r.status ? 0 : r.junk ? 1 : 2);
+    todo.sort((a, b) => rank(a) - rank(b) || b.count - a.count);
+    const pending = pendingChanges();
+
+    const options = (row) => {
+      const list = [...statusData.canonical];
+      const picked = wanted(row);
+      if (picked && !list.includes(picked)) list.push(picked);
+      return `<option value="">Leave as it is</option>${list.map((c) => `<option value="${escapeHtml(c)}" ${picked === c ? "selected" : ""}>${escapeHtml(c)}</option>`).join("")}`;
+    };
+    const note = (r) => ({ "same meaning": "Same as", "tidy spelling": "Tidier as", meaningless: "Says nothing", disconnected: "Use Send to Disconnected", custom: "Custom" }[r.why] || "");
+
+    return `<div class="team-block">
+      <h4>Tidy the statuses</h4>
+      <p class="ctl-help">${clean.length} status${clean.length === 1 ? " is" : "es are"} already clean (${clean.map((r) => `${escapeHtml(r.status)} ${r.count}`).join(", ") || "none yet"}).
+        ${todo.length ? `Below are the others: spellings that mean the same thing, and ones that say nothing. Pick what each should become and apply. Only the status text changes (not who owns the lead), and an undo file downloads.` : "Nothing to tidy."}</p>
+      ${todo.length ? `<table class="results-table ctl-table ctl-status-table"><thead><tr><th>Stored as</th><th>Leads</th><th></th><th>Becomes</th></tr></thead><tbody>${todo.map((r) => `
+        <tr class="${r.junk ? "is-junk" : ""}"><td><strong>${escapeHtml(r.status)}</strong></td><td class="mono">${r.count}</td><td class="muted-note">${escapeHtml(note(r))}</td>
+          <td>${r.why === "disconnected" ? '<span class="muted-note">Handled by Send to Disconnected</span>' : `<select data-status-from="${escapeHtml(r.status)}">${options(r)}</select>`}</td></tr>`).join("")}</tbody></table>
+        <div class="ctl-run"><button type="button" class="btn btn-primary" data-status="apply" ${pending.length ? "" : "disabled"}>Apply ${pending.length} change${pending.length === 1 ? "" : "s"}</button>
+          <span class="muted-note">${pending.reduce((n, r) => n + r.count, 0)} lead${pending.reduce((n, r) => n + r.count, 0) === 1 ? "" : "s"} affected</span></div>` : ""}
+      ${statusResult ? `<div class="ctl-summary">Changed ${statusResult.leadsChanged} lead${statusResult.leadsChanged === 1 ? "" : "s"}: ${statusResult.summary.filter((x) => x.leads).map((x) => `${escapeHtml(x.from)} \u2192 ${escapeHtml(x.to)} (${x.leads})`).join(", ")}.</div>` : ""}
+    </div>`;
+  }
+
+  async function applyStatuses() {
+    const list = pendingChanges();
+    if (!list.length) return;
+    const leads = list.reduce((n, r) => n + r.count, 0);
+    if (!confirm(`Change the status of ${leads} lead${leads === 1 ? "" : "s"} across ${list.length} spelling${list.length === 1 ? "" : "s"}? Only the status text changes. A file listing every lead's old status will download so this can be undone.`)) return;
+    try {
+      const result = await apiPost("admin/statuses/merge", { merges: list.map((r) => ({ from: r.status, to: wanted(r) })) });
+      if (result.changed.length) {
+        download(`status-cleanup-undo-${today()}.csv`, sheetLib.toCsv(["NPI", "Old status", "New status"], result.changed.map((c) => [c.npi, c.from, c.to])));
+      }
+      statusResult = result;
+      Object.keys(statusPick).forEach((k) => delete statusPick[k]);
+      state.statuses = []; // the Claimed filter list is rebuilt on its next load
+      showToast(`Changed ${result.leadsChanged} lead${result.leadsChanged === 1 ? "" : "s"}`);
+      load();
+    } catch (err) {
+      showToast(err.message, true);
+    }
   }
 
   /* ---------- sheet import and CSV export ---------- */
@@ -442,6 +531,7 @@
   }
 
   panel.addEventListener("click", (e) => {
+    if (e.target.closest('[data-status="apply"]')) { applyStatuses(); return; }
     const btn = e.target.closest("[data-sheet]");
     if (!btn) return;
     const act = btn.dataset.sheet;
@@ -453,6 +543,9 @@
     else if (act === "results") downloadResults();
   });
   panel.addEventListener("change", (e) => {
+    if (e.target.id === "ctlDefaultTaxonomy") { saveDefaultTaxonomy(e.target.value); return; }
+    const pick = e.target.closest("[data-status-from]");
+    if (pick) { statusPick[pick.dataset.statusFrom] = pick.value; statusResult = null; panel.querySelector(".ctl-status-table")?.closest(".team-block")?.replaceWith(Object.assign(document.createElement("div"), { innerHTML: statusesHtml() }).firstElementChild); return; }
     if (e.target.matches("[data-sheet-file]")) { onSheetFile(e.target.files[0]); return; }
     const opener = e.target.closest("[data-sheet-opener]");
     if (opener) { imp.openerUser[opener.dataset.sheetOpener] = opener.value; imp.results = new Map(); refreshSheet(); return; }
@@ -513,6 +606,8 @@
     closeDialog();
     users = null;
     system = null;
+    taxonomies = null;
+    statusData = null;
     panel.innerHTML = "";
   };
 })();

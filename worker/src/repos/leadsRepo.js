@@ -9,6 +9,7 @@ import { findUserByUsernameExact } from "../lib/users.js";
 import { normalizeMeetingInput } from "../lib/meetings.js";
 import { parseNoteLines } from "../lib/teamActivity.js";
 import { SORTS, buildTodayView } from "../lib/leadView.js";
+import { cleanStatus, isJunkStatus, normalizeStatus, statusOptions } from "../lib/statuses.js";
 
 const DEFAULT_STATUSES = ["new", "called", "voicemail", "interested", "not interested", "do not call"];
 const MAX_STATUS_LENGTH = 40;
@@ -145,16 +146,7 @@ export async function getOwnedGroupNpisAmong(supabase, userId, candidates) {
 export async function getKnownStatuses(supabase) {
   const { data, error } = await supabase.from("leads").select("status").eq("is_disconnected", false);
   if (error) throw httpError(500, "Failed to load statuses: " + error.message);
-  const seen = new Set(DEFAULT_STATUSES);
-  const known = [...DEFAULT_STATUSES];
-  (data || []).forEach((row) => {
-    const s = String(row.status || "").trim();
-    if (s && !seen.has(s)) {
-      seen.add(s);
-      known.push(s);
-    }
-  });
-  return known;
+  return statusOptions((data || []).map((row) => row.status));
 }
 
 // A plain unbounded .select("*") silently gets capped by PostgREST's own
@@ -538,7 +530,8 @@ function toCompany(input) {
     sources: { nppes: true },
   });
   // What the sheet already knew about the lead, kept with it (see lib/sheetImport.js for the limits).
-  const status = String(input.status ?? "").trim().slice(0, 60);
+  const typed = normalizeStatus(input.status);
+  const status = typed && !isJunkStatus(typed) && cleanStatus(typed) !== "disconnected" ? typed : "";
   const notes = String(input.notes ?? "").trim().slice(0, 4000);
   const opener = String(input.meetingOpenerNotes ?? "").trim().slice(0, 2000);
   if (status) company.leadStatus = status;
@@ -722,9 +715,12 @@ export async function getOwnedLeadForBooking(supabase, npi, session) {
 
 export async function updateLeadStatus(supabase, npi, status, session) {
   if (!npi) throw httpError(400, "npi is required");
-  const trimmedStatus = String(status || "").trim();
-  if (!trimmedStatus) throw httpError(400, "status is required");
-  if (trimmedStatus.length > MAX_STATUS_LENGTH) throw httpError(400, `status must be ${MAX_STATUS_LENGTH} characters or fewer`);
+  if (!String(status || "").trim()) throw httpError(400, "status is required");
+  if (String(status).trim().length > MAX_STATUS_LENGTH) throw httpError(400, `status must be ${MAX_STATUS_LENGTH} characters or fewer`);
+  // "VM", "Voice mail" and "voicemail" are one status; the stored form is the tidy one.
+  const trimmedStatus = normalizeStatus(status);
+  if (cleanStatus(trimmedStatus) === "disconnected") throw httpError(400, "To disconnect a lead use Send to Disconnected, not a status");
+  if (isJunkStatus(trimmedStatus)) throw httpError(400, "That status doesn't say anything. Pick one from the list, or type a short descriptive one");
 
   await requireOwnLead(supabase, npi, session);
 

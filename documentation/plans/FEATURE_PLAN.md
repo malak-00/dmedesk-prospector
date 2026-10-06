@@ -8,6 +8,23 @@
 
 ---
 
+## Implementation status and corrections (2026-10-07)
+
+All five features are built. Where the build differs from the text below:
+
+| # | Feature | Status | What differs from the plan |
+|---|---|---|---|
+| 1 | Unified call mode | **Done** | Result chips are the app's own statuses, not abbreviations: Voicemail, No answer, Gatekeeper, Interested, Not interested, Disconnected (VM, GK, NA, NI would not match the status list, the filters or the funnel). Disconnected is not a claim with a note: it uses Send to Disconnected (confirmed first, cannot be undone). A claim has no undo of its own, so a 10 second **Undo** strip returns the lead to Prospect. "Claim without a result" stays as a small link. |
+| 2 | Lead local time | **Done** (`docs/localtime.js`) | Shown on Prospect, Claimed, Today and call mode, not only the drawer. Kentucky is Eastern (Louisville, Lexington), not Central; Puerto Rico, the Virgin Islands and Guam are included. Hours use `hourCycle: "h23"`: `hour12: false` can report "24" at midnight. |
+| 3 | Shuffle queue | **Done** | A Shuffle button in the call drawer header (remembered). Turning it on or off only reorders the leads still to call. |
+| 4 | Default specialty | **Done** (`sql/028_default_taxonomy.sql`) | Routes have no `/api` prefix: `POST /admin/taxonomies/default`. Applied only in a brand-new session (nothing remembered for the tab). |
+| 5 | Calling-window dots | **Done** | Uses the same rule as the "Good time to call" filter: 8 AM to 5 PM on weekdays in the lead's time zone, lunch hour (12 to 1) excluded. The plan said 9 to 5; change `OPEN_HOUR` in `docs/localtime.js` to 9 if that is wanted. |
+
+Statuses were also normalized (see `WORKLOG.md`, 2026-10-07): one short canonical list, typed variants map onto it, and Admin > Controls > Statuses merges existing duplicates.
+
+---
+
+
 ## Feature 1 — Unified call mode: prospect mode gets the same disposition panel
 
 **Priority:** P1
@@ -206,14 +223,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS taxonomies_one_default
 - Add `setDefault(supabase, id)`: sets `default_for_search = false` on all rows, then `true` on the target row.
 
 **`worker/src/index.js`:**
-- Add `POST /api/admin/taxonomies/:id/set-default` (admin-only gate) calling `taxonomiesRepo.setDefault`.
+- Add `POST /admin/taxonomies/default` (admin-only gate) calling `taxonomiesRepo.setDefault`.
 
 ### Frontend — Controls panel (`docs/controls.js`)
 
 Under Admin → Controls, add a **"Default search taxonomy"** section:
 - A `<select>` populated from the enabled taxonomy list.
 - Current default is pre-selected.
-- On change, calls `POST /api/admin/taxonomies/:id/set-default`.
+- On change, calls `POST /admin/taxonomies/default`.
 
 ### Frontend — Search form (`docs/app.js`)
 

@@ -578,6 +578,26 @@ app.get("/admin/system", async (c) => {
   return c.json(ok(await SystemInfo.getSystemInfo(c.get("config"), supabaseFor(c))));
 });
 
+// Choose (or clear, with an empty rowNumber) the specialty the search form starts with. Admin only.
+app.post("/admin/taxonomies/default", async (c) => {
+  requireAdmin(c.get("session"));
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok({ taxonomies: await taxonomiesRepo.setDefault(supabaseFor(c), body.rowNumber || "") }));
+});
+
+// Every spelling of a status in use, and what each should become. Admin only.
+app.get("/admin/statuses", async (c) => {
+  requireAdmin(c.get("session"));
+  return c.json(ok(await adminRepo.getStatusCleanup(supabaseFor(c))));
+});
+
+// Change statuses in bulk: { merges: [{ from, to }] }. Returns the leads it changed, for an undo file. Admin only.
+app.post("/admin/statuses/merge", async (c) => {
+  requireAdmin(c.get("session"));
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await adminRepo.applyStatusMerges(supabaseFor(c), body.merges)));
+});
+
 // Claimed -> contacted -> meeting -> onboarded, by rep, specialty and state. Admin only.
 app.get("/admin/funnel", async (c) => {
   requireAdmin(c.get("session"));

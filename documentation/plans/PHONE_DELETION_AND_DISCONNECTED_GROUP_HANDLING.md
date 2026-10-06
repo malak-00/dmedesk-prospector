@@ -168,8 +168,8 @@ When any lead in a group is disconnected, all associated leads in that group (or
 ### 3.2 Part B: Checking Grouped Leads for Existing Disconnected Numbers
 
 #### Current Behavior
-- [`leadsRepo.getClaimedNpisAmong`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/worker/src/repos/leadsRepo.js#L117) only filters candidate NPIs themselves.
-- [`sql/010_group_aware_claim.sql:363`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/sql/010_group_aware_claim.sql#L363) (`owned_group_npis`) and [`sql/014_claim_preflight.sql:151`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/sql/014_claim_preflight.sql#L151) explicitly filter `where not l.is_disconnected`.
+- [`leadsRepo.getClaimedNpisAmong`](../../worker/src/repos/leadsRepo.js#L117) only filters candidate NPIs themselves.
+- [`sql/010_group_aware_claim.sql:363`](../../sql/010_group_aware_claim.sql#L363) (`owned_group_npis`) and [`sql/014_claim_preflight.sql:151`](../../sql/014_claim_preflight.sql#L151) explicitly filter `where not l.is_disconnected`.
 - As a result, candidates belonging to an identity group that already had a number marked disconnected are **not detected** and can be claimed blindly.
 
 #### Required Behavior

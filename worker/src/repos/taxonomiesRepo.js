@@ -17,6 +17,7 @@ function toDTO(row) {
     facilityType: row.facility_type,
     code: row.code || "",
     description: row.description || row.facility_type,
+    defaultForSearch: row.default_for_search === true,
   };
 }
 
@@ -103,5 +104,27 @@ export async function enable(supabase, rowNumber) {
   if (error) throw httpError(500, "Failed to enable taxonomy: " + error.message);
   if (!data) throw httpError(404, "No taxonomy row with id " + rowNumber);
 
+  return listEnabled(supabase);
+}
+
+// The specialty the search form starts with (sql/028). rowNumber "" clears it.
+export async function setDefault(supabase, rowNumber) {
+  const missing = (error) => /default_for_search/.test(error.message || "") && /does not exist|42703|schema cache/.test(`${error.code || ""} ${error.message || ""}`);
+  const fail = (error) => {
+    if (missing(error)) throw httpError(503, "Choosing a default specialty isn't installed yet. Run sql/028_default_taxonomy.sql in Supabase, then try again.");
+    throw httpError(500, "Failed to save the default specialty: " + error.message);
+  };
+
+  if (rowNumber) {
+    const { data: target, error: findError } = await supabase.from("taxonomies").select("id").eq("id", rowNumber).maybeSingle();
+    if (findError) fail(findError);
+    if (!target) throw httpError(404, "No taxonomy row with id " + rowNumber);
+  }
+  const cleared = await supabase.from("taxonomies").update({ default_for_search: false }).eq("default_for_search", true);
+  if (cleared.error) fail(cleared.error);
+  if (rowNumber) {
+    const set = await supabase.from("taxonomies").update({ default_for_search: true }).eq("id", rowNumber);
+    if (set.error) fail(set.error);
+  }
   return listEnabled(supabase);
 }

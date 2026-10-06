@@ -203,7 +203,7 @@ Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>
 ## 7. Implementation: CLI Tooling
 
 The protocol is formalized as an automated CLI script:
-[`scripts/import-bd-sheet.mjs`](file:///c:/Users/ben.arthur/Desktop/dmedesk-prospector/scripts/import-bd-sheet.mjs).
+[`scripts/import-bd-sheet.mjs`](../../scripts/import-bd-sheet.mjs).
 
 ### Usage
 ```powershell

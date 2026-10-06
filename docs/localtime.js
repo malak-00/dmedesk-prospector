@@ -85,7 +85,20 @@
     return `<span class="local-time is-${info.status}" data-tz-state="${esc(String(stateCode).toUpperCase())}" title="${esc(info.label)}">${esc(info.time)} ${esc(info.abbr)}</span>`;
   };
 
+  // The search form's state list: a dot on every state where a call is sensible right now.
+  // Only an indicator: nothing is selected or changed, and every state stays selectable.
+  function markStateList() {
+    const open = new Set(openStates());
+    document.querySelectorAll("#stateOptions .multiselect-option").forEach((el) => {
+      const code = el.querySelector("input")?.value;
+      const inWindow = Boolean(code && open.has(code));
+      el.classList.toggle("in-call-window", inWindow);
+      if (inWindow) el.title = "A good time to call here right now"; else el.removeAttribute("title");
+    });
+  }
+
   function tick() {
+    markStateList();
     document.querySelectorAll("[data-tz-state]").forEach((el) => {
       const info = localInfo(el.dataset.tzState);
       if (!info) return;
@@ -95,4 +108,5 @@
     });
   }
   setInterval(tick, 60000);
+  markStateList();
 })(typeof window !== "undefined" ? window : globalThis);

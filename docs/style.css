@@ -2735,3 +2735,25 @@ html.call-open .suggestion-overlay { z-index: 60; }
 .today-card.is-cold { border-color: var(--score-mid); }
 .stale-days { font-size: 12px; font-weight: 650; color: var(--score-mid); background: var(--glow-mid); border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
 .today-card-link { margin-left: auto; font-size: 12px; }
+
+/* ---- Call mode: prospect results, undo, shuffle. Calling-window dots. Status colours and cleanup. ---- */
+.cm-hint-inline { margin-left: 6px; font-weight: 500; font-size: 11.5px; color: var(--muted-2); }
+.cm-status.is-danger { color: var(--score-low); border-color: var(--score-low); }
+.cm-status.is-danger:hover { background: var(--glow-low); }
+.cm-undo {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; font-size: 13px;
+  border-radius: var(--radius-md); background: var(--accent-soft); border: 1px solid var(--selection-chip-border);
+}
+.cm-shuffle.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+
+.multiselect-option.in-call-window::after {
+  content: ""; width: 8px; height: 8px; margin-left: auto; border-radius: 50%; background: var(--score-high); flex: none;
+}
+
+.ctl-status-table select { width: 100%; min-width: 150px; }
+.ctl-status-table tr.is-junk td:first-child strong { color: var(--score-low); }
+
+/* Pills for the statuses added to the standard list */
+.status-select.status-no-answer, .status-select.status-gatekeeper, .status-select.status-callback, .status-select.status-follow-up { border-color: var(--score-mid); color: var(--score-mid); }
+.status-select.status-meeting-booked, .status-select.status-meeting-held, .status-select.status-contract-sent, .status-select.status-invoice-sent { border-color: var(--accent); color: var(--accent-ink); }
+.status-select.status-onboarded { border-color: var(--score-high); color: var(--score-high); }

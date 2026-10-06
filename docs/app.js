@@ -2267,10 +2267,10 @@ async function saveCallLog(idx) {
     // One action, one story: the result sets the lead's status AND leads the
     // call-log entry, so the two can never disagree.
     if (status && status !== lead.status) {
-      await apiPost("leads/status", { npi: lead.npi, status });
-      lead.status = status;
+      const saved = await apiPost("leads/status", { npi: lead.npi, status });
+      lead.status = saved.status;
       partlySaved = true;
-      syncRowStatusSelect(idx, status);
+      syncRowStatusSelect(idx, saved.status);
     }
     if (status || text) {
       const data = await apiPost("leads/notes", { npi: lead.npi, note: [status, text].filter(Boolean).join(" — ") });
@@ -2297,14 +2297,14 @@ async function saveCallLog(idx) {
 
 // Statuses offered as call results: the common ones first, then any custom
 // statuses the team has added. "new" and "disconnected" aren't call results.
+// The results of a single call, then any custom statuses still in use. Pipeline stages
+// (meeting booked, contract sent...) are set by meetings and the status column, not offered here.
+const CALL_RESULT_STATUSES = ["called", "voicemail", "no answer", "gatekeeper", "callback", "interested", "follow up", "not interested", "do not call"];
+const STAGE_STATUSES = ["new", "meeting booked", "meeting held", "contract sent", "invoice sent", "onboarded", "disconnected"];
 function callResultStatuses() {
-  const preferred = ["called", "voicemail", "interested", "not interested", "do not call"];
-  const all = (state.statuses && state.statuses.length ? state.statuses : DEFAULT_RESULT_STATUSES)
-    .filter((s) => !["new", "disconnected"].includes(String(s).toLowerCase()));
-  const rank = (s) => { const i = preferred.indexOf(String(s).toLowerCase()); return i === -1 ? preferred.length : i; };
-  return [...new Set(all)].sort((a, b) => rank(a) - rank(b));
+  const extras = (state.statuses || []).filter((s) => !CALL_RESULT_STATUSES.includes(s) && !STAGE_STATUSES.includes(s));
+  return [...CALL_RESULT_STATUSES, ...extras];
 }
-const DEFAULT_RESULT_STATUSES = ["called", "voicemail", "interested", "not interested", "do not call"];
 
 // Keeps the table row's status pill in step when the status is changed from the card.
 function syncRowStatusSelect(idx, status) {
@@ -3986,7 +3986,8 @@ function attachClaimedRowHandlers() {
 
       e.target.disabled = true;
       try {
-        await apiPost("leads/status", { npi, status });
+        status = (await apiPost("leads/status", { npi, status })).status; // as the server tidied it
+        syncRowStatusSelect(Number(e.target.dataset.index), status);
         e.target.className = `status-select status-${status.replace(/\s+/g, "-")}`;
         // Same object reference as in state.claimedLeadsAll -- keeps the
         // status filter (and anything else reading state.claimedLeads)
@@ -4213,6 +4214,19 @@ function renderTaxonomyOptions(taxonomies) {
   });
 }
 
+// The admin's chosen starting specialty, ticked for a brand-new session only: anything already
+// remembered for this tab (a saved search, or a deliberate "All specialties") is left alone.
+function applyDefaultTaxonomy(taxonomies) {
+  if (sessionStorage.getItem(SEARCH_FILTERS_KEY)) return;
+  const preferred = taxonomies.find((t) => t.defaultForSearch);
+  if (!preferred) return;
+  const box = [...taxonomyOptionsContainer.querySelectorAll('input[name="taxonomyDescriptions"]')].find((cb) => cb.value === preferred.description);
+  if (!box) return;
+  box.checked = true;
+  taxonomyAllCheckbox.checked = false;
+  updateTaxonomySummary();
+}
+
 async function loadTaxonomyOptions() {
   try {
     const data = await apiGet("taxonomies/list");
@@ -4222,6 +4236,7 @@ async function loadTaxonomyOptions() {
     // restoreSearchFormState() (see its comment on
     // restoreTaxonomySelectionFromSession for why that would be a bug here).
     restoreTaxonomySelectionFromSession();
+    applyDefaultTaxonomy(data.taxonomies || []);
   } catch (err) {
     console.log("[Taxonomies] Failed to load options: " + err.message);
   }
