@@ -549,6 +549,18 @@ app.get("/admin/system", async (c) => {
   return c.json(ok(await SystemInfo.getSystemInfo(c.get("config"), supabaseFor(c))));
 });
 
+// Claimed -> contacted -> meeting -> onboarded, by rep, specialty and state. Admin only.
+app.get("/admin/funnel", async (c) => {
+  requireAdmin(c.get("session"));
+  return c.json(ok(await adminRepo.getFunnel(supabaseFor(c), { days: c.req.query("days") })));
+});
+
+// Active claimed leads (all, or one rep's) for the admin CSV export. Admin only.
+app.get("/admin/export/leads", async (c) => {
+  requireAdmin(c.get("session"));
+  return c.json(ok({ leads: await adminRepo.getLeadsForExport(supabaseFor(c), { userId: c.req.query("userId") || "" }) }));
+});
+
 // Calls, meetings and claims per rep, by week. Admin only.
 app.get("/admin/team-activity", async (c) => {
   requireAdmin(c.get("session"));
@@ -595,7 +607,7 @@ app.post("/admin/claim-for-user", async (c) => {
   const data = await leadsRepo.claimForUser(
     supabaseFor(c),
     c.get("session"),
-    { username: body.username, companies: body.companies },
+    { username: body.username, companies: body.companies, dryRun: body.dryRun === true },
     CsvExport.flattenCompany
   );
   return c.json(ok(data));

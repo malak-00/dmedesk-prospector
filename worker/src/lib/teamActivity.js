@@ -31,6 +31,7 @@ export function noteKind(text) {
   if (/^Meeting held/i.test(t)) return "held";
   if (/^Meeting no-show/i.test(t)) return "noShow";
   if (/^Meeting cancelled/i.test(t)) return "cancelled";
+  if (/^Imported from/i.test(t)) return "import"; // context copied in from a sheet, not something the rep did
   return "call";
 }
 

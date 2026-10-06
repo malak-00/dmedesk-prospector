@@ -29,7 +29,7 @@ function isMissingFunction(error) {
   return /Could not find the function|^function [\w."]+\(.*\) does not exist/i.test(error.message || "");
 }
 
-function toLeadDTO(row, claimedByDisplayName) {
+export function toLeadDTO(row, claimedByDisplayName) {
   const statusUpdatedAt = row.status_updated_at || "";
   const claimedAt = row.claimed_at || "";
   return {
@@ -99,12 +99,13 @@ function companyToLeadRow(company, session, { status, isDisconnected }) {
     medicare_payment: flat.medicarePayment === "" ? null : flat.medicarePayment,
     contact_phone: flat.contactPhone,
     nppes_last_updated: flat.nppesLastUpdated || null,
-    status,
+    status: flat.leadStatus || status,
     status_updated_by: isDisconnected ? session.id : null,
     status_updated_at: isDisconnected ? now : null,
-    notes: null,
+    notes: flat.leadNotes || null,
     reminder_at: null,
     is_disconnected: isDisconnected,
+    ...(flat.leadOpenerNotes ? { meeting_opener_notes: flat.leadOpenerNotes } : {}),
   };
 }
 
@@ -353,7 +354,7 @@ function companiesToClaimItems(companies, session, flattenCompany) {
   const items = companies
     .filter((c) => c && c.npi)
     .map((c) => {
-      const flat = flattenCompany(c);
+      const flat = { ...flattenCompany(c), leadStatus: c.leadStatus, leadNotes: c.leadNotes, leadOpenerNotes: c.leadOpenerNotes };
       return {
         npi: String(c.npi),
         identity: identityFromCompany(c, flat),
@@ -515,7 +516,7 @@ function toCompany(input) {
   if (!input || typeof input !== "object") return input;
   if (input.address || input.decisionMakers) return input;
   const official = input.authorizedOfficial ? String(input.authorizedOfficial).trim() : "";
-  return createCompany({
+  const company = createCompany({
     npi: input.npi != null ? String(input.npi).trim() : null,
     name: input.name || null,
     phone: input.phone || null,
@@ -535,9 +536,55 @@ function toCompany(input) {
       : [],
     sources: { nppes: true },
   });
+  // What the sheet already knew about the lead, kept with it (see lib/sheetImport.js for the limits).
+  const status = String(input.status ?? "").trim().slice(0, 60);
+  const notes = String(input.notes ?? "").trim().slice(0, 4000);
+  const opener = String(input.meetingOpenerNotes ?? "").trim().slice(0, 2000);
+  if (status) company.leadStatus = status;
+  if (notes) company.leadNotes = notes;
+  if (opener) company.leadOpenerNotes = opener;
+  return company;
 }
 
-export async function claimForUser(supabase, callerSession, { username, companies }, flattenCompany) {
+// A sheet row only knows an NPI, a name and a few notes. Business grouping (and a lead
+// that reads properly in the app) needs the registry's name, address, owner and
+// specialty, so fill those in from npi_records for rows that came without an address.
+// What the sheet did say (phone, email, status, notes) is kept. One lookup, by NPI.
+export async function enrichFromRegistry(supabase, inputs) {
+  const wanted = (inputs || []).filter((c) => c && c.npi && !c.address && !c.decisionMakers && !c.state && !c.addressLine1);
+  if (wanted.length === 0) return inputs;
+  const npis = [...new Set(wanted.map((c) => String(c.npi).trim()))];
+  const { data, error } = await supabase
+    .from("npi_records")
+    .select("npi, name, phone, address_line1, address_city, address_state, address_postalcode, taxonomy_code, taxonomy_description, authorizedofficial_firstname, authorizedofficial_lastname, authorizedofficial_title, authorizedofficial_phone")
+    .in("npi", npis);
+  if (error) throw httpError(500, "Failed to look up the providers: " + error.message);
+  const byNpi = new Map((data || []).map((r) => [String(r.npi), r]));
+
+  return inputs.map((c) => {
+    const r = c && byNpi.get(String(c.npi).trim());
+    if (!r || !wanted.includes(c)) return c;
+    const official = [r.authorizedofficial_firstname, r.authorizedofficial_lastname].filter(Boolean).join(" ").trim();
+    return {
+      ...c,
+      name: r.name || c.name,
+      phone: c.phone || r.phone || null,
+      addressLine1: r.address_line1 || null,
+      city: r.address_city || null,
+      state: r.address_state || null,
+      postalCode: r.address_postalcode || null,
+      taxonomyCode: r.taxonomy_code || null,
+      taxonomy: r.taxonomy_description || c.taxonomy || null,
+      // The registry's official takes part in grouping; the sheet's "authorized person" is kept
+      // as the contact only when the registry has none.
+      authorizedOfficial: official || c.authorizedOfficial || null,
+      authorizedOfficialTitle: r.authorizedofficial_title || c.authorizedOfficialTitle || null,
+      authorizedOfficialPhone: r.authorizedofficial_phone || c.authorizedOfficialPhone || null,
+    };
+  });
+}
+
+export async function claimForUser(supabase, callerSession, { username, companies, dryRun = false }, flattenCompany) {
   if (!username || !String(username).trim()) throw httpError(400, "username is required");
   if (!Array.isArray(companies) || companies.length === 0) throw httpError(400, "At least one company is required to claim");
   if (companies.length > MAX_CLAIM_FOR_USER_COMPANIES) {
@@ -564,9 +611,18 @@ export async function claimForUser(supabase, callerSession, { username, companie
   const target = await findUserByUsernameExact(supabase, username, "id, username, display_name");
   if (!target) throw httpError(404, `No user with username "${String(username).trim()}"`);
 
+  const prepared = (await enrichFromRegistry(supabase, companies)).map(toCompany);
+
+  // A dry run answers "what would happen" (claimed, already theirs, blocked by whom, held for
+  // review, invalid) and writes nothing.
+  if (dryRun) {
+    const verdict = await preflightCompaniesForSheet(supabase, prepared, { id: target.id, displayName: target.display_name }, flattenCompany);
+    return { dryRun: true, ...verdict, claimedFor: { username: target.username, displayName: target.display_name } };
+  }
+
   const result = await exportCompaniesToLeads(
     supabase,
-    companies.map(toCompany),
+    prepared,
     { id: target.id, displayName: target.display_name },
     flattenCompany,
     { actorId: callerSession.id }
