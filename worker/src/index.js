@@ -835,6 +835,25 @@ app.post("/admin/match-reviews/bulk-merge", async (c) => {
   return c.json(ok(data));
 });
 
+// "Merge all eligible" for registry matches (sql/035): a read-only count first,
+// then batches the browser repeats until `done`. Safety is checked in SQL.
+app.get("/admin/match-reviews/merge-all-preview", async (c) => {
+  requireAdmin(c.get("session"));
+  const data = await adminRepo.getRegistryMergePreview(supabaseFor(c));
+  return c.json(ok(data));
+});
+
+app.post("/admin/match-reviews/merge-all", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  const data = await adminRepo.mergeEligibleRegistryReviews(supabaseFor(c), {
+    after: body.after,
+    decidedBy: session.id,
+  });
+  return c.json(ok(data));
+});
+
 app.get("/admin/leads", async (c) => {
   const session = c.get("session");
   requireAdmin(session);

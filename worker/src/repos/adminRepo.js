@@ -668,6 +668,100 @@ export async function bulkMergeEligibleMatchReviews(supabase, { pairs, decidedBy
   return { requested: requested.length, merged, skipped, failed };
 }
 
+// ---- merge all eligible registry matches (sql/035) ------------------------------
+
+// Tier 2 (three of name/state/official/phone) plus same official AND phone.
+// Tier 3 name+phone and name+official alone are left for a person to decide.
+export const AUTO_MERGE_KEYS = ["name+state+phone", "name+state+official", "state+official+phone", "official+phone"];
+// One subrequest per merge plus one to read the batch, kept under the 50
+// subrequests a Worker request is allowed on the free plan.
+export const AUTO_MERGE_BATCH = 25;
+
+function isMissingRpc(error) {
+  return error && (error.code === "PGRST202" || error.code === "42883" || /Could not find the function/i.test(error.message || ""));
+}
+
+export async function getRegistryMergePreview(supabase) {
+  const { data, error } = await supabase.rpc("registry_merge_preview", { p_keys: AUTO_MERGE_KEYS });
+  if (error) {
+    if (isMissingRpc(error)) throw httpError(503, "Merge all isn't installed yet. Run sql/035_registry_merge_all.sql in Supabase, then try again.");
+    throw httpError(500, "Failed to count the matches: " + error.message);
+  }
+  const result = data || {};
+  return {
+    total: Number(result.total) || 0,
+    blocked: Number(result.blocked) || 0,
+    mergeable: Number(result.mergeable) || 0,
+    rules: AUTO_MERGE_KEYS,
+  };
+}
+
+// Merges one batch of pending registry pairs that match the rules, in NPI-pair
+// order, starting after `after` ({ leftNpi, rightNpi }). A keyset cursor, not an
+// offset: merged pairs leave the queue, so an offset would skip pairs. The
+// caller repeats with `next` until `done`. Whether a pair is safe is decided in
+// SQL, atomically with the merge (merge_identity_pair_if_safe).
+export async function mergeEligibleRegistryReviews(supabase, { after, decidedBy }) {
+  let query = supabase
+    .from("registry_review_queue")
+    .select(QUEUE_COLUMNS)
+    .in("matched_keys", AUTO_MERGE_KEYS)
+    .order("left_npi")
+    .order("right_npi")
+    .limit(AUTO_MERGE_BATCH);
+
+  if (after && (after.leftNpi || after.rightNpi)) {
+    const left = String(after.leftNpi || "");
+    const right = String(after.rightNpi || "");
+    // NPIs are spliced into a filter string, so only ten digits are accepted.
+    if (!/^\d{10}$/.test(left) || !/^\d{10}$/.test(right)) throw httpError(400, "Invalid cursor");
+    query = query.or(`left_npi.gt.${left},and(left_npi.eq.${left},right_npi.gt.${right})`);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingRelation(error, "registry_review_queue")) {
+      throw httpError(503, "Registry-wide matching isn't installed yet. Run sql/030_registry_identity_matching.sql first.");
+    }
+    throw httpError(500, "Failed to read the registry matches: " + error.message);
+  }
+
+  const rows = data || [];
+  const merged = [];
+  const skipped = [];
+  const failed = [];
+  for (const row of rows) {
+    const pair = { leftNpi: row.left_npi, rightNpi: row.right_npi };
+    const { data: result, error: mergeError } = await supabase.rpc("merge_identity_pair_if_safe", {
+      p_left_npi: row.left_npi,
+      p_right_npi: row.right_npi,
+      p_decided_by: decidedBy,
+      p_reason: `Automatic merge of eligible registry match (${row.matched_keys}); no other agent owns anything in either group.`,
+      p_tier: Number.isInteger(row.tier) ? row.tier : null,
+      p_matched_keys: row.matched_keys,
+    });
+    if (mergeError) {
+      if (isMissingRpc(mergeError)) throw httpError(503, "Merge all isn't installed yet. Run sql/035_registry_merge_all.sql in Supabase, then try again.");
+      // Someone else decided this pair a moment ago: not a problem.
+      if (/already been decided/i.test(mergeError.message || "")) skipped.push({ ...pair, reason: "Already decided." });
+      else failed.push({ ...pair, reason: mergeError.message || "Failed to merge this pair." });
+    } else if (result && result.skipped) {
+      skipped.push({ ...pair, reason: result.reason || "Not eligible." });
+    } else {
+      merged.push(pair);
+    }
+  }
+
+  const last = rows[rows.length - 1];
+  return {
+    merged,
+    skipped,
+    failed,
+    next: last ? { leftNpi: last.left_npi, rightNpi: last.right_npi } : null,
+    done: rows.length < AUTO_MERGE_BATCH,
+  };
+}
+
 // Hands the whole decision to one SQL function. Deliberately NOT a
 // read-then-write here: PostgREST gives the Worker no transaction, so a
 // resolve built out of separate REST calls could interleave with a

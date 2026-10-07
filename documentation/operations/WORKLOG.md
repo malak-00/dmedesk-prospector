@@ -1,5 +1,28 @@
 ﻿# DME Desk Prospector Worklog
 
+## 2026-10-08 — Merge all eligible registry matches (sql/035, written, not run)
+
+### Objective
+Let an admin merge the eligible registry-wide matches in bulk instead of ticking up to 500 at a time.
+Decisions (user): merge Tier 2 matches plus official+phone; preview, confirm, then keep running to the end.
+
+### Actions Completed
+- `sql/035_registry_merge_all.sql`: `registry_merge_preview(keys)` (read-only counts) and
+  `merge_identity_pair_if_safe(...)`, which merges one pair through `resolve_identity_match` only if at most
+  one agent owns anything in either group, checked in the same transaction under a lock.
+- Worker: `GET /admin/match-reviews/merge-all-preview` and `POST /admin/match-reviews/merge-all` (batches of
+  25 by keyset cursor). Admin tab: "Merge all eligible…" (All providers view only; becomes Stop while running).
+- Also earlier today: the All providers list loads 500 pairs, then "Load 100 more" (replaced an endless
+  auto-load); sql/033_release_keeps_claimed_at.sql fixes Return to Prospect.
+- 167 worker tests pass (4 new). No browser testing.
+
+### Database / System Result
+None yet: sql/035 has not been run. Name+phone and name+official matches alone are never auto-merged.
+
+### Safety Status
+Merges write the normal decision rows and group evidence but cannot be undone from the app. Ownership never
+changes; pairs touching groups owned by different agents are held back for manual review.
+
 ## 2026-10-07 — Registry-wide identity matching over npi_records (migration drafted, not applied)
 
 ### Objective

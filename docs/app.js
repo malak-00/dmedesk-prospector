@@ -334,6 +334,7 @@ const els = {
   matchReviewsSelectAll: document.getElementById("matchReviewsSelectAll"),
   matchReviewsBulkSummary: document.getElementById("matchReviewsBulkSummary"),
   matchReviewsBulkMergeBtn: document.getElementById("matchReviewsBulkMergeBtn"),
+  matchReviewsMergeAllBtn: document.getElementById("matchReviewsMergeAllBtn"),
   matchReviewOverlay: document.getElementById("matchReviewOverlay"),
   matchReviewForm: document.getElementById("matchReviewForm"),
   matchReviewTitle: document.getElementById("matchReviewTitle"),
@@ -897,6 +898,8 @@ function renderMatchReviewSide(record, requestedBy) {
 function renderMatchReviews() {
   const payload = state.matchReviews;
   if (!payload) return;
+  // Only offered for the registry comparison; a run in progress keeps its Stop button.
+  els.matchReviewsMergeAllBtn.hidden = state.matchReviewsScope !== "registry" || payload.available === false;
 
   if (payload.available === false) {
     state.matchReviewSelected.clear();
@@ -3860,6 +3863,85 @@ function renderMatchReviewBulkControls(reviews) {
 
 const BULK_MERGE_BATCH_SIZE = 20;
 
+// "Merge all eligible" (registry comparison): count first, ask, then run
+// server batches until none are left. The same button becomes Stop while it runs.
+let mergeAllRunning = false;
+let mergeAllStopRequested = false;
+
+async function mergeAllEligibleRegistry() {
+  if (mergeAllRunning) {
+    mergeAllStopRequested = true;
+    els.matchReviewsMergeAllBtn.disabled = true;
+    els.matchReviewsMergeAllBtn.textContent = "Stopping after this batch…";
+    return;
+  }
+
+  let preview;
+  try {
+    preview = await apiGet("admin/match-reviews/merge-all-preview");
+  } catch (err) {
+    showToast(err.message, true);
+    return;
+  }
+  if (!preview.mergeable) {
+    showToast(preview.total ? "Every matching pair is held back: different agents own parts of those groups." : "Nothing matches the merge rules.");
+    return;
+  }
+  const ok = confirm(
+    `Merge about ${preview.mergeable.toLocaleString()} pair${preview.mergeable === 1 ? "" : "s"}?\n\n` +
+      "Rules: Tier 2 matches (three of name, state, official, phone), or the same authorized official AND phone. " +
+      "Name-and-phone or name-and-official matches alone are not touched.\n\n" +
+      (preview.blocked ? `${preview.blocked.toLocaleString()} matching pair${preview.blocked === 1 ? " is" : "s are"} held back because different agents own NPIs in those groups.\n\n` : "") +
+      "Nobody's claims change, but a merge can't be undone from the app. It keeps going until none are left; you can stop it at any time."
+  );
+  if (!ok) return;
+
+  mergeAllRunning = true;
+  mergeAllStopRequested = false;
+  let after = null;
+  let merged = 0;
+  let held = 0;
+  let failed = 0;
+  let error = null;
+  try {
+    while (!mergeAllStopRequested) {
+      let result;
+      try {
+        result = await apiPost("admin/match-reviews/merge-all", { after });
+      } catch (err) {
+        // A batch that timed out may still have merged some pairs; asking again
+        // from the same place is safe because decided pairs are skipped.
+        try {
+          result = await apiPost("admin/match-reviews/merge-all", { after });
+        } catch (retryErr) {
+          error = retryErr;
+          break;
+        }
+      }
+      merged += result.merged?.length || 0;
+      held += result.skipped?.length || 0;
+      failed += result.failed?.length || 0;
+      els.matchReviewsMergeAllBtn.textContent = `Stop — merged ${merged.toLocaleString()}`;
+      if (result.done || !result.next) break;
+      after = result.next;
+    }
+  } finally {
+    const stopped = mergeAllStopRequested;
+    mergeAllRunning = false;
+    mergeAllStopRequested = false;
+    els.matchReviewsMergeAllBtn.disabled = false;
+    els.matchReviewsMergeAllBtn.textContent = "Merge all eligible…";
+    showToast(
+      `${stopped ? "Stopped. " : error ? "Paused: " + error.message + " " : "Done. "}` +
+        `Merged ${merged.toLocaleString()}` +
+        (held ? `, held back ${held.toLocaleString()}` : "") +
+        (failed ? `, ${failed.toLocaleString()} failed` : "") + ".",
+      Boolean(error) || failed > 0
+    );
+    await Promise.all([loadMatchReviews(true), loadConflicts(true)]);
+  }
+}
+
 async function bulkMergeSelectedMatchReviews() {
   const reviews = filteredMatchReviews().filter((review) => state.matchReviewSelected.has(matchReviewKey(review)));
   if (reviews.length === 0) return;
@@ -4493,6 +4575,7 @@ els.matchReviewsSelectAll.addEventListener("change", (e) => {
   renderMatchReviews();
 });
 els.matchReviewsBulkMergeBtn.addEventListener("click", bulkMergeSelectedMatchReviews);
+els.matchReviewsMergeAllBtn.addEventListener("click", mergeAllEligibleRegistry);
 els.compareSourcesBtn.addEventListener("click", compareSearchSources);
 els.providerChangesList.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-provider-change]");
