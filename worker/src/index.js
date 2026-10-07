@@ -31,6 +31,7 @@ import * as GoogleCalendar from "./services/googleCalendar.js";
 import * as SearchInsights from "./services/searchInsights.js";
 import * as userAdminRepo from "./repos/userAdminRepo.js";
 import * as SystemInfo from "./services/systemInfo.js";
+import * as buddyRepo from "./repos/buddyRepo.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
 import { parseListParams } from "./lib/leadView.js";
@@ -583,6 +584,34 @@ app.post("/admin/users/update", async (c) => {
 app.get("/admin/system", async (c) => {
   requireAdmin(c.get("session"));
   return c.json(ok(await SystemInfo.getSystemInfo(c.get("config"), supabaseFor(c))));
+});
+
+// ---- the avatar's notes (sql/031) -----------------------------------------
+
+// What this person can see: the message of the day and notes written for them.
+app.get("/buddy/notes", async (c) => c.json(ok(await buddyRepo.listForUser(supabaseFor(c), c.get("session")))));
+
+app.post("/buddy/seen", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyRepo.markSeen(supabaseFor(c), c.get("session"), body.id)));
+});
+
+app.get("/admin/buddy", async (c) => {
+  requireAdmin(c.get("session"));
+  return c.json(ok(await buddyRepo.listForAdmin(supabaseFor(c))));
+});
+
+app.post("/admin/buddy", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyRepo.createNote(supabaseFor(c), session, body)));
+});
+
+app.post("/admin/buddy/retire", async (c) => {
+  requireAdmin(c.get("session"));
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyRepo.retireNote(supabaseFor(c), body.id)));
 });
 
 // Choose (or clear, with an empty rowNumber) the specialty the search form starts with. Admin only.

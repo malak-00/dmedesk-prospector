@@ -74,6 +74,43 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-08 — Avatar: greetings, milestones and notes from the admin
+
+### Objective
+
+Add a friendly avatar of the team lead to the app: it says hello, cheers on milestones and shows notes
+(message of the day, or a note for one person), without getting in the way.
+
+### Actions Completed
+
+- **Avatar images**: eight poses supplied by the user in `docs/avatar/` (neutral, wave, thumbs up, party,
+  thinking, sleepy, note, phone). The originals are 0.3 to 1.7 MB each, so 420 px WebP copies
+  (`bd-*.webp`, 35 to 55 KB each, transparent) are what the app uses. The originals are not committed.
+- **Frontend** (`docs/buddy.js`, styles in `docs/style.css`, `today.js` calls `dmeBuddy.onToday`):
+  a small face in the bottom-right corner. It greets once a day (and says welcome back after 3 or more days
+  away), reacts to the first call of the day, 10 calls, the daily goal and 5/10/20/30-day streaks (only when
+  crossed, never for what was already true on load), and wraps up the day after 5 pm. At most three pop-ups
+  a day (notes excepted), none during call mode, and each person can choose All, Big moments only, or Off by
+  clicking the face. Clicking the face also shows a tip and the recent notes.
+- **Notes** (`sql/031_avatar_notes.sql`, `worker/src/lib/buddy.js`, `worker/src/repos/buddyRepo.js`):
+  `GET /buddy/notes`, `POST /buddy/seen`, and admin `GET/POST /admin/buddy`, `POST /admin/buddy/retire`.
+  Admin > Controls > Avatar notes writes a note for everyone or one person, for 1 day to 1 month, optionally
+  starting later. Each person sees it pop up once; retiring a note keeps the row.
+- Before sql/031 is run, reading notes returns an empty list and writing says to run the file first. The
+  greetings, milestones and tips need no database.
+
+### Database / System Result
+
+- New SQL file `sql/031_avatar_notes.sql` (two small tables, row-level security on, no access for browsers).
+  **Not run by Claude; to be run by the user.**
+- Worker tests: all pass (new: note validation, who sees which note, missing tables, retiring, marking seen).
+
+### Safety Status
+
+- Additive only; no existing table or data touched. Notes are never deleted. Pop-up counts and the
+  avatar mode are kept in the browser only.
+- Manual browser testing required.
+
 ## 2026-10-08 — A tap on a phone number counts as a call (claimed or not)
 
 ### Objective

@@ -364,6 +364,7 @@
     try {
       view = await apiGet("leads/today", todayQuery());
       loadFailed = false;
+      window.dmeBuddy?.onToday(view, dailyGoal());
     } catch (err) {
       console.log("[today] " + err.message);
       if (!view) loadFailed = true;

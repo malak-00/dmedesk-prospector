@@ -17,6 +17,8 @@
   let statusError = "";
   const statusPick = {}; // stored spelling -> the status it should become ("" = leave it)
   let statusResult = null;
+  let buddyData = null;
+  let buddyError = "";
   let loading = false;
   let error = "";
   let dialog = null; // the open dialog's overlay element
@@ -31,11 +33,12 @@
     loading = true;
     error = "";
     render();
-    const [u, s, t, st] = await Promise.allSettled([apiGet("admin/users"), apiGet("admin/system"), apiGet("taxonomies/list"), apiGet("admin/statuses")]);
+    const [u, s, t, st, bd] = await Promise.allSettled([apiGet("admin/users"), apiGet("admin/system"), apiGet("taxonomies/list"), apiGet("admin/statuses"), apiGet("admin/buddy")]);
     if (u.status === "fulfilled") { users = u.value.users; features = u.value.features; } else { error = u.reason.message; }
     if (s.status === "fulfilled") { system = s.value; systemError = ""; } else { systemError = s.reason.message; }
     if (t.status === "fulfilled") taxonomies = t.value.taxonomies || [];
     if (st.status === "fulfilled") { statusData = st.value; statusError = ""; } else { statusError = st.reason.message; }
+    if (bd.status === "fulfilled") { buddyData = bd.value; buddyError = ""; } else { buddyError = bd.reason.message; }
     loading = false;
     render();
   }
@@ -103,6 +106,7 @@
       </div>
       <div class="team-body${loading && users ? " is-stale" : ""}">
         <section><h3 class="ctl-h">Users</h3>${usersBody}</section>
+        <section><h3 class="ctl-h">Avatar notes</h3><div id="ctlBuddyHost">${buddyHtml()}</div></section>
         <section><h3 class="ctl-h">System</h3>${systemHtml()}</section>
         <section><h3 class="ctl-h">Search defaults</h3>${defaultsHtml()}</section>
         <section><h3 class="ctl-h">Statuses</h3>${statusesHtml()}</section>
@@ -256,6 +260,72 @@
   }
 
   /* ---------- search defaults and status cleanup ---------- */
+
+  /* ---------- avatar notes: message of the day, or a note for one person ---------- */
+
+  const NOTE_STATE = { showing: "Showing", scheduled: "Scheduled", expired: "Expired" };
+
+  function buddyHtml() {
+    if (buddyError) return `<div class="team-block"><div class="team-state">${escapeHtml(buddyError)}</div></div>`;
+    if (!buddyData) return '<div class="team-block"><span class="muted-note">Loading…</span></div>';
+    const people = (users || []).filter((u) => !u.disabled);
+    const notes = buddyData.notes || [];
+    return `<div class="team-block">
+      <h4>Write a note</h4>
+      <p class="ctl-help">Your avatar shows it as a pop-up the next time each person opens the app, once. Choose everyone for a message of the day, or one person for a personal note. It stays under the avatar's face until it expires.${buddyData.unavailable ? ' <strong>Run sql/031_avatar_notes.sql in Supabase first: notes cannot be saved until you do.</strong>' : ""}</p>
+      <textarea id="ctlBuddyBody" class="ctl-note-input" rows="3" maxlength="500" placeholder="e.g. Great week, everyone. Georgia is the focus on Monday." aria-label="Note"></textarea>
+      <div class="ctl-run ctl-note-row">
+        <label class="ctl-inline">For <select id="ctlBuddyTo"><option value="">Everyone</option>${people.map((u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.displayName)}</option>`).join("")}</select></label>
+        <label class="ctl-inline">Shows for <select id="ctlBuddyDays">${[[1, "1 day"], [3, "3 days"], [7, "1 week"], [14, "2 weeks"], [30, "1 month"]].map(([d, l]) => `<option value="${d}" ${d === 7 ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label class="ctl-inline">Starting <input type="datetime-local" id="ctlBuddyFrom" aria-label="Start time (optional)"></label>
+        <button type="button" class="btn btn-primary btn-small" data-ctl="buddy-send">Send</button>
+      </div>
+      ${notes.length ? `<table class="results-table ctl-table ctl-note-table"><thead><tr><th>Note</th><th>For</th><th>Status</th><th title="People who have been shown it">Seen</th><th></th></tr></thead><tbody>
+        ${notes.map((n) => `<tr><td class="ctl-note-cell">${escapeHtml(n.body)}</td><td>${escapeHtml(n.to)}</td>
+          <td><span class="status-pill ${n.state === "showing" ? "is-active" : "is-removed"}">${NOTE_STATE[n.state] || n.state}</span><div class="ctl-sub">${n.state === "scheduled" ? `from ${escapeHtml(when(n.showFrom))}` : n.expiresAt ? `until ${escapeHtml(when(n.expiresAt))}` : ""}</div></td>
+          <td class="mono">${n.seenBy}</td>
+          <td><button type="button" class="link-btn" data-ctl="buddy-retire" data-id="${escapeHtml(n.id)}">Retire</button></td></tr>`).join("")}
+      </tbody></table>` : '<div class="muted-note" style="margin-top:12px;">No notes yet.</div>'}
+    </div>`;
+  }
+
+  function refreshBuddy() {
+    const host = document.getElementById("ctlBuddyHost");
+    if (host) host.innerHTML = buddyHtml();
+  }
+
+  async function sendBuddy() {
+    const body = document.getElementById("ctlBuddyBody")?.value.trim();
+    if (!body) { showToast("Write the note first", true); return; }
+    const from = document.getElementById("ctlBuddyFrom")?.value;
+    try {
+      await apiPost("admin/buddy", {
+        body,
+        toUserId: document.getElementById("ctlBuddyTo").value,
+        expiresDays: Number(document.getElementById("ctlBuddyDays").value),
+        showFrom: from ? new Date(from).toISOString() : "",
+      });
+      buddyData = await apiGet("admin/buddy");
+      refreshBuddy();
+      window.dmeBuddy?.reload?.();
+      showToast("Note sent");
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  }
+
+  async function retireBuddy(id) {
+    if (!confirm("Retire this note? It stops showing for everyone (the record stays).")) return;
+    try {
+      await apiPost("admin/buddy/retire", { id });
+      buddyData = await apiGet("admin/buddy");
+      refreshBuddy();
+      window.dmeBuddy?.reload?.();
+      showToast("Note retired");
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  }
 
   function defaultsHtml() {
     if (!taxonomies) return '<div class="team-block"><span class="muted-note">Loading\u2026</span></div>';
@@ -577,6 +647,8 @@
     if (btn.dataset.ctl === "reload") load();
     else if (btn.dataset.ctl === "add") openAdd();
     else if (btn.dataset.ctl === "edit") openEdit(btn.dataset.id);
+    else if (btn.dataset.ctl === "buddy-send") sendBuddy();
+    else if (btn.dataset.ctl === "buddy-retire") retireBuddy(btn.dataset.id);
   });
 
   document.addEventListener("click", (e) => {
@@ -608,6 +680,7 @@
     system = null;
     taxonomies = null;
     statusData = null;
+    buddyData = null;
     panel.innerHTML = "";
   };
 })();
