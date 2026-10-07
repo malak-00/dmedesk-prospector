@@ -697,7 +697,14 @@ app.post("/admin/provider-changes/resolve", async (c) => {
 
 app.get("/admin/match-reviews", async (c) => {
   requireAdmin(c.get("session"));
-  const data = await adminRepo.getMatchReviews(supabaseFor(c));
+  // scope=registry (sql/030) is read one page at a time: tier, offset, limit.
+  const scope = c.req.query("scope") === "registry" ? "registry" : "leads";
+  const data = await adminRepo.getMatchReviews(supabaseFor(c), {
+    scope,
+    tier: c.req.query("tier"),
+    offset: c.req.query("offset"),
+    limit: c.req.query("limit"),
+  });
   return c.json(ok(data));
 });
 

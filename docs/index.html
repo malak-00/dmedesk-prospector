@@ -511,6 +511,13 @@
             <span class="bulk-selection-summary" id="matchReviewsBulkSummary"></span>
             <button type="button" class="btn btn-primary btn-small" id="matchReviewsBulkMergeBtn" disabled>Merge selected</button>
             <label class="inline-field">
+              <span>Compare</span>
+              <select id="matchReviewsScope">
+                <option value="leads">Leads</option>
+                <option value="registry">All providers</option>
+              </select>
+            </label>
+            <label class="inline-field">
               <span>Show</span>
               <select id="matchReviewsTierFilter">
                 <option value="all">All tiers</option>

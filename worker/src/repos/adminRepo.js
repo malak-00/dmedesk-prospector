@@ -349,7 +349,49 @@ async function fetchQueuePairs(supabase, columns) {
   );
 }
 
-export async function getMatchReviews(supabase) {
+// sql/030: pairs found across every organization NPI in npi_records, not just
+// leads. Far too many to load at once, so this scope is read one page at a time.
+const REGISTRY_QUEUE_COLUMNS = QUEUE_COLUMNS + ", source, left_is_lead, right_is_lead, first_seen_at";
+export const REGISTRY_PAGE_DEFAULT = 25;
+export const REGISTRY_PAGE_MAX = 100;
+
+async function getRegistryMatchReviews(supabase, { tier, offset, limit }) {
+  const pageSize = Math.min(Math.max(Number.parseInt(limit, 10) || REGISTRY_PAGE_DEFAULT, 1), REGISTRY_PAGE_MAX);
+  const start = Math.max(Number.parseInt(offset, 10) || 0, 0);
+  const tierNumber = Number.parseInt(tier, 10);
+
+  // Ordered by the primary key so Postgres can stop after one page. Ordering
+  // by tier would force it to evaluate the whole queue for every page.
+  let query = supabase
+    .from("registry_review_queue")
+    .select(REGISTRY_QUEUE_COLUMNS)
+    .order("left_npi")
+    .order("right_npi")
+    .range(start, start + pageSize); // one extra row tells us whether there is a next page
+  if (tierNumber === 2 || tierNumber === 3) query = query.eq("tier", tierNumber);
+
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingRelation(error, "registry_review_queue")) {
+      return {
+        available: false,
+        scope: "registry",
+        reviews: [],
+        reason: "Registry-wide matching isn't installed yet. Run sql/030_registry_identity_matching.sql, then python -m nppes_ingest --match-registry.",
+      };
+    }
+    throw httpError(500, "Failed to load registry matches: " + error.message);
+  }
+
+  const rows = data || [];
+  const hasMore = rows.length > pageSize;
+  const reviews = await buildMatchReviews(supabase, rows.slice(0, pageSize));
+  return { available: true, scope: "registry", reviews, offset: start, limit: pageSize, hasMore };
+}
+
+export async function getMatchReviews(supabase, { scope = "leads", tier = null, offset = 0, limit = null } = {}) {
+  if (scope === "registry") return getRegistryMatchReviews(supabase, { tier, offset, limit });
+
   let pairs;
   try {
     try {
@@ -368,7 +410,12 @@ export async function getMatchReviews(supabase) {
     }
     throw err;
   }
-  if (pairs.length === 0) return { available: true, reviews: [] };
+  return { available: true, scope: "leads", reviews: await buildMatchReviews(supabase, pairs) };
+}
+
+// Turns queue rows into the side-by-side records an admin decides on.
+async function buildMatchReviews(supabase, pairs) {
+  if (pairs.length === 0) return [];
 
   const npis = [...new Set(pairs.flatMap((p) => [p.left_npi, p.right_npi]))];
   const groupIds = [...new Set(pairs.flatMap((p) => [p.left_group_id, p.right_group_id]).filter(Boolean))];
@@ -421,6 +468,10 @@ export async function getMatchReviews(supabase) {
       official: [record.authorizedofficial_firstname, record.authorizedofficial_lastname].filter(Boolean).join(" ") || snap.officialName || "",
       phone: formatPhone(phone || officialPhone),
       phoneSource: phone ? "location" : officialPhone ? "authorized official" : "",
+      // Registry matching (sql/030) matches on either number, so the official's
+      // phone is shown on its own whenever the card already shows the location phone.
+      officialPhone: phone && officialPhone ? formatPhone(officialPhone) : "",
+      isLead: rows.some((row) => !row.is_disconnected),
       groupId: groupId || null,
       groupSize: groupId ? groupSize.get(groupId) || 1 : 1,
       owners: owners.map((id) => ({ userId: id, displayName: userNameById.get(id) || "(unknown user)" })),
@@ -438,7 +489,8 @@ export async function getMatchReviews(supabase) {
         .split("+")
         .filter(Boolean)
         .sort((a, b) => MATCH_KEY_ORDER.indexOf(a) - MATCH_KEY_ORDER.indexOf(b)),
-      source: isRequest ? "claim_request" : "leads",
+      source: isRequest ? "claim_request" : p.source === "registry" ? "registry" : "leads",
+      firstSeenAt: p.first_seen_at || null,
       // A held claim: requestedNpi is the NPI someone tried to claim.
       requestedNpi: isRequest ? p.requested_npi : null,
       requestedBy: isRequest && p.requested_by
@@ -449,7 +501,7 @@ export async function getMatchReviews(supabase) {
     };
   });
 
-  return { available: true, reviews };
+  return reviews;
 }
 
 // Merge or dismiss one flagged pair. Like conflict resolution, the whole
@@ -508,6 +560,10 @@ export function getBulkMergeEligibility(review) {
   }
 
   if (ownerIds.length === 0) {
+    // isLead is false only for registry matches (sql/030), where neither NPI has been claimed.
+    if (review?.left?.isLead === false && review?.right?.isLead === false) {
+      return { eligible: true, reason: "Bulk merge: neither NPI is a lead yet (registry match); no claims are affected." };
+    }
     return { eligible: true, reason: "Bulk merge: both leads are unclaimed." };
   }
 
@@ -518,6 +574,38 @@ export function getBulkMergeEligibility(review) {
     return { eligible: true, reason: `Bulk merge: both leads are owned by ${ownerName}; ownership is consistent.` };
   }
   return { eligible: true, reason: `Bulk merge: one lead is unclaimed and the other is owned by ${ownerName}.` };
+}
+
+const PAIR_LOOKUP_CHUNK = 100;
+
+// Current queue entries for exactly these pairs. A pair is pending if it is in
+// either queue; the lead queue wins when it is in both.
+async function getPendingReviewsForPairs(supabase, requested) {
+  const rowsByKey = new Map();
+  for (const view of ["identity_review_queue", "registry_review_queue"]) {
+    for (let i = 0; i < requested.length; i += PAIR_LOOKUP_CHUNK) {
+      const chunk = requested.slice(i, i + PAIR_LOOKUP_CHUNK);
+      const wanted = new Set(chunk.map((pair) => pair.key));
+      const { data, error } = await supabase
+        .from(view)
+        .select(QUEUE_COLUMNS)
+        .in("left_npi", [...new Set(chunk.map((pair) => pair.leftNpi))])
+        .in("right_npi", [...new Set(chunk.map((pair) => pair.rightNpi))]);
+      if (error) {
+        if (isMissingRelation(error, view)) {
+          if (view === "identity_review_queue") throw httpError(503, "The review queue isn't installed yet.");
+          break; // registry matching (sql/030) just isn't installed
+        }
+        throw httpError(500, "Failed to read the review queue: " + error.message);
+      }
+      for (const row of data || []) {
+        const [left, right] = canonicalReviewPair(row.left_npi, row.right_npi);
+        const key = `${left}:${right}`;
+        if (wanted.has(key) && !rowsByKey.has(key)) rowsByKey.set(key, row);
+      }
+    }
+  }
+  return buildMatchReviews(supabase, [...rowsByKey.values()]);
 }
 
 export async function bulkMergeEligibleMatchReviews(supabase, { pairs, decidedBy }) {
@@ -536,9 +624,10 @@ export async function bulkMergeEligibleMatchReviews(supabase, { pairs, decidedBy
   }
   if (requested.length === 0) throw httpError(400, "At least one valid pair is required");
 
-  const queue = await getMatchReviews(supabase);
-  if (queue.available === false) throw httpError(503, queue.reason || "The review queue isn't available");
-  const reviewByKey = new Map((queue.reviews || []).map((review) => [
+  // Only the requested pairs are re-read (from the lead queue and the
+  // registry queue), never a whole queue: the registry queue can be huge.
+  const pendingReviews = await getPendingReviewsForPairs(supabase, requested);
+  const reviewByKey = new Map(pendingReviews.map((review) => [
     `${canonicalReviewPair(review.leftNpi, review.rightNpi)[0]}:${canonicalReviewPair(review.leftNpi, review.rightNpi)[1]}`,
     review,
   ]));

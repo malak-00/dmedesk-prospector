@@ -445,7 +445,89 @@ class FakeApplyClient:
             return self.lead_sync.pop(0)
         if function == "reset_lead_sync":
             return {"run_id": params["p_run_id"], "cleared_cursor": "1999999999", "was_complete": True}
+        if function == "refresh_npi_identity_keys":
+            return {"processed": 0, "written": 0, "last_npi": None, "done": True}
+        if function == "start_registry_match_build":
+            return "build-1"
+        if function == "build_registry_match_shard":
+            return {"shard": params["p_shard"], "pairs": 0, "big_buckets": 0}
+        if function == "finish_registry_match_build":
+            return {"pairs": 0, "new_pairs": 0, "removed_pairs": 0, "big_buckets": 0}
         raise AssertionError(function)
+
+
+class RegistryMatchTests(unittest.TestCase):
+    def test_keys_are_refreshed_in_batches_then_every_shard_is_built_then_finished(self) -> None:
+        from nppes_ingest.registry_match import run_registry_match
+
+        class Client(FakeApplyClient):
+            def __init__(self) -> None:
+                super().__init__([])
+                self.key_batches = [
+                    {"processed": 2, "written": 2, "last_npi": "1000000002", "done": False},
+                    {"processed": 1, "written": 0, "last_npi": "1000000003", "done": True},
+                ]
+
+            def rpc(self, function: str, params=None):
+                if function == "refresh_npi_identity_keys":
+                    self.calls.append((function, params))
+                    return self.key_batches.pop(0)
+                return super().rpc(function, params)
+
+        client = Client()
+        summary = run_registry_match(client, key_batch_size=2, shards=3, log=quiet)
+        self.assertEqual(summary["pairs"], 0)
+        self.assertEqual([c[0] for c in client.calls], [
+            "refresh_npi_identity_keys", "refresh_npi_identity_keys",
+            "start_registry_match_build",
+            "build_registry_match_shard", "build_registry_match_shard", "build_registry_match_shard",
+            "finish_registry_match_build",
+        ])
+        # The second key batch resumes after the first batch's last NPI.
+        self.assertEqual(client.calls[1][1], {"p_after": "1000000002", "p_batch_size": 2})
+        self.assertEqual([c[1]["p_shard"] for c in client.calls[3:6]], [0, 1, 2])
+
+    def test_missing_sql_is_skipped_not_failed(self) -> None:
+        from nppes_ingest.registry_match import run_registry_match
+
+        class NoSql(FakeApplyClient):
+            def rpc(self, function: str, params=None):
+                raise RuntimeError("PGRST202: Could not find the function public.refresh_npi_identity_keys")
+
+        messages: list[str] = []
+        self.assertIsNone(run_registry_match(NoSql([]), log=messages.append))
+        self.assertTrue(any("sql/030" in m for m in messages), messages)
+
+    def test_a_key_batch_without_a_cursor_is_refused(self) -> None:
+        from nppes_ingest.registry_match import run_registry_match
+
+        class Stuck(FakeApplyClient):
+            def rpc(self, function: str, params=None):
+                return {"processed": 5, "written": 0, "last_npi": None, "done": False}
+
+        with self.assertRaises(RuntimeError):
+            run_registry_match(Stuck([]), log=quiet)
+
+    def test_cli_runs_it_after_apply_unless_skipped(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        for extra, expected in (([], True), (["--skip-registry-match"], False)):
+            fake = FakeApplyClient([{"processed": 1, "remaining": 0}])
+            with mock.patch.object(cli, "load_supabase_config", return_value=object()), \
+                    mock.patch.object(cli, "SupabaseClient", return_value=fake), \
+                    mock.patch("builtins.print"):
+                self.assertEqual(cli.main(["--apply-run", "run-9", *extra]), 0)
+            self.assertEqual("refresh_npi_identity_keys" in [c[0] for c in fake.calls], expected)
+
+    def test_match_registry_is_used_on_its_own(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        with mock.patch("builtins.print"):
+            self.assertEqual(cli.main(["--match-registry", "--apply-run", "x"]), 2)
 
 
 class ApplyRunTests(unittest.TestCase):

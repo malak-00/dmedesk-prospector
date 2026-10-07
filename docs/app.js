@@ -132,6 +132,9 @@ const state = {
   matchReviews: null,
   matchReviewsTier: "all",
   matchReviewsLimit: 25,
+  // "leads" loads the whole queue; "registry" (sql/030) is paged by the Worker.
+  matchReviewsScope: "leads",
+  matchReviewsHasMore: false,
   matchReviewSelected: new Set(),
   providerChanges: null,
   providerChangesLimit: 25,
@@ -323,6 +326,7 @@ const els = {
   providerChangesMoreBtn: document.getElementById("providerChangesMoreBtn"),
   matchReviewsSummary: document.getElementById("matchReviewsSummary"),
   matchReviewsTierFilter: document.getElementById("matchReviewsTierFilter"),
+  matchReviewsScope: document.getElementById("matchReviewsScope"),
   matchReviewsEmpty: document.getElementById("matchReviewsEmpty"),
   matchReviewsList: document.getElementById("matchReviewsList"),
   matchReviewsMoreBtn: document.getElementById("matchReviewsMoreBtn"),
@@ -852,7 +856,8 @@ function matchReviewBulkEligibility(review) {
 
 function filteredMatchReviews() {
   const reviews = (state.matchReviews && state.matchReviews.reviews) || [];
-  if (state.matchReviewsTier === "all") return reviews;
+  // The registry scope is already filtered by tier on the server.
+  if (state.matchReviewsScope === "registry" || state.matchReviewsTier === "all") return reviews;
   return reviews.filter((review) => String(review.tier) === state.matchReviewsTier);
 }
 
@@ -867,7 +872,9 @@ function renderMatchReviewSide(record, requestedBy) {
     ? record.owners.map((owner) => escapeHtml(owner.displayName)).join(", ")
     : requestedBy
       ? `<span class="match-review-request">Requested by ${escapeHtml(requestedBy.displayName)}</span>`
-      : "Unclaimed";
+      : record.isLead === false
+        ? "Not a lead yet"
+        : "Unclaimed";
   return {
     name: `<div class="company-name">${escapeHtml(record.name || "(no name)")}</div><div class="company-taxonomy mono">${escapeHtml(record.npi)}</div>`,
     state: location,
@@ -875,6 +882,7 @@ function renderMatchReviewSide(record, requestedBy) {
     phone: record.phone
       ? `${escapeHtml(record.phone)}${record.phoneSource === "authorized official" ? ' <span class="match-review-note">(official)</span>' : ""}`
       : "—",
+    officialPhone: record.officialPhone ? `${escapeHtml(record.officialPhone)} <span class="match-review-note">(official)</span>` : "—",
     group: record.groupSize > 1 ? `${record.groupSize} NPIs` : "Only this NPI",
     owners,
   };
@@ -896,10 +904,13 @@ function renderMatchReviews() {
   }
 
   const all = payload.reviews || [];
+  const isRegistry = state.matchReviewsScope === "registry";
   const tier2 = all.filter((review) => review.tier === 2).length;
   const tier3 = all.filter((review) => review.tier === 3).length;
   els.matchReviewsSummary.textContent = all.length
-    ? `${all.length} pair${all.length === 1 ? "" : "s"} to review · Tier 2: ${tier2} · Tier 3: ${tier3}`
+    ? isRegistry
+      ? `${all.length} pair${all.length === 1 ? "" : "s"} loaded${state.matchReviewsHasMore ? " · more available" : ""} · all providers`
+      : `${all.length} pair${all.length === 1 ? "" : "s"} to review · Tier 2: ${tier2} · Tier 3: ${tier3}`
     : "Nothing to review";
 
   const reviews = filteredMatchReviews();
@@ -915,7 +926,7 @@ function renderMatchReviews() {
   }
 
   els.matchReviewsEmpty.hidden = true;
-  const visible = reviews.slice(0, state.matchReviewsLimit);
+  const visible = isRegistry ? reviews : reviews.slice(0, state.matchReviewsLimit);
   els.matchReviewsList.innerHTML = visible
     .map((review) => {
       const bulkEligibility = matchReviewBulkEligibility(review);
@@ -965,6 +976,7 @@ function renderMatchReviews() {
               ${row("State", "state", "state")}
               ${row("Authorized official", "official", "official")}
               ${row("Phone", "phone", "phone")}
+              ${review.left.officialPhone || review.right.officialPhone ? row("Official's phone", "officialPhone", "phone") : ""}
               ${row("Group", "group", null)}
               ${row("Claimed by", "owners", null)}
             </tbody>
@@ -974,6 +986,12 @@ function renderMatchReviews() {
     })
     .join("");
 
+  if (isRegistry) {
+    // The Worker pages this scope; "Show more" fetches the next page.
+    els.matchReviewsMoreBtn.hidden = !state.matchReviewsHasMore;
+    els.matchReviewsMoreBtn.textContent = `Show ${MATCH_REVIEWS_PAGE} more`;
+    return;
+  }
   const remaining = reviews.length - visible.length;
   els.matchReviewsMoreBtn.hidden = remaining <= 0;
   els.matchReviewsMoreBtn.textContent = `Show ${Math.min(remaining, MATCH_REVIEWS_PAGE)} more (${remaining} left)`;
@@ -1215,7 +1233,8 @@ async function resolveProviderChange(eventId, decision) {
   }
 }
 
-async function loadMatchReviews(silent = false) {
+// append=true (registry scope only) adds the next page to what is already loaded.
+async function loadMatchReviews(silent = false, append = false) {
   if (!silent) {
     els.matchReviewsSummary.textContent = "Checking…";
     if (!state.matchReviews) {
@@ -1224,7 +1243,17 @@ async function loadMatchReviews(silent = false) {
     }
   }
   try {
-    state.matchReviews = await apiGet("admin/match-reviews");
+    if (state.matchReviewsScope === "registry") {
+      const loaded = append && state.matchReviews ? state.matchReviews.reviews || [] : [];
+      const params = new URLSearchParams({ scope: "registry", limit: String(MATCH_REVIEWS_PAGE), offset: String(loaded.length) });
+      if (state.matchReviewsTier !== "all") params.set("tier", state.matchReviewsTier);
+      const page = await apiGet("admin/match-reviews?" + params.toString());
+      state.matchReviewsHasMore = page.hasMore === true;
+      state.matchReviews = { ...page, reviews: [...loaded, ...(page.reviews || [])] };
+    } else {
+      state.matchReviewsHasMore = false;
+      state.matchReviews = await apiGet("admin/match-reviews");
+    }
     renderMatchReviews();
   } catch (err) {
     if (silent) {
@@ -4449,9 +4478,24 @@ els.providerChangesMoreBtn.addEventListener("click", () => {
 els.matchReviewsTierFilter.addEventListener("change", () => {
   state.matchReviewsTier = els.matchReviewsTierFilter.value;
   state.matchReviewsLimit = MATCH_REVIEWS_PAGE;
-  renderMatchReviews();
+  state.matchReviewSelected.clear();
+  // Registry pages are filtered by the Worker, so a new tier means a new query.
+  if (state.matchReviewsScope === "registry") loadMatchReviews();
+  else renderMatchReviews();
+});
+els.matchReviewsScope.addEventListener("change", () => {
+  state.matchReviewsScope = els.matchReviewsScope.value;
+  state.matchReviewsLimit = MATCH_REVIEWS_PAGE;
+  state.matchReviewSelected.clear();
+  state.matchReviews = null;
+  loadMatchReviews();
 });
 els.matchReviewsMoreBtn.addEventListener("click", () => {
+  if (state.matchReviewsScope === "registry") {
+    els.matchReviewsMoreBtn.disabled = true;
+    loadMatchReviews(true, true).finally(() => { els.matchReviewsMoreBtn.disabled = false; });
+    return;
+  }
   state.matchReviewsLimit += MATCH_REVIEWS_PAGE;
   renderMatchReviews();
 });

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .apply import DEFAULT_APPLY_BATCH_SIZE, run_apply, run_lead_sync
 from .config import ConfigError, load_supabase_config
+from .registry_match import DEFAULT_MAX_BUCKET, run_registry_match
 from .ingest import (
     DEFAULT_BATCH_SIZE,
     RUN_TYPE_DEACTIVATION,
@@ -75,6 +76,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Don't refresh claimed leads from the applied release or raise provider-change alerts "
         "(sql/015). The sync can be run later by applying the same run again",
+    )
+    parser.add_argument(
+        "--match-registry",
+        action="store_true",
+        help="Only rebuild registry-wide identity match candidates (sql/030) from npi_records -- for the first "
+        "load, or to rerun after a release was applied without it",
+    )
+    parser.add_argument(
+        "--skip-registry-match",
+        action="store_true",
+        help="After applying a release, don't rebuild registry-wide identity match candidates (sql/030)",
+    )
+    parser.add_argument(
+        "--match-max-bucket",
+        type=int,
+        default=DEFAULT_MAX_BUCKET,
+        help="Largest group of NPIs sharing one key (official+phone, name+phone, name+official) that is still paired",
     )
     parser.add_argument("--recover-run", help="Finalize an interrupted uploading run by UUID")
     parser.add_argument("--abort-run", help="Abort an uploading run by UUID")
@@ -167,6 +185,17 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --restart is only used with --sync-run", flush=True)
         return 2
 
+    if args.match_registry:
+        if args.sync_run or args.apply_run or args.recover_run or args.abort_run or args.source is not None:
+            print("error: --match-registry is used on its own", flush=True)
+            return 2
+        try:
+            client = SupabaseClient(load_supabase_config(args.env_file))
+            return 1 if run_registry_match(client, max_bucket=args.match_max_bucket) is None else 0
+        except (ConfigError, RuntimeError, ValueError) as err:
+            print(f"error: {err}", flush=True)
+            return 1
+
     if args.sync_run:
         if args.apply_run or args.recover_run or args.abort_run or args.source is not None:
             print("error: --sync-run is used on its own (it syncs an already applied run)", flush=True)
@@ -187,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             client = SupabaseClient(load_supabase_config(args.env_file))
             run_apply(client, args.apply_run, batch_size=args.apply_batch_size, sync_leads=not args.skip_lead_sync)
+            if not args.skip_registry_match:
+                run_registry_match(client, max_bucket=args.match_max_bucket)
             return 0
         except (ConfigError, RuntimeError, ValueError) as err:
             print(f"error: {err}", flush=True)
@@ -261,6 +292,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.apply:
             run_apply(client, result.manifest.refresh_run_id, batch_size=args.apply_batch_size,
                       sync_leads=not args.skip_lead_sync)
+            if not args.skip_registry_match:
+                run_registry_match(client, max_bucket=args.match_max_bucket)
     except PermissionError as err:
         print(
             f"error: permission denied reading {err.filename or args.source} -- this Windows account can't open "

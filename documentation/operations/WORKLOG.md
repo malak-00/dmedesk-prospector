@@ -1,5 +1,42 @@
 ﻿# DME Desk Prospector Worklog
 
+## 2026-10-07 — Registry-wide identity matching over npi_records (migration drafted, not applied)
+
+### Objective
+Five NPIs run by the same official (Furqan Saadat) were not flagged for merging. Read-only check showed
+three are only in `npi_records` (no lead, no group, so the lead-only review view never sees them), and
+United Medical Supply (1598576696) has a different location phone, so the location-first phone key never
+matched it to the rest. Decisions: match on either phone, show every registry pair, cover every organization.
+
+### Actions Completed
+- Drafted `sql/030_registry_identity_matching.sql`: `npi_identity_keys`, `registry_match_candidates`,
+  `registry_match_builds`, `registry_match_big_buckets`, batched/sharded build functions, the
+  `registry_review_queue` view, and a replacement `resolve_identity_match` that creates a missing group
+  membership before merging (otherwise identical to 009).
+- Added `scripts/nppes_ingest/registry_match.py` and CLI flags `--match-registry`, `--skip-registry-match`,
+  `--match-max-bucket`; the rebuild now runs automatically after `--apply` / `--apply-run`, and is skipped
+  with a message if sql/030 is not installed.
+- Added unit tests (`scripts/tests/test_ingest.py`); 63 tests pass.
+- Worker: `GET /admin/match-reviews?scope=registry&tier=&offset=&limit=` reads `registry_review_queue` one page
+  at a time (default 25, max 100, ordered by NPI pair so Postgres can stop early, `hasMore` from one extra
+  row). The default `scope=leads` is unchanged. Bulk merge now re-reads only the requested pairs from both
+  queues instead of the whole queue. Cards also carry `officialPhone` and `isLead`.
+- Admin tab: new "Compare: Leads / All providers" selector, server-paged "Show more", an "Official's phone"
+  row, and "Not a lead yet" in the Claimed by row. 138 worker tests pass (4 new); app.js syntax-checked.
+  No browser testing was done (per AGENTS.md); it needs a manual check after sql/030 is installed.
+- Plan: `documentation/plans/REGISTRY_WIDE_IDENTITY_MATCHING_PLAN.md`.
+
+### Database / System Result
+None yet. The migration has NOT been run anywhere, including production. The SQL itself is untested:
+the only Supabase project reachable from this session was an unrelated one, so it must be run on a
+Supabase branch first.
+
+### Safety Status
+Additive tables and views; no leads, groups, ownership or decisions are changed. The one replaced function
+(`resolve_identity_match`) behaves as before for NPIs that already have a group. The Worker admin queue
+default scope still reads `identity_review_queue` exactly as before; the registry scope is opt-in in the UI
+and reports "not installed" until sql/030 exists. Worker and frontend are not deployed.
+
 ## 2026-10-06 — Onboarded Sheet Leads Import: Qualification, Preservation, and Claim Execution
 
 ### Objective
