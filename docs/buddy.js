@@ -28,6 +28,8 @@
     christmas: "bd-christmas.webp",
     newyear: "bd-newyear.webp",
     valentine: "bd-valentine.webp",
+    birthday: "bd-birthday.webp",
+    friday: "bd-friday.webp",
   };
   const SURPRISE_POSES = ["wave", "thumbs", "party", "thinking", "note", "phone", "neutral", "wink", "encourage"];
   const MODE_KEY = "dmeBuddyMode"; // all | big | off
@@ -188,14 +190,16 @@
     if (m === 2 && d >= 10 && d <= 14) return "valentine";
     return "";
   }
-  const restPose = () => seasonPose() || "neutral";
+  // Her usual look today: her birthday outfit on the person's own birthday, then the season, then Friday's sunglasses.
+  const restPose = () => {
+    if (occasions.some((o) => o.mine && o.kind === "birthday")) return "birthday";
+    return seasonPose() || (new Date().getDay() === 5 ? "friday" : "neutral");
+  };
 
-  // A little extra on her corner for things she has no outfit for: birthdays, anniversaries, Fridays.
+  // A little extra on her corner for the one occasion she has no outfit for yet: a work anniversary.
   function accessory() {
-    const mine = occasions.find((o) => o.mine);
-    if (mine) return mine.kind === "birthday" ? ["cake", "It's your birthday!"] : ["party", "Happy work anniversary!"];
-    if (!seasonPose() && new Date().getDay() === 5) return ["sun", "It's Friday!"];
-    return ["", ""];
+    const mine = occasions.find((o) => o.mine && o.kind === "anniversary");
+    return mine ? ["party", "Happy work anniversary!"] : ["", ""];
   }
 
   function applyAccessory() {
@@ -211,7 +215,7 @@
     const img = host && host.querySelector(".buddy-launch img");
     if (img) img.src = IMG + (POSES[pose] || POSES.neutral);
     const launch = host && host.querySelector(".buddy-launch");
-    if (launch) launch.classList.toggle("is-outfit", Boolean(seasonPose()) && pose === seasonPose());
+    if (launch) launch.classList.toggle("is-outfit", pose !== "neutral" && pose === restPose());
   }
 
   function build() {
@@ -564,7 +568,7 @@
     say({
       key,
       kind: "small",
-      pose: seasonPose() || "wave",
+      pose: restPose() === "neutral" ? "wave" : restPose(),
       title: `${part}${name ? `, ${name}` : ""}!`,
       text: waiting.length ? `${waiting.join(" · ")}. ${extra}`.trim() : `Nothing urgent waiting. ${extra || "A good day to open some new leads."}`.trim(),
     });
@@ -679,7 +683,7 @@
   function occasionsToSay() {
     for (const o of occasions) {
       const key = `occasion:${o.kind}:${o.userId}:${today()}`;
-      if (o.mine && o.kind === "birthday") say({ key, kind: "event", pose: "party", title: `Happy birthday${firstName() ? `, ${firstName()}` : ""}!`, text: "Hope it's a great one. The team is lucky to have you.", confetti: true });
+      if (o.mine && o.kind === "birthday") say({ key, kind: "event", pose: "birthday", title: `Happy birthday${firstName() ? `, ${firstName()}` : ""}!`, text: "Hope it's a great one. The team is lucky to have you.", confetti: true });
       else if (o.mine) say({ key, kind: "event", pose: "party", title: `${plural(o.years, "year")} with the team!`, text: "Happy work anniversary. Thank you for everything you do.", confetti: true });
       else if (o.kind === "birthday") say({ key, kind: "event", pose: "wave", title: "A birthday today", text: `It's ${o.name}'s birthday. Say hi!` });
       else say({ key, kind: "event", pose: "thumbs", title: "A work anniversary", text: `${o.name} is celebrating ${plural(o.years, "year")} with the team today.` });
@@ -699,6 +703,7 @@
     }
     updateDot();
     applyAccessory();
+    setLaunchPose(restPose());
     renderPanel();
     const weekday = new Date().getDay();
     // Newest unseen first; each note is shown once (a weekly note once each day it applies).
