@@ -308,7 +308,89 @@
           <td><button type="button" class="link-btn" data-ctl="buddy-retire" data-id="${escapeHtml(n.id)}">Retire</button></td></tr>`).join("")}
       </tbody></table>` : '<div class="muted-note" style="margin-top:12px;">No notes yet.</div>'}
       ${peopleHtml()}
+      ${teamHtml()}
     </div>`;
+  }
+
+  /* ---------- the avatar's team features: team goal, scripts, mood, kudos ---------- */
+
+  function teamHtml() {
+    const unavailable = buddyData.teamUnavailable
+      ? '<p class="ctl-help"><strong>Run sql/033_avatar_team.sql in Supabase to use scripts, kudos and the mood check-in.</strong></p>'
+      : "";
+    const scripts = buddyData.scripts || [];
+    const mood = buddyData.mood || [];
+    const kudos = buddyData.kudos || [];
+    const peak = Math.max(1, ...mood.map((d) => d.great + d.okay + d.rough));
+    const answered = mood.reduce((n, d) => n + d.great + d.okay + d.rough, 0);
+    return `${unavailable}
+      <h4 style="margin-top:18px">Team call goal</h4>
+      <p class="ctl-help">A shared target for calls this week (Monday to Sunday). The avatar shows the team's progress and cheers when it is reached. Leave blank to switch it off.</p>
+      <div class="ctl-run"><input type="number" id="ctlTeamGoal" min="1" max="100000" step="1" placeholder="e.g. 500" value="${buddyData.teamGoal || ""}" aria-label="Weekly team call goal" style="width:120px">
+        <button type="button" class="btn btn-ghost btn-small" data-ctl="buddy-goal">Save</button></div>
+
+      <h4 style="margin-top:18px">Call scripts</h4>
+      <p class="ctl-help">Openers and voicemail scripts shown beside call mode. Leave the specialty blank for every lead, or type part of a specialty name (for example "orthotic") to show it only for those leads.</p>
+      <div class="ctl-run ctl-note-row">
+        <label class="ctl-inline">Title <input type="text" id="ctlScriptTitle" maxlength="60" placeholder="Opener" style="width:150px"></label>
+        <label class="ctl-inline">Specialty (optional) <input type="text" id="ctlScriptSpecialty" maxlength="80" placeholder="all leads" style="width:150px"></label>
+      </div>
+      <textarea id="ctlScriptBody" class="ctl-note-input" rows="3" maxlength="800" placeholder="Hi, this is [name] from [company]. I'm calling because..." aria-label="Script"></textarea>
+      <div class="ctl-run"><button type="button" class="btn btn-primary btn-small" data-ctl="buddy-script">Add script</button></div>
+      ${scripts.length ? `<table class="results-table ctl-table ctl-note-table"><thead><tr><th>Script</th><th>For</th><th></th></tr></thead><tbody>
+        ${scripts.map((sc) => `<tr><td class="ctl-note-cell"><strong>${escapeHtml(sc.title)}</strong><div>${escapeHtml(sc.body)}</div></td><td>${escapeHtml(sc.specialty || "All leads")}</td>
+          <td><button type="button" class="link-btn" data-ctl="buddy-script-retire" data-id="${escapeHtml(sc.id)}">Retire</button></td></tr>`).join("")}
+      </tbody></table>` : '<div class="muted-note" style="margin-top:10px;">No scripts yet.</div>'}
+
+      <h4 style="margin-top:18px">How the team is feeling</h4>
+      <p class="ctl-help">A one-tap check-in the avatar asks at the start of a shift. You only see anonymous totals per day, never who chose what. Last 14 days${answered ? ` (${answered} answers)` : ""}.</p>
+      ${answered ? `<div class="ctl-mood" aria-label="Mood over the last 14 days">${mood.map((d) => {
+        const total = d.great + d.okay + d.rough;
+        const h = (n) => `height:${(n / peak) * 100}%`;
+        return `<div class="ctl-mood-day" title="${escapeHtml(d.day)}: ${d.great} great, ${d.okay} okay, ${d.rough} rough"><i class="m3" style="${h(d.great)}"></i><i class="m2" style="${h(d.okay)}"></i><i class="m1" style="${h(d.rough)}"></i></div>`;
+      }).join("")}</div><div class="muted-note" style="margin-top:6px;">Green great, yellow okay, red rough.</div>` : '<div class="muted-note">No answers yet.</div>'}
+
+      <h4 style="margin-top:18px">Recent kudos</h4>
+      ${kudos.length ? `<table class="results-table ctl-table"><thead><tr><th>From</th><th>To</th><th>Message</th><th>When</th></tr></thead><tbody>
+        ${kudos.map((k) => `<tr><td>${escapeHtml(k.from)}</td><td>${escapeHtml(k.to)}</td><td class="ctl-note-cell">${escapeHtml(k.body)}</td><td class="mono">${escapeHtml(when(k.at))}</td></tr>`).join("")}
+      </tbody></table>` : '<div class="muted-note">No kudos yet.</div>'}`;
+  }
+
+  async function saveTeamGoal() {
+    const value = document.getElementById("ctlTeamGoal").value.trim();
+    try {
+      await apiPost("admin/buddy/settings", { teamGoal: value });
+      buddyData.teamGoal = value ? Number(value) : null;
+      showToast(value ? "Team goal saved" : "Team goal switched off");
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  }
+
+  async function addScript() {
+    const title = document.getElementById("ctlScriptTitle").value.trim();
+    const body = document.getElementById("ctlScriptBody").value.trim();
+    if (!title || !body) { showToast("Give the script a title and some text", true); return; }
+    try {
+      await apiPost("admin/buddy/script", { title, body, specialty: document.getElementById("ctlScriptSpecialty").value.trim() });
+      buddyData = await apiGet("admin/buddy");
+      refreshBuddy();
+      showToast("Script added");
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  }
+
+  async function retireScript(id) {
+    if (!confirm("Retire this script? It stops showing in call mode (the record stays).")) return;
+    try {
+      await apiPost("admin/buddy/script/retire", { id });
+      buddyData = await apiGet("admin/buddy");
+      refreshBuddy();
+      showToast("Script retired");
+    } catch (err) {
+      showToast(err.message, true);
+    }
   }
 
   async function saveTeamWins(on) {
@@ -698,6 +780,9 @@
     else if (btn.dataset.ctl === "buddy-send") sendBuddy();
     else if (btn.dataset.ctl === "buddy-retire") retireBuddy(btn.dataset.id);
     else if (btn.dataset.ctl === "buddy-person") savePerson(btn.closest("tr"));
+    else if (btn.dataset.ctl === "buddy-goal") saveTeamGoal();
+    else if (btn.dataset.ctl === "buddy-script") addScript();
+    else if (btn.dataset.ctl === "buddy-script-retire") retireScript(btn.dataset.id);
   });
 
   document.addEventListener("click", (e) => {

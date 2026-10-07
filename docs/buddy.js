@@ -90,6 +90,8 @@
     { id: "booked", icon: "\u{1F4C5}", label: "Booked it", how: "Book your first meeting" },
     { id: "closer", icon: "\u{1F3C6}", label: "Closer", how: "Onboard a lead" },
     { id: "challenge", icon: "\u{1F3AF}", label: "Challenger", how: "Finish a daily challenge" },
+    { id: "riddler", icon: "\u{1F9E9}", label: "Riddler", how: "Solve 5 daily puzzles" },
+    { id: "cheer", icon: "\u{1F4E3}", label: "Cheerleader", how: "Send a teammate kudos" },
   ];
 
   let host = null;
@@ -105,6 +107,9 @@
   let lastActive = Date.now();
   let napping = false;
   let started = false;
+
+  // The extra fun (riddle, kudos, wheel, pet, mood...) lives in buddy-fun.js, which plugs into the hooks below.
+  const fun = () => window.dmeBuddyFun || null;
 
   /* ---------- helpers ---------- */
 
@@ -200,6 +205,7 @@
       <button type="button" class="buddy-launch" id="buddyLaunch" aria-label="Open your avatar" aria-expanded="false">
         <img src="${IMG}${POSES.neutral}" alt="" width="88" height="88">
         <span class="buddy-acc" id="buddyAcc" aria-hidden="true" hidden></span>
+        <span class="buddy-pet" id="buddyPet" aria-hidden="true" hidden></span>
         <span class="buddy-dot" id="buddyDot" hidden></span>
       </button>`;
     document.body.append(host);
@@ -219,14 +225,14 @@
   /* ---------- pop-ups ---------- */
 
   // kind: "note" (waits for "Got it"), "event" (a win or occasion, always shown), "big" (milestones), "small" (greetings, tips).
-  function say({ key, kind = "small", pose = "neutral", title = "", text, noteId = "", from = "", react = null, confetti = false }) {
+  function say({ key, kind = "small", pose = "neutral", title = "", text, noteId = "", from = "", react = null, confetti = false, choices = null, onChoice = null, onSeen = null }) {
     if (!getSession() || mode() === "off") return;
     if (mode() === "big" && kind === "small") return;
     const s = shownToday();
     if (key && s.keys.includes(key)) return;
     if (kind !== "note" && kind !== "event" && s.n >= DAILY_CAP) return;
     if (queue.some((q) => q.key && q.key === key)) return;
-    queue.push({ key, kind, pose, title, text, noteId, from, react, confetti });
+    queue.push({ key, kind, pose, title, text, noteId, from, react, confetti, choices, onChoice, onSeen });
     next();
   }
 
@@ -244,7 +250,7 @@
     renderBubble(item);
     host.hidden = false;
     clearTimeout(hideTimer);
-    if (item.kind !== "note") hideTimer = setTimeout(dismiss, item.react ? 30000 : 14000);
+    if (item.kind !== "note") hideTimer = setTimeout(dismiss, item.react || item.choices ? 30000 : 14000);
   }
 
   function reactHtml(n) {
@@ -264,8 +270,9 @@
         <div class="buddy-text">${escapeHtml(item.text).replace(/\n/g, "<br>")}</div>
         ${item.from ? `<div class="buddy-from">From ${escapeHtml(item.from)}</div>` : ""}
         ${n ? reactHtml(n) : ""}
+        ${item.choices ? `<div class="buddy-choices">${item.choices.map((c, i) => `<button type="button" class="btn btn-ghost btn-small" data-buddy-choice="${i}">${escapeHtml(c.label)}</button>`).join("")}</div>` : ""}
         <div class="buddy-actions">
-          <button type="button" class="btn btn-primary btn-small" data-buddy="dismiss">${item.kind === "note" ? "Got it" : "Thanks"}</button>
+          <button type="button" class="btn btn-primary btn-small" data-buddy="dismiss">${item.kind === "note" ? "Got it" : item.choices ? "Not now" : "Thanks"}</button>
           ${item.kind === "small" || item.kind === "big" ? '<button type="button" class="link-btn" data-buddy="quiet" title="Show only big moments">Quieter</button>' : ""}
         </div>
       </div>`;
@@ -295,6 +302,7 @@
     const bubble = $("buddyBubble");
     if (bubble) { bubble.hidden = true; bubble.innerHTML = ""; }
     if (item && item.noteId) markSeen(item.noteId);
+    if (item && item.onSeen) item.onSeen();
     setTimeout(next, 600);
   }
 
@@ -374,7 +382,9 @@
         <div class="buddy-panel-tip"><strong>${escapeHtml(panel.dataset.label || "Tip")}</strong><br>${escapeHtml(panel.dataset.line || pick(TIPS))}</div>
       </div>
       ${challengeHtml()}
+      ${fun()?.teamGoalHtml?.() || ""}
       ${badgesHtml()}
+      ${fun()?.panelHtml?.() || ""}
       <div class="buddy-panel-notes">
         ${list.length
           ? list.map((n) => `<div class="buddy-note${n.seen || isRecurring(n) ? "" : " is-new"}">
@@ -419,6 +429,15 @@
   }
 
   function onClick(e) {
+    const choice = e.target.closest("[data-buddy-choice]");
+    if (choice && showing && showing.choices) {
+      const picked = showing.choices[Number(choice.dataset.buddyChoice)];
+      const handler = showing.onChoice;
+      dismiss();
+      if (picked && handler) handler(picked.value);
+      return;
+    }
+    if (fun()?.onClick?.(e)) return;
     const act = e.target.closest("[data-buddy]");
     if (act) {
       const what = act.dataset.buddy;
@@ -477,10 +496,14 @@
     callHelper.hidden = true;
     callHelper.innerHTML = `
       <div class="buddy-call-tip" id="buddyCallTip"></div>
+      <div class="buddy-call-extra" id="buddyCallExtra"></div>
       <img src="${IMG}${POSES.phone}" alt="" width="120" height="120">
       <button type="button" class="link-btn" id="buddyCallNext">Another tip</button>`;
     document.body.append(callHelper);
     callHelper.querySelector("#buddyCallNext").addEventListener("click", () => { $("buddyCallTip").textContent = pick(CALL_TIPS); });
+    callHelper.addEventListener("click", (e) => {
+      if (fun()?.onClick?.(e)) $("buddyCallExtra").innerHTML = fun()?.callHelperHtml?.() || "";
+    });
   }
 
   function syncCallHelper() {
@@ -488,6 +511,7 @@
     if (show) {
       buildCallHelper();
       $("buddyCallTip").textContent = pick(CALL_TIPS);
+      $("buddyCallExtra").innerHTML = fun()?.callHelperHtml?.() || "";
       callHelper.hidden = false;
     } else if (callHelper) {
       callHelper.hidden = true;
@@ -591,6 +615,7 @@
     milestones(view.stats, lastGoal);
     weeklyRecap(view.stats);
     endOfDay(view.stats, view);
+    fun()?.onToday?.(view, lastGoal);
   }
 
   /* ---------- wins: a meeting booked, a lead onboarded ---------- */
@@ -646,6 +671,7 @@
       const data = await apiGet("buddy/notes", { day: today() });
       notes = data.notes || [];
       occasions = data.occasions || [];
+      fun()?.onKudos?.(data.kudos || []);
     } catch (err) {
       notes = [];
       occasions = [];
@@ -677,6 +703,7 @@
     host.hidden = false;
     watchWins();
     loadNotes();
+    fun()?.start?.();
   }
 
   const hooks = window.dmeHooks;
@@ -693,10 +720,14 @@
     lastCalls = null;
     napping = false;
     clearTimeout(hideTimer);
+    fun()?.stop?.();
     if (host) { host.remove(); host = null; }
     if (callHelper) callHelper.hidden = true;
   };
 
-  window.dmeBuddy = { onToday, say, reload: loadNotes };
+  window.dmeBuddy = {
+    onToday, say, reload: loadNotes,
+    api: { say, earn, mode, pick, read, write, today, dayNumber, minutesNow, clockText, SHIFT, weekKey, confetti, rerender: renderPanel, stats: () => lastStats, goal: () => lastGoal, idleMs: () => Date.now() - lastActive },
+  };
   if (getSession()) start();
 })();

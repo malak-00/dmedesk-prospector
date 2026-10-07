@@ -77,6 +77,45 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-08 — Avatar team features: puzzle, kudos, team goal, mood, scripts, wheel, sidekick
+
+### Objective
+
+More fun and more useful for the team: a daily puzzle, thank-yous between teammates, a shared weekly call goal,
+a one-tap mood check-in, call scripts beside call mode, a reward wheel, a lead of the day, a stretch reminder
+and a sidekick that grows with the call streak.
+
+### Actions Completed
+
+- **Frontend** (`docs/buddy-fun.js`, plugged into `docs/buddy.js`): a daily puzzle that rotates between a riddle,
+  a word scramble, quick maths and trivia (about 55 built in, the same one for everyone each day, answers
+  checked in the browser, a hint after two tries, a solve streak and a Riddler badge); a wheel spin unlocked
+  by hitting the daily goal; a lead of the day taken from the rep's going-cold leads; kudos; the team goal
+  bar and a cheer when it is reached; a mood question at the start of the shift; a stretch reminder after two
+  hours of continuous activity (twice a day at most, never in the last 20 minutes of the shift); scripts
+  beside call mode (matched to the lead's specialty); and a small sidekick that grows with the call streak.
+- **Server** (`worker/src/lib/buddy.js`, `worker/src/repos/buddyTeamRepo.js`, `worker/src/index.js`):
+  `GET /buddy/team`, `GET /buddy/scripts`, `POST /buddy/kudos`, `POST /buddy/kudos/seen`, `POST /buddy/mood`;
+  admin `POST /admin/buddy/script`, `/admin/buddy/script/retire`, and `teamGoal` on `/admin/buddy/settings`.
+  `GET /buddy/notes` now also returns the thank-yous not yet seen.
+- **Admin > Controls > Avatar notes**: the weekly team goal, a scripts manager, a 14-day mood chart and the
+  recent kudos.
+- The team's call count is the number of phone taps recorded this week (`call_taps`, sql/029): every Call
+  button and tapped number writes one. At most 5 kudos per person per day.
+
+### Database / System Result
+
+- New SQL file `sql/033_avatar_team.sql`: `buddy_kudos`, `buddy_mood` (one row per person per day) and
+  `buddy_scripts`. Rerun-safe, nothing dropped or rewritten. **Not run by Claude; to be run by the user.**
+  The team goal is stored as a row in `buddy_settings` (sql/032).
+- Worker tests: all pass (new: kudos rules, daily limit and the missing-table case, mood, scripts, the goal
+  and week start, anonymous mood totals).
+
+### Safety Status
+
+- Additive only. Scripts are retired, never deleted. Admins see mood only as anonymous daily totals, never who
+  chose what. Puzzle, wheel and sidekick state are kept in the browser only. Manual browser testing required.
+
 ## 2026-10-08 — Avatar extras: wins, reactions, repeating notes, birthdays, challenges and badges
 
 ### Objective

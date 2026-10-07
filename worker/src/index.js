@@ -32,6 +32,7 @@ import * as SearchInsights from "./services/searchInsights.js";
 import * as userAdminRepo from "./repos/userAdminRepo.js";
 import * as SystemInfo from "./services/systemInfo.js";
 import * as buddyRepo from "./repos/buddyRepo.js";
+import * as buddyTeam from "./repos/buddyTeamRepo.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
 import { parseListParams } from "./lib/leadView.js";
@@ -589,7 +590,28 @@ app.get("/admin/system", async (c) => {
 // ---- the avatar's notes (sql/031) -----------------------------------------
 
 // What this person can see: the message of the day and notes written for them.
-app.get("/buddy/notes", async (c) => c.json(ok(await buddyRepo.listForUser(supabaseFor(c), c.get("session"), { day: c.req.query("day") }))));
+app.get("/buddy/notes", async (c) => {
+  const supabase = supabaseFor(c);
+  const session = c.get("session");
+  const [data, kudos] = await Promise.all([buddyRepo.listForUser(supabase, session, { day: c.req.query("day") }), buddyTeam.kudosForMe(supabase, session)]);
+  return c.json(ok({ ...data, kudos }));
+});
+
+// Teammates to thank and the week's team call goal; call scripts; kudos; and a one-tap daily mood.
+app.get("/buddy/team", async (c) => c.json(ok(await buddyTeam.teamInfo(supabaseFor(c), c.get("session")))));
+app.get("/buddy/scripts", async (c) => c.json(ok(await buddyTeam.listScripts(supabaseFor(c)))));
+app.post("/buddy/kudos", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyTeam.giveKudos(supabaseFor(c), c.get("session"), body)));
+});
+app.post("/buddy/kudos/seen", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyTeam.markKudosSeen(supabaseFor(c), c.get("session"), body.id)));
+});
+app.post("/buddy/mood", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyTeam.setMood(supabaseFor(c), c.get("session"), body)));
+});
 
 // A reaction (emoji) and/or a one-line reply to a note.
 app.post("/buddy/react", async (c) => {
@@ -604,7 +626,22 @@ app.post("/buddy/seen", async (c) => {
 
 app.get("/admin/buddy", async (c) => {
   requireAdmin(c.get("session"));
-  return c.json(ok(await buddyRepo.listForAdmin(supabaseFor(c))));
+  const supabase = supabaseFor(c);
+  const [notes, extras] = await Promise.all([buddyRepo.listForAdmin(supabase), buddyTeam.adminExtras(supabase)]);
+  return c.json(ok({ ...notes, ...extras }));
+});
+
+app.post("/admin/buddy/script", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyTeam.saveScript(supabaseFor(c), session, body)));
+});
+
+app.post("/admin/buddy/script/retire", async (c) => {
+  requireAdmin(c.get("session"));
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyTeam.retireScript(supabaseFor(c), body.id)));
 });
 
 app.post("/admin/buddy", async (c) => {
@@ -624,7 +661,11 @@ app.post("/admin/buddy/person", async (c) => {
 app.post("/admin/buddy/settings", async (c) => {
   requireAdmin(c.get("session"));
   const body = await c.req.json().catch(() => ({}));
-  return c.json(ok(await buddyRepo.setTeamWins(supabaseFor(c), body.teamWins === true)));
+  const supabase = supabaseFor(c);
+  const out = {};
+  if ("teamWins" in body) Object.assign(out, await buddyRepo.setTeamWins(supabase, body.teamWins === true));
+  if ("teamGoal" in body) Object.assign(out, await buddyTeam.setTeamGoal(supabase, body.teamGoal));
+  return c.json(ok(out));
 });
 
 app.post("/admin/buddy/retire", async (c) => {

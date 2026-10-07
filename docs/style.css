@@ -2860,3 +2860,42 @@ html.call-open .buddy { display: none; }
 html:not(.call-open) body:has(.buddy:not([hidden])) .toast { right: 124px; max-width: min(340px, calc(100vw - 144px)); }
 @media (max-width: 900px) { html:not(.call-open) body:has(.buddy:not([hidden])) .selection-bar { bottom: 112px; } }
 @media (max-width: 520px) { html:not(.call-open) body:has(.buddy:not([hidden])) .toast { right: 96px; max-width: calc(100vw - 112px); } }
+
+/* The avatar, part 3: puzzle, wheel, kudos, team goal, mood choices, scripts and the sidekick. */
+.buddy-secs { display: grid; gap: 6px; }
+.buddy-sec { border: 1px solid var(--line, var(--hairline)); border-radius: var(--radius-md, 10px); background: var(--surface-2); }
+.buddy-sec > summary { cursor: pointer; padding: 8px 11px; font-size: 13px; font-weight: 650; list-style: none; }
+.buddy-sec > summary::-webkit-details-marker { display: none; }
+.buddy-sec > summary::after { content: "\25BE"; float: right; color: var(--muted); }
+.buddy-sec[open] > summary::after { content: "\25B4"; }
+.buddy-sec-body { padding: 2px 11px 11px; display: grid; gap: 8px; }
+.buddy-fun-label { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); font-weight: 650; }
+.buddy-fun-q { font-size: 13.5px; line-height: 1.45; font-weight: 600; }
+.buddy-fun-note { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.buddy-fun-row { display: flex; gap: 8px; align-items: center; }
+.buddy-fun-row input, .buddy-fun-row select { flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--input-line, var(--hairline)); border-radius: 8px; padding: 6px 9px; }
+.buddy-wheel { font-size: 44px; text-align: center; line-height: 1; }
+.buddy-wheel.is-spinning { animation: buddy-spin 1.3s ease-in-out; }
+@keyframes buddy-spin { from { transform: rotate(0); } to { transform: rotate(1080deg); } }
+.buddy-team-goal { display: grid; gap: 4px; padding: 9px 11px; border-radius: var(--radius-md, 10px); background: var(--surface-2); border: 1px solid var(--line, var(--hairline)); font-size: 13px; }
+.buddy-team-goal strong { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.buddy-bar { height: 8px; border-radius: 999px; background: var(--surface); overflow: hidden; border: 1px solid var(--line, var(--hairline)); }
+.buddy-bar span { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.4s ease; }
+.buddy-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.buddy-pet { position: absolute; left: -24px; bottom: -2px; font-size: 26px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35)); pointer-events: auto; }
+.buddy-pet[hidden] { display: none; }
+.buddy-pet.is-bouncing { animation: buddy-bounce 0.9s ease; }
+@keyframes buddy-bounce { 0%, 100% { transform: translateY(0); } 25% { transform: translateY(-14px); } 50% { transform: translateY(0); } 70% { transform: translateY(-7px); } }
+@media (prefers-reduced-motion: reduce) { .buddy-pet.is-bouncing, .buddy-wheel.is-spinning { animation: none; } }
+.buddy-call { width: 250px; }
+.buddy-call-extra:empty { display: none; }
+.buddy-script { padding: 9px 12px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--selection-chip-border); box-shadow: var(--shadow-card); font-size: 12.5px; line-height: 1.45; max-height: 38vh; overflow: auto; width: 100%; }
+.buddy-script-title { font-weight: 700; margin-bottom: 3px; }
+.buddy-script-title span { font-weight: 500; font-size: 11px; color: var(--muted); margin-left: 4px; }
+.buddy-script-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ctl-mood { display: flex; gap: 3px; align-items: flex-end; height: 56px; margin-top: 8px; }
+.ctl-mood-day { flex: 1; display: flex; flex-direction: column-reverse; min-width: 6px; border-radius: 3px; overflow: hidden; background: var(--surface-2); height: 100%; }
+.ctl-mood-day i { display: block; }
+.ctl-mood-day .m3 { background: var(--score-high, #2eb872); }
+.ctl-mood-day .m2 { background: var(--score-mid, #d9a21b); }
+.ctl-mood-day .m1 { background: var(--score-low, #e2695c); }

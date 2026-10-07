@@ -120,3 +120,66 @@ export function occasionsOn(people, day, meId, nameOf = () => "") {
 }
 
 export const winText = (name, company) => `${name} just onboarded ${company || "a new customer"}! 🎉`;
+
+/* ---------- team features (sql/033): kudos, mood, scripts, the team goal ---------- */
+
+export const MAX_KUDOS_LENGTH = 140;
+export const KUDOS_PER_DAY = 5;
+export const MAX_SCRIPT_BODY = 800;
+
+// A thank-you to a teammate: not to yourself, and short.
+export function cleanKudos(input = {}, fromUserId) {
+  const toUser = String(input.toUserId ?? "").trim();
+  if (!toUser) throw httpError(400, "Choose who to thank");
+  if (toUser === fromUserId) throw httpError(400, "Thank a teammate, not yourself");
+  const body = String(input.body ?? "").replace(/\s+/g, " ").trim();
+  if (!body) throw httpError(400, "Write a few words first");
+  if (body.length > MAX_KUDOS_LENGTH) throw httpError(400, `Keep it to ${MAX_KUDOS_LENGTH} characters`);
+  return { toUser, body };
+}
+
+export function cleanMood(input = {}) {
+  const mood = Number(input.mood);
+  if (!Number.isInteger(mood) || mood < 1 || mood > 3) throw httpError(400, "Choose how your day is going");
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(input.day || "")) ? String(input.day) : null;
+  return { mood, day };
+}
+
+// A script for everyone (specialty blank) or one specialty.
+export function cleanScript(input = {}) {
+  const title = String(input.title ?? "").replace(/\s+/g, " ").trim();
+  const body = String(input.body ?? "").replace(/[ \t]+\n/g, "\n").trim();
+  const specialty = String(input.specialty ?? "").replace(/\s+/g, " ").trim();
+  if (!title) throw httpError(400, "Give the script a title");
+  if (title.length > 60) throw httpError(400, "The title can be up to 60 characters");
+  if (!body) throw httpError(400, "Write the script first");
+  if (body.length > MAX_SCRIPT_BODY) throw httpError(400, `Scripts can be up to ${MAX_SCRIPT_BODY} characters`);
+  if (specialty.length > 80) throw httpError(400, "The specialty can be up to 80 characters");
+  return { title, body, specialty: specialty || null };
+}
+
+// The weekly team call goal: a whole number, or "" to switch it off.
+export function cleanTeamGoal(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 100000) throw httpError(400, "The team goal is a whole number of calls, like 500");
+  return n;
+}
+
+// Monday 00:00 UTC of the week containing `now` (the team's shifts sit well inside one UTC day).
+export function weekStartUtc(now = new Date()) {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString();
+}
+
+// Mood answers for a stretch of days -> one anonymous count per day (never who chose what).
+export function moodTrend(rows, days = 14, now = new Date()) {
+  const out = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const day = new Date(now.getTime() - i * 86_400_000).toISOString().slice(0, 10);
+    const mine = (rows || []).filter((r) => String(r.day) === day);
+    out.push({ day, great: mine.filter((r) => r.mood === 3).length, okay: mine.filter((r) => r.mood === 2).length, rough: mine.filter((r) => r.mood === 1).length });
+  }
+  return out;
+}

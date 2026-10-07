@@ -35,6 +35,7 @@ Required manual sequence:
 029_call_taps.sql                (a small table remembering every tap on a phone number, claimed or not, so it counts as a call)
 031_avatar_notes.sql             (two small tables for notes the avatar shows: message of the day, or a note for one person)
 032_avatar_extras.sql            (after 031: team wins, repeating notes, reactions and replies, birthdays and anniversaries)
+033_avatar_team.sql              (after 032: kudos between teammates, a daily mood tap, call scripts)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -92,6 +93,7 @@ in `003`); save their output with the run.
 | `029_call_taps.sql` | Creates `call_taps` (who tapped which NPI's number, and when; about 100 bytes a tap). Today and Team activity count a tap as a call, and a result logged soon after is the same call. Rerun-safe, touches nothing existing | **Not yet run. Until it is, taps on your own claimed leads are still counted (written to the lead's call log); taps on leads you have not claimed are not kept** |
 | `031_avatar_notes.sql` | Creates `buddy_notes` and `buddy_seen` (notes an admin writes for everyone or one person, and who has been shown them). Rerun-safe, touches nothing existing | **Not yet run. Until it is, the avatar still greets and cheers people; Admin > Controls > Avatar notes can't save notes** |
 | `032_avatar_extras.sql` | Adds `buddy_notes.kind` and `repeat_weekday`, and creates `buddy_reactions`, `buddy_people` (month-day birthday, start date) and `buddy_settings`. Rerun-safe, nothing dropped or rewritten | **Not yet run. Until it is, the avatar works as before; repeating notes, reactions and replies, birthdays and the team-win announcement need it** |
+| `033_avatar_team.sql` | Creates `buddy_kudos`, `buddy_mood` (one tap a day; admins see anonymous totals only) and `buddy_scripts`. Rerun-safe, touches nothing existing | **Not yet run. Until it is, kudos, the mood check-in and call scripts say what they need; everything else in the avatar works** |
 
 ## Notes on individual files
 
