@@ -108,7 +108,7 @@
   let napping = false;
   let started = false;
 
-  // The extra fun (riddle, kudos, wheel, pet, mood...) lives in buddy-fun.js, which plugs into the hooks below.
+  // The extra fun (riddle, kudos, wheel, mood...) lives in buddy-fun.js, which plugs into the hooks below.
   const fun = () => window.dmeBuddyFun || null;
 
   /* ---------- helpers ---------- */
@@ -205,7 +205,6 @@
       <button type="button" class="buddy-launch" id="buddyLaunch" aria-label="Open your avatar" aria-expanded="false">
         <img src="${IMG}${POSES.neutral}" alt="" width="88" height="88">
         <span class="buddy-acc" id="buddyAcc" aria-hidden="true" hidden></span>
-        <span class="buddy-pet" id="buddyPet" aria-hidden="true" hidden></span>
         <span class="buddy-dot" id="buddyDot" hidden></span>
       </button>`;
     document.body.append(host);

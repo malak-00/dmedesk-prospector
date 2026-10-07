@@ -2,7 +2,7 @@
    - A daily puzzle (riddle, word scramble, quick maths or trivia, rotating), with a solve streak.
    - Spin the wheel after a goal day, a "lead of the day", and kudos between teammates.
    - A shared weekly team call goal, a one-tap daily mood (only anonymous totals are shared), a stretch reminder,
-     call scripts beside call mode, and a sidekick that grows with the call streak.
+     and call scripts beside call mode.
    Loaded after buddy.js. Kudos, mood and scripts need sql/033; the team goal needs sql/032 and an admin to set it. */
 (function () {
   "use strict";
@@ -16,7 +16,6 @@
   const WHEEL_KEY = "dmeFunWheel"; // { day, prize }
   const MOOD_KEY = "dmeFunMood"; // { day }
   const GOAL_KEY = "dmeFunTeamGoal"; // { week }
-  const STREAK_KEY = "dmeFunStreak";
 
   /* ---------- the daily puzzle ---------- */
 
@@ -351,33 +350,6 @@
       ${list.length > 1 ? `<button type="button" class="link-btn" data-fun="script-next">Next script (${(scriptIndex % list.length) + 1}/${list.length})</button>` : ""}</div>`;
   }
 
-  /* ---------- the sidekick ---------- */
-
-  const PET_STAGES = [
-    { min: 0, emoji: "\u{1F95A}", name: "an egg" },
-    { min: 1, emoji: "\u{1F423}", name: "a hatchling" },
-    { min: 3, emoji: "\u{1F425}", name: "a chick" },
-    { min: 7, emoji: "\u{1F426}", name: "a songbird" },
-    { min: 14, emoji: "\u{1F99C}", name: "a parrot" },
-    { min: 30, emoji: "\u{1F99A}", name: "a peacock" },
-  ];
-
-  function showPet(streak, bounce) {
-    const el = document.getElementById("buddyPet");
-    if (!el) return;
-    const idx = PET_STAGES.reduce((best, st, i) => (streak >= st.min ? i : best), 0);
-    const stage = PET_STAGES[idx];
-    const next = PET_STAGES[idx + 1];
-    el.textContent = stage.emoji;
-    el.title = `Your sidekick is ${stage.name}. ${streak ? `${streak}-day call streak.` : "Call today to start a streak."}${next ? ` ${next.min - streak} more day${next.min - streak === 1 ? "" : "s"} to grow.` : " Fully grown!"}`;
-    el.hidden = false;
-    if (bounce && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      el.classList.remove("is-bouncing");
-      void el.offsetWidth;
-      el.classList.add("is-bouncing");
-    }
-  }
-
   /* ---------- the panel ---------- */
 
   const open = new Set();
@@ -423,29 +395,21 @@
   /* ---------- lifecycle ---------- */
 
   let lastCalls = null;
-  let lastStreak = null;
   let timer = null;
 
   function onToday(view) {
     const stats = view.stats || {};
     const calls = stats.callsToday || 0;
-    const streak = stats.streak || 0;
     pickLead(view);
-    try { localStorage.setItem(STREAK_KEY, String(streak)); } catch { /* storage blocked */ }
-    showPet(streak, (lastStreak !== null && streak > lastStreak) || (lastCalls !== null && lastCalls < api.goal() && calls >= api.goal()));
     if (lastCalls === 0 && calls >= 1 && !riddleState().solved && !riddleState().revealed) {
       api.say({ key: `puzzleinvite:${api.today()}`, kind: "small", pose: "thinking", title: "Puzzle time?", text: "Nice first call. Today's puzzle is waiting in my panel when you want a short break." });
     }
     lastCalls = calls;
-    lastStreak = streak;
     askMood();
     loadTeam(false);
   }
 
   function start() {
-    let cached = 0;
-    try { cached = Number(localStorage.getItem(STREAK_KEY)) || 0; } catch { /* default */ }
-    showPet(cached, false);
     loadTeam(true);
     loadScripts();
     clearInterval(timer);
@@ -459,7 +423,6 @@
     scripts = [];
     lead = null;
     lastCalls = null;
-    lastStreak = null;
     workedSince = null;
     lastTeamFetch = 0;
   }

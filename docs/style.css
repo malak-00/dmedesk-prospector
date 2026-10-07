@@ -2861,7 +2861,7 @@ html:not(.call-open) body:has(.buddy:not([hidden])) .toast { right: 124px; max-w
 @media (max-width: 900px) { html:not(.call-open) body:has(.buddy:not([hidden])) .selection-bar { bottom: 112px; } }
 @media (max-width: 520px) { html:not(.call-open) body:has(.buddy:not([hidden])) .toast { right: 96px; max-width: calc(100vw - 112px); } }
 
-/* The avatar, part 3: puzzle, wheel, kudos, team goal, mood choices, scripts and the sidekick. */
+/* The avatar, part 3: puzzle, wheel, kudos, team goal, mood choices, scripts. */
 .buddy-secs { display: grid; gap: 6px; }
 .buddy-sec { border: 1px solid var(--line, var(--hairline)); border-radius: var(--radius-md, 10px); background: var(--surface-2); }
 .buddy-sec > summary { cursor: pointer; padding: 8px 11px; font-size: 13px; font-weight: 650; list-style: none; }
@@ -2882,11 +2882,7 @@ html:not(.call-open) body:has(.buddy:not([hidden])) .toast { right: 124px; max-w
 .buddy-bar { height: 8px; border-radius: 999px; background: var(--surface); overflow: hidden; border: 1px solid var(--line, var(--hairline)); }
 .buddy-bar span { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.4s ease; }
 .buddy-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.buddy-pet { position: absolute; left: -24px; bottom: -2px; font-size: 26px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35)); pointer-events: auto; }
-.buddy-pet[hidden] { display: none; }
-.buddy-pet.is-bouncing { animation: buddy-bounce 0.9s ease; }
-@keyframes buddy-bounce { 0%, 100% { transform: translateY(0); } 25% { transform: translateY(-14px); } 50% { transform: translateY(0); } 70% { transform: translateY(-7px); } }
-@media (prefers-reduced-motion: reduce) { .buddy-pet.is-bouncing, .buddy-wheel.is-spinning { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .buddy-wheel.is-spinning { animation: none; } }
 .buddy-call { width: 250px; }
 .buddy-call-extra:empty { display: none; }
 .buddy-script { padding: 9px 12px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--selection-chip-border); box-shadow: var(--shadow-card); font-size: 12.5px; line-height: 1.45; max-height: 38vh; overflow: auto; width: 100%; }

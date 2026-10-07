@@ -82,8 +82,7 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 ### Objective
 
 More fun and more useful for the team: a daily puzzle, thank-yous between teammates, a shared weekly call goal,
-a one-tap mood check-in, call scripts beside call mode, a reward wheel, a lead of the day, a stretch reminder
-and a sidekick that grows with the call streak.
+a one-tap mood check-in, call scripts beside call mode, a reward wheel, a lead of the day and a stretch reminder.
 
 ### Actions Completed
 
@@ -92,8 +91,9 @@ and a sidekick that grows with the call streak.
   checked in the browser, a hint after two tries, a solve streak and a Riddler badge); a wheel spin unlocked
   by hitting the daily goal; a lead of the day taken from the rep's going-cold leads; kudos; the team goal
   bar and a cheer when it is reached; a mood question at the start of the shift; a stretch reminder after two
-  hours of continuous activity (twice a day at most, never in the last 20 minutes of the shift); scripts
-  beside call mode (matched to the lead's specialty); and a small sidekick that grows with the call streak.
+  hours of continuous activity (twice a day at most, never in the last 20 minutes of the shift); and scripts
+  beside call mode (matched to the lead's specialty). (A small sidekick that grew with the call streak was
+  built and then removed at the user's request.)
 - **Server** (`worker/src/lib/buddy.js`, `worker/src/repos/buddyTeamRepo.js`, `worker/src/index.js`):
   `GET /buddy/team`, `GET /buddy/scripts`, `POST /buddy/kudos`, `POST /buddy/kudos/seen`, `POST /buddy/mood`;
   admin `POST /admin/buddy/script`, `/admin/buddy/script/retire`, and `teamGoal` on `/admin/buddy/settings`.
