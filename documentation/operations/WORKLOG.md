@@ -77,6 +77,30 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-08 — Avatar seasonal outfits and two new poses
+
+### Objective
+
+Use the new artwork: seasonal outfits for the avatar, and the wink and encouragement poses.
+
+### Actions Completed
+
+- Seven new images from the user, resized to 420 px WebP (`docs/avatar/bd-*.webp`, 44 to 69 KB each; the large
+  originals are not committed). Her corner face wears the outfit for the time of year: Halloween from 24 October,
+  Thanksgiving Monday to Friday of the fourth Thursday of November, Christmas 1 to 26 December, New Year 27
+  December to 2 January, Valentine's 10 to 14 February. The daily greeting wears it too.
+- Birthdays, work anniversaries and Fridays keep the small icon next to her face (no outfit artwork for those yet).
+- The wink pose joins the click-me surprise; the encouragement pose is used for a day with no calls and for the
+  reply to a "rough" mood tap.
+
+### Database / System Result
+
+- Frontend only; no SQL, no Worker change.
+
+### Safety Status
+
+- Display only. Manual browser testing required.
+
 ## 2026-10-08 — Icons instead of emoji, and collapsible Admin sections
 
 ### Objective

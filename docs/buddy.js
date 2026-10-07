@@ -21,8 +21,15 @@
     sleepy: "bd-sleepy.webp",
     note: "bd-note.webp",
     phone: "bd-phone.webp",
+    wink: "bd-wink.webp",
+    encourage: "bd-encourage.webp",
+    halloween: "bd-halloween.webp",
+    thanksgiving: "bd-thanksgiving.webp",
+    christmas: "bd-christmas.webp",
+    newyear: "bd-newyear.webp",
+    valentine: "bd-valentine.webp",
   };
-  const SURPRISE_POSES = ["wave", "thumbs", "party", "thinking", "note", "phone", "neutral"];
+  const SURPRISE_POSES = ["wave", "thumbs", "party", "thinking", "note", "phone", "neutral", "wink", "encourage"];
   const MODE_KEY = "dmeBuddyMode"; // all | big | off
   const SHOWN_KEY = "dmeBuddyShown"; // { day, n, keys: [] }
   const LAST_SEEN_KEY = "dmeBuddyLastSeen";
@@ -165,18 +172,29 @@
 
   /* ---------- the corner ---------- */
 
-  // A little seasonal extra on her corner: birthdays and anniversaries first, then the calendar.
+  // Her outfit for the time of year, or "" for her usual look.
+  function seasonPose(now = new Date()) {
+    const m = now.getMonth() + 1;
+    const d = now.getDate();
+    if (m === 10 && d >= 24) return "halloween";
+    if (m === 11) {
+      // Thanksgiving week: Monday to Friday around the fourth Thursday of November.
+      const first = new Date(now.getFullYear(), 10, 1);
+      const thursday = 1 + ((4 - first.getDay() + 7) % 7) + 21;
+      if (d >= thursday - 3 && d <= thursday + 1) return "thanksgiving";
+    }
+    if (m === 12 && d <= 26) return "christmas";
+    if ((m === 12 && d >= 27) || (m === 1 && d <= 2)) return "newyear";
+    if (m === 2 && d >= 10 && d <= 14) return "valentine";
+    return "";
+  }
+  const restPose = () => seasonPose() || "neutral";
+
+  // A little extra on her corner for things she has no outfit for: birthdays, anniversaries, Fridays.
   function accessory() {
     const mine = occasions.find((o) => o.mine);
     if (mine) return mine.kind === "birthday" ? ["cake", "It's your birthday!"] : ["party", "Happy work anniversary!"];
-    const d = new Date();
-    const m = d.getMonth() + 1;
-    const day = d.getDate();
-    if (m === 12 && day <= 26) return ["snowflake", "Happy holidays!"];
-    if (m === 10 && day >= 24) return ["pumpkin", "Happy Halloween!"];
-    if (m === 2 && day >= 10 && day <= 14) return ["heart", "Happy Valentine's week!"];
-    if ((m === 12 && day >= 27) || (m === 1 && day <= 2)) return ["sparkle", "Happy New Year!"];
-    if (d.getDay() === 5) return ["sun", "It's Friday!"];
+    if (!seasonPose() && new Date().getDay() === 5) return ["sun", "It's Friday!"];
     return ["", ""];
   }
 
@@ -192,6 +210,8 @@
   function setLaunchPose(pose) {
     const img = host && host.querySelector(".buddy-launch img");
     if (img) img.src = IMG + (POSES[pose] || POSES.neutral);
+    const launch = host && host.querySelector(".buddy-launch");
+    if (launch) launch.classList.toggle("is-outfit", Boolean(seasonPose()) && pose === seasonPose());
   }
 
   function build() {
@@ -203,7 +223,7 @@
       <div class="buddy-bubble" id="buddyBubble" role="status" aria-live="polite" hidden></div>
       <div class="buddy-panel" id="buddyPanel" hidden></div>
       <button type="button" class="buddy-launch" id="buddyLaunch" aria-label="Open your avatar" aria-expanded="false">
-        <img src="${IMG}${POSES.neutral}" alt="" width="88" height="88">
+        <img src="${IMG}${POSES[restPose()]}" alt="" width="88" height="88">
         <span class="buddy-acc" id="buddyAcc" aria-hidden="true" hidden></span>
         <span class="buddy-dot" id="buddyDot" hidden></span>
       </button>`;
@@ -211,6 +231,7 @@
     host.addEventListener("click", onClick);
     host.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("[data-buddy-reply-input]")) sendReply(e.target); });
     applyAccessory();
+    setLaunchPose(restPose());
   }
 
   const isRecurring = (n) => n.repeatWeekday !== null && n.repeatWeekday !== undefined;
@@ -468,7 +489,7 @@
 
   function wake() {
     lastActive = Date.now();
-    if (napping) { napping = false; setLaunchPose("neutral"); }
+    if (napping) { napping = false; setLaunchPose(restPose()); }
   }
 
   ["mousemove", "keydown", "click", "touchstart", "scroll"].forEach((type) => {
@@ -543,7 +564,7 @@
     say({
       key,
       kind: "small",
-      pose: "wave",
+      pose: seasonPose() || "wave",
       title: `${part}${name ? `, ${name}` : ""}!`,
       text: waiting.length ? `${waiting.join(" · ")}. ${extra}`.trim() : `Nothing urgent waiting. ${extra || "A good day to open some new leads."}`.trim(),
     });
@@ -555,7 +576,7 @@
     if (stats.callsToday > 0) {
       say({ key, kind: "small", pose: "sleepy", title: "That's a wrap", text: `${plural(stats.callsToday, "call")} today${view.meetingsToday.length ? ` and ${plural(view.meetingsToday.length, "meeting")}` : ""}. Nice work. Rest up!` });
     } else {
-      say({ key, kind: "small", pose: "sleepy", title: "End of day", text: "No calls today, and that's okay. Tomorrow's a fresh start." });
+      say({ key, kind: "small", pose: "encourage", title: "End of day", text: "No calls today, and that's okay. Tomorrow's a fresh start." });
     }
   }
 
