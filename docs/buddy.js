@@ -71,16 +71,19 @@
     "Why did the sticky note get promoted? It stayed on top of everything.",
     "Fun fact: Tuesdays and Thursdays are often the best days to reach busy offices.",
   ];
+  // The team's shift, 3:30pm to 11:30pm Cairo time, as minutes since midnight on the person's own clock.
+  // Challenges and the end-of-day wrap-up are measured from it, not from the clock's morning.
+  const SHIFT = { start: 15 * 60 + 30, end: 23 * 60 + 30 };
   const CHALLENGES = [
-    { id: "early5", text: "Make 5 calls before 11am", target: 5, by: 11 },
-    { id: "three", text: "Make 3 calls before 10am", target: 3, by: 10 },
-    { id: "eight", text: "Get 8 calls in before lunch", target: 8, by: 12 },
-    { id: "ten", text: "Reach 10 calls by 2pm", target: 10, by: 14 },
+    { id: "hour3", text: "Make 3 calls in your first hour", target: 3, after: 60 },
+    { id: "two5", text: "Make 5 calls by {time}", target: 5, after: 120 },
+    { id: "half8", text: "Get 8 calls in by {time}", target: 8, after: 240 },
+    { id: "ten", text: "Reach 10 calls by {time}", target: 10, after: 360 },
     { id: "plus3", text: "Beat your daily goal by 3 calls", target: 0, plus: 3 },
-    { id: "six", text: "Make 6 calls today", target: 6 },
+    { id: "six", text: "Make 6 calls this shift", target: 6 },
   ];
   const BADGES = [
-    { id: "early", icon: "\u{1F305}", label: "Early bird", how: "Make your first call of the day before 9am" },
+    { id: "early", icon: "\u{1F305}", label: "Early bird", how: "Make your first call within 30 minutes of your shift starting" },
     { id: "streak5", icon: "\u{1F525}", label: "On fire", how: "Call 5 days in a row" },
     { id: "streak10", icon: "\u{1F680}", label: "Unstoppable", how: "Call 10 days in a row" },
     { id: "power", icon: "⚡", label: "Power week", how: "50 calls in one week" },
@@ -118,6 +121,12 @@
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const $ = (id) => document.getElementById(id);
   const callOpen = () => document.documentElement.classList.contains("call-open");
+  const minutesNow = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+  const clockText = (min) => {
+    const h = Math.floor(min / 60) % 24;
+    const m = min % 60;
+    return `${h % 12 || 12}${m ? `:${pad(m)}` : ""}${h < 12 ? "am" : "pm"}`;
+  };
 
   function weekKey() {
     const d = new Date();
@@ -335,9 +344,9 @@
   function challengeToday() {
     const c = CHALLENGES[dayNumber() % CHALLENGES.length];
     const target = c.plus ? lastGoal + c.plus : c.target;
-    const text = c.plus ? `Beat your daily goal by ${c.plus} calls (${target} calls)` : c.text;
+    const text = c.plus ? `Beat your daily goal by ${c.plus} calls (${target} calls)` : c.text.replace("{time}", clockText(SHIFT.start + (c.after || 0)));
     const done = read(CHALLENGE_KEY, {});
-    return { ...c, target, text, done: done.day === today() && done.done, late: Boolean(c.by) && new Date().getHours() >= c.by };
+    return { ...c, target, text, done: done.day === today() && done.done, late: Boolean(c.after) && minutesNow() > SHIFT.start + c.after };
   }
 
   function challengeHtml() {
@@ -518,7 +527,7 @@
   }
 
   function endOfDay(stats, view) {
-    if (new Date().getHours() < 17) return;
+    if (minutesNow() < SHIFT.end - 60) return; // the last hour of the shift
     const key = `wrap:${today()}`;
     if (stats.callsToday > 0) {
       say({ key, kind: "small", pose: "sleepy", title: "That's a wrap", text: `${plural(stats.callsToday, "call")} today${view.meetingsToday.length ? ` and ${plural(view.meetingsToday.length, "meeting")}` : ""}. Nice work. Rest up!` });
@@ -529,7 +538,7 @@
 
   function weeklyRecap(stats) {
     const d = new Date();
-    if (d.getDay() !== 5 || d.getHours() < 15 || !stats.callsWeek) return;
+    if (d.getDay() !== 5 || minutesNow() < SHIFT.end - 150 || !stats.callsWeek) return; // Friday, in the last hours of the shift
     say({
       key: `recap:${weekKey()}`,
       kind: "big",
@@ -563,7 +572,8 @@
     else if (crossed(10) && goal > 10) say({ key: `ten:${today()}`, kind: "big", pose: "thumbs", title: "10 calls", text: "Double digits. Keep that rhythm going." });
     else if (crossed(1)) {
       say({ key: `first:${today()}`, kind: "big", pose: "thumbs", title: "First call of the day", text: "Nice start. The first one is always the hardest." });
-      if (new Date().getHours() < 9) earn("early");
+      const into = minutesNow() - SHIFT.start;
+      if (into >= 0 && into <= 30) earn("early");
     }
     if (calls > 0 && [5, 10, 20, 30].includes(stats.streak)) {
       say({ key: `streak${stats.streak}:${today()}`, kind: "big", pose: "party", title: `${stats.streak}-day streak`, text: "Calling every day adds up. That's real consistency." });
