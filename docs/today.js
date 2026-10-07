@@ -283,7 +283,7 @@
         <div class="goal-title">Daily call goal</div>
         <div class="goal-msg">${escapeHtml(goalMessage(done, goal))}</div>
         <div class="goal-foot">
-          ${ins.streak ? `<span class="goal-streak" title="Days in a row with a logged call">🔥 ${ins.streak}-day streak</span>` : '<span class="goal-streak muted-note">Log a call to start a streak</span>'}
+          ${ins.streak ? `<span class="goal-streak" title="Days in a row with a logged call">${uiIcon("flame")} ${ins.streak}-day streak</span>` : '<span class="goal-streak muted-note">Log a call to start a streak</span>'}
           <button type="button" class="link-btn" data-today="goal">Change goal</button>
         </div>
       </div>

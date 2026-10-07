@@ -239,7 +239,7 @@
     let facts = "";
     if (info.claims != null) facts += `<span class="cm-fact">${info.claims.toLocaleString()} Medicare claims</span>`;
     if (info.website) facts += `<a class="cm-fact cm-fact-link" href="${escapeHtml(info.website)}" target="_blank" rel="noopener">Website</a>`;
-    if (info.meeting) facts += `<span class="cm-fact is-meeting">📅 ${escapeHtml(info.meeting)}</span>`;
+    if (info.meeting) facts += `<span class="cm-fact is-meeting">${uiIcon("calendar")} ${escapeHtml(info.meeting)}</span>`;
 
     let context = "";
     if (info.prior) context += priorContactBannerHtml(info.prior);
@@ -258,7 +258,7 @@
         <div class="cm-chips">
           ${CALLBACK_CHOICES.map((o) => `<button type="button" class="choice-chip cm-remind${String(o.days) === run.remind ? " active" : ""}" data-value="${o.days}">${o.label}</button>`).join("")}
         </div>
-        <div class="cm-more"><button type="button" class="text-action" data-cm="meeting">📅 ${item.meetingAt && !meetingIsPast(item) ? "Edit meeting" : "Book a meeting"}</button></div>`;
+        <div class="cm-more"><button type="button" class="text-action" data-cm="meeting">${uiIcon("calendar")} ${item.meetingAt && !meetingIsPast(item) ? "Edit meeting" : "Book a meeting"}</button></div>`;
     } else {
       primaryLabel = "";
       work = `

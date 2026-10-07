@@ -31,7 +31,7 @@
   const DAILY_CAP = 3;
   const AWAY_DAYS = 3;
   const IDLE_MS = 10 * 60 * 1000;
-  const REACTIONS = ["\u{1F44D}", "❤️", "\u{1F389}"];
+  const REACTIONS = [["like", "thumb", "Like"], ["love", "heart", "Love"], ["cheer", "party", "Cheer"]];
 
   const TIPS = [
     "Ask who handles supplier orders. They're often not the person who answers.",
@@ -83,15 +83,15 @@
     { id: "six", text: "Make 6 calls this shift", target: 6 },
   ];
   const BADGES = [
-    { id: "early", icon: "\u{1F305}", label: "Early bird", how: "Make your first call within 30 minutes of your shift starting" },
-    { id: "streak5", icon: "\u{1F525}", label: "On fire", how: "Call 5 days in a row" },
-    { id: "streak10", icon: "\u{1F680}", label: "Unstoppable", how: "Call 10 days in a row" },
-    { id: "power", icon: "⚡", label: "Power week", how: "50 calls in one week" },
-    { id: "booked", icon: "\u{1F4C5}", label: "Booked it", how: "Book your first meeting" },
-    { id: "closer", icon: "\u{1F3C6}", label: "Closer", how: "Onboard a lead" },
-    { id: "challenge", icon: "\u{1F3AF}", label: "Challenger", how: "Finish a daily challenge" },
-    { id: "riddler", icon: "\u{1F9E9}", label: "Riddler", how: "Solve 5 daily puzzles" },
-    { id: "cheer", icon: "\u{1F4E3}", label: "Cheerleader", how: "Send a teammate kudos" },
+    { id: "early", icon: "sunrise", label: "Early bird", how: "Make your first call within 30 minutes of your shift starting" },
+    { id: "streak5", icon: "flame", label: "On fire", how: "Call 5 days in a row" },
+    { id: "streak10", icon: "rocket", label: "Unstoppable", how: "Call 10 days in a row" },
+    { id: "power", icon: "bolt", label: "Power week", how: "50 calls in one week" },
+    { id: "booked", icon: "calendar", label: "Booked it", how: "Book your first meeting" },
+    { id: "closer", icon: "trophy", label: "Closer", how: "Onboard a lead" },
+    { id: "challenge", icon: "target", label: "Challenger", how: "Finish a daily challenge" },
+    { id: "riddler", icon: "puzzle", label: "Riddler", how: "Solve 5 daily puzzles" },
+    { id: "cheer", icon: "megaphone", label: "Cheerleader", how: "Send a teammate kudos" },
   ];
 
   let host = null;
@@ -159,7 +159,7 @@
     have[id] = today();
     write(BADGES_KEY, have);
     const badge = BADGES.find((b) => b.id === id);
-    if (badge) say({ key: `badge:${id}`, kind: "event", pose: "party", title: `New badge: ${badge.label} ${badge.icon}`, text: badge.how + ". You've got it!", confetti: true });
+    if (badge) say({ key: `badge:${id}`, kind: "event", pose: "party", title: `New badge: ${badge.label}`, text: badge.how + ". You've got it!", confetti: true });
     renderPanel();
   }
 
@@ -168,25 +168,25 @@
   // A little seasonal extra on her corner: birthdays and anniversaries first, then the calendar.
   function accessory() {
     const mine = occasions.find((o) => o.mine);
-    if (mine) return mine.kind === "birthday" ? ["\u{1F382}", "It's your birthday!"] : ["\u{1F389}", "Happy work anniversary!"];
+    if (mine) return mine.kind === "birthday" ? ["cake", "It's your birthday!"] : ["party", "Happy work anniversary!"];
     const d = new Date();
     const m = d.getMonth() + 1;
     const day = d.getDate();
-    if (m === 12 && day <= 26) return ["\u{1F385}", "Happy holidays!"];
-    if (m === 10 && day >= 24) return ["\u{1F383}", "Happy Halloween!"];
-    if (m === 2 && day >= 10 && day <= 14) return ["\u{1F49D}", "Happy Valentine's week!"];
-    if ((m === 12 && day >= 27) || (m === 1 && day <= 2)) return ["\u{1F386}", "Happy New Year!"];
-    if (d.getDay() === 5) return ["\u{1F60E}", "It's Friday!"];
+    if (m === 12 && day <= 26) return ["snowflake", "Happy holidays!"];
+    if (m === 10 && day >= 24) return ["pumpkin", "Happy Halloween!"];
+    if (m === 2 && day >= 10 && day <= 14) return ["heart", "Happy Valentine's week!"];
+    if ((m === 12 && day >= 27) || (m === 1 && day <= 2)) return ["sparkle", "Happy New Year!"];
+    if (d.getDay() === 5) return ["sun", "It's Friday!"];
     return ["", ""];
   }
 
   function applyAccessory() {
     const el = $("buddyAcc");
     if (!el) return;
-    const [emoji, label] = accessory();
-    el.textContent = emoji;
+    const [name, label] = accessory();
+    el.innerHTML = name ? uiIcon(name) : "";
     el.title = label;
-    el.hidden = !emoji;
+    el.hidden = !name;
   }
 
   function setLaunchPose(pose) {
@@ -254,7 +254,7 @@
 
   function reactHtml(n) {
     return `<div class="buddy-react" data-note="${escapeHtml(n.id)}">
-      <span class="buddy-react-row">${REACTIONS.map((r) => `<button type="button" class="buddy-emoji${n.reaction === r ? " is-on" : ""}" data-buddy-react="${r}" aria-label="React ${r}" aria-pressed="${n.reaction === r}">${r}</button>`).join("")}</span>
+      <span class="buddy-react-row">${REACTIONS.map(([key, icon, label]) => `<button type="button" class="buddy-emoji${n.reaction === key ? " is-on" : ""}" data-buddy-react="${key}" aria-label="${label}" title="${label}" aria-pressed="${n.reaction === key}">${uiIcon(icon)}</button>`).join("")}</span>
       <span class="buddy-reply"><input type="text" maxlength="200" data-buddy-reply-input placeholder="${n.reply ? "Edit your reply" : "Reply…"}" value="${escapeHtml(n.reply || "")}" aria-label="Reply to this note"><button type="button" class="link-btn" data-buddy-reply>Send</button></span>
     </div>`;
   }
@@ -269,7 +269,7 @@
         <div class="buddy-text">${escapeHtml(item.text).replace(/\n/g, "<br>")}</div>
         ${item.from ? `<div class="buddy-from">From ${escapeHtml(item.from)}</div>` : ""}
         ${n ? reactHtml(n) : ""}
-        ${item.choices ? `<div class="buddy-choices">${item.choices.map((c, i) => `<button type="button" class="btn btn-ghost btn-small" data-buddy-choice="${i}">${escapeHtml(c.label)}</button>`).join("")}</div>` : ""}
+        ${item.choices ? `<div class="buddy-choices">${item.choices.map((c, i) => `<button type="button" class="btn btn-ghost btn-small" data-buddy-choice="${i}">${c.icon ? uiIcon(c.icon) : ""}${escapeHtml(c.label)}</button>`).join("")}</div>` : ""}
         <div class="buddy-actions">
           <button type="button" class="btn btn-primary btn-small" data-buddy="dismiss">${item.kind === "note" ? "Got it" : item.choices ? "Not now" : "Thanks"}</button>
           ${item.kind === "small" || item.kind === "big" ? '<button type="button" class="link-btn" data-buddy="quiet" title="Show only big moments">Quieter</button>' : ""}
@@ -359,13 +359,13 @@
   function challengeHtml() {
     const c = challengeToday();
     const calls = lastStats.callsToday || 0;
-    const progress = c.done ? "Done! ✅" : c.late ? "Time's up for this one. Back tomorrow." : `${Math.min(calls, c.target)} / ${c.target}`;
-    return `<div class="buddy-challenge${c.done ? " is-done" : ""}"><strong>Today's challenge</strong><span>${escapeHtml(c.text)}</span><span class="buddy-progress">${escapeHtml(progress)}</span></div>`;
+    const progress = c.done ? `Done! ${uiIcon("check")}` : escapeHtml(c.late ? "Time's up for this one. Back tomorrow." : `${Math.min(calls, c.target)} / ${c.target}`);
+    return `<div class="buddy-challenge${c.done ? " is-done" : ""}"><strong>Today's challenge</strong><span>${escapeHtml(c.text)}</span><span class="buddy-progress">${progress}</span></div>`;
   }
 
   function badgesHtml() {
     const have = earned();
-    return `<div class="buddy-badges" aria-label="Badges (kept on this device)">${BADGES.map((b) => `<span class="buddy-badge${have[b.id] ? " is-on" : ""}" title="${escapeHtml(b.label)}: ${escapeHtml(b.how)}${have[b.id] ? ` (earned ${escapeHtml(have[b.id])})` : ""}">${b.icon}</span>`).join("")}</div>`;
+    return `<div class="buddy-badges" aria-label="Badges (kept on this device)">${BADGES.map((b) => `<span class="buddy-badge${have[b.id] ? " is-on" : ""}" title="${escapeHtml(b.label)}: ${escapeHtml(b.how)}${have[b.id] ? ` (earned ${escapeHtml(have[b.id])})` : ""}">${uiIcon(b.icon)}</span>`).join("")}</div>`;
   }
 
   const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

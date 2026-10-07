@@ -2850,7 +2850,7 @@ function meetingIsPast(lead) {
 function meetingBadgeHtml(lead) {
   if (!lead.meetingAt || !formatMeeting(lead.meetingAt)) return "";
   const past = meetingIsPast(lead);
-  return `<span class="reminder-badge meeting-badge ${past ? "is-past" : ""}" title="${past ? "Past meeting" : "Booked meeting"}">📅 ${escapeHtml(formatMeeting(lead.meetingAt))}</span>`;
+  return `<span class="reminder-badge meeting-badge ${past ? "is-past" : ""}" title="${past ? "Past meeting" : "Booked meeting"}">${uiIcon("calendar")} ${escapeHtml(formatMeeting(lead.meetingAt))}</span>`;
 }
 
 // The Reminder column shows the callback badge and, below it, any booked meeting.
@@ -2874,7 +2874,7 @@ function meetingSectionHtml(lead, index) {
   const past = meetingIsPast(lead);
   const remind = lead.meetingRemindBeforeMin ? `Reminder ${REMIND_BEFORE_LABELS[lead.meetingRemindBeforeMin] || lead.meetingRemindBeforeMin + " min"} before` : "No reminder";
   return `
-    <div class="meeting-when ${past ? "is-past" : ""}">📅 ${escapeHtml(formatMeeting(lead.meetingAt))}${past ? " · past" : ""}</div>
+    <div class="meeting-when ${past ? "is-past" : ""}">${uiIcon("calendar")} ${escapeHtml(formatMeeting(lead.meetingAt))}${past ? " · past" : ""}</div>
     <div class="who-sub">${escapeHtml(String(lead.meetingDurationMin || 30))} min · ${escapeHtml(remind)}</div>
     ${lead.meetingEmail ? `<div class="who-sub"><a href="mailto:${escapeHtml(lead.meetingEmail)}">${escapeHtml(lead.meetingEmail)}</a></div>` : ""}
     ${lead.meetingOpenerNotes ? `<div class="opener-notes"><div class="opener-label">Your opener</div><div class="opener-text">${escapeHtml(lead.meetingOpenerNotes)}</div></div>` : ""}
@@ -2977,7 +2977,7 @@ async function cancelMeeting(idx) {
 function reminderBadgeHtml(reminderAt) {
   const urgency = reminderUrgency(reminderAt);
   if (!urgency) return "";
-  return `<span class="reminder-badge reminder-${urgency}">🔔 ${escapeHtml(formatReminder(reminderAt))}</span>`;
+  return `<span class="reminder-badge reminder-${urgency}">${uiIcon("bell")} ${escapeHtml(formatReminder(reminderAt))}</span>`;
 }
 
 // <input type="datetime-local"> wants "YYYY-MM-DDTHH:mm" in LOCAL time, not
@@ -3769,7 +3769,7 @@ function claimedDetailRowHtml(lead, index) {
               <div class="reminder-block next-callback">
                 <div class="reasons-title">Next callback</div>
                 ${lead.reminderAt
-                  ? `<div class="reminder-current reminder-${urgency}">🔔 ${escapeHtml(formatReminder(lead.reminderAt))}${urgency === "overdue" ? " · overdue" : ""}</div>
+                  ? `<div class="reminder-current reminder-${urgency}">${uiIcon("bell")} ${escapeHtml(formatReminder(lead.reminderAt))}${urgency === "overdue" ? " · overdue" : ""}</div>
                      <div class="callback-actions"><button type="button" class="text-action" data-reminder-index="${index}">Change</button><button type="button" class="text-action" data-clear-reminder="${index}">Clear</button></div>`
                   : `<span class="muted-note">None set</span>
                      <div class="callback-actions"><button type="button" class="text-action" data-reminder-index="${index}">Set a reminder</button></div>`}

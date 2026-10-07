@@ -146,7 +146,7 @@
         ${s.tries >= 2 ? `<div class="buddy-fun-note">Hint: ${escapeHtml(hint)}</div>` : ""}
         <button type="button" class="link-btn" data-fun="riddle-reveal">Show answer</button>`;
     }
-    return section("riddle", `\u{1F9E9} Daily puzzle${s.solved ? " ✓" : ""}`, `<div class="buddy-fun-label">${TYPE_LABEL[p.type]}</div><div class="buddy-fun-q">${escapeHtml(p.q)}</div>${body}`);
+    return section("riddle", `${uiIcon("puzzle")} Daily puzzle${s.solved ? ` ${uiIcon("check")}` : ""}`, `<div class="buddy-fun-label">${TYPE_LABEL[p.type]}</div><div class="buddy-fun-q">${escapeHtml(p.q)}</div>${body}`);
   }
 
   /* ---------- spin the wheel ---------- */
@@ -157,11 +157,11 @@
     "Compliment of the day: you make hard calls look easy.",
     "Fun fact: you've outworked the alarm clock today.",
     "Your next callback is guaranteed to go well. (Trust me.)",
-    "A virtual high five from me. \u{1F64C}",
+    "A virtual high five from me.",
     "Treat yourself to your favourite snack. You earned it.",
     "You're excused from small talk for the next 10 minutes.",
     "Today's superpower: persistence. Use it wisely.",
-    "A sticker for your shift: ⭐ Gold star.",
+    "A sticker for your shift: a gold star.",
     "Go ahead and call your best lead next. Momentum is yours.",
     "Free pass: pick any lead and call it first.",
   ];
@@ -177,10 +177,10 @@
     const w = wheelState();
     let body;
     if (w) body = `<div class="buddy-fun-note">Today's spin: ${escapeHtml(w.prize)}</div>`;
-    else if (spinning) body = '<div class="buddy-wheel is-spinning" aria-hidden="true">\u{1F3A1}</div><div class="buddy-fun-note">Spinning…</div>';
-    else if (goalHit()) body = '<div class="buddy-fun-note">You hit your goal, so you earned a spin!</div><button type="button" class="btn btn-primary btn-small" data-fun="spin">\u{1F3A1} Spin</button>';
+    else if (spinning) body = `<div class="buddy-wheel is-spinning" aria-hidden="true">${uiIcon("wheel", "big")}</div><div class="buddy-fun-note">Spinning…</div>`;
+    else if (goalHit()) body = `<div class="buddy-fun-note">You hit your goal, so you earned a spin!</div><button type="button" class="btn btn-primary btn-small" data-fun="spin">${uiIcon("wheel")} Spin</button>`;
     else body = `<div class="buddy-fun-note">Hit your daily goal (${api.goal()} calls) to unlock a spin.</div>`;
-    return section("wheel", `\u{1F3A1} Spin the wheel${w ? " ✓" : ""}`, body);
+    return section("wheel", `${uiIcon("wheel")} Spin the wheel${w ? ` ${uiIcon("check")}` : ""}`, body);
   }
 
   function spin() {
@@ -209,7 +209,7 @@
     if (!lead) return "";
     const where = [lead.city, lead.state].filter(Boolean).join(", ");
     const why = lead.quietDays ? `Quiet for ${lead.quietDays} days. A friendly check-in could wake it up.` : "Waiting for a first call. A fresh start.";
-    return section("lead", "\u{1F4DE} Lead of the day", `<div class="buddy-fun-q">${escapeHtml(lead.name)}</div><div class="buddy-fun-note">${escapeHtml(where)}${where ? " · " : ""}${escapeHtml(why)}</div><button type="button" class="btn btn-ghost btn-small" data-fun="lead-open">Find it in Claimed</button>`);
+    return section("lead", `${uiIcon("phone")} Lead of the day`, `<div class="buddy-fun-q">${escapeHtml(lead.name)}</div><div class="buddy-fun-note">${escapeHtml(where)}${where ? " · " : ""}${escapeHtml(why)}</div><button type="button" class="btn btn-ghost btn-small" data-fun="lead-open">Find it in Claimed</button>`);
   }
 
   /* ---------- kudos ---------- */
@@ -236,7 +236,7 @@
 
   function kudosSection() {
     if (!team.people.length) return "";
-    return section("kudos", "\u{1F4E3} Give kudos", `<div class="buddy-fun-note">Thank a teammate. They'll see it pop up once.</div>
+    return section("kudos", `${uiIcon("megaphone")} Give kudos`, `<div class="buddy-fun-note">Thank a teammate. They'll see it pop up once.</div>
       <div class="buddy-fun-row"><select data-fun-kudos-to aria-label="Who to thank">${team.people.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("")}</select></div>
       <div class="buddy-fun-row"><input type="text" data-fun-kudos-body maxlength="140" placeholder="Thanks for covering my callbacks!" aria-label="Your thank-you"><button type="button" class="btn btn-primary btn-small" data-fun="kudos-send">Send</button></div>`);
   }
@@ -271,7 +271,7 @@
     const pct = Math.min(100, Math.round((g.calls / g.target) * 100));
     return `<div class="buddy-team-goal"><strong>Team goal this week</strong>
       <div class="buddy-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${g.target}" aria-valuenow="${Math.min(g.calls, g.target)}"><span style="width:${pct}%"></span></div>
-      <span class="buddy-progress">${g.calls.toLocaleString()} of ${g.target.toLocaleString()} calls${g.calls >= g.target ? " ✅" : ""}</span></div>`;
+      <span class="buddy-progress">${g.calls.toLocaleString()} of ${g.target.toLocaleString()} calls${g.calls >= g.target ? ` ${uiIcon("check")}` : ""}</span></div>`;
   }
 
   /* ---------- one-tap mood ---------- */
@@ -289,7 +289,7 @@
     api.say({
       key: `mood:${api.today()}`, kind: "small", pose: "wave", title: "How's your day going?",
       text: "One tap, so I know how the team is doing. Only anonymous totals are shared, never names.",
-      choices: [{ label: "\u{1F600} Great", value: 3 }, { label: "\u{1F610} Okay", value: 2 }, { label: "\u{1F61F} Rough", value: 1 }],
+      choices: [{ label: "Great", value: 3, icon: "smile" }, { label: "Okay", value: 2, icon: "meh" }, { label: "Rough", value: 1, icon: "frown" }],
       onChoice: async (mood) => {
         api.write(MOOD_KEY, { day: api.today() });
         try { await apiPost("buddy/mood", { mood, day: api.today() }); } catch (err) { console.log("[buddy] " + err.message); }

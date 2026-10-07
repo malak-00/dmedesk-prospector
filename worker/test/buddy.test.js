@@ -125,7 +125,7 @@ test('a repeating note defaults to half a year and needs a real weekday', () => 
 });
 
 test('reactions are limited to the offered emoji and replies to a short line', () => {
-  assert.deepEqual(cleanReaction({ reaction: '\u{1F44D}' }), { reaction: '\u{1F44D}' });
+  assert.deepEqual(cleanReaction({ reaction: 'like' }), { reaction: 'like' });
   assert.deepEqual(cleanReaction({ reaction: '' }), { reaction: null });
   assert.deepEqual(cleanReaction({ reply: '  thanks   boss ' }), { reply: 'thanks boss' });
   assert.throws(() => cleanReaction({ reaction: 'x' }), /isn't available/);
@@ -153,10 +153,10 @@ test('birthday and start date input is checked', () => {
 test('a reaction keeps an earlier reply, and you cannot react to a personal note meant for someone else', async () => {
   const db = fakeDb({ notes: [row({ id: 1 }), row({ id: 2, to_user_id: 'r2' })] });
   await react(db, { id: 'r1' }, { id: 1, reply: 'on it' });
-  const second = await react(db, { id: 'r1' }, { id: 1, reaction: '\u{1F44D}' });
-  assert.deepEqual(second, { id: '1', reaction: '\u{1F44D}', reply: 'on it' });
+  const second = await react(db, { id: 'r1' }, { id: 1, reaction: 'like' });
+  assert.deepEqual(second, { id: '1', reaction: 'like', reply: 'on it' });
   assert.equal(db.state.reactions.length, 1);
-  await assert.rejects(react(db, { id: 'r1' }, { id: 2, reaction: '\u{1F44D}' }), { status: 404 });
+  await assert.rejects(react(db, { id: 'r1' }, { id: 2, reaction: 'like' }), { status: 404 });
   await assert.rejects(react(db, { id: 'r1' }, { id: 1 }), /Choose a reaction/);
 });
 

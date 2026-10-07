@@ -5,7 +5,7 @@ export const MAX_NOTE_LENGTH = 500;
 export const MAX_REPLY_LENGTH = 200;
 export const DEFAULT_NOTE_DAYS = 7;
 export const DEFAULT_REPEAT_DAYS = 180;
-export const REACTIONS = ["👍", "❤️", "🎉"];
+export const REACTIONS = ["like", "love", "cheer"];
 const DAY_MS = 86_400_000;
 
 function httpError(status, message) {
@@ -119,7 +119,7 @@ export function occasionsOn(people, day, meId, nameOf = () => "") {
   return out;
 }
 
-export const winText = (name, company) => `${name} just onboarded ${company || "a new customer"}! 🎉`;
+export const winText = (name, company) => `${name} just onboarded ${company || "a new customer"}!`;
 
 /* ---------- team features (sql/033): kudos, mood, scripts, the team goal ---------- */
 

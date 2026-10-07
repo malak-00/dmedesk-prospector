@@ -264,6 +264,7 @@
   /* ---------- avatar notes: message of the day, or a note for one person ---------- */
 
   const NOTE_STATE = { showing: "Showing", scheduled: "Scheduled", expired: "Expired" };
+  const REACTION_WORDS = { like: "liked it", love: "loved it", cheer: "cheered" };
   const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
   function peopleHtml() {
@@ -302,7 +303,7 @@
       </div>
       <label class="checkbox ctl-wins"><input type="checkbox" id="ctlBuddyWins" ${buddyData.settings && buddyData.settings.teamWins ? "checked" : ""}><span>Tell the team when someone onboards a lead (a pop-up for everyone else, for a day)</span></label>
       ${notes.length ? `<table class="results-table ctl-table ctl-note-table"><thead><tr><th>Note</th><th>For</th><th>Status</th><th title="People who have been shown it">Seen</th><th></th></tr></thead><tbody>
-        ${notes.map((n) => `<tr><td class="ctl-note-cell">${escapeHtml(n.body)}${n.reactions && n.reactions.length ? `<div class="ctl-react-list">${n.reactions.map((r) => `${escapeHtml(r.name)} ${escapeHtml(r.reaction)}${r.reply ? ` \u201c${escapeHtml(r.reply)}\u201d` : ""}`).join(" \u00b7 ")}</div>` : ""}</td><td>${escapeHtml(n.to)}${n.repeatWeekday !== null && n.repeatWeekday !== undefined ? `<div class="ctl-sub">every ${WEEKDAY_NAMES[n.repeatWeekday]}</div>` : ""}</td>
+        ${notes.map((n) => `<tr><td class="ctl-note-cell">${escapeHtml(n.body)}${n.reactions && n.reactions.length ? `<div class="ctl-react-list">${n.reactions.map((r) => `${escapeHtml(r.name)}${r.reaction ? ` (${escapeHtml(REACTION_WORDS[r.reaction] || r.reaction)})` : ""}${r.reply ? ` \u201c${escapeHtml(r.reply)}\u201d` : ""}`).join(" \u00b7 ")}</div>` : ""}</td><td>${escapeHtml(n.to)}${n.repeatWeekday !== null && n.repeatWeekday !== undefined ? `<div class="ctl-sub">every ${WEEKDAY_NAMES[n.repeatWeekday]}</div>` : ""}</td>
           <td><span class="status-pill ${n.state === "showing" ? "is-active" : "is-removed"}">${NOTE_STATE[n.state] || n.state}</span><div class="ctl-sub">${n.state === "scheduled" ? `from ${escapeHtml(when(n.showFrom))}` : n.expiresAt ? `until ${escapeHtml(when(n.expiresAt))}` : ""}</div></td>
           <td class="mono">${n.seenBy}</td>
           <td><button type="button" class="link-btn" data-ctl="buddy-retire" data-id="${escapeHtml(n.id)}">Retire</button></td></tr>`).join("")}

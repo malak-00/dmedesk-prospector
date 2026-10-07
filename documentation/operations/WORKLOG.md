@@ -77,6 +77,34 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-08 — Icons instead of emoji, and collapsible Admin sections
+
+### Objective
+
+Emoji looked rough next to the rest of the interface, and the Admin tab had long sections that could not be
+folded away.
+
+### Actions Completed
+
+- **Icons** (`docs/uiicons.js`): a small set of line icons drawn in the current text colour (`uiIcon("name")`),
+  used for the avatar's badges, reactions, section titles, accessory, mood buttons and wheel, and for the
+  calendar, bell and streak marks in Today, Claimed and call mode. No emoji are left; the check mark
+  in the match-review table is a plain text glyph.
+- **Reactions** are now stored as words (`like`, `love`, `cheer`) rather than emoji; the admin sees them as
+  "liked it / loved it / cheered". The team-win announcement text no longer has an emoji.
+- **Collapsible sections** (`docs/adminfold.js`): in Admin, every block in Team activity and every section and
+  sub-section in Controls folds from its heading (the Review queues already folded from their toolbars). What is
+  folded is remembered on the computer. It watches the panels because they are redrawn often.
+
+### Database / System Result
+
+- No SQL. Worker tests: all pass. The Worker needs a deploy for the reaction words.
+
+### Safety Status
+
+- Display only, plus the reaction values (nothing was stored under the old emoji values yet). Manual browser
+  testing required.
+
 ## 2026-10-08 — Avatar team features: puzzle, kudos, team goal, mood, scripts, wheel, sidekick
 
 ### Objective
