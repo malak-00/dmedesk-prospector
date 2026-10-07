@@ -909,7 +909,7 @@ function renderMatchReviews() {
   const tier3 = all.filter((review) => review.tier === 3).length;
   els.matchReviewsSummary.textContent = all.length
     ? isRegistry
-      ? `${all.length} pair${all.length === 1 ? "" : "s"} loaded${state.matchReviewsHasMore ? " · more available" : ""} · all providers`
+      ? `${all.length} pair${all.length === 1 ? "" : "s"} loaded${state.matchReviewsHasMore ? " · loading more…" : " · all providers"}`
       : `${all.length} pair${all.length === 1 ? "" : "s"} to review · Tier 2: ${tier2} · Tier 3: ${tier3}`
     : "Nothing to review";
 
@@ -987,9 +987,8 @@ function renderMatchReviews() {
     .join("");
 
   if (isRegistry) {
-    // The Worker pages this scope; "Show more" fetches the next page.
-    els.matchReviewsMoreBtn.hidden = !state.matchReviewsHasMore;
-    els.matchReviewsMoreBtn.textContent = `Show ${MATCH_REVIEWS_PAGE} more`;
+    // All pages auto-load; the "Show more" button is not needed.
+    els.matchReviewsMoreBtn.hidden = true;
     return;
   }
   const remaining = reviews.length - visible.length;
@@ -1244,12 +1243,20 @@ async function loadMatchReviews(silent = false, append = false) {
   }
   try {
     if (state.matchReviewsScope === "registry") {
-      const loaded = append && state.matchReviews ? state.matchReviews.reviews || [] : [];
-      const params = new URLSearchParams({ scope: "registry", limit: String(MATCH_REVIEWS_PAGE), offset: String(loaded.length) });
-      if (state.matchReviewsTier !== "all") params.set("tier", state.matchReviewsTier);
-      const page = await apiGet("admin/match-reviews?" + params.toString());
-      state.matchReviewsHasMore = page.hasMore === true;
-      state.matchReviews = { ...page, reviews: [...loaded, ...(page.reviews || [])] };
+      // Auto-load every page (25 at a time) so the admin sees the full set
+      // immediately without clicking "Show more" repeatedly.
+      let loaded = append && state.matchReviews ? state.matchReviews.reviews || [] : [];
+      let hasMore = true;
+      while (hasMore) {
+        const params = new URLSearchParams({ scope: "registry", limit: String(MATCH_REVIEWS_PAGE), offset: String(loaded.length) });
+        if (state.matchReviewsTier !== "all") params.set("tier", state.matchReviewsTier);
+        const page = await apiGet("admin/match-reviews?" + params.toString());
+        hasMore = page.hasMore === true;
+        loaded = [...loaded, ...(page.reviews || [])];
+        state.matchReviewsHasMore = hasMore;
+        state.matchReviews = { ...page, reviews: loaded };
+        renderMatchReviews(); // update count after each batch
+      }
     } else {
       state.matchReviewsHasMore = false;
       state.matchReviews = await apiGet("admin/match-reviews");
