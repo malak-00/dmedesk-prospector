@@ -4016,6 +4016,49 @@ async function mergeAllEligibleRegistry() {
     await Promise.all([loadMatchReviews(true), loadConflicts(true)]);
   }
 }
+async function bulkMergeSelectedMatchReviews() {
+  const reviews = filteredMatchReviews().filter((review) => state.matchReviewSelected.has(matchReviewKey(review)));
+  if (reviews.length === 0) return;
+  const eligible = reviews.filter((review) => matchReviewBulkEligibility(review).eligible);
+  const allReviews = filteredMatchReviews();
+  const excluded = allReviews.filter((review) => !matchReviewBulkEligibility(review).eligible).length;
+  const message = `Merge ${eligible.length} selected eligible pair${eligible.length === 1 ? "" : "s"}?` +
+    (excluded ? ` ${excluded} pair${excluded === 1 ? " is" : "s are"} excluded from bulk selection because different agents own them.` : "") +
+    " Each merge will be recorded with an automatic ownership-consistency reason.";
+  if (!confirm(message)) return;
+
+  els.matchReviewsBulkMergeBtn.disabled = true;
+  els.matchReviewsBulkMergeBtn.textContent = `Merging 0/${eligible.length}…`;
+  let merged = 0;
+  let skipped = 0;
+  let failedBatches = 0;
+  try {
+    for (let offset = 0; offset < eligible.length; offset += BULK_MERGE_BATCH_SIZE) {
+      const batch = eligible.slice(offset, offset + BULK_MERGE_BATCH_SIZE);
+      try {
+        const result = await apiPost("admin/match-reviews/bulk-merge", {
+          pairs: batch.map((review) => ({ leftNpi: review.leftNpi, rightNpi: review.rightNpi })),
+        });
+        merged += result.merged?.length || 0;
+        skipped += (result.skipped?.length || 0) + (result.failed?.length || 0);
+      } catch (err) {
+        // A retry is safe: pairs completed before a timeout are no longer in
+        // the pending queue and the Worker reports them as skipped.
+        failedBatches += 1;
+      }
+      els.matchReviewsBulkMergeBtn.textContent = `Merging ${Math.min(offset + batch.length, eligible.length)}/${eligible.length}…`;
+    }
+    state.matchReviewSelected.clear();
+    showToast(`Merged ${merged} pair${merged === 1 ? "" : "s"}.` +
+      (skipped ? ` ${skipped} skipped or failed; refresh to review them.` : "") +
+      (failedBatches ? ` ${failedBatches} batch${failedBatches === 1 ? "" : "es"} timed out or failed.` : ""));
+    await Promise.all([loadMatchReviews(true), loadConflicts(true)]);
+  } catch (err) {
+    showToast(err.message, true);
+    renderMatchReviewBulkControls(filteredMatchReviews());
+  }
+}
+
 async function bookClaimedMeeting(index) {
   const lead = state.claimedLeads[index];
   if (!lead) return;
