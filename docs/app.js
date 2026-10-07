@@ -2145,11 +2145,6 @@ function detailRowHtml(company, index) {
           ${window.dmeHooks.relatedBlock?.("prospect", index) || ""}
           <div class="detail-grid detail-grid-2">
             <div class="detail-block">
-              <h4>Who to call</h4>
-              ${contactsHtml || '<span class="muted-note">No decision maker identified yet.</span>'}
-              ${!dms.length && mainPhone ? `<div class="who-actions" style="margin-top:10px"><a class="btn btn-primary btn-small" href="tel:${escapeHtml(mainPhone)}">${SIGNAL_ICONS.phone}Call main line</a></div>` : ""}
-            </div>
-            <div class="detail-block">
               <h4>Company</h4>
               ${factsHtml([
                 ["Address", fullAddress ? `${escapeHtml(fullAddress)}<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}" target="_blank" rel="noopener">Open in Maps</a>` : "—"],
@@ -2166,6 +2161,11 @@ function detailRowHtml(company, index) {
                 ])}
               </details>
               <div class="brief-link-row"><button type="button" class="text-action" data-brief-index="${index}">${SPARK_ICON}Prep a call brief</button></div>
+            </div>
+            <div class="detail-block">
+              <h4>Who to call</h4>
+              ${contactsHtml || '<span class="muted-note">No decision maker identified yet.</span>'}
+              ${!dms.length && mainPhone ? `<div class="who-actions" style="margin-top:10px"><a class="btn btn-primary btn-small" href="tel:${escapeHtml(mainPhone)}">${SIGNAL_ICONS.phone}Call main line</a></div>` : ""}
             </div>
           </div>
           ${branchLocationsHtml(company.locations) ? `<div class="detail-grid">${branchLocationsHtml(company.locations)}</div>` : ""}
