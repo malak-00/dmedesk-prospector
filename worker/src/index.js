@@ -608,6 +608,13 @@ app.post("/buddy/kudos/seen", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return c.json(ok(await buddyTeam.markKudosSeen(supabaseFor(c), c.get("session"), body.id)));
 });
+// A note to tomorrow's you.
+app.get("/buddy/handover", async (c) => c.json(ok(await buddyTeam.getHandover(supabaseFor(c), c.get("session")))));
+app.post("/buddy/handover", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyTeam.saveHandover(supabaseFor(c), c.get("session"), body)));
+});
+app.post("/buddy/handover/seen", async (c) => c.json(ok(await buddyTeam.markHandoverShown(supabaseFor(c), c.get("session")))));
 app.post("/buddy/mood", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return c.json(ok(await buddyTeam.setMood(supabaseFor(c), c.get("session"), body)));
@@ -629,6 +636,12 @@ app.get("/admin/buddy", async (c) => {
   const supabase = supabaseFor(c);
   const [notes, extras] = await Promise.all([buddyRepo.listForAdmin(supabase), buddyTeam.adminExtras(supabase)]);
   return c.json(ok({ ...notes, ...extras }));
+});
+
+// Last week at a glance for the admin.
+app.get("/admin/buddy/digest", async (c) => {
+  requireAdmin(c.get("session"));
+  return c.json(ok(await buddyTeam.adminDigest(supabaseFor(c))));
 });
 
 app.post("/admin/buddy/script", async (c) => {

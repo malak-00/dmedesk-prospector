@@ -37,6 +37,20 @@
   const LAST_SEEN_KEY = "dmeBuddyLastSeen";
   const BADGES_KEY = "dmeBuddyBadges"; // { id: date earned }, on this device
   const CHALLENGE_KEY = "dmeBuddyChallenge"; // { day, done }
+  const NAME = "Caro";
+  const POSES_KEY = "dmeBuddyPoses"; // { pose: date first seen }, on this device
+  const PREF_KEY = "dmeBuddyPose"; // the resting pose this person chose
+  const SOUND_KEY = "dmeBuddySound";
+  const QUIET_KEY = "dmeBuddyQuiet"; // { from, to } in minutes since midnight
+  const MOOD_KEY_FUN = "dmeFunMood"; // written by buddy-fun.js: { day, mood }
+  const LINE_CAP = 5; // little remarks after logging a call, per day
+  const LINE_GAP = 20 * 60 * 1000;
+  const ON_CALL_QUIET_MS = 10 * 60 * 1000; // after tapping a phone number, assume you're on a call
+  const POSE_LABELS = {
+    neutral: "Hello", wave: "Wave", thumbs: "Thumbs up", party: "Party", thinking: "Thinking", sleepy: "Sleepy", note: "Note", phone: "On the phone",
+    wink: "Wink", encourage: "Encouraging", halloween: "Halloween", thanksgiving: "Thanksgiving", christmas: "Christmas", newyear: "New Year",
+    valentine: "Valentine's", birthday: "Birthday", friday: "Friday",
+  };
   const DAILY_CAP = 3;
   const AWAY_DAYS = 3;
   const IDLE_MS = 10 * 60 * 1000;
@@ -101,6 +115,7 @@
     { id: "challenge", icon: "target", label: "Challenger", how: "Finish a daily challenge" },
     { id: "riddler", icon: "puzzle", label: "Riddler", how: "Solve 5 daily puzzles" },
     { id: "cheer", icon: "megaphone", label: "Cheerleader", how: "Send a teammate kudos" },
+    { id: "bingo", icon: "sparkle", label: "Bingo", how: "Get a line on the weekly bingo card" },
   ];
 
   let host = null;
@@ -116,6 +131,9 @@
   let lastActive = Date.now();
   let napping = false;
   let started = false;
+  let quietUntil = 0;
+  let lastLineAt = 0;
+  let audio = null;
 
   // The extra fun (riddle, kudos, wheel, mood...) lives in buddy-fun.js, which plugs into the hooks below.
   const fun = () => window.dmeBuddyFun || null;
@@ -155,8 +173,60 @@
 
   function shownToday() {
     const s = read(SHOWN_KEY, null);
-    return s && s.day === today() ? s : { day: today(), n: 0, keys: [] };
+    return s && s.day === today() ? s : { day: today(), n: 0, keys: [], lines: 0 };
   }
+
+  /* ---------- poses she has shown (the gallery) ---------- */
+
+  const seenPoses = () => ({ neutral: "start", wave: "start", ...read(POSES_KEY, {}) });
+  function unlockPose(pose) {
+    if (!pose || !POSES[pose]) return;
+    const have = read(POSES_KEY, {});
+    if (have[pose] || pose === "neutral" || pose === "wave") return;
+    have[pose] = today();
+    write(POSES_KEY, have);
+  }
+
+  /* ---------- quiet time and sound ---------- */
+
+  function quietHours() {
+    const q = read(QUIET_KEY, null);
+    return q && Number.isFinite(q.from) && Number.isFinite(q.to) && q.from !== q.to ? q : null;
+  }
+  function isQuiet() {
+    if (Date.now() < quietUntil) return true;
+    const q = quietHours();
+    if (!q) return false;
+    const m = minutesNow();
+    return q.from < q.to ? m >= q.from && m < q.to : m >= q.from || m < q.to; // a window may cross midnight
+  }
+  const toMinutes = (hhmm) => { const [h, m] = String(hhmm || "").split(":").map(Number); return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN; };
+  const toTime = (min) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
+
+  // A soft three-note chime for a win; off unless the person turned sound on in the panel.
+  function chime() {
+    if (!read(SOUND_KEY, false)) return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      audio = audio || new Ctx();
+      const t = audio.currentTime;
+      [[660, 0], [880, 0.12], [1175, 0.24]].forEach(([freq, delay]) => {
+        const osc = audio.createOscillator();
+        const gain = audio.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, t + delay);
+        gain.gain.exponentialRampToValueAtTime(0.12, t + delay + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + delay + 0.35);
+        osc.connect(gain).connect(audio.destination);
+        osc.start(t + delay);
+        osc.stop(t + delay + 0.4);
+      });
+    } catch { /* sound isn't available */ }
+  }
+
+  const roughToday = () => { const m = read(MOOD_KEY_FUN, {}); return m.day === today() && m.mood === 1; };
 
   /* ---------- badges (kept on this device) ---------- */
 
@@ -190,10 +260,15 @@
     if (m === 2 && d >= 10 && d <= 14) return "valentine";
     return "";
   }
-  // Her usual look today: her birthday outfit on the person's own birthday, then the season, then Friday's sunglasses.
+  // Her usual look today: her birthday outfit on the person's own birthday, then the season, then Friday's sunglasses,
+  // then the pose this person picked in her gallery.
   const restPose = () => {
     if (occasions.some((o) => o.mine && o.kind === "birthday")) return "birthday";
-    return seasonPose() || (new Date().getDay() === 5 ? "friday" : "neutral");
+    const season = seasonPose();
+    if (season) return season;
+    if (new Date().getDay() === 5) return "friday";
+    const pref = read(PREF_KEY, "");
+    return pref && POSES[pref] && seenPoses()[pref] ? pref : "neutral";
   };
 
   // A little extra on her corner for the one occasion she has no outfit for yet: a work anniversary.
@@ -215,7 +290,8 @@
     const img = host && host.querySelector(".buddy-launch img");
     if (img) img.src = IMG + (POSES[pose] || POSES.neutral);
     const launch = host && host.querySelector(".buddy-launch");
-    if (launch) launch.classList.toggle("is-outfit", pose !== "neutral" && pose === restPose());
+    if (launch) launch.classList.toggle("is-outfit", pose !== "neutral");
+    unlockPose(pose);
   }
 
   function build() {
@@ -226,7 +302,7 @@
     host.innerHTML = `
       <div class="buddy-bubble" id="buddyBubble" role="status" aria-live="polite" hidden></div>
       <div class="buddy-panel" id="buddyPanel" hidden></div>
-      <button type="button" class="buddy-launch" id="buddyLaunch" aria-label="Open your avatar" aria-expanded="false">
+      <button type="button" class="buddy-launch" id="buddyLaunch" aria-label="Open ${NAME}" aria-expanded="false">
         <img src="${IMG}${POSES[restPose()]}" alt="" width="88" height="88">
         <span class="buddy-acc" id="buddyAcc" aria-hidden="true" hidden></span>
         <span class="buddy-dot" id="buddyDot" hidden></span>
@@ -251,10 +327,13 @@
   // kind: "note" (waits for "Got it"), "event" (a win or occasion, always shown), "big" (milestones), "small" (greetings, tips).
   function say({ key, kind = "small", pose = "neutral", title = "", text, noteId = "", from = "", react = null, confetti = false, choices = null, onChoice = null, onSeen = null }) {
     if (!getSession() || mode() === "off") return;
-    if (mode() === "big" && kind === "small") return;
+    if (mode() === "big" && (kind === "small" || kind === "line")) return;
     const s = shownToday();
     if (key && s.keys.includes(key)) return;
-    if (kind !== "note" && kind !== "event" && s.n >= DAILY_CAP) return;
+    if (kind === "line") {
+      // A passing remark: rare, never queued behind something else, never while she is busy or you're on a call.
+      if ((s.lines || 0) >= LINE_CAP || Date.now() - lastLineAt < LINE_GAP || showing || queue.length || isQuiet() || callOpen()) return;
+    } else if (kind !== "note" && kind !== "event" && s.n >= DAILY_CAP) return;
     if (queue.some((q) => q.key && q.key === key)) return;
     queue.push({ key, kind, pose, title, text, noteId, from, react, confetti, choices, onChoice, onSeen });
     next();
@@ -263,18 +342,20 @@
   function next() {
     if (showing || !queue.length || !host) return;
     if (callOpen() || document.hidden) { setTimeout(next, 4000); return; } // never in the middle of a call
+    if (isQuiet()) { setTimeout(next, 30000); return; } // quiet hours, or you're probably on the phone
     const item = queue.shift();
     if (mode() === "off") return next();
     showing = item;
     const s = shownToday();
     if (item.kind === "small" || item.kind === "big") s.n += 1;
+    if (item.kind === "line") { s.lines = (s.lines || 0) + 1; lastLineAt = Date.now(); }
     if (item.key) s.keys.push(item.key);
     write(SHOWN_KEY, s);
     wake();
     renderBubble(item);
     host.hidden = false;
     clearTimeout(hideTimer);
-    if (item.kind !== "note") hideTimer = setTimeout(dismiss, item.react || item.choices ? 30000 : 14000);
+    if (item.kind !== "note") hideTimer = setTimeout(dismiss, item.react || item.choices ? 30000 : item.kind === "line" ? 7000 : 14000);
   }
 
   function reactHtml(n) {
@@ -290,6 +371,7 @@
     bubble.innerHTML = `
       <img class="buddy-pose" src="${IMG}${POSES[item.pose] || POSES.neutral}" alt="" width="128" height="128">
       <div class="buddy-body">
+        <div class="buddy-name">${NAME}</div>
         ${item.title ? `<div class="buddy-title">${escapeHtml(item.title)}</div>` : ""}
         <div class="buddy-text">${escapeHtml(item.text).replace(/\n/g, "<br>")}</div>
         ${item.from ? `<div class="buddy-from">From ${escapeHtml(item.from)}</div>` : ""}
@@ -305,6 +387,8 @@
     void bubble.offsetWidth; // restart the little entrance
     bubble.classList.add("is-in");
     if (item.confetti || item.pose === "party") confetti(bubble);
+    unlockPose(item.pose);
+    if (item.confetti || item.pose === "party" || item.kind === "event") chime();
   }
 
   function confetti(parent) {
@@ -382,6 +466,7 @@
   }
 
   function challengeHtml() {
+    if (roughToday()) return `<div class="buddy-challenge"><strong>Today</strong><span>No challenge today. Just do what you can, and be kind to yourself.</span></div>`;
     const c = challengeToday();
     const calls = lastStats.callsToday || 0;
     const progress = c.done ? `Done! ${uiIcon("check")}` : escapeHtml(c.late ? "Time's up for this one. Back tomorrow." : `${Math.min(calls, c.target)} / ${c.target}`);
@@ -401,6 +486,7 @@
     const m = mode();
     const list = notes.slice(0, 6);
     panel.innerHTML = `
+      <div class="buddy-panel-name">${NAME}</div>
       <div class="buddy-panel-head">
         <button type="button" class="buddy-surprise" data-buddy="surprise" title="Click me!"><img id="buddyPanelImg" src="${IMG}${POSES[panel.dataset.pose] || POSES.thinking}" alt="" width="96" height="96"></button>
         <div class="buddy-panel-tip"><strong>${escapeHtml(panel.dataset.label || "Tip")}</strong><br>${escapeHtml(panel.dataset.line || pick(TIPS))}</div>
@@ -420,9 +506,14 @@
       </div>
       <div class="buddy-panel-foot">
         <span class="muted-note">Pop-ups</span>
-        <div class="buddy-seg" role="group" aria-label="How often your avatar pops up">
+        <div class="buddy-seg" role="group" aria-label="How often she pops up">
           ${[["all", "All"], ["big", "Big moments"], ["off", "Off"]].map(([v, label]) => `<button type="button" class="buddy-seg-btn${m === v ? " is-on" : ""}" data-buddy-mode="${v}" aria-pressed="${m === v}">${label}</button>`).join("")}
         </div>
+      </div>
+      <div class="buddy-panel-foot buddy-settings">
+        <label class="buddy-quiet">Quiet from <input type="time" data-buddy-quiet="from" value="${quietHours() ? toTime(quietHours().from) : ""}" aria-label="Quiet hours start">
+          to <input type="time" data-buddy-quiet="to" value="${quietHours() ? toTime(quietHours().to) : ""}" aria-label="Quiet hours end"></label>
+        <label class="buddy-sound"><input type="checkbox" data-buddy-sound ${read(SOUND_KEY, false) ? "checked" : ""}> Sound</label>
       </div>`;
   }
 
@@ -448,6 +539,7 @@
     panel.dataset.pose = pose;
     panel.dataset.label = label;
     panel.dataset.line = line;
+    unlockPose(pose);
     renderPanel();
     if (pose === "party") confetti(panel.querySelector(".buddy-panel-head"));
   }
@@ -487,6 +579,31 @@
   document.addEventListener("click", (e) => {
     if (host && !host.contains(e.target)) closePanel();
   });
+
+  // Quiet hours and the sound switch live in her panel.
+  document.addEventListener("change", (e) => {
+    const t = e.target;
+    if (!t.matches) return;
+    if (t.matches("[data-buddy-sound]")) { write(SOUND_KEY, t.checked); if (t.checked) chime(); return; }
+    if (t.matches("[data-buddy-quiet]")) {
+      const panel = $("buddyPanel");
+      const from = toMinutes(panel.querySelector('[data-buddy-quiet="from"]').value);
+      const to = toMinutes(panel.querySelector('[data-buddy-quiet="to"]').value);
+      if (Number.isNaN(from) || Number.isNaN(to) || from === to) { try { localStorage.removeItem(QUIET_KEY); } catch { /* nothing to clear */ } showToast("Quiet hours are off"); }
+      else { write(QUIET_KEY, { from, to }); showToast(`${NAME} will stay quiet from ${clockText(from)} to ${clockText(to)}`); }
+    }
+  });
+
+  // Tapping a phone number means you're about to be on a call: stay quiet for a while.
+  document.addEventListener("click", (e) => {
+    if (e.target.closest && e.target.closest('a[href^="tel:"]')) quietUntil = Date.now() + ON_CALL_QUIET_MS;
+    // A goodbye on the way out.
+    if (e.target.closest && e.target.closest("#signOutBtn") && getSession() && mode() !== "off") {
+      const calls = lastStats.callsToday || 0;
+      const name = firstName();
+      showToast(`${NAME}: see you tomorrow${name ? `, ${name}` : ""}.${calls ? ` ${plural(calls, "call")} today. Nice work!` : ""}`);
+    }
+  }, true);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
   /* ---------- naps ---------- */
@@ -649,13 +766,30 @@
     return (lead && lead.name) || "";
   };
 
+  const event = (name, info) => { try { fun()?.onEvent?.(name, info); } catch (err) { console.log("[buddy] " + err.message); } };
+
   function meetingBooked(npi) {
+    event("meeting", { npi });
     const name = companyName(npi);
     say({ key: `meeting:${npi}:${today()}`, kind: "event", pose: "thumbs", title: "Meeting booked!", text: `${name ? `${name}. ` : ""}That's a real step forward.` });
     earn("booked");
   }
 
+  const REMARKS = {
+    voicemail: ["Voicemail left. Nice and tidy.", "Another voicemail down. The callback will land."],
+    interested: ["Interested! Strike while it's warm.", "They're interested. Set a callback so it doesn't cool."],
+    "not interested": ["On to the next one.", "A no is just a not-yet. Next!"],
+    "no answer": ["No answer. Try again tomorrow."],
+    note: ["Logged. Future you says thanks.", "Nice note. That's how deals get remembered."],
+    _: ["Logged!", "Noted. Keep it rolling."],
+  };
+  function remark(kind) {
+    const list = REMARKS[kind] || REMARKS._;
+    say({ kind: "line", pose: kind === "interested" ? "thumbs" : "wink", text: pick(list) });
+  }
+
   function onboarded(npi) {
+    event("won", { npi });
     const name = companyName(npi);
     say({ key: `won:${npi}:${today()}`, kind: "event", pose: "party", title: "Onboarded!", text: `${name ? `${name} is a customer. ` : ""}Huge. Well done!`, confetti: true });
     earn("closer");
@@ -671,6 +805,10 @@
       try {
         if ((path === "leads/book-meeting" || path === "leads/meeting") && body && (body.meetingAt || body.startTime)) meetingBooked(body.npi);
         else if (path === "leads/status" && String(result && result.status || "").trim().toLowerCase() === "onboarded") onboarded(body.npi);
+        else if (path === "leads/status") { event("result", { npi: body.npi }); remark(String(result && result.status || "").trim().toLowerCase()); }
+        else if (path === "leads/notes") { event("result", { npi: body.npi }); remark("note"); }
+        else if (path === "leads/reminder" && body && body.reminderAt) event("callback", { npi: body.npi });
+        else if (path === "export/sheets" && result && (result.claimedNpis || []).length) event("claim", { count: result.claimedNpis.length });
       } catch (err) { console.log("[buddy] " + err.message); }
       return result;
     };
@@ -696,6 +834,7 @@
       notes = data.notes || [];
       occasions = data.occasions || [];
       fun()?.onKudos?.(data.kudos || []);
+      fun()?.onUpcoming?.(data.upcoming || []);
     } catch (err) {
       notes = [];
       occasions = [];
@@ -752,7 +891,13 @@
 
   window.dmeBuddy = {
     onToday, say, reload: loadNotes,
-    api: { say, earn, mode, pick, read, write, today, dayNumber, minutesNow, clockText, SHIFT, weekKey, confetti, rerender: renderPanel, stats: () => lastStats, goal: () => lastGoal, idleMs: () => Date.now() - lastActive },
+    api: {
+      say, earn, mode, pick, read, write, today, dayNumber, minutesNow, clockText, SHIFT, weekKey, confetti, NAME, POSES, POSE_LABELS,
+      rerender: renderPanel, stats: () => lastStats, goal: () => lastGoal, idleMs: () => Date.now() - lastActive,
+      seenPoses, restPose, roughToday, isQuiet, openPanel: () => { if ($("buddyPanel") && $("buddyPanel").hidden) togglePanel(); },
+      setPreferred: (pose) => { write(PREF_KEY, pose); setLaunchPose(restPose()); renderPanel(); },
+      preferred: () => read(PREF_KEY, ""),
+    },
   };
   if (getSession()) start();
 })();

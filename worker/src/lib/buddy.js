@@ -183,3 +183,33 @@ export function moodTrend(rows, days = 14, now = new Date()) {
   }
   return out;
 }
+
+/* ---------- handover note, the week ahead, and the weekly digest ---------- */
+
+export const MAX_HANDOVER_LENGTH = 300;
+
+export function cleanHandover(input = {}) {
+  const body = String(input.body ?? "").replace(/[ \t]+\n/g, "\n").trim();
+  if (!body) throw httpError(400, "Write the note first");
+  if (body.length > MAX_HANDOVER_LENGTH) throw httpError(400, `Keep it to ${MAX_HANDOVER_LENGTH} characters`);
+  return { body };
+}
+
+// Birthdays and anniversaries in the days after `day` (not today), soonest first.
+export function upcomingOccasions(people, day, meId, nameOf = () => "", span = 7) {
+  const base = Date.parse(`${day}T12:00:00Z`);
+  const out = [];
+  for (let i = 1; i <= span; i += 1) {
+    const d = new Date(base + i * 86_400_000).toISOString().slice(0, 10);
+    for (const o of occasionsOn(people, d, meId, nameOf)) out.push({ ...o, date: d, inDays: i });
+  }
+  return out;
+}
+
+// Last full Monday-to-Sunday week (UTC) before the one `now` is in: [from, to), and the week before that.
+export function lastWeekRange(now = new Date()) {
+  const thisMonday = new Date(weekStartUtc(now));
+  const from = new Date(thisMonday.getTime() - 7 * 86_400_000);
+  const before = new Date(from.getTime() - 7 * 86_400_000);
+  return { from: from.toISOString(), to: thisMonday.toISOString(), beforeFrom: before.toISOString() };
+}

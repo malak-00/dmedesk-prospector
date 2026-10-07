@@ -347,7 +347,7 @@
 
   function sideHtml(b, ins) {
     const card = (title, body) => `<section class="today-card side-card"><header class="today-card-head"><h3>${title}</h3></header><div class="side-body">${body}</div></section>`;
-    return goalCardHtml(ins) + card("Your pipeline", pipelineHtml()) + card("Coming up", comingUpHtml()) + card("Recent activity", activityHtml());
+    return goalCardHtml(ins) + card("Your pipeline", pipelineHtml()) + card("Coming up", comingUpHtml()) + (window.dmeBuddyFun?.todayCardHtml?.() || "") + card("Recent activity", activityHtml());
   }
 
   function updateBadge() {

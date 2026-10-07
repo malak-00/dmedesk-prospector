@@ -2,7 +2,7 @@
 // repeating notes, reactions and replies, birthdays and anniversaries.
 // Before those files are run the tables (or the newer columns) don't exist; every read then returns what it can
 // rather than failing, and writing says plainly which file hasn't been run.
-import { cleanNoteInput, cleanPeopleInput, cleanReaction, notesFor, occasionsOn, winText } from "../lib/buddy.js";
+import { cleanNoteInput, cleanPeopleInput, cleanReaction, notesFor, occasionsOn, upcomingOccasions, winText } from "../lib/buddy.js";
 
 function httpError(status, message) {
   const err = new Error(message);
@@ -39,7 +39,7 @@ const localDay = (value, now) => (/^\d{4}-\d{2}-\d{2}$/.test(String(value || "")
 export async function listForUser(supabase, session, { now = new Date(), day } = {}) {
   const notes = await selectNotes(supabase, (q) => q.is("retired_at", null).order("show_from", { ascending: false }).limit(60));
   if (notes.error) {
-    if (missingTable(notes.error)) return { notes: [], occasions: [], unavailable: true };
+    if (missingTable(notes.error)) return { notes: [], occasions: [], upcoming: [], unavailable: true };
     throw httpError(500, "Failed to load notes: " + notes.error.message);
   }
   const [seen, mine, people] = await Promise.all([
@@ -54,6 +54,7 @@ export async function listForUser(supabase, session, { now = new Date(), day } =
   return {
     notes: notesFor(notes.data || [], seenIds, session.id, now, nameOf, reactions).slice(0, 12),
     occasions: occasionsOn(peopleRows, localDay(day, now), session.id, nameOf),
+    upcoming: upcomingOccasions(peopleRows, localDay(day, now), session.id, nameOf),
   };
 }
 

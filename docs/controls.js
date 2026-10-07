@@ -19,6 +19,7 @@
   let statusResult = null;
   let buddyData = null;
   let buddyError = "";
+  let digest = null;
   let loading = false;
   let error = "";
   let dialog = null; // the open dialog's overlay element
@@ -33,12 +34,13 @@
     loading = true;
     error = "";
     render();
-    const [u, s, t, st, bd] = await Promise.allSettled([apiGet("admin/users"), apiGet("admin/system"), apiGet("taxonomies/list"), apiGet("admin/statuses"), apiGet("admin/buddy")]);
+    const [u, s, t, st, bd, dg] = await Promise.allSettled([apiGet("admin/users"), apiGet("admin/system"), apiGet("taxonomies/list"), apiGet("admin/statuses"), apiGet("admin/buddy"), apiGet("admin/buddy/digest")]);
     if (u.status === "fulfilled") { users = u.value.users; features = u.value.features; } else { error = u.reason.message; }
     if (s.status === "fulfilled") { system = s.value; systemError = ""; } else { systemError = s.reason.message; }
     if (t.status === "fulfilled") taxonomies = t.value.taxonomies || [];
     if (st.status === "fulfilled") { statusData = st.value; statusError = ""; } else { statusError = st.reason.message; }
     if (bd.status === "fulfilled") { buddyData = bd.value; buddyError = ""; } else { buddyError = bd.reason.message; }
+    digest = dg.status === "fulfilled" ? dg.value : null;
     loading = false;
     render();
   }
@@ -325,6 +327,7 @@
     const peak = Math.max(1, ...mood.map((d) => d.great + d.okay + d.rough));
     const answered = mood.reduce((n, d) => n + d.great + d.okay + d.rough, 0);
     return `${unavailable}
+      ${digestHtml()}
       <h4 style="margin-top:18px">Team call goal</h4>
       <p class="ctl-help">A shared target for calls this week (Monday to Sunday). The avatar shows the team's progress and cheers when it is reached. Leave blank to switch it off.</p>
       <div class="ctl-run"><input type="number" id="ctlTeamGoal" min="1" max="100000" step="1" placeholder="e.g. 500" value="${buddyData.teamGoal || ""}" aria-label="Weekly team call goal" style="width:120px">
@@ -355,6 +358,23 @@
       ${kudos.length ? `<table class="results-table ctl-table"><thead><tr><th>From</th><th>To</th><th>Message</th><th>When</th></tr></thead><tbody>
         ${kudos.map((k) => `<tr><td>${escapeHtml(k.from)}</td><td>${escapeHtml(k.to)}</td><td class="ctl-note-cell">${escapeHtml(k.body)}</td><td class="mono">${escapeHtml(when(k.at))}</td></tr>`).join("")}
       </tbody></table>` : '<div class="muted-note">No kudos yet.</div>'}`;
+  }
+
+  // Last full week (Monday to Sunday) at a glance.
+  function digestHtml() {
+    if (!digest) return "";
+    const d = digest;
+    const range = `${new Date(`${d.from}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })} to ${new Date(`${d.to}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+    const change = d.calls !== null && d.callsBefore ? Math.round(((d.calls - d.callsBefore) / d.callsBefore) * 100) : null;
+    const moodTotal = d.mood.great + d.mood.okay + d.mood.rough;
+    const tile = (label, value, sub) => `<div class="kpi-card"><span class="kpi-label">${escapeHtml(label)}</span><span class="kpi-value">${value === null ? "\u2014" : Number(value).toLocaleString()}</span><span class="kpi-sub">${escapeHtml(sub)}</span></div>`;
+    return `<h4>Last week at a glance <span class="muted-note">(${escapeHtml(range)})</span></h4>
+      <div class="kpi-row">
+        ${tile("Calls dialed", d.calls, change === null ? "Phone taps recorded" : `${change >= 0 ? "+" : ""}${change}% on the week before`)}
+        ${tile("Thank-yous", d.kudos, "Kudos between teammates")}
+        ${tile("Team wins", d.wins, "Onboarded leads announced")}
+        ${tile("Check-ins", moodTotal, moodTotal ? `${d.mood.great} great, ${d.mood.okay} okay, ${d.mood.rough} rough` : "No answers")}
+      </div>`;
   }
 
   async function saveTeamGoal() {
@@ -816,6 +836,7 @@
     taxonomies = null;
     statusData = null;
     buddyData = null;
+    digest = null;
     panel.innerHTML = "";
   };
 })();

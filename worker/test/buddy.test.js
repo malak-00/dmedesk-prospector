@@ -87,7 +87,7 @@ function fakeDb({ notes = [], seen = [], reactions = [], people = [], settings =
 
 test('before sql/031 is run, reading notes gives an empty list and writing says why', async () => {
   const db = fakeDb({ missing: true });
-  assert.deepEqual(await listForUser(db, { id: 'r1' }, { now: NOW }), { notes: [], occasions: [], unavailable: true });
+  assert.deepEqual(await listForUser(db, { id: 'r1' }, { now: NOW }), { notes: [], occasions: [], upcoming: [], unavailable: true });
   await assert.rejects(createNote(db, { id: 'a1' }, { body: 'hello' }, NOW), { status: 503 });
 });
 

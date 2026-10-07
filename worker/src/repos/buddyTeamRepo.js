@@ -1,6 +1,6 @@
 // The avatar's team features (sql/033): kudos, a daily mood tap, call scripts, and the weekly team goal.
 // Before that file is run the tables don't exist: reads then return nothing, and writes say which file to run.
-import { KUDOS_PER_DAY, cleanKudos, cleanMood, cleanScript, cleanTeamGoal, moodTrend, weekStartUtc } from "../lib/buddy.js";
+import { KUDOS_PER_DAY, cleanHandover, cleanKudos, cleanMood, cleanScript, cleanTeamGoal, lastWeekRange, moodTrend, weekStartUtc } from "../lib/buddy.js";
 
 function httpError(status, message) {
   const err = new Error(message);
@@ -9,7 +9,7 @@ function httpError(status, message) {
 }
 
 const missingTable = (error) =>
-  Boolean(error) && (error.code === "42P01" || error.code === "PGRST205" || /buddy_(kudos|mood|scripts|settings)|call_taps/.test(error.message || ""));
+  Boolean(error) && (error.code === "42P01" || error.code === "PGRST205" || /buddy_(kudos|mood|scripts|settings|handover)|call_taps/.test(error.message || ""));
 const NEEDS_033 = "Run sql/033_avatar_team.sql in Supabase first";
 
 async function activeUsers(supabase) {
@@ -137,5 +137,56 @@ export async function adminExtras(supabase, now = new Date()) {
     scripts: scripts.error ? [] : (scripts.data || []).map((s) => ({ id: String(s.id), specialty: s.specialty || "", title: s.title, body: s.body })),
     teamGoal: goal,
     teamUnavailable: Boolean(mood.error && missingTable(mood.error)),
+  };
+}
+
+// The note a person left for their next shift: shown once, then marked shown.
+export async function getHandover(supabase, session) {
+  const { data, error } = await supabase.from("buddy_handover").select("body, created_at").eq("user_id", session.id).is("shown_at", null).maybeSingle();
+  if (error) {
+    if (missingTable(error)) return { note: null, unavailable: true };
+    throw httpError(500, "Failed to load your note: " + error.message);
+  }
+  return { note: data ? { body: data.body, at: data.created_at } : null };
+}
+
+export async function saveHandover(supabase, session, input, now = new Date()) {
+  const { body } = cleanHandover(input);
+  const { error } = await supabase.from("buddy_handover").upsert({ user_id: session.id, body, created_at: now.toISOString(), shown_at: null }, { onConflict: "user_id" });
+  if (error) throw httpError(missingTable(error) ? 503 : 500, missingTable(error) ? "Run sql/034_avatar_handover.sql in Supabase first" : "Failed to save: " + error.message);
+  return { saved: true };
+}
+
+export async function markHandoverShown(supabase, session, now = new Date()) {
+  const { error } = await supabase.from("buddy_handover").update({ shown_at: now.toISOString() }).eq("user_id", session.id).is("shown_at", null);
+  if (error && !missingTable(error)) throw httpError(500, "Failed to record that: " + error.message);
+  return { shown: true };
+}
+
+// The admin's Monday summary of last week: calls (phone taps), thank-yous, team wins, and how people felt.
+export async function adminDigest(supabase, now = new Date()) {
+  const { from, to, beforeFrom } = lastWeekRange(now);
+  const count = async (table, column, a, b, extra) => {
+    let q = supabase.from(table).select("id", { count: "exact", head: true }).gte(column, a).lt(column, b);
+    if (extra) q = extra(q);
+    const { count: n, error } = await q;
+    return error ? null : n || 0;
+  };
+  const [calls, callsBefore, kudos, wins, mood] = await Promise.all([
+    count("call_taps", "tapped_at", from, to),
+    count("call_taps", "tapped_at", beforeFrom, from),
+    count("buddy_kudos", "created_at", from, to),
+    count("buddy_notes", "created_at", from, to, (q) => q.eq("kind", "win")),
+    supabase.from("buddy_mood").select("mood").gte("day", from.slice(0, 10)).lt("day", to.slice(0, 10)).limit(2000),
+  ]);
+  const moods = mood.error ? [] : mood.data || [];
+  return {
+    from: from.slice(0, 10),
+    to: new Date(Date.parse(to) - 86_400_000).toISOString().slice(0, 10),
+    calls,
+    callsBefore,
+    kudos,
+    wins,
+    mood: { great: moods.filter((m) => m.mood === 3).length, okay: moods.filter((m) => m.mood === 2).length, rough: moods.filter((m) => m.mood === 1).length },
   };
 }

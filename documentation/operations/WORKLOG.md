@@ -77,6 +77,43 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-08 — Caro: handover notes, reminders, bingo, gallery, quiet hours and more
+
+### Objective
+
+Name the avatar (Caro) and make her more useful during real work and more fun, without making her noisy.
+
+### Actions Completed
+
+- **Useful**: a note to tomorrow's you (written in her panel, or when she asks near the end of the shift, shown
+  once at the next sign-in); a heads-up about 15 minutes before a callback or meeting; a nudge when three or
+  more leads are in a good time to call right now (one tap starts call mode on them); a Team calendar card on
+  Today with birthdays and anniversaries for the next seven days; a quiet-for-a-while nudge (twice a day at
+  most); and an "on a roll" remark.
+- **Fun**: a weekly bingo card (the same nine squares for everyone each week, mixed from twelve; a line or a full
+  card earns a cheer and a badge); seasonal puzzles around Halloween, Thanksgiving and Christmas; a gallery of
+  her poses where each look unlocks the first time she shows it and the person can pick her resting pose;
+  short remarks after logging a call (five a day at most, 20 minutes apart); a goodbye as you sign out.
+- **Considerate**: she is quieter on a day someone answers "rough" to the mood check-in (no challenge); she
+  stays quiet for ten minutes after a phone number is tapped, and during quiet hours each person can set; an
+  optional soft chime on wins (off by default).
+- **Admin** (Controls > Avatar notes): a "Last week at a glance" digest: calls dialed (against the week before),
+  thank-yous, team wins and the mood totals.
+- **Server** (`worker/src/lib/buddy.js`, `worker/src/repos/buddyTeamRepo.js`, `worker/src/repos/buddyRepo.js`):
+  `GET/POST /buddy/handover`, `POST /buddy/handover/seen`, `GET /admin/buddy/digest`; `/buddy/notes` also returns
+  the week ahead.
+
+### Database / System Result
+
+- New SQL file `sql/034_avatar_handover.sql` (`buddy_handover`, one row per person). Rerun-safe, nothing dropped.
+  **Not run by Claude; to be run by the user.** Everything else works without it.
+- Worker tests: all pass (new: handover note, the week ahead, last week's range and the digest totals).
+
+### Safety Status
+
+- Additive only. The handover note is private to its owner. Bingo, poses, quiet hours and sound live in the
+  browser. Manual browser testing required.
+
 ## 2026-10-08 — Avatar seasonal outfits and two new poses
 
 ### Objective

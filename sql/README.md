@@ -36,6 +36,7 @@ Required manual sequence:
 031_avatar_notes.sql             (two small tables for notes the avatar shows: message of the day, or a note for one person)
 032_avatar_extras.sql            (after 031: team wins, repeating notes, reactions and replies, birthdays and anniversaries)
 033_avatar_team.sql              (after 032: kudos between teammates, a daily mood tap, call scripts)
+034_avatar_handover.sql         (a note to tomorrow's you, shown once at the next sign-in)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -94,6 +95,7 @@ in `003`); save their output with the run.
 | `031_avatar_notes.sql` | Creates `buddy_notes` and `buddy_seen` (notes an admin writes for everyone or one person, and who has been shown them). Rerun-safe, touches nothing existing | **Not yet run. Until it is, the avatar still greets and cheers people; Admin > Controls > Avatar notes can't save notes** |
 | `032_avatar_extras.sql` | Adds `buddy_notes.kind` and `repeat_weekday`, and creates `buddy_reactions`, `buddy_people` (month-day birthday, start date) and `buddy_settings`. Rerun-safe, nothing dropped or rewritten | **Not yet run. Until it is, the avatar works as before; repeating notes, reactions and replies, birthdays and the team-win announcement need it** |
 | `033_avatar_team.sql` | Creates `buddy_kudos`, `buddy_mood` (one tap a day; admins see anonymous totals only) and `buddy_scripts`. Rerun-safe, touches nothing existing | **Not yet run. Until it is, kudos, the mood check-in and call scripts say what they need; everything else in the avatar works** |
+| `034_avatar_handover.sql` | Creates `buddy_handover` (one row per person: the note they left for their next shift, shown once). Rerun-safe, touches nothing existing | **Not yet run. Until it is, the handover note says what it needs; everything else works** |
 
 ## Notes on individual files
 

@@ -3,7 +3,11 @@
    - Spin the wheel after a goal day, a "lead of the day", and kudos between teammates.
    - A shared weekly team call goal, a one-tap daily mood (only anonymous totals are shared), a stretch reminder,
      and call scripts beside call mode.
-   Loaded after buddy.js. Kudos, mood and scripts need sql/033; the team goal needs sql/032 and an admin to set it. */
+   Also: a weekly bingo card, seasonal puzzles, a gallery of her poses (pick her resting pose), a nudge when leads are
+   in a good time to call, a reminder before a callback or meeting, a note to tomorrow's you, a team calendar card on
+   Today, and "on a roll" / lull remarks.
+   Loaded after buddy.js. Kudos, mood and scripts need sql/033, the handover note sql/034; the team goal needs sql/032
+   and an admin to set it. */
 (function () {
   "use strict";
 
@@ -87,6 +91,53 @@
       { q: "How many hours are in a day?", a: ["24", "twenty four", "twenty-four"] },
     ],
   };
+  // In the weeks around a holiday the day's puzzle is a themed one.
+  const SEASONAL = {
+    halloween: {
+      label: "Halloween riddle", from: [10, 20], to: [10, 31],
+      list: [
+        { q: "What do you call a witch who lives at the beach?", a: ["sandwitch", "sand witch", "a sandwitch", "a sand witch"] },
+        { q: "What is a skeleton's favourite musical instrument?", a: ["xylophone", "a xylophone", "trombone", "a trombone"] },
+        { q: "Why don't skeletons fight each other?", a: ["no guts", "they have no guts", "they dont have the guts", "guts", "they dont have any guts"] },
+        { q: "I'm orange and round, and at Halloween I'm carved with a grin. What am I?", a: ["pumpkin", "a pumpkin", "jack o lantern", "jackolantern", "a jackolantern"] },
+        { q: "What do you get when you cross a vampire with a snowman?", a: ["frostbite"] },
+        { q: "What do ghosts like to eat for dessert?", a: ["ice scream", "i scream", "ice cream"] },
+        { q: "What flies at night, hangs upside down, and isn't a vampire?", a: ["bat", "a bat"] },
+        { q: "What has eight legs, spins webs, and is a Halloween favourite?", a: ["spider", "a spider"] },
+      ],
+    },
+    thanksgiving: {
+      label: "Thanksgiving trivia", from: [11, 15], to: [11, 27],
+      list: [
+        { q: "Which US president made Thanksgiving a national holiday during the Civil War?", a: ["lincoln", "abraham lincoln"] },
+        { q: "Which bird is the traditional centrepiece of a Thanksgiving dinner?", a: ["turkey", "a turkey"] },
+        { q: "In which month is US Thanksgiving?", a: ["november"] },
+        { q: "Which pie is the classic Thanksgiving dessert?", a: ["pumpkin", "pumpkin pie"] },
+        { q: "What colour is cranberry sauce?", a: ["red"] },
+        { q: "Which ship carried the Pilgrims to America in 1620?", a: ["mayflower", "the mayflower"] },
+        { q: "On which day of the week does US Thanksgiving fall?", a: ["thursday"] },
+        { q: "What do people do at the table on Thanksgiving, as the name says?", a: ["give thanks", "giving thanks", "thanks"] },
+      ],
+    },
+    christmas: {
+      label: "Holiday riddle", from: [12, 10], to: [12, 26],
+      list: [
+        { q: "What do snowmen eat for breakfast?", a: ["snowflakes", "frosted flakes", "snow flakes"] },
+        { q: "How many reindeer pull Santa's sleigh, not counting Rudolph?", a: ["8", "eight"] },
+        { q: "Who goes 'ho ho ho' and has a big white beard?", a: ["santa", "santa claus", "father christmas"] },
+        { q: "What do you call a snowman in the summer?", a: ["puddle", "a puddle", "water"] },
+        { q: "On which date is Christmas Day?", a: ["25 december", "december 25", "25th december", "december 25th", "dec 25"] },
+        { q: "Which reindeer has a famous red nose?", a: ["rudolph"] },
+        { q: "Which green character tried to steal Christmas?", a: ["grinch", "the grinch"] },
+        { q: "How many days of Christmas are there in the song?", a: ["12", "twelve"] },
+      ],
+    },
+  };
+  function seasonalTheme(now = new Date()) {
+    const m = now.getMonth() + 1;
+    const d = now.getDate();
+    return Object.values(SEASONAL).find((t) => (m > t.from[0] || (m === t.from[0] && d >= t.from[1])) && (m < t.to[0] || (m === t.to[0] && d <= t.to[1]))) || null;
+  }
   const TYPES = ["riddle", "scramble", "math", "trivia"];
   const TYPE_LABEL = { riddle: "Riddle", scramble: "Word scramble", math: "Quick maths", trivia: "Trivia" };
   const SOLVE_LINES = ["Nailed it!", "Sharp mind.", "Got it in one.", "Brilliant.", "That's the one!"];
@@ -95,6 +146,8 @@
 
   function todaysPuzzle() {
     const d = api.dayNumber();
+    const theme = seasonalTheme();
+    if (theme) return { type: "seasonal", label: theme.label, ...theme.list[d % theme.list.length] };
     const type = TYPES[d % TYPES.length];
     const list = PUZZLES[type];
     return { type, ...list[Math.floor(d / TYPES.length) % list.length] };
@@ -124,6 +177,7 @@
       riddleMessage = "";
       api.say({ key: `puzzle:${api.today()}`, kind: "event", pose: "thumbs", title: "Solved!", text: `${api.pick(SOLVE_LINES)}${stats.streak > 1 ? ` ${stats.streak} puzzles in a row.` : ""}`, confetti: stats.streak > 1 });
       if (stats.solved >= 5) api.earn("riddler");
+      bingoMark("puzzle");
     } else {
       s.tries += 1;
       api.write(RIDDLE_KEY, s);
@@ -146,7 +200,7 @@
         ${s.tries >= 2 ? `<div class="buddy-fun-note">Hint: ${escapeHtml(hint)}</div>` : ""}
         <button type="button" class="link-btn" data-fun="riddle-reveal">Show answer</button>`;
     }
-    return section("riddle", `${uiIcon("puzzle")} Daily puzzle${s.solved ? ` ${uiIcon("check")}` : ""}`, `<div class="buddy-fun-label">${TYPE_LABEL[p.type]}</div><div class="buddy-fun-q">${escapeHtml(p.q)}</div>${body}`);
+    return section("riddle", `${uiIcon("puzzle")} Daily puzzle${s.solved ? ` ${uiIcon("check")}` : ""}`, `<div class="buddy-fun-label">${escapeHtml(p.label || TYPE_LABEL[p.type])}</div><div class="buddy-fun-q">${escapeHtml(p.q)}</div>${body}`);
   }
 
   /* ---------- spin the wheel ---------- */
@@ -251,6 +305,7 @@
       showToast("Thank-you sent");
       input.value = "";
       api.earn("cheer");
+      bingoMark("kudos");
     } catch (err) {
       showToast(err.message, true);
     }
@@ -291,7 +346,7 @@
       text: "One tap, so I know how the team is doing. Only anonymous totals are shared, never names.",
       choices: [{ label: "Great", value: 3, icon: "smile" }, { label: "Okay", value: 2, icon: "meh" }, { label: "Rough", value: 1, icon: "frown" }],
       onChoice: async (mood) => {
-        api.write(MOOD_KEY, { day: api.today() });
+        api.write(MOOD_KEY, { day: api.today(), mood });
         try { await apiPost("buddy/mood", { mood, day: api.today() }); } catch (err) { console.log("[buddy] " + err.message); }
         const reply = MOOD_REPLY[mood];
         api.say({ key: `moodreply:${api.today()}`, kind: "event", pose: reply.pose, title: "Thanks for telling me", text: reply.text });
@@ -350,6 +405,168 @@
       ${list.length > 1 ? `<button type="button" class="link-btn" data-fun="script-next">Next script (${(scriptIndex % list.length) + 1}/${list.length})</button>` : ""}</div>`;
   }
 
+  /* ---------- weekly bingo ---------- */
+
+  const BINGO_KEY = "dmeFunBingo"; // { week, done: { id: true }, lines: n }
+  const BINGO_POOL = [
+    { id: "calls10", text: "Make 10 calls in a day", icon: "phone" },
+    { id: "goal", text: "Hit your daily goal", icon: "target" },
+    { id: "meeting", text: "Book a meeting", icon: "calendar" },
+    { id: "won", text: "Onboard a lead", icon: "trophy" },
+    { id: "result", text: "Log a result on a lead", icon: "check" },
+    { id: "callback", text: "Set a callback", icon: "bell" },
+    { id: "kudos", text: "Send kudos", icon: "megaphone" },
+    { id: "puzzle", text: "Solve the daily puzzle", icon: "puzzle" },
+    { id: "claim", text: "Claim a new lead", icon: "sparkle" },
+    { id: "cold", text: "Work a going-cold lead", icon: "flame" },
+    { id: "streak3", text: "Call 3 days in a row", icon: "sunrise" },
+    { id: "late", text: "Make a call after 8pm", icon: "bolt" },
+  ];
+  const BINGO_LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+
+  // The same nine squares for everyone this week, mixed from the week's start date.
+  function bingoCard() {
+    let seed = 0;
+    for (const ch of api.weekKey()) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+    const rand = () => { seed = (seed + 0x6d2b79f5) >>> 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const pool = BINGO_POOL.slice();
+    const card = [];
+    while (card.length < 9) card.push(pool.splice(Math.floor(rand() * pool.length), 1)[0]);
+    return card;
+  }
+
+  function bingoState() {
+    const b = api.read(BINGO_KEY, null);
+    return b && b.week === api.weekKey() ? b : { week: api.weekKey(), done: {}, lines: 0 };
+  }
+
+  function bingoMark(id) {
+    const card = bingoCard();
+    if (!card.some((c) => c.id === id)) return;
+    const b = bingoState();
+    if (b.done[id]) return;
+    b.done[id] = true;
+    const lines = BINGO_LINES.filter((l) => l.every((i) => b.done[card[i].id])).length;
+    const full = card.every((c) => b.done[c.id]);
+    const newLine = lines > b.lines;
+    b.lines = lines;
+    api.write(BINGO_KEY, b);
+    if (full) {
+      api.say({ key: `bingofull:${b.week}`, kind: "event", pose: "party", title: "Full card!", text: "Every square on this week's bingo. That's a perfect week.", confetti: true });
+      api.earn("bingo");
+    } else if (newLine) {
+      api.say({ key: `bingoline:${b.week}:${lines}`, kind: "event", pose: "party", title: "Bingo!", text: `A line on this week's card${lines > 1 ? ` (${lines} lines)` : ""}.`, confetti: true });
+      api.earn("bingo");
+    } else {
+      api.rerender();
+    }
+  }
+
+  function bingoSection() {
+    const card = bingoCard();
+    const b = bingoState();
+    const n = card.filter((c) => b.done[c.id]).length;
+    return section("bingo", `${uiIcon("target")} Weekly bingo (${n}/9)`, `<div class="buddy-bingo">${card.map((c) => `<div class="buddy-bingo-cell${b.done[c.id] ? " is-done" : ""}">${uiIcon(b.done[c.id] ? "check" : c.icon)}${escapeHtml(c.text)}</div>`).join("")}</div>
+      <div class="buddy-fun-note">Three in a row earns a cheer. A new card every Monday.</div>`);
+  }
+
+  // Squares that follow from the numbers rather than from one action.
+  function bingoFromStats(stats, late) {
+    if ((stats.callsToday || 0) >= 10) bingoMark("calls10");
+    if ((stats.callsToday || 0) >= api.goal()) bingoMark("goal");
+    if ((stats.streak || 0) >= 3) bingoMark("streak3");
+    if (late) bingoMark("late");
+  }
+
+  function onEvent(name, info) {
+    if (["meeting", "won", "callback", "claim"].includes(name)) bingoMark(name);
+    if (name === "result") {
+      bingoMark("result");
+      if (info && info.npi && coldNpis.has(String(info.npi))) bingoMark("cold");
+    }
+  }
+
+  /* ---------- her poses: a collection, and pick her resting pose ---------- */
+
+  function gallerySection() {
+    const seen = api.seenPoses();
+    const chosen = api.preferred();
+    const cells = Object.keys(api.POSES).map((p) => {
+      const have = Boolean(seen[p]);
+      return `<button type="button" class="buddy-pose-btn${have ? "" : " is-locked"}${have && chosen === p ? " is-chosen" : ""}" ${have ? `data-fun="pose" data-pose="${p}"` : "disabled"} title="${have ? `${escapeHtml(api.POSE_LABELS[p] || p)}${chosen === p ? " (her resting pose)" : ""}` : "Not seen yet"}"><img src="avatar/${api.POSES[p]}" alt="" width="52" height="52"><span>${have ? escapeHtml(api.POSE_LABELS[p] || p) : "?"}</span></button>`;
+    }).join("");
+    const count = Object.keys(api.POSES).filter((p) => seen[p]).length;
+    return section("gallery", `${uiIcon("sparkle")} Her looks (${count}/${Object.keys(api.POSES).length})`, `<div class="buddy-gallery">${cells}</div>
+      <div class="buddy-fun-note">She shows each look at the right moment. Pick one to be her resting pose; outfits for holidays and Fridays still take over on their days.</div>`);
+  }
+
+  /* ---------- a note to tomorrow's you ---------- */
+
+  function handoverSection() {
+    return section("handover", `${uiIcon("calendar")} Note to tomorrow's you`, `<div class="buddy-fun-note">Leave yourself a reminder. ${escapeHtml(api.NAME)} will show it at the start of your next shift.</div>
+      <textarea data-fun-handover maxlength="300" rows="3" class="buddy-fun-text" placeholder="e.g. Call Acme first, they said after 4pm" aria-label="Note to tomorrow's you"></textarea>
+      <div class="buddy-fun-row"><button type="button" class="btn btn-primary btn-small" data-fun="handover-save">Save note</button></div>`);
+  }
+
+  async function saveHandover(root) {
+    const box = root.querySelector("[data-fun-handover]");
+    const body = box.value.trim();
+    if (!body) { showToast("Write the note first", true); return; }
+    try {
+      await apiPost("buddy/handover", { body });
+      showToast("Saved. I'll remind you next shift.");
+      box.value = "";
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  }
+
+  async function loadHandover() {
+    try {
+      const data = await apiGet("buddy/handover");
+      if (!data.note) return;
+      api.say({
+        key: `handover:${api.today()}`, kind: "event", pose: "note", title: "A note from yesterday's you", text: data.note.body,
+        onSeen: () => apiPost("buddy/handover/seen", {}).catch((err) => console.log("[buddy] " + err.message)),
+      });
+    } catch (err) {
+      console.log("[buddy] " + err.message);
+    }
+  }
+
+  function promptHandover() {
+    const m = api.minutesNow();
+    if (m < api.SHIFT.end - 30 || m >= api.SHIFT.end) return;
+    if ((api.stats().callsToday || 0) < 1) return;
+    api.say({
+      key: `handoverprompt:${api.today()}`, kind: "small", pose: "note", title: "Leave a note for tomorrow?",
+      text: "Anything you want to pick up first next shift? I'll remind you.",
+      choices: [{ label: "Write one", value: "write" }],
+      onChoice: () => { open.add("handover"); api.openPanel(); api.rerender(); },
+    });
+  }
+
+  /* ---------- the team calendar (a card on Today) ---------- */
+
+  let upcoming = [];
+
+  function onUpcoming(list) {
+    const changed = JSON.stringify(list) !== JSON.stringify(upcoming);
+    upcoming = list || [];
+    if (changed && upcoming.length && window.dmeToday && window.dmeToday.refresh) window.dmeToday.refresh();
+  }
+
+  function todayCardHtml() {
+    if (!upcoming.length) return "";
+    const when = (o) => (o.inDays === 1 ? "tomorrow" : new Date(`${o.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long" }));
+    const rows = upcoming.slice(0, 6).map((o) => {
+      const who = o.mine ? "Your" : `${escapeHtml(o.name)}'s`;
+      const what = o.kind === "birthday" ? "birthday" : `${o.years}-year work anniversary`;
+      return `<div class="team-cal-row"><span>${who} ${what}</span><span>${when(o)}</span></div>`;
+    }).join("");
+    return `<section class="today-card side-card"><header class="today-card-head"><h3>Team calendar</h3></header><div class="side-body">${rows}</div></section>`;
+  }
+
   /* ---------- the panel ---------- */
 
   const open = new Set();
@@ -359,7 +576,7 @@
   }
 
   function panelHtml() {
-    return `<div class="buddy-secs">${riddleSection()}${wheelSection()}${leadSection()}${kudosSection()}</div>`;
+    return `<div class="buddy-secs">${riddleSection()}${bingoSection()}${wheelSection()}${leadSection()}${kudosSection()}${handoverSection()}${gallerySection()}</div>`;
   }
 
   document.addEventListener("toggle", (e) => {
@@ -389,6 +606,8 @@
       state.claimedPage = 1;
       switchView("claimed");
     } else if (act === "script-next") scriptIndex += 1;
+    else if (act === "handover-save") saveHandover(el.closest(".buddy-sec-body"));
+    else if (act === "pose") api.setPreferred(el.dataset.pose === api.preferred() ? "" : el.dataset.pose);
     return true;
   }
 
@@ -396,11 +615,21 @@
 
   let lastCalls = null;
   let timer = null;
+  let lastView = null;
+  let coldNpis = new Set();
+  const samples = []; // { t, calls }: how fast calls are going
+  const asked = { goodTime: 0, lull: 0, lullCount: 0, refresh: 0 };
+  const reminded = new Set();
 
   function onToday(view) {
     const stats = view.stats || {};
     const calls = stats.callsToday || 0;
     pickLead(view);
+    lastView = view;
+    coldNpis = new Set(((view.stale && view.stale.items) || []).map((l) => String(l.npi)));
+    bingoFromStats(stats, calls > (lastCalls ?? calls) && api.minutesNow() >= 20 * 60);
+    paceCheck(calls);
+    goodTimeNudge(view);
     if (lastCalls === 0 && calls >= 1 && !riddleState().solved && !riddleState().revealed) {
       api.say({ key: `puzzleinvite:${api.today()}`, kind: "small", pose: "thinking", title: "Puzzle time?", text: "Nice first call. Today's puzzle is waiting in my panel when you want a short break." });
     }
@@ -409,11 +638,82 @@
     loadTeam(false);
   }
 
+  // Three or more calls in the last fifteen minutes is worth a word, once an hour at most.
+  function paceCheck(calls) {
+    const now = Date.now();
+    samples.push({ t: now, calls });
+    while (samples.length && now - samples[0].t > 20 * 60 * 1000) samples.shift();
+    const old = samples.find((x) => now - x.t >= 5 * 60 * 1000 && now - x.t <= 16 * 60 * 1000);
+    if (old && calls - old.calls >= 3) {
+      api.say({ key: `roll:${api.today()}:${new Date().getHours()}`, kind: "event", pose: "thumbs", title: "You're on a roll", text: `${calls - old.calls} calls in the last quarter of an hour. Keep that rhythm.` });
+    }
+  }
+
+  // Leads whose local time is in a good window right now, picked from what Today already holds.
+  function goodTimeNudge(view) {
+    const m = api.minutesNow();
+    if (m < api.SHIFT.start + 20 || m > api.SHIFT.end - 40 || !window.dmeTime || !window.dmeTime.localInfo) return;
+    if (Date.now() - asked.goodTime < 2 * 60 * 60 * 1000) return;
+    const all = [...(view.callbacks || []), ...((view.firstCalls && view.firstCalls.items) || []), ...((view.stale && view.stale.items) || [])];
+    const seenNpi = new Set();
+    const open = all.filter((l) => { const ok = window.dmeTime.localInfo(l.state)?.good && !seenNpi.has(l.npi); seenNpi.add(l.npi); return ok; });
+    if (open.length < 3) return;
+    asked.goodTime = Date.now();
+    const names = open.slice(0, 2).map((l) => l.name).join(" and ");
+    api.say({
+      key: `goodtime:${api.today()}:${new Date().getHours()}`, kind: "small", pose: "phone", title: "A good time to call",
+      text: `${open.length} of your leads are open for calls right now, like ${names}.`,
+      choices: [{ label: "Call them", value: "go" }],
+      onChoice: () => window.dmeCall && window.dmeCall.start(open.slice(0, 15), "claimed"),
+    });
+  }
+
+  // A minute-by-minute tick: stretch break, a quiet spell, and a heads-up before a callback or meeting.
+  function reminderTick() {
+    const now = Date.now();
+    if (api.idleMs() < 5 * 60 * 1000 && now - asked.refresh > 10 * 60 * 1000 && window.dmeToday && window.dmeToday.refresh) {
+      asked.refresh = now;
+      window.dmeToday.refresh();
+    }
+    if (lastView) {
+      const soon = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) && t - now > 0 && t - now <= 15 * 60 * 1000 ? Math.round((t - now) / 60000) : null; };
+      for (const l of lastView.callbacks || []) {
+        const mins = soon(l.reminderAt);
+        if (mins !== null && !reminded.has(`cb:${l.npi}:${l.reminderAt}`)) {
+          reminded.add(`cb:${l.npi}:${l.reminderAt}`);
+          api.say({ key: `cb:${l.npi}:${l.reminderAt}`, kind: "event", pose: "phone", title: "Callback coming up", text: `${l.name} in about ${mins} minute${mins === 1 ? "" : "s"}.`, choices: [{ label: "Open it", value: "go" }], onChoice: () => window.dmeCall && window.dmeCall.start([l], "claimed") });
+        }
+      }
+      for (const l of lastView.meetingsToday || []) {
+        const mins = soon(l.meetingAt);
+        if (mins !== null && !reminded.has(`mt:${l.npi}:${l.meetingAt}`)) {
+          reminded.add(`mt:${l.npi}:${l.meetingAt}`);
+          api.say({ key: `mt:${l.npi}:${l.meetingAt}`, kind: "event", pose: "note", title: "Meeting coming up", text: `${l.name} in about ${mins} minute${mins === 1 ? "" : "s"}. Take a look at your opener notes.`, choices: [{ label: "Open it", value: "go" }], onChoice: () => window.dmeCall && window.dmeCall.start([l], "claimed") });
+        }
+      }
+    }
+    // Quiet for half an hour during the shift: a gentle nudge, never more than twice a day.
+    const m = api.minutesNow();
+    if (m > api.SHIFT.start + 30 && m < api.SHIFT.end - 30 && api.idleMs() > 30 * 60 * 1000 && now - asked.lull > 90 * 60 * 1000 && asked.lullCount < 2) {
+      asked.lull = now;
+      asked.lullCount += 1;
+      api.say({
+        key: `lull:${api.today()}:${asked.lullCount}`, kind: "event", pose: "encourage", title: "Still with me?",
+        text: lead ? `It's been quiet for a while. A good lead to start with: ${lead.name}.` : "It's been quiet for a while. Whenever you're ready, one call gets the rhythm back.",
+        choices: lead ? [{ label: "Find it", value: "go" }] : null,
+        onChoice: () => { if (lead) { state.claimedSearchQuery = lead.name; els.claimedSearchInput.value = lead.name; state.claimedPage = 1; switchView("claimed"); } },
+      });
+    }
+    breakTick();
+    promptHandover();
+  }
+
   function start() {
     loadTeam(true);
     loadScripts();
+    loadHandover();
     clearInterval(timer);
-    timer = setInterval(breakTick, 60000);
+    timer = setInterval(reminderTick, 60000);
   }
 
   function stop() {
@@ -422,12 +722,17 @@
     team = { people: [], goal: { target: null, calls: 0, weekStart: "" } };
     scripts = [];
     lead = null;
+    upcoming = [];
+    lastView = null;
+    coldNpis = new Set();
+    samples.length = 0;
+    asked.goodTime = 0; asked.lull = 0; asked.lullCount = 0; asked.refresh = 0;
     lastCalls = null;
     workedSince = null;
     lastTeamFetch = 0;
   }
 
-  window.dmeBuddyFun = { panelHtml, teamGoalHtml, onClick, onToday, onKudos, callHelperHtml, start, stop };
+  window.dmeBuddyFun = { panelHtml, teamGoalHtml, onClick, onToday, onKudos, onUpcoming, onEvent, todayCardHtml, callHelperHtml, start, stop };
   // buddy.js may already be signed in and showing; catch up.
   if (typeof getSession === "function" && getSession() && document.getElementById("buddyLaunch")) start();
 })();
