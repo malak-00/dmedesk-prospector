@@ -2817,3 +2817,38 @@ html.call-open .buddy { display: none; }
 .ctl-inline select, .ctl-inline input { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--input-line, var(--hairline)); border-radius: 8px; padding: 6px 8px; }
 .ctl-note-table { margin-top: 14px; }
 .ctl-note-cell { max-width: 420px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* The avatar, part 2: reactions, challenge, badges, accessory, nap and the call-mode helper. */
+.buddy-bubble { position: relative; }
+.buddy-panel-head { position: relative; }
+.buddy-acc { position: absolute; top: -10px; left: -2px; font-size: 26px; line-height: 1; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35)); }
+.buddy-acc[hidden] { display: none; }
+.buddy-surprise { border: 0; background: transparent; padding: 0; cursor: pointer; border-radius: 50%; flex: none; }
+.buddy-surprise:hover img { transform: rotate(-4deg) scale(1.04); }
+.buddy-surprise img { display: block; transition: transform 0.15s ease; }
+.buddy-challenge { display: grid; gap: 2px; padding: 9px 11px; border-radius: var(--radius-md, 10px); background: var(--accent-soft); border: 1px solid var(--selection-chip-border); font-size: 13px; }
+.buddy-challenge strong { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.buddy-challenge.is-done { border-color: var(--score-high, var(--accent)); }
+.buddy-progress { font-weight: 650; font-size: 12.5px; }
+.buddy-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.buddy-badge { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; font-size: 18px; background: var(--surface-2); border: 1px solid var(--line, var(--hairline)); filter: grayscale(1); opacity: 0.4; }
+.buddy-badge.is-on { filter: none; opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+.buddy-react { display: grid; gap: 6px; margin-top: 8px; }
+.buddy-react-row { display: inline-flex; gap: 4px; }
+.buddy-emoji { border: 1px solid var(--line, var(--hairline)); background: var(--surface-2); border-radius: 999px; padding: 2px 8px; font-size: 15px; cursor: pointer; line-height: 1.4; }
+.buddy-emoji.is-on, .buddy-emoji:hover { border-color: var(--accent); background: var(--accent-soft); }
+.buddy-reply { display: flex; gap: 8px; align-items: center; }
+.buddy-reply input { flex: 1; min-width: 0; font: inherit; font-size: 12.5px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--input-line, var(--hairline)); border-radius: 8px; padding: 5px 8px; }
+.buddy-launch img { transition: opacity 0.2s ease; }
+.buddy-call {
+  position: fixed; z-index: 56; bottom: 16px; right: calc(min(440px, 100%) + 14px);
+  display: flex; flex-direction: column; align-items: center; gap: 4px; width: 190px; pointer-events: none;
+}
+.buddy-call > * { pointer-events: auto; }
+.buddy-call[hidden] { display: none; }
+.buddy-call-tip { padding: 9px 12px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--selection-chip-border); box-shadow: var(--shadow-card); font-size: 12.5px; line-height: 1.45; color: var(--ink); }
+.buddy-call img { width: 120px; height: 120px; object-fit: contain; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.3)); }
+@media (max-width: 960px) { .buddy-call { display: none; } }
+.ctl-row-wrap { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.ctl-react-list { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.ctl-people-table input { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--input-line, var(--hairline)); border-radius: 8px; padding: 4px 8px; }

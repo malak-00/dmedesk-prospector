@@ -10,6 +10,7 @@ import { normalizeMeetingInput } from "../lib/meetings.js";
 import { parseNoteLines } from "../lib/teamActivity.js";
 import { SORTS, buildTodayView } from "../lib/leadView.js";
 import { cleanStatus, isJunkStatus, normalizeStatus, statusOptions } from "../lib/statuses.js";
+import { announceWin } from "./buddyRepo.js";
 
 const DEFAULT_STATUSES = ["new", "called", "voicemail", "interested", "not interested", "do not call"];
 const MAX_STATUS_LENGTH = 40;
@@ -723,6 +724,10 @@ export async function updateLeadStatus(supabase, npi, status, session) {
   if (isJunkStatus(trimmedStatus)) throw httpError(400, "That status doesn't say anything. Pick one from the list, or type a short descriptive one");
 
   await requireOwnLead(supabase, npi, session);
+  // Before the change, so a lead that was already onboarded isn't announced twice.
+  const before = cleanStatus(trimmedStatus) === "onboarded"
+    ? (await supabase.from("leads").select("status, company_name").eq("claimed_by", session.id).eq("npi", String(npi)).maybeSingle()).data
+    : null;
 
   const { error } = await supabase
     .from("leads")
@@ -730,6 +735,8 @@ export async function updateLeadStatus(supabase, npi, status, session) {
     .eq("claimed_by", session.id)
     .eq("npi", String(npi));
   if (error) throw httpError(500, "Failed to update status: " + error.message);
+
+  if (before && cleanStatus(before.status) !== "onboarded") await announceWin(supabase, session, before.company_name);
 
   return { npi: String(npi), status: trimmedStatus, rowsUpdated: 1 };
 }

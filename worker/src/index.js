@@ -589,7 +589,13 @@ app.get("/admin/system", async (c) => {
 // ---- the avatar's notes (sql/031) -----------------------------------------
 
 // What this person can see: the message of the day and notes written for them.
-app.get("/buddy/notes", async (c) => c.json(ok(await buddyRepo.listForUser(supabaseFor(c), c.get("session")))));
+app.get("/buddy/notes", async (c) => c.json(ok(await buddyRepo.listForUser(supabaseFor(c), c.get("session"), { day: c.req.query("day") }))));
+
+// A reaction (emoji) and/or a one-line reply to a note.
+app.post("/buddy/react", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyRepo.react(supabaseFor(c), c.get("session"), body)));
+});
 
 app.post("/buddy/seen", async (c) => {
   const body = await c.req.json().catch(() => ({}));
@@ -606,6 +612,19 @@ app.post("/admin/buddy", async (c) => {
   requireAdmin(session);
   const body = await c.req.json().catch(() => ({}));
   return c.json(ok(await buddyRepo.createNote(supabaseFor(c), session, body)));
+});
+
+// Birthday and start date for one person; and the switch that announces onboarded leads to the team.
+app.post("/admin/buddy/person", async (c) => {
+  requireAdmin(c.get("session"));
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyRepo.setPerson(supabaseFor(c), body)));
+});
+
+app.post("/admin/buddy/settings", async (c) => {
+  requireAdmin(c.get("session"));
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await buddyRepo.setTeamWins(supabaseFor(c), body.teamWins === true)));
 });
 
 app.post("/admin/buddy/retire", async (c) => {

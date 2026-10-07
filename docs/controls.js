@@ -264,6 +264,25 @@
   /* ---------- avatar notes: message of the day, or a note for one person ---------- */
 
   const NOTE_STATE = { showing: "Showing", scheduled: "Scheduled", expired: "Expired" };
+  const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  function peopleHtml() {
+    const list = (users || []).filter((u) => !u.disabled);
+    if (!list.length) return "";
+    const byId = new Map((buddyData.people || []).map((p) => [p.userId, p]));
+    return `<h4 style="margin-top:18px">Birthdays and work anniversaries</h4>
+      <p class="ctl-help">Optional. The avatar wishes them a happy birthday (month and day only, no year is stored) and marks each work anniversary, and tells their teammates.</p>
+      <table class="results-table ctl-table ctl-people-table"><thead><tr><th>Person</th><th>Birthday (month and day)</th><th>Started</th><th></th></tr></thead><tbody>
+      ${list.map((u) => {
+        const p = byId.get(u.id) || {};
+        const [mm, dd] = String(p.birthday || "").split("-");
+        return `<tr data-person="${escapeHtml(u.id)}"><td>${escapeHtml(u.displayName)}</td>
+          <td><select data-person-month aria-label="Birthday month"><option value="">Month</option>${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((m, i) => `<option value="${String(i + 1).padStart(2, "0")}" ${mm === String(i + 1).padStart(2, "0") ? "selected" : ""}>${m}</option>`).join("")}</select>
+            <select data-person-day aria-label="Birthday day"><option value="">Day</option>${Array.from({ length: 31 }, (_, i) => `<option value="${String(i + 1).padStart(2, "0")}" ${dd === String(i + 1).padStart(2, "0") ? "selected" : ""}>${i + 1}</option>`).join("")}</select></td>
+          <td><input type="date" data-person-start value="${escapeHtml(p.startedOn || "")}" aria-label="Start date"></td>
+          <td><button type="button" class="link-btn" data-ctl="buddy-person">Save</button></td></tr>`;
+      }).join("")}</tbody></table>`;
+  }
 
   function buddyHtml() {
     if (buddyError) return `<div class="team-block"><div class="team-state">${escapeHtml(buddyError)}</div></div>`;
@@ -277,16 +296,43 @@
       <div class="ctl-run ctl-note-row">
         <label class="ctl-inline">For <select id="ctlBuddyTo"><option value="">Everyone</option>${people.map((u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.displayName)}</option>`).join("")}</select></label>
         <label class="ctl-inline">Shows for <select id="ctlBuddyDays">${[[1, "1 day"], [3, "3 days"], [7, "1 week"], [14, "2 weeks"], [30, "1 month"]].map(([d, l]) => `<option value="${d}" ${d === 7 ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label class="ctl-inline">Repeat <select id="ctlBuddyRepeat" title="A repeating note shows each week on that day until it runs out"><option value="">Once</option>${WEEKDAY_NAMES.map((d, i) => `<option value="${i}">Every ${d}</option>`).join("")}</select></label>
         <label class="ctl-inline">Starting <input type="datetime-local" id="ctlBuddyFrom" aria-label="Start time (optional)"></label>
         <button type="button" class="btn btn-primary btn-small" data-ctl="buddy-send">Send</button>
       </div>
+      <label class="checkbox ctl-wins"><input type="checkbox" id="ctlBuddyWins" ${buddyData.settings && buddyData.settings.teamWins ? "checked" : ""}><span>Tell the team when someone onboards a lead (a pop-up for everyone else, for a day)</span></label>
       ${notes.length ? `<table class="results-table ctl-table ctl-note-table"><thead><tr><th>Note</th><th>For</th><th>Status</th><th title="People who have been shown it">Seen</th><th></th></tr></thead><tbody>
-        ${notes.map((n) => `<tr><td class="ctl-note-cell">${escapeHtml(n.body)}</td><td>${escapeHtml(n.to)}</td>
+        ${notes.map((n) => `<tr><td class="ctl-note-cell">${escapeHtml(n.body)}${n.reactions && n.reactions.length ? `<div class="ctl-react-list">${n.reactions.map((r) => `${escapeHtml(r.name)} ${escapeHtml(r.reaction)}${r.reply ? ` \u201c${escapeHtml(r.reply)}\u201d` : ""}`).join(" \u00b7 ")}</div>` : ""}</td><td>${escapeHtml(n.to)}${n.repeatWeekday !== null && n.repeatWeekday !== undefined ? `<div class="ctl-sub">every ${WEEKDAY_NAMES[n.repeatWeekday]}</div>` : ""}</td>
           <td><span class="status-pill ${n.state === "showing" ? "is-active" : "is-removed"}">${NOTE_STATE[n.state] || n.state}</span><div class="ctl-sub">${n.state === "scheduled" ? `from ${escapeHtml(when(n.showFrom))}` : n.expiresAt ? `until ${escapeHtml(when(n.expiresAt))}` : ""}</div></td>
           <td class="mono">${n.seenBy}</td>
           <td><button type="button" class="link-btn" data-ctl="buddy-retire" data-id="${escapeHtml(n.id)}">Retire</button></td></tr>`).join("")}
       </tbody></table>` : '<div class="muted-note" style="margin-top:12px;">No notes yet.</div>'}
+      ${peopleHtml()}
     </div>`;
+  }
+
+  async function saveTeamWins(on) {
+    try {
+      await apiPost("admin/buddy/settings", { teamWins: on });
+      buddyData.settings = { teamWins: on };
+      showToast(on ? "The team will hear about onboarded leads" : "Onboarded leads won't be announced");
+    } catch (err) {
+      showToast(err.message, true);
+      refreshBuddy();
+    }
+  }
+
+  async function savePerson(row) {
+    const mm = row.querySelector("[data-person-month]").value;
+    const dd = row.querySelector("[data-person-day]").value;
+    if (Boolean(mm) !== Boolean(dd)) { showToast("Choose both a month and a day, or neither", true); return; }
+    try {
+      await apiPost("admin/buddy/person", { userId: row.dataset.person, birthday: mm && dd ? `${mm}-${dd}` : "", startedOn: row.querySelector("[data-person-start]").value });
+      buddyData = await apiGet("admin/buddy");
+      showToast("Saved");
+    } catch (err) {
+      showToast(err.message, true);
+    }
   }
 
   function refreshBuddy() {
@@ -302,7 +348,8 @@
       await apiPost("admin/buddy", {
         body,
         toUserId: document.getElementById("ctlBuddyTo").value,
-        expiresDays: Number(document.getElementById("ctlBuddyDays").value),
+        expiresDays: document.getElementById("ctlBuddyRepeat").value === "" ? Number(document.getElementById("ctlBuddyDays").value) : "",
+        repeatWeekday: document.getElementById("ctlBuddyRepeat").value,
         showFrom: from ? new Date(from).toISOString() : "",
       });
       buddyData = await apiGet("admin/buddy");
@@ -614,6 +661,7 @@
   });
   panel.addEventListener("change", (e) => {
     if (e.target.id === "ctlDefaultTaxonomy") { saveDefaultTaxonomy(e.target.value); return; }
+    if (e.target.id === "ctlBuddyWins") { saveTeamWins(e.target.checked); return; }
     const pick = e.target.closest("[data-status-from]");
     if (pick) { statusPick[pick.dataset.statusFrom] = pick.value; statusResult = null; panel.querySelector(".ctl-status-table")?.closest(".team-block")?.replaceWith(Object.assign(document.createElement("div"), { innerHTML: statusesHtml() }).firstElementChild); return; }
     if (e.target.matches("[data-sheet-file]")) { onSheetFile(e.target.files[0]); return; }
@@ -649,6 +697,7 @@
     else if (btn.dataset.ctl === "edit") openEdit(btn.dataset.id);
     else if (btn.dataset.ctl === "buddy-send") sendBuddy();
     else if (btn.dataset.ctl === "buddy-retire") retireBuddy(btn.dataset.id);
+    else if (btn.dataset.ctl === "buddy-person") savePerson(btn.closest("tr"));
   });
 
   document.addEventListener("click", (e) => {

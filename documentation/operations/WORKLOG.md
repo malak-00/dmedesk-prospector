@@ -77,6 +77,45 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-08 — Avatar extras: wins, reactions, repeating notes, birthdays, challenges and badges
+
+### Objective
+
+Make the avatar more fun and more useful: cheer real wins, mark occasions, let people answer notes, and keep
+people company in call mode, without turning into noise.
+
+### Actions Completed
+
+- **Wins** (`docs/buddy.js`, `worker/src/repos/leadsRepo.js`): a booked meeting and an onboarded lead each
+  get a cheer (noticed where they are saved, so call mode, Today and Claimed are all covered). Optionally,
+  an admin can switch on a team announcement: when a rep onboards a lead, everyone else sees "<name> just
+  onboarded <company>!" for a day (never an error: a failed announcement can't break the status change).
+- **Notes**: repeating weekly notes (every Monday, etc.); reactions (three emoji) and a one-line reply on
+  any note, shown to the admin under each note; birthdays (month and day only) and work anniversaries,
+  entered in Admin > Controls, announced to the person and their teammates.
+- **Fun**: a daily mini-challenge, badges (kept on the device, not the server), a joke or fun fact of the
+  day, a click-me surprise, a Friday weekly recap, a nap after ten idle minutes, a seasonal accessory, and
+  a phone-pose helper with call tips beside call mode (it never pops up during a call).
+- **Server** (`worker/src/lib/buddy.js`, `worker/src/repos/buddyRepo.js`, `worker/src/index.js`):
+  `POST /buddy/react`, `POST /admin/buddy/person`, `POST /admin/buddy/settings`; `GET /buddy/notes` takes the
+  person's own date for occasions.
+
+### Database / System Result
+
+- New SQL file `sql/032_avatar_extras.sql`: two columns on `buddy_notes` (`kind`, `repeat_weekday`) and three
+  small tables (`buddy_reactions`, `buddy_people`, `buddy_settings`). Rerun-safe; nothing dropped or rewritten.
+  **Not run by Claude; to be run by the user.** Before it is run, everything else works and the new
+  features say plainly that they need it.
+- Worker tests: all pass (new: repeating notes, reactions, birthdays and anniversaries, team announcements
+  and their failure case, the admin's dates and switch).
+
+### Safety Status
+
+- Additive only. Notes are retired, never deleted. A birthday stores month and day only. The team
+  announcement is off until an admin switches it on.
+- Not built (needs data the app doesn't have): a cheer for a first claim in a new state, and a
+  "comeback" badge. Manual browser testing required.
+
 ## 2026-10-08 — Avatar: greetings, milestones and notes from the admin
 
 ### Objective
