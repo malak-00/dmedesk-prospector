@@ -77,6 +77,32 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-08 — Avatar: removed the weekly call goal and the digest; a clearer team mood
+
+### Objective
+
+Act on feedback: the team call goal is not wanted, the "Last week at a glance" block repeated what Team
+activity already shows, and the mood chart was hard to read.
+
+### Actions Completed
+
+- **Removed** the weekly team call goal (the setting, the progress bar in the avatar's panel, the cheer, and
+  `setTeamGoal`) and the "Last week at a glance" digest (the block in Controls, `GET /admin/buddy/digest`,
+  `adminDigest`). Team activity remains the one place for call numbers.
+- **Mood** (Controls > Avatar notes > "How the team is feeling"): replaced the small bars with a plain
+  explanation of the question Caro asks, a summary of the last 7 days (Great, Okay, Rough with icons), and a
+  table of each day's counts with a proportional bar. Still totals only, never names.
+
+### Database / System Result
+
+- No SQL. An old `team_goal` row in `buddy_settings`, if one was ever saved, is simply unused. Worker tests: all
+  pass; the Worker was redeployed.
+
+### Safety Status
+
+- Removal of unused features and a display change; nothing in the database was touched. Manual browser testing
+  required.
+
 ## 2026-10-08 — Caro: handover notes, reminders, bingo, gallery, quiet hours and more
 
 ### Objective

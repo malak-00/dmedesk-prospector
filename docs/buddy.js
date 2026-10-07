@@ -492,7 +492,6 @@
         <div class="buddy-panel-tip"><strong>${escapeHtml(panel.dataset.label || "Tip")}</strong><br>${escapeHtml(panel.dataset.line || pick(TIPS))}</div>
       </div>
       ${challengeHtml()}
-      ${fun()?.teamGoalHtml?.() || ""}
       ${badgesHtml()}
       ${fun()?.panelHtml?.() || ""}
       <div class="buddy-panel-notes">

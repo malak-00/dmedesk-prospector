@@ -1,13 +1,12 @@
 /* The avatar's extra fun and team features, plugged into buddy.js:
    - A daily puzzle (riddle, word scramble, quick maths or trivia, rotating), with a solve streak.
    - Spin the wheel after a goal day, a "lead of the day", and kudos between teammates.
-   - A shared weekly team call goal, a one-tap daily mood (only anonymous totals are shared), a stretch reminder,
+   - A one-tap daily mood (only anonymous totals are shared), a stretch reminder,
      and call scripts beside call mode.
    Also: a weekly bingo card, seasonal puzzles, a gallery of her poses (pick her resting pose), a nudge when leads are
    in a good time to call, a reminder before a callback or meeting, a note to tomorrow's you, a team calendar card on
    Today, and "on a roll" / lull remarks.
-   Loaded after buddy.js. Kudos, mood and scripts need sql/033, the handover note sql/034; the team goal needs sql/032
-   and an admin to set it. */
+   Loaded after buddy.js. Kudos, mood and scripts need sql/033, the handover note sql/034. */
 (function () {
   "use strict";
 
@@ -19,7 +18,6 @@
   const RIDDLE_STATS_KEY = "dmeFunRiddleStats"; // { solved, streak, last }
   const WHEEL_KEY = "dmeFunWheel"; // { day, prize }
   const MOOD_KEY = "dmeFunMood"; // { day }
-  const GOAL_KEY = "dmeFunTeamGoal"; // { week }
 
   /* ---------- the daily puzzle ---------- */
 
@@ -268,7 +266,7 @@
 
   /* ---------- kudos ---------- */
 
-  let team = { people: [], goal: { target: null, calls: 0, weekStart: "" } };
+  let team = { people: [] };
   let lastTeamFetch = 0;
 
   async function loadTeam(force) {
@@ -279,11 +277,6 @@
     } catch (err) {
       console.log("[buddy] " + err.message);
       return;
-    }
-    const g = team.goal || {};
-    if (g.target && g.calls >= g.target && api.read(GOAL_KEY, {}).week !== g.weekStart) {
-      api.write(GOAL_KEY, { week: g.weekStart });
-      api.say({ key: `teamgoal:${g.weekStart}`, kind: "event", pose: "party", title: "Team goal reached!", text: `Together you've made ${g.calls.toLocaleString()} calls this week. Amazing team effort.`, confetti: true });
     }
     api.rerender();
   }
@@ -316,17 +309,6 @@
       key: `kudos:${k.id}`, kind: "event", pose: "thumbs", title: `${k.from} says thanks`, text: k.body,
       onSeen: () => apiPost("buddy/kudos/seen", { id: k.id }).catch((err) => console.log("[buddy] " + err.message)),
     }));
-  }
-
-  /* ---------- the team goal ---------- */
-
-  function teamGoalHtml() {
-    const g = team.goal || {};
-    if (!g.target) return "";
-    const pct = Math.min(100, Math.round((g.calls / g.target) * 100));
-    return `<div class="buddy-team-goal"><strong>Team goal this week</strong>
-      <div class="buddy-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${g.target}" aria-valuenow="${Math.min(g.calls, g.target)}"><span style="width:${pct}%"></span></div>
-      <span class="buddy-progress">${g.calls.toLocaleString()} of ${g.target.toLocaleString()} calls${g.calls >= g.target ? ` ${uiIcon("check")}` : ""}</span></div>`;
   }
 
   /* ---------- one-tap mood ---------- */
@@ -719,7 +701,7 @@
   function stop() {
     clearInterval(timer);
     timer = null;
-    team = { people: [], goal: { target: null, calls: 0, weekStart: "" } };
+    team = { people: [] };
     scripts = [];
     lead = null;
     upcoming = [];
@@ -732,7 +714,7 @@
     lastTeamFetch = 0;
   }
 
-  window.dmeBuddyFun = { panelHtml, teamGoalHtml, onClick, onToday, onKudos, onUpcoming, onEvent, todayCardHtml, callHelperHtml, start, stop };
+  window.dmeBuddyFun = { panelHtml, onClick, onToday, onKudos, onUpcoming, onEvent, todayCardHtml, callHelperHtml, start, stop };
   // buddy.js may already be signed in and showing; catch up.
   if (typeof getSession === "function" && getSession() && document.getElementById("buddyLaunch")) start();
 })();

@@ -19,7 +19,6 @@
   let statusResult = null;
   let buddyData = null;
   let buddyError = "";
-  let digest = null;
   let loading = false;
   let error = "";
   let dialog = null; // the open dialog's overlay element
@@ -34,13 +33,12 @@
     loading = true;
     error = "";
     render();
-    const [u, s, t, st, bd, dg] = await Promise.allSettled([apiGet("admin/users"), apiGet("admin/system"), apiGet("taxonomies/list"), apiGet("admin/statuses"), apiGet("admin/buddy"), apiGet("admin/buddy/digest")]);
+    const [u, s, t, st, bd] = await Promise.allSettled([apiGet("admin/users"), apiGet("admin/system"), apiGet("taxonomies/list"), apiGet("admin/statuses"), apiGet("admin/buddy")]);
     if (u.status === "fulfilled") { users = u.value.users; features = u.value.features; } else { error = u.reason.message; }
     if (s.status === "fulfilled") { system = s.value; systemError = ""; } else { systemError = s.reason.message; }
     if (t.status === "fulfilled") taxonomies = t.value.taxonomies || [];
     if (st.status === "fulfilled") { statusData = st.value; statusError = ""; } else { statusError = st.reason.message; }
     if (bd.status === "fulfilled") { buddyData = bd.value; buddyError = ""; } else { buddyError = bd.reason.message; }
-    digest = dg.status === "fulfilled" ? dg.value : null;
     loading = false;
     render();
   }
@@ -315,7 +313,7 @@
     </div>`;
   }
 
-  /* ---------- the avatar's team features: team goal, scripts, mood, kudos ---------- */
+  /* ---------- the avatar's team features: scripts, mood, kudos ---------- */
 
   function teamHtml() {
     const unavailable = buddyData.teamUnavailable
@@ -324,15 +322,7 @@
     const scripts = buddyData.scripts || [];
     const mood = buddyData.mood || [];
     const kudos = buddyData.kudos || [];
-    const peak = Math.max(1, ...mood.map((d) => d.great + d.okay + d.rough));
-    const answered = mood.reduce((n, d) => n + d.great + d.okay + d.rough, 0);
     return `${unavailable}
-      ${digestHtml()}
-      <h4 style="margin-top:18px">Team call goal</h4>
-      <p class="ctl-help">A shared target for calls this week (Monday to Sunday). The avatar shows the team's progress and cheers when it is reached. Leave blank to switch it off.</p>
-      <div class="ctl-run"><input type="number" id="ctlTeamGoal" min="1" max="100000" step="1" placeholder="e.g. 500" value="${buddyData.teamGoal || ""}" aria-label="Weekly team call goal" style="width:120px">
-        <button type="button" class="btn btn-ghost btn-small" data-ctl="buddy-goal">Save</button></div>
-
       <h4 style="margin-top:18px">Call scripts</h4>
       <p class="ctl-help">Openers and voicemail scripts shown beside call mode. Leave the specialty blank for every lead, or type part of a specialty name (for example "orthotic") to show it only for those leads.</p>
       <div class="ctl-run ctl-note-row">
@@ -347,12 +337,7 @@
       </tbody></table>` : '<div class="muted-note" style="margin-top:10px;">No scripts yet.</div>'}
 
       <h4 style="margin-top:18px">How the team is feeling</h4>
-      <p class="ctl-help">A one-tap check-in the avatar asks at the start of a shift. You only see anonymous totals per day, never who chose what. Last 14 days${answered ? ` (${answered} answers)` : ""}.</p>
-      ${answered ? `<div class="ctl-mood" aria-label="Mood over the last 14 days">${mood.map((d) => {
-        const total = d.great + d.okay + d.rough;
-        const h = (n) => `height:${(n / peak) * 100}%`;
-        return `<div class="ctl-mood-day" title="${escapeHtml(d.day)}: ${d.great} great, ${d.okay} okay, ${d.rough} rough"><i class="m3" style="${h(d.great)}"></i><i class="m2" style="${h(d.okay)}"></i><i class="m1" style="${h(d.rough)}"></i></div>`;
-      }).join("")}</div><div class="muted-note" style="margin-top:6px;">Green great, yellow okay, red rough.</div>` : '<div class="muted-note">No answers yet.</div>'}
+      ${moodHtml(mood)}
 
       <h4 style="margin-top:18px">Recent kudos</h4>
       ${kudos.length ? `<table class="results-table ctl-table"><thead><tr><th>From</th><th>To</th><th>Message</th><th>When</th></tr></thead><tbody>
@@ -360,32 +345,26 @@
       </tbody></table>` : '<div class="muted-note">No kudos yet.</div>'}`;
   }
 
-  // Last full week (Monday to Sunday) at a glance.
-  function digestHtml() {
-    if (!digest) return "";
-    const d = digest;
-    const range = `${new Date(`${d.from}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })} to ${new Date(`${d.to}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
-    const change = d.calls !== null && d.callsBefore ? Math.round(((d.calls - d.callsBefore) / d.callsBefore) * 100) : null;
-    const moodTotal = d.mood.great + d.mood.okay + d.mood.rough;
-    const tile = (label, value, sub) => `<div class="kpi-card"><span class="kpi-label">${escapeHtml(label)}</span><span class="kpi-value">${value === null ? "\u2014" : Number(value).toLocaleString()}</span><span class="kpi-sub">${escapeHtml(sub)}</span></div>`;
-    return `<h4>Last week at a glance <span class="muted-note">(${escapeHtml(range)})</span></h4>
-      <div class="kpi-row">
-        ${tile("Calls dialed", d.calls, change === null ? "Phone taps recorded" : `${change >= 0 ? "+" : ""}${change}% on the week before`)}
-        ${tile("Thank-yous", d.kudos, "Kudos between teammates")}
-        ${tile("Team wins", d.wins, "Onboarded leads announced")}
-        ${tile("Check-ins", moodTotal, moodTotal ? `${d.mood.great} great, ${d.mood.okay} okay, ${d.mood.rough} rough` : "No answers")}
-      </div>`;
-  }
-
-  async function saveTeamGoal() {
-    const value = document.getElementById("ctlTeamGoal").value.trim();
-    try {
-      await apiPost("admin/buddy/settings", { teamGoal: value });
-      buddyData.teamGoal = value ? Number(value) : null;
-      showToast(value ? "Team goal saved" : "Team goal switched off");
-    } catch (err) {
-      showToast(err.message, true);
-    }
+  // At the start of each shift Caro asks everyone one question. This shows the answers as plain counts per day
+  // (never names), so a run of "Rough" days is easy to spot.
+  function moodHtml(mood) {
+    const days = mood.slice(-7).reverse(); // newest first, the last seven days
+    const total = (d) => d.great + d.okay + d.rough;
+    const sum = (key) => days.reduce((n, d) => n + d[key], 0);
+    const answered = days.reduce((n, d) => n + total(d), 0);
+    const intro = '<p class="ctl-help">At the start of each shift Caro asks everyone &ldquo;How\'s your day going?&rdquo; with three choices: Great, Okay or Rough. These are the answers from the last 7 days. You only see totals, never who answered what.</p>';
+    if (!answered) return `${intro}<div class="muted-note">No answers yet.</div>`;
+    const label = (d) => new Date(`${d.day}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    return `${intro}
+      <div class="mood-summary">
+        <span class="mood-pill m3">${uiIcon("smile")} <strong>${sum("great")}</strong> Great</span>
+        <span class="mood-pill m2">${uiIcon("meh")} <strong>${sum("okay")}</strong> Okay</span>
+        <span class="mood-pill m1">${uiIcon("frown")} <strong>${sum("rough")}</strong> Rough</span>
+      </div>
+      <table class="results-table ctl-table mood-table"><thead><tr><th>Day</th><th>Answers</th><th>Great</th><th>Okay</th><th>Rough</th><th class="mood-bar-col"></th></tr></thead><tbody>
+        ${days.map((d) => `<tr><td>${escapeHtml(label(d))}</td><td class="mono">${total(d) || "\u2014"}</td><td class="mono">${d.great || ""}</td><td class="mono">${d.okay || ""}</td><td class="mono">${d.rough || ""}</td>
+          <td class="mood-bar-col">${total(d) ? `<div class="mood-bar" aria-hidden="true"><i class="m3" style="width:${(d.great / total(d)) * 100}%"></i><i class="m2" style="width:${(d.okay / total(d)) * 100}%"></i><i class="m1" style="width:${(d.rough / total(d)) * 100}%"></i></div>` : ""}</td></tr>`).join("")}
+      </tbody></table>`;
   }
 
   async function addScript() {
@@ -801,7 +780,6 @@
     else if (btn.dataset.ctl === "buddy-send") sendBuddy();
     else if (btn.dataset.ctl === "buddy-retire") retireBuddy(btn.dataset.id);
     else if (btn.dataset.ctl === "buddy-person") savePerson(btn.closest("tr"));
-    else if (btn.dataset.ctl === "buddy-goal") saveTeamGoal();
     else if (btn.dataset.ctl === "buddy-script") addScript();
     else if (btn.dataset.ctl === "buddy-script-retire") retireScript(btn.dataset.id);
   });
@@ -836,7 +814,6 @@
     taxonomies = null;
     statusData = null;
     buddyData = null;
-    digest = null;
     panel.innerHTML = "";
   };
 })();

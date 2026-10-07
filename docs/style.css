@@ -2877,10 +2877,6 @@ html:not(.call-open) body:has(.buddy:not([hidden])) .toast { right: 124px; max-w
 .buddy-wheel { font-size: 44px; text-align: center; line-height: 1; }
 .buddy-wheel.is-spinning { animation: buddy-spin 1.3s ease-in-out; }
 @keyframes buddy-spin { from { transform: rotate(0); } to { transform: rotate(1080deg); } }
-.buddy-team-goal { display: grid; gap: 4px; padding: 9px 11px; border-radius: var(--radius-md, 10px); background: var(--surface-2); border: 1px solid var(--line, var(--hairline)); font-size: 13px; }
-.buddy-team-goal strong { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
-.buddy-bar { height: 8px; border-radius: 999px; background: var(--surface); overflow: hidden; border: 1px solid var(--line, var(--hairline)); }
-.buddy-bar span { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.4s ease; }
 .buddy-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { .buddy-wheel.is-spinning { animation: none; } }
 .buddy-call { width: 250px; }
@@ -2889,12 +2885,6 @@ html:not(.call-open) body:has(.buddy:not([hidden])) .toast { right: 124px; max-w
 .buddy-script-title { font-weight: 700; margin-bottom: 3px; }
 .buddy-script-title span { font-weight: 500; font-size: 11px; color: var(--muted); margin-left: 4px; }
 .buddy-script-body { white-space: pre-wrap; overflow-wrap: anywhere; }
-.ctl-mood { display: flex; gap: 3px; align-items: flex-end; height: 56px; margin-top: 8px; }
-.ctl-mood-day { flex: 1; display: flex; flex-direction: column-reverse; min-width: 6px; border-radius: 3px; overflow: hidden; background: var(--surface-2); height: 100%; }
-.ctl-mood-day i { display: block; }
-.ctl-mood-day .m3 { background: var(--score-high, #2eb872); }
-.ctl-mood-day .m2 { background: var(--score-mid, #d9a21b); }
-.ctl-mood-day .m1 { background: var(--score-low, #e2695c); }
 
 /* Icons instead of emoji, and collapsible admin sections. */
 .ui-icon { width: 1.1em; height: 1.1em; vertical-align: -0.2em; flex: none; }
@@ -2944,5 +2934,17 @@ html:not(.call-open) body:has(.buddy:not([hidden])) .toast { right: 124px; max-w
 .team-cal-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 4px 0; }
 .team-cal-row span:last-child { color: var(--muted); white-space: nowrap; }
 .buddy-fun-text { width: 100%; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--input-line, var(--hairline)); border-radius: 8px; padding: 7px 9px; resize: vertical; }
-.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 4px; }
-.kpi-row .kpi-card { cursor: default; }
+
+/* Admin: the team's mood, as plain counts. */
+.mood-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.mood-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; font-size: 13px; background: var(--surface-2); border: 1px solid var(--line, var(--hairline)); }
+.mood-pill .ui-icon { width: 17px; height: 17px; }
+.mood-pill.m3 .ui-icon { color: var(--score-high, #2eb872); }
+.mood-pill.m2 .ui-icon { color: var(--score-mid, #d9a21b); }
+.mood-pill.m1 .ui-icon { color: var(--score-low, #e2695c); }
+.mood-table .mood-bar-col { width: 40%; min-width: 120px; }
+.mood-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+.mood-bar i { display: block; height: 100%; }
+.mood-bar .m3 { background: var(--score-high, #2eb872); }
+.mood-bar .m2 { background: var(--score-mid, #d9a21b); }
+.mood-bar .m1 { background: var(--score-low, #e2695c); }

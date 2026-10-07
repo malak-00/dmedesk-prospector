@@ -1,6 +1,6 @@
 // The avatar's team features (sql/033): kudos, a daily mood tap, call scripts, and the weekly team goal.
 // Before that file is run the tables don't exist: reads then return nothing, and writes say which file to run.
-import { KUDOS_PER_DAY, cleanHandover, cleanKudos, cleanMood, cleanScript, cleanTeamGoal, lastWeekRange, moodTrend, weekStartUtc } from "../lib/buddy.js";
+import { KUDOS_PER_DAY, cleanHandover, cleanKudos, cleanMood, cleanScript, moodTrend } from "../lib/buddy.js";
 
 function httpError(status, message) {
   const err = new Error(message);
@@ -27,26 +27,10 @@ async function nameLookup(supabase, ids) {
   return (id) => map.get(id) || "";
 }
 
-async function readGoal(supabase) {
-  const { data, error } = await supabase.from("buddy_settings").select("value").eq("key", "team_goal").maybeSingle();
-  if (error || !data) return null;
-  const n = Number(data.value);
-  return Number.isInteger(n) && n > 0 ? n : null;
-}
-
-// Teammates to thank, and the week's team call goal with how far the team is. Calls are the phone taps
-// recorded this week (sql/029), which is what every Call button and tapped number already writes.
-export async function teamInfo(supabase, session, now = new Date()) {
-  const [users, target] = await Promise.all([activeUsers(supabase), readGoal(supabase)]);
-  let calls = 0;
-  if (target) {
-    const { count, error } = await supabase.from("call_taps").select("id", { count: "exact", head: true }).gte("tapped_at", weekStartUtc(now));
-    if (!error) calls = count || 0;
-  }
-  return {
-    people: users.filter((u) => u.id !== session.id).map((u) => ({ id: u.id, name: u.display_name })),
-    goal: { target, calls, weekStart: weekStartUtc(now).slice(0, 10) },
-  };
+// Teammates to thank.
+export async function teamInfo(supabase, session) {
+  const users = await activeUsers(supabase);
+  return { people: users.filter((u) => u.id !== session.id).map((u) => ({ id: u.id, name: u.display_name })) };
 }
 
 // Thank-yous this person hasn't been shown yet.
@@ -113,29 +97,19 @@ export async function retireScript(supabase, id, now = new Date()) {
   return { id: String(n), retired: true };
 }
 
-// The weekly team goal (blank switches it off). Stored as a setting (sql/032).
-export async function setTeamGoal(supabase, value) {
-  const goal = cleanTeamGoal(value);
-  const { error } = await supabase.from("buddy_settings").upsert({ key: "team_goal", value: goal === null ? "" : String(goal) }, { onConflict: "key" });
-  if (error) throw httpError(missingTable(error) ? 503 : 500, missingTable(error) ? "Run sql/032_avatar_extras.sql in Supabase first" : "Failed to save: " + error.message);
-  return { teamGoal: goal };
-}
-
-// What the admin sees: the mood as anonymous daily totals, the latest thank-yous, the scripts and the goal.
+// What the admin sees: the mood as anonymous daily totals, the latest thank-yous and the scripts.
 export async function adminExtras(supabase, now = new Date()) {
   const since = new Date(now.getTime() - 14 * 86_400_000).toISOString().slice(0, 10);
-  const [mood, kudos, scripts, goal] = await Promise.all([
+  const [mood, kudos, scripts] = await Promise.all([
     supabase.from("buddy_mood").select("day, mood").gte("day", since).limit(2000),
     supabase.from("buddy_kudos").select("id, from_user, to_user, body, created_at").order("created_at", { ascending: false }).limit(20),
     supabase.from("buddy_scripts").select("id, specialty, title, body").is("retired_at", null).order("id", { ascending: true }).limit(100),
-    readGoal(supabase),
   ]);
   const nameOf = await nameLookup(supabase, (kudos.data || []).flatMap((k) => [k.from_user, k.to_user]));
   return {
     mood: mood.error ? [] : moodTrend(mood.data || [], 14, now),
     kudos: kudos.error ? [] : (kudos.data || []).map((k) => ({ id: String(k.id), from: nameOf(k.from_user), to: nameOf(k.to_user), body: k.body, at: k.created_at })),
     scripts: scripts.error ? [] : (scripts.data || []).map((s) => ({ id: String(s.id), specialty: s.specialty || "", title: s.title, body: s.body })),
-    teamGoal: goal,
     teamUnavailable: Boolean(mood.error && missingTable(mood.error)),
   };
 }
@@ -161,32 +135,4 @@ export async function markHandoverShown(supabase, session, now = new Date()) {
   const { error } = await supabase.from("buddy_handover").update({ shown_at: now.toISOString() }).eq("user_id", session.id).is("shown_at", null);
   if (error && !missingTable(error)) throw httpError(500, "Failed to record that: " + error.message);
   return { shown: true };
-}
-
-// The admin's Monday summary of last week: calls (phone taps), thank-yous, team wins, and how people felt.
-export async function adminDigest(supabase, now = new Date()) {
-  const { from, to, beforeFrom } = lastWeekRange(now);
-  const count = async (table, column, a, b, extra) => {
-    let q = supabase.from(table).select("id", { count: "exact", head: true }).gte(column, a).lt(column, b);
-    if (extra) q = extra(q);
-    const { count: n, error } = await q;
-    return error ? null : n || 0;
-  };
-  const [calls, callsBefore, kudos, wins, mood] = await Promise.all([
-    count("call_taps", "tapped_at", from, to),
-    count("call_taps", "tapped_at", beforeFrom, from),
-    count("buddy_kudos", "created_at", from, to),
-    count("buddy_notes", "created_at", from, to, (q) => q.eq("kind", "win")),
-    supabase.from("buddy_mood").select("mood").gte("day", from.slice(0, 10)).lt("day", to.slice(0, 10)).limit(2000),
-  ]);
-  const moods = mood.error ? [] : mood.data || [];
-  return {
-    from: from.slice(0, 10),
-    to: new Date(Date.parse(to) - 86_400_000).toISOString().slice(0, 10),
-    calls,
-    callsBefore,
-    kudos,
-    wins,
-    mood: { great: moods.filter((m) => m.mood === 3).length, okay: moods.filter((m) => m.mood === 2).length, rough: moods.filter((m) => m.mood === 1).length },
-  };
 }

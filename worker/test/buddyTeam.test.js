@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanKudos, cleanMood, cleanScript, cleanTeamGoal, cleanHandover, lastWeekRange, moodTrend, upcomingOccasions, weekStartUtc } from '../src/lib/buddy.js';
-import { teamInfo, kudosForMe, giveKudos, markKudosSeen, setMood, listScripts, saveScript, retireScript, setTeamGoal, adminExtras, getHandover, saveHandover, markHandoverShown, adminDigest } from '../src/repos/buddyTeamRepo.js';
+import { cleanKudos, cleanMood, cleanScript, cleanHandover, moodTrend, upcomingOccasions } from '../src/lib/buddy.js';
+import { teamInfo, kudosForMe, giveKudos, markKudosSeen, setMood, listScripts, saveScript, retireScript, adminExtras, getHandover, saveHandover, markHandoverShown } from '../src/repos/buddyTeamRepo.js';
 
 const NOW = new Date('2026-10-08T15:00:00Z'); // a Thursday
 
@@ -24,18 +24,6 @@ test('a script needs a title and text; the specialty may be blank', () => {
   assert.throws(() => cleanScript({ title: '', body: 'x' }), /title/);
   assert.throws(() => cleanScript({ title: 't', body: '' }), /Write the script/);
   assert.throws(() => cleanScript({ title: 't', body: 'x'.repeat(801) }), /800/);
-});
-
-test('the team goal is a whole number, or blank to switch it off', () => {
-  assert.equal(cleanTeamGoal('500'), 500);
-  assert.equal(cleanTeamGoal(''), null);
-  assert.throws(() => cleanTeamGoal('lots'), /whole number/);
-  assert.throws(() => cleanTeamGoal(0), /whole number/);
-});
-
-test('the week starts on Monday (UTC)', () => {
-  assert.equal(weekStartUtc(NOW), '2026-10-05T00:00:00.000Z');
-  assert.equal(weekStartUtc(new Date('2026-10-04T23:00:00Z')), '2026-09-28T00:00:00.000Z'); // a Sunday belongs to the week before
 });
 
 test('mood is summed per day with no names', () => {
@@ -100,17 +88,9 @@ const users = [
   { id: 'c', display_name: 'Gone', disabled_at: '2026-01-01T00:00:00Z' },
 ];
 
-test('the team view lists active teammates (not you) and counts this week\'s taps against the goal', async () => {
-  const db = fakeDb({
-    users,
-    settings: [{ key: 'team_goal', value: '500' }],
-    taps: [{ id: 1, tapped_at: '2026-10-06T10:00:00Z' }, { id: 2, tapped_at: '2026-10-07T10:00:00Z' }, { id: 3, tapped_at: '2026-09-30T10:00:00Z' }],
-  });
-  const info = await teamInfo(db, { id: 'a' }, NOW);
-  assert.deepEqual(info.people, [{ id: 'b', name: 'Ben' }]);
-  assert.deepEqual(info.goal, { target: 500, calls: 2, weekStart: '2026-10-05' });
-  const noGoal = await teamInfo(fakeDb({ users }), { id: 'a' }, NOW);
-  assert.deepEqual(noGoal.goal, { target: null, calls: 0, weekStart: '2026-10-05' });
+test('the team view lists active teammates, not you or someone removed', async () => {
+  const info = await teamInfo(fakeDb({ users }), { id: 'a' });
+  assert.deepEqual(info, { people: [{ id: 'b', name: 'Ben' }] });
 });
 
 test('kudos: sent, shown once, limited per day, and the tables missing is explained', async () => {
@@ -143,10 +123,8 @@ test('scripts: add, list, retire (kept), and the admin overview shows totals wit
   await retireScript(db, made.id, NOW);
   assert.equal((await listScripts(db)).scripts.length, 0);
   assert.equal(db.tables.buddy_scripts.length, 1); // never deleted
-  await setTeamGoal(db, '750');
   await setMood(db, { id: 'a' }, { mood: 2, day: '2026-10-08' }, NOW);
   const extras = await adminExtras(db, NOW);
-  assert.equal(extras.teamGoal, 750);
   assert.deepEqual(extras.mood.at(-1), { day: '2026-10-08', great: 0, okay: 1, rough: 0 });
   assert.equal(JSON.stringify(extras.mood).includes('"a"'), false);
 });
@@ -155,13 +133,6 @@ test('the week ahead lists birthdays and anniversaries after today, soonest firs
   const people = [{ user_id: 'b', birthday_md: '10-10', started_on: '2024-10-12' }, { user_id: 'c', birthday_md: '10-08', started_on: null }];
   const out = upcomingOccasions(people, '2026-10-08', 'a', (id) => ({ b: 'Ben', c: 'Cy' }[id]));
   assert.deepEqual(out.map((o) => [o.kind, o.name, o.inDays, o.years]), [['birthday', 'Ben', 2, 0], ['anniversary', 'Ben', 4, 2]]);
-});
-
-test('last week is the previous Monday to Sunday', () => {
-  const r = lastWeekRange(NOW); // Thursday 8 Oct
-  assert.equal(r.from, '2026-09-28T00:00:00.000Z');
-  assert.equal(r.to, '2026-10-05T00:00:00.000Z');
-  assert.equal(r.beforeFrom, '2026-09-21T00:00:00.000Z');
 });
 
 test('a note to tomorrow\'s you is limited, shown once, then marked shown; replaced by a newer one', async () => {
@@ -178,17 +149,4 @@ test('a note to tomorrow\'s you is limited, shown once, then marked shown; repla
   const missing = fakeDb({ users, missing: true });
   assert.deepEqual(await getHandover(missing, { id: 'a' }), { note: null, unavailable: true });
   await assert.rejects(saveHandover(missing, { id: 'a' }, { body: 'x' }, NOW), { status: 503 });
-});
-
-test('the weekly digest counts last week only, and totals the mood without names', async () => {
-  const db = fakeDb({
-    users,
-    taps: [{ id: 1, tapped_at: '2026-09-29T10:00:00Z' }, { id: 2, tapped_at: '2026-10-04T23:00:00Z' }, { id: 3, tapped_at: '2026-10-06T10:00:00Z' }, { id: 4, tapped_at: '2026-09-22T10:00:00Z' }],
-    kudos: [{ id: 1, created_at: '2026-10-01T10:00:00Z' }],
-    notes: [{ id: 1, kind: 'win', created_at: '2026-10-02T10:00:00Z' }, { id: 2, kind: 'note', created_at: '2026-10-02T10:00:00Z' }],
-    mood: [{ day: '2026-09-30', mood: 3 }, { day: '2026-10-01', mood: 1 }, { day: '2026-10-06', mood: 3 }],
-  });
-  const d = await adminDigest(db, NOW);
-  assert.deepEqual([d.from, d.to, d.calls, d.callsBefore, d.kudos, d.wins], ['2026-09-28', '2026-10-04', 2, 1, 1, 1]);
-  assert.deepEqual(d.mood, { great: 1, okay: 0, rough: 1 });
 });

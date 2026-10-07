@@ -597,7 +597,7 @@ app.get("/buddy/notes", async (c) => {
   return c.json(ok({ ...data, kudos }));
 });
 
-// Teammates to thank and the week's team call goal; call scripts; kudos; and a one-tap daily mood.
+// Teammates to thank; call scripts; kudos; and a one-tap daily mood.
 app.get("/buddy/team", async (c) => c.json(ok(await buddyTeam.teamInfo(supabaseFor(c), c.get("session")))));
 app.get("/buddy/scripts", async (c) => c.json(ok(await buddyTeam.listScripts(supabaseFor(c)))));
 app.post("/buddy/kudos", async (c) => {
@@ -638,12 +638,6 @@ app.get("/admin/buddy", async (c) => {
   return c.json(ok({ ...notes, ...extras }));
 });
 
-// Last week at a glance for the admin.
-app.get("/admin/buddy/digest", async (c) => {
-  requireAdmin(c.get("session"));
-  return c.json(ok(await buddyTeam.adminDigest(supabaseFor(c))));
-});
-
 app.post("/admin/buddy/script", async (c) => {
   const session = c.get("session");
   requireAdmin(session);
@@ -677,7 +671,6 @@ app.post("/admin/buddy/settings", async (c) => {
   const supabase = supabaseFor(c);
   const out = {};
   if ("teamWins" in body) Object.assign(out, await buddyRepo.setTeamWins(supabase, body.teamWins === true));
-  if ("teamGoal" in body) Object.assign(out, await buddyTeam.setTeamGoal(supabase, body.teamGoal));
   return c.json(ok(out));
 });
 

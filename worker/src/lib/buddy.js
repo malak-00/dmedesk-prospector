@@ -158,21 +158,6 @@ export function cleanScript(input = {}) {
   return { title, body, specialty: specialty || null };
 }
 
-// The weekly team call goal: a whole number, or "" to switch it off.
-export function cleanTeamGoal(value) {
-  if (value === "" || value === null || value === undefined) return null;
-  const n = Number(value);
-  if (!Number.isInteger(n) || n < 1 || n > 100000) throw httpError(400, "The team goal is a whole number of calls, like 500");
-  return n;
-}
-
-// Monday 00:00 UTC of the week containing `now` (the team's shifts sit well inside one UTC day).
-export function weekStartUtc(now = new Date()) {
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-  return d.toISOString();
-}
-
 // Mood answers for a stretch of days -> one anonymous count per day (never who chose what).
 export function moodTrend(rows, days = 14, now = new Date()) {
   const out = [];
@@ -204,12 +189,4 @@ export function upcomingOccasions(people, day, meId, nameOf = () => "", span = 7
     for (const o of occasionsOn(people, d, meId, nameOf)) out.push({ ...o, date: d, inDays: i });
   }
   return out;
-}
-
-// Last full Monday-to-Sunday week (UTC) before the one `now` is in: [from, to), and the week before that.
-export function lastWeekRange(now = new Date()) {
-  const thisMonday = new Date(weekStartUtc(now));
-  const from = new Date(thisMonday.getTime() - 7 * 86_400_000);
-  const before = new Date(from.getTime() - 7 * 86_400_000);
-  return { from: from.toISOString(), to: thisMonday.toISOString(), beforeFrom: before.toISOString() };
 }
