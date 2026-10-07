@@ -2852,3 +2852,11 @@ html.call-open .buddy { display: none; }
 .ctl-row-wrap { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 .ctl-react-list { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .ctl-people-table input { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--input-line, var(--hairline)); border-radius: 8px; padding: 4px 8px; }
+
+/* Messages (merged, sent to sheet, claimed...) must never end up behind the avatar: the toast sits above it and,
+   while the avatar is on screen, moves left of her face; the floating selection bar lifts clear on narrow screens. */
+.toast { z-index: 80; }
+.toast.visible { pointer-events: auto; }
+html:not(.call-open) body:has(.buddy:not([hidden])) .toast { right: 124px; max-width: min(340px, calc(100vw - 144px)); }
+@media (max-width: 900px) { html:not(.call-open) body:has(.buddy:not([hidden])) .selection-bar { bottom: 112px; } }
+@media (max-width: 520px) { html:not(.call-open) body:has(.buddy:not([hidden])) .toast { right: 96px; max-width: calc(100vw - 112px); } }
