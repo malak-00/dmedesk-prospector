@@ -702,26 +702,26 @@ export async function getRegistryMergePreview(supabase) {
 // caller repeats with `next` until `done`. Whether a pair is safe is decided in
 // SQL, atomically with the merge (merge_identity_pair_if_safe).
 export async function mergeEligibleRegistryReviews(supabase, { after, decidedBy }) {
-  let query = supabase
-    .from("registry_review_queue")
-    .select(QUEUE_COLUMNS)
-    .in("matched_keys", AUTO_MERGE_KEYS)
-    .order("left_npi")
-    .order("right_npi")
-    .limit(AUTO_MERGE_BATCH);
-
+  let afterLeft = null;
+  let afterRight = null;
   if (after && (after.leftNpi || after.rightNpi)) {
-    const left = String(after.leftNpi || "");
-    const right = String(after.rightNpi || "");
-    // NPIs are spliced into a filter string, so only ten digits are accepted.
-    if (!/^\d{10}$/.test(left) || !/^\d{10}$/.test(right)) throw httpError(400, "Invalid cursor");
-    query = query.or(`left_npi.gt.${left},and(left_npi.eq.${left},right_npi.gt.${right})`);
+    afterLeft = String(after.leftNpi || "");
+    afterRight = String(after.rightNpi || "");
+    if (!/^\d{10}$/.test(afterLeft) || !/^\d{10}$/.test(afterRight)) throw httpError(400, "Invalid cursor");
   }
 
-  const { data, error } = await query;
+  // sql/036: reads registry_match_candidates directly in key order. The
+  // registry_review_queue view checks every pair it scans against all past
+  // decisions, which timed out once thousands of pairs had been merged.
+  const { data, error } = await supabase.rpc("registry_merge_next_batch", {
+    p_keys: AUTO_MERGE_KEYS,
+    p_after_left: afterLeft,
+    p_after_right: afterRight,
+    p_limit: AUTO_MERGE_BATCH,
+  });
   if (error) {
-    if (isMissingRelation(error, "registry_review_queue")) {
-      throw httpError(503, "Registry-wide matching isn't installed yet. Run sql/030_registry_identity_matching.sql first.");
+    if (isMissingRpc(error)) {
+      throw httpError(503, "Merge all needs the latest update. Run sql/036_registry_merge_batch.sql in Supabase, then try again.");
     }
     throw httpError(500, "Failed to read the registry matches: " + error.message);
   }

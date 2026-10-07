@@ -3867,23 +3867,61 @@ const BULK_MERGE_BATCH_SIZE = 20;
 // server batches until none are left. The same button becomes Stop while it runs.
 let mergeAllRunning = false;
 let mergeAllStopRequested = false;
+let mergeAllClock = null;
+
+function formatElapsed(ms) {
+  const total = Math.floor(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+// fraction = null shows the sliding "working" bar; a number fills the bar.
+function setMergeAllProgress(text, fraction) {
+  const box = document.getElementById("mergeAllProgress");
+  box.hidden = false;
+  box.classList.toggle("is-indeterminate", fraction === null);
+  document.getElementById("mergeAllProgressText").textContent = text;
+  document.getElementById("mergeAllProgressFill").style.width = fraction === null ? "" : `${Math.round(fraction * 100)}%`;
+}
+
+function stopMergeAllClock() {
+  if (mergeAllClock) clearInterval(mergeAllClock);
+  mergeAllClock = null;
+}
 
 async function mergeAllEligibleRegistry() {
   if (mergeAllRunning) {
     mergeAllStopRequested = true;
     els.matchReviewsMergeAllBtn.disabled = true;
-    els.matchReviewsMergeAllBtn.textContent = "Stopping after this batch…";
+    els.matchReviewsMergeAllBtn.textContent = "Stopping…";
+    setMergeAllProgress("Stopping after the batch in progress…", null);
     return;
   }
+
+  // Say something the instant it is clicked: counting can take several seconds.
+  const btn = els.matchReviewsMergeAllBtn;
+  btn.disabled = true;
+  btn.textContent = "Counting…";
+  document.querySelector("#mergeAllProgress .spinner").hidden = false;
+  setMergeAllProgress("Counting the matches that can be merged…", null);
+  document.getElementById("mergeAllProgressTime").textContent = "";
 
   let preview;
   try {
     preview = await apiGet("admin/match-reviews/merge-all-preview");
   } catch (err) {
+    document.getElementById("mergeAllProgress").hidden = true;
+    btn.disabled = false;
+    btn.textContent = "Merge all eligible…";
     showToast(err.message, true);
     return;
   }
+  const backToIdle = () => {
+    document.getElementById("mergeAllProgress").hidden = true;
+    btn.disabled = false;
+    btn.textContent = "Merge all eligible…";
+  };
   if (!preview.mergeable) {
+    backToIdle();
     showToast(preview.total ? "Every matching pair is held back: different agents own parts of those groups." : "Nothing matches the merge rules.");
     return;
   }
@@ -3894,15 +3932,43 @@ async function mergeAllEligibleRegistry() {
       (preview.blocked ? `${preview.blocked.toLocaleString()} matching pair${preview.blocked === 1 ? " is" : "s are"} held back because different agents own NPIs in those groups.\n\n` : "") +
       "Nobody's claims change, but a merge can't be undone from the app. It keeps going until none are left; you can stop it at any time."
   );
-  if (!ok) return;
+  if (!ok) {
+    backToIdle();
+    return;
+  }
 
   mergeAllRunning = true;
   mergeAllStopRequested = false;
+  const startedAt = Date.now();
   let after = null;
   let merged = 0;
   let held = 0;
   let failed = 0;
+  let batches = 0;
   let error = null;
+
+  const timeEl = document.getElementById("mergeAllProgressTime");
+  const refresh = () => {
+    const done = merged + held + failed;
+    // The total is an estimate (merging one pair can settle others), so the bar
+    // holds back from 100% until the run really ends.
+    const fraction = preview.total ? Math.min(done / preview.total, 0.97) : null;
+    btn.disabled = false;
+    btn.textContent = `Stop — merged ${merged.toLocaleString()}`;
+    setMergeAllProgress(
+      `Merging… ${merged.toLocaleString()} merged` +
+        (held ? ` · ${held.toLocaleString()} held back` : "") +
+        (failed ? ` · ${failed.toLocaleString()} failed` : "") +
+        ` · about ${preview.mergeable.toLocaleString()} to go`,
+      fraction
+    );
+  };
+  // The clock ticks every second even while a batch is in flight, so a slow
+  // batch still shows the run is alive.
+  mergeAllClock = setInterval(() => { timeEl.textContent = formatElapsed(Date.now() - startedAt); }, 1000);
+  timeEl.textContent = "0:00";
+  refresh();
+
   try {
     while (!mergeAllStopRequested) {
       let result;
@@ -3918,19 +3984,28 @@ async function mergeAllEligibleRegistry() {
           break;
         }
       }
+      batches += 1;
       merged += result.merged?.length || 0;
       held += result.skipped?.length || 0;
       failed += result.failed?.length || 0;
-      els.matchReviewsMergeAllBtn.textContent = `Stop — merged ${merged.toLocaleString()}`;
+      refresh();
       if (result.done || !result.next) break;
       after = result.next;
     }
   } finally {
     const stopped = mergeAllStopRequested;
+    stopMergeAllClock();
     mergeAllRunning = false;
     mergeAllStopRequested = false;
-    els.matchReviewsMergeAllBtn.disabled = false;
-    els.matchReviewsMergeAllBtn.textContent = "Merge all eligible…";
+    btn.disabled = false;
+    btn.textContent = "Merge all eligible…";
+    setMergeAllProgress(
+      `${stopped ? "Stopped" : error ? "Paused" : "Finished"} in ${formatElapsed(Date.now() - startedAt)} — ` +
+        `${merged.toLocaleString()} merged` + (held ? `, ${held.toLocaleString()} held back` : "") +
+        (failed ? `, ${failed.toLocaleString()} failed` : "") + (error ? `. ${error.message}` : "."),
+      stopped || error ? Math.min((merged + held + failed) / Math.max(preview.total, 1), 0.97) : 1
+    );
+    document.getElementById("mergeAllProgress").querySelector(".spinner").hidden = true;
     showToast(
       `${stopped ? "Stopped. " : error ? "Paused: " + error.message + " " : "Done. "}` +
         `Merged ${merged.toLocaleString()}` +
@@ -3941,50 +4016,6 @@ async function mergeAllEligibleRegistry() {
     await Promise.all([loadMatchReviews(true), loadConflicts(true)]);
   }
 }
-
-async function bulkMergeSelectedMatchReviews() {
-  const reviews = filteredMatchReviews().filter((review) => state.matchReviewSelected.has(matchReviewKey(review)));
-  if (reviews.length === 0) return;
-  const eligible = reviews.filter((review) => matchReviewBulkEligibility(review).eligible);
-  const allReviews = filteredMatchReviews();
-  const excluded = allReviews.filter((review) => !matchReviewBulkEligibility(review).eligible).length;
-  const message = `Merge ${eligible.length} selected eligible pair${eligible.length === 1 ? "" : "s"}?` +
-    (excluded ? ` ${excluded} pair${excluded === 1 ? " is" : "s are"} excluded from bulk selection because different agents own them.` : "") +
-    " Each merge will be recorded with an automatic ownership-consistency reason.";
-  if (!confirm(message)) return;
-
-  els.matchReviewsBulkMergeBtn.disabled = true;
-  els.matchReviewsBulkMergeBtn.textContent = `Merging 0/${eligible.length}…`;
-  let merged = 0;
-  let skipped = 0;
-  let failedBatches = 0;
-  try {
-    for (let offset = 0; offset < eligible.length; offset += BULK_MERGE_BATCH_SIZE) {
-      const batch = eligible.slice(offset, offset + BULK_MERGE_BATCH_SIZE);
-      try {
-        const result = await apiPost("admin/match-reviews/bulk-merge", {
-          pairs: batch.map((review) => ({ leftNpi: review.leftNpi, rightNpi: review.rightNpi })),
-        });
-        merged += result.merged?.length || 0;
-        skipped += (result.skipped?.length || 0) + (result.failed?.length || 0);
-      } catch (err) {
-        // A retry is safe: pairs completed before a timeout are no longer in
-        // the pending queue and the Worker reports them as skipped.
-        failedBatches += 1;
-      }
-      els.matchReviewsBulkMergeBtn.textContent = `Merging ${Math.min(offset + batch.length, eligible.length)}/${eligible.length}…`;
-    }
-    state.matchReviewSelected.clear();
-    showToast(`Merged ${merged} pair${merged === 1 ? "" : "s"}.` +
-      (skipped ? ` ${skipped} skipped or failed; refresh to review them.` : "") +
-      (failedBatches ? ` ${failedBatches} batch${failedBatches === 1 ? "" : "es"} timed out or failed.` : ""));
-    await Promise.all([loadMatchReviews(true), loadConflicts(true)]);
-  } catch (err) {
-    showToast(err.message, true);
-    renderMatchReviewBulkControls(filteredMatchReviews());
-  }
-}
-
 async function bookClaimedMeeting(index) {
   const lead = state.claimedLeads[index];
   if (!lead) return;

@@ -1,4 +1,4 @@
-﻿# Supabase SQL bundle
+# Supabase SQL bundle
 
 These files are ordered and intended for manual execution in the Supabase SQL
 Editor by the project owner. The agent does not execute them against Supabase.
@@ -77,6 +77,7 @@ in `003`); save their output with the run.
 | `011_claim_for_user.sql` | `app_users.can_claim_for_others`; `claim_leads()` redefined with an optional actor for claims on behalf of another user | Executed 2026-09-16 (Worker deployed after) |
 | `012_medicare_refresh.sql` | `medicare_refresh_staging` + `apply_medicare_refresh()`: CMS DMEPOS by-Supplier data into `npi_cms_enrichment`, with history and claim-drop alerts | Executed 2026-09-17; re-run 2026-09-17 with the narrowed duplicate guard, so the 9,292 suppliers skipped on the first load can be picked up by the next `--apply` |
 | `013_release_claimed_leads.sql` | `release_claimed_leads()`: "Return to Prospect" as a soft release with a `released` event | Executed 2026-09-17 (Worker deployed after) |
+| `036_registry_merge_batch.sql` | `registry_merge_next_batch()` reads Merge-all batches straight from the candidates table (the review view timed out after ~9,000 merges); `merge_identity_pair_if_safe()` also honors group-level "already decided" | Not run yet |
 | `035_registry_merge_all.sql` | `registry_merge_preview()` + `merge_identity_pair_if_safe()` behind "Merge all eligible" (Tier 2 + official+phone; refuses groups owned by different agents) | Not run yet |
 | `033_release_keeps_claimed_at.sql` | Fixes "Return to Prospect" failing on `leads.claimed_at` NOT NULL: `release_claimed_leads()` no longer nulls `claimed_at` | Not run yet |
 | `014_claim_preflight.sql` | `identity_group_lookup()` + `claim_leads(..., p_dry_run)`: the claim rules with nothing written, so "Send to Sheet" refuses what claiming would refuse | Executed 2026-09-17 (Worker deployed after) |

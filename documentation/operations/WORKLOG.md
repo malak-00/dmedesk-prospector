@@ -1,4 +1,21 @@
-﻿# DME Desk Prospector Worklog
+# DME Desk Prospector Worklog
+
+## 2026-10-08 — Merge all eligible: timeouts after ~9,000 merges, and visible progress (sql/036, written, not run)
+
+### Objective
+After the first run merged about 9,000 pairs and was stopped, running it again kept timing out, and the button gave no sign it was working between updates.
+
+### Actions Completed
+- Cause (inferred, not confirmed on the database): batches were read from `registry_review_queue`, whose per-row `identity_pair_decided()` expands both pairs' whole groups; merged groups had grown, and every rerun rescanned from the top.
+- `sql/036_registry_merge_batch.sql`: `registry_merge_next_batch()` selects the next pairs from `registry_match_candidates` in key order with cheap tests; `merge_identity_pair_if_safe()` now applies the group-level "already decided" check per pair (25 per batch instead of per scanned row).
+- Worker reads batches through the new function (503 with a "run sql/036" message until it exists). 167 tests pass.
+- Admin tab: a progress strip appears the moment "Merge all eligible…" is clicked (spinner, sliding bar while counting, filled bar, merged/held-back counts, a clock that ticks every second); style.css v=75, app.js v=64.
+
+### Database / System Result
+None yet: sql/036 has not been run. The 9,000 merges from the first run are in place.
+
+### Safety Status
+Same merge rules as 035 (Tier 2 plus official+phone; refuses groups owned by different agents). Merges cannot be undone from the app.
 
 ## 2026-10-08 — Merge all eligible registry matches (sql/035, written, not run)
 

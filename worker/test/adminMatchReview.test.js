@@ -147,18 +147,28 @@ test("bulk merge re-reads only the requested pairs, not a whole queue", async ()
   assert.ok(lookups.every((call) => call.filters.some(([kind, column]) => kind === "in" && column === "left_npi")));
 });
 
+// Batches are read through registry_merge_next_batch (sql/036); merges go through
+// merge_identity_pair_if_safe. This fake answers both and records every call.
+function mergeAllSupabase({ batch = [], batchError = null, merge }) {
+  const calls = [];
+  return {
+    calls,
+    rpc: async (name, args) => {
+      calls.push([name, args]);
+      if (name === "registry_merge_next_batch") return { data: batchError ? null : batch, error: batchError };
+      return merge ? merge(args, calls.filter(([n]) => n === name).length) : { data: { skipped: false }, error: null };
+    },
+  };
+}
+
 test("merge all: merges safe pairs, reports the ones held back, and hands back a cursor", async () => {
   const { mergeEligibleRegistryReviews, AUTO_MERGE_KEYS } = await import("../src/repos/adminRepo.js");
-  const supabase = fakeSupabase({
-    registry_review_queue: { data: [registryRow("1000000001", "1000000002"), registryRow("1000000001", "1000000003")], error: null },
-  });
-  const rpcCalls = [];
-  supabase.rpc = async (name, args) => {
-    rpcCalls.push([name, args]);
-    return args.p_right_npi === "1000000003"
+  const supabase = mergeAllSupabase({
+    batch: [registryRow("1000000001", "1000000002"), registryRow("1000000001", "1000000003")],
+    merge: (args) => args.p_right_npi === "1000000003"
       ? { data: { skipped: true, reason: "Different agents own these NPIs or others in their groups; review manually." }, error: null }
-      : { data: { decision: "merged", skipped: false }, error: null };
-  };
+      : { data: { decision: "merged", skipped: false }, error: null },
+  });
 
   const result = await mergeEligibleRegistryReviews(supabase, { after: null, decidedBy: "admin-1" });
   assert.equal(result.merged.length, 1);
@@ -166,18 +176,19 @@ test("merge all: merges safe pairs, reports the ones held back, and hands back a
   assert.equal(result.failed.length, 0);
   assert.equal(result.done, true); // fewer rows than a full batch
   assert.deepEqual(result.next, { leftNpi: "1000000001", rightNpi: "1000000003" });
-  assert.ok(rpcCalls.every(([name]) => name === "merge_identity_pair_if_safe"));
-  assert.match(rpcCalls[0][1].p_reason, /Automatic merge/);
+  const merges = supabase.calls.filter(([name]) => name === "merge_identity_pair_if_safe");
+  assert.equal(merges.length, 2);
+  assert.match(merges[0][1].p_reason, /Automatic merge/);
   // Only the agreed rules are asked for: Tier 2 keys plus official+phone.
-  const queueCall = supabase.calls.find((call) => call.table === "registry_review_queue");
-  assert.deepEqual(queueCall.filters[0], ["in", "matched_keys", AUTO_MERGE_KEYS]);
+  const batchCall = supabase.calls.find(([name]) => name === "registry_merge_next_batch");
+  assert.deepEqual(batchCall[1].p_keys, AUTO_MERGE_KEYS);
+  assert.equal(batchCall[1].p_after_left, null);
   assert.ok(!AUTO_MERGE_KEYS.includes("name+phone") && !AUTO_MERGE_KEYS.includes("name+official"));
 });
 
 test("merge all: continues after the cursor, and refuses anything that isn't an NPI", async () => {
   const { mergeEligibleRegistryReviews } = await import("../src/repos/adminRepo.js");
-  const supabase = fakeSupabase({ registry_review_queue: { data: [], error: null } });
-  supabase.rpc = async () => ({ data: {}, error: null });
+  const supabase = mergeAllSupabase({ batch: [] });
 
   const result = await mergeEligibleRegistryReviews(supabase, {
     after: { leftNpi: "1000000001", rightNpi: "1000000003" },
@@ -185,8 +196,8 @@ test("merge all: continues after the cursor, and refuses anything that isn't an 
   });
   assert.equal(result.done, true);
   assert.equal(result.next, null);
-  const orFilter = supabase.calls[0].filters.find(([kind]) => kind === "or");
-  assert.equal(orFilter[1], "left_npi.gt.1000000001,and(left_npi.eq.1000000001,right_npi.gt.1000000003)");
+  assert.equal(supabase.calls[0][1].p_after_left, "1000000001");
+  assert.equal(supabase.calls[0][1].p_after_right, "1000000003");
 
   await assert.rejects(
     () => mergeEligibleRegistryReviews(supabase, { after: { leftNpi: "1),or(1=1", rightNpi: "2" }, decidedBy: "admin-1" }),
@@ -197,14 +208,14 @@ test("merge all: continues after the cursor, and refuses anything that isn't an 
 test("merge all: a failed or already-decided pair is counted, not fatal; a full batch means keep going", async () => {
   const { mergeEligibleRegistryReviews, AUTO_MERGE_BATCH } = await import("../src/repos/adminRepo.js");
   const rows = Array.from({ length: AUTO_MERGE_BATCH }, (_, i) => registryRow("1000000001", String(2000000000 + i)));
-  const supabase = fakeSupabase({ registry_review_queue: { data: rows, error: null } });
-  let n = 0;
-  supabase.rpc = async () => {
-    n += 1;
-    if (n === 1) return { data: null, error: { message: "this pair has already been decided" } };
-    if (n === 2) return { data: null, error: { message: "boom" } };
-    return { data: { skipped: false }, error: null };
-  };
+  const supabase = mergeAllSupabase({
+    batch: rows,
+    merge: (args, n) => {
+      if (n === 1) return { data: null, error: { message: "this pair has already been decided" } };
+      if (n === 2) return { data: null, error: { message: "boom" } };
+      return { data: { skipped: false }, error: null };
+    },
+  });
   const result = await mergeEligibleRegistryReviews(supabase, { decidedBy: "admin-1" });
   assert.equal(result.skipped.length, 1);
   assert.equal(result.failed.length, 1);
@@ -212,15 +223,16 @@ test("merge all: a failed or already-decided pair is counted, not fatal; a full 
   assert.equal(result.done, false);
 });
 
-test("merge all: before sql/035 the preview and the merge say what to run", async () => {
+test("merge all: before sql/035 and sql/036 the preview and the merge say what to run", async () => {
   const { getRegistryMergePreview, mergeEligibleRegistryReviews } = await import("../src/repos/adminRepo.js");
-  const missing = { code: "PGRST202", message: "Could not find the function public.registry_merge_preview" };
-  const supabase = fakeSupabase({ registry_review_queue: { data: [registryRow("1000000001", "1000000002")], error: null } });
-  supabase.rpc = async () => ({ data: null, error: missing });
+  const previewMissing = { code: "PGRST202", message: "Could not find the function public.registry_merge_preview" };
+  let supabase = { rpc: async () => ({ data: null, error: previewMissing }) };
   await assert.rejects(() => getRegistryMergePreview(supabase), (error) => error.status === 503 && /sql\/035/.test(error.message));
-  await assert.rejects(() => mergeEligibleRegistryReviews(supabase, { decidedBy: "a" }), (error) => error.status === 503);
 
-  supabase.rpc = async () => ({ data: { total: 10, blocked: 3, mergeable: 7 }, error: null });
+  supabase = mergeAllSupabase({ batchError: { code: "PGRST202", message: "Could not find the function public.registry_merge_next_batch" } });
+  await assert.rejects(() => mergeEligibleRegistryReviews(supabase, { decidedBy: "a" }), (error) => error.status === 503 && /sql\/036/.test(error.message));
+
+  supabase = { rpc: async () => ({ data: { total: 10, blocked: 3, mergeable: 7 }, error: null }) };
   assert.deepEqual(await getRegistryMergePreview(supabase), {
     total: 10, blocked: 3, mergeable: 7,
     rules: ["name+state+phone", "name+state+official", "state+official+phone", "official+phone"],
