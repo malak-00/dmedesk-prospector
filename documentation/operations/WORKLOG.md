@@ -27,9 +27,12 @@ matched it to the rest. Decisions: match on either phone, show every registry pa
 - Plan: `documentation/plans/REGISTRY_WIDE_IDENTITY_MATCHING_PLAN.md`.
 
 ### Database / System Result
-None yet. The migration has NOT been run anywhere, including production. The SQL itself is untested:
-the only Supabase project reachable from this session was an unrelated one, so it must be run on a
-Supabase branch first.
+Run by the user (not by Claude; the environment, branch or production, was not recorded here):
+sql/030 installed, `python -m nppes_ingest --match-registry` completed. 387,258 organization NPIs keyed;
+154,082 candidate pairs; 1,400 oversized key groups skipped (cap 25). All 10 pairs among the five Saadat
+NPIs appear in `registry_review_queue` (official+phone, and state+official+phone for the three unclaimed
+ones). Worker and frontend were pushed to main and the user confirmed the five show in the Admin tab.
+Not yet checked: query speed of `registry_review_queue` as pages deepen, and what the 1,400 skipped groups contain.
 
 ### Safety Status
 Additive tables and views; no leads, groups, ownership or decisions are changed. The one replaced function
