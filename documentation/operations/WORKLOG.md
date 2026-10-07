@@ -152,7 +152,7 @@ Use the new artwork: seasonal outfits for the avatar, and the wink and encourage
   originals are not committed). Her corner face wears the outfit for the time of year: Halloween from 24 October,
   Thanksgiving Monday to Friday of the fourth Thursday of November, Christmas 1 to 26 December, New Year 27
   December to 2 January, Valentine's 10 to 14 February. The daily greeting wears it too.
-- Birthdays and Fridays have their own outfits (the birthday one on the person's own day, Friday's sunglasses when there is no season); only a work anniversary keeps the small icon.
+- Birthdays and Fridays have their own outfits (birthday on the person's own day, Friday when there is no season); only a work anniversary keeps the small icon.
 - The wink pose joins the click-me surprise; the encouragement pose is used for a day with no calls and for the
   reply to a "rough" mood tap.
 

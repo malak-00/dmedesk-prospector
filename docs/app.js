@@ -135,6 +135,7 @@ const state = {
   // "leads" loads the whole queue; "registry" (sql/030) is paged by the Worker.
   matchReviewsScope: "leads",
   matchReviewsHasMore: false,
+  matchReviewsLoading: false,
   matchReviewSelected: new Set(),
   providerChanges: null,
   providerChangesLimit: 25,
@@ -828,6 +829,11 @@ async function handleConflictResolve(event) {
 // conflicts for that decision.
 
 const MATCH_REVIEWS_PAGE = 25;
+// All-providers comparison: the Worker caps a page at 100. The first load
+// stops at 500 pairs; the registry has far more, and each page is a query.
+const REGISTRY_FETCH_PAGE = 100;
+const REGISTRY_AUTOLOAD_CAP = 500;
+let matchReviewsLoadToken = 0; // lets a newer load cancel an older one still fetching
 const MATCH_KEY_LABELS = { name: "Name", state: "State", official: "Authorized official", phone: "Phone" };
 
 function matchReviewKey(review) {
@@ -909,7 +915,7 @@ function renderMatchReviews() {
   const tier3 = all.filter((review) => review.tier === 3).length;
   els.matchReviewsSummary.textContent = all.length
     ? isRegistry
-      ? `${all.length} pair${all.length === 1 ? "" : "s"} loaded${state.matchReviewsHasMore ? " · loading more…" : " · all providers"}`
+      ? `${all.length} pair${all.length === 1 ? "" : "s"} loaded${state.matchReviewsLoading ? " · loading more…" : state.matchReviewsHasMore ? " · more available" : " · all providers"}`
       : `${all.length} pair${all.length === 1 ? "" : "s"} to review · Tier 2: ${tier2} · Tier 3: ${tier3}`
     : "Nothing to review";
 
@@ -987,8 +993,8 @@ function renderMatchReviews() {
     .join("");
 
   if (isRegistry) {
-    // All pages auto-load; the "Show more" button is not needed.
-    els.matchReviewsMoreBtn.hidden = true;
+    els.matchReviewsMoreBtn.hidden = !state.matchReviewsHasMore || state.matchReviewsLoading;
+    els.matchReviewsMoreBtn.textContent = `Load ${REGISTRY_FETCH_PAGE} more`;
     return;
   }
   const remaining = reviews.length - visible.length;
@@ -1234,6 +1240,7 @@ async function resolveProviderChange(eventId, decision) {
 
 // append=true (registry scope only) adds the next page to what is already loaded.
 async function loadMatchReviews(silent = false, append = false) {
+  const token = ++matchReviewsLoadToken;
   if (!silent) {
     els.matchReviewsSummary.textContent = "Checking…";
     if (!state.matchReviews) {
@@ -1243,22 +1250,36 @@ async function loadMatchReviews(silent = false, append = false) {
   }
   try {
     if (state.matchReviewsScope === "registry") {
-      // Auto-load every page (25 at a time) so the admin sees the full set
-      // immediately without clicking "Show more" repeatedly.
+      // A fresh load fetches pages until REGISTRY_AUTOLOAD_CAP pairs are on
+      // screen; the registry holds far more than anyone can review at once, so
+      // "Load more" adds one page at a time beyond that.
       let loaded = append && state.matchReviews ? state.matchReviews.reviews || [] : [];
+      const target = append ? loaded.length + REGISTRY_FETCH_PAGE : REGISTRY_AUTOLOAD_CAP;
       let hasMore = true;
-      while (hasMore) {
-        const params = new URLSearchParams({ scope: "registry", limit: String(MATCH_REVIEWS_PAGE), offset: String(loaded.length) });
-        if (state.matchReviewsTier !== "all") params.set("tier", state.matchReviewsTier);
-        const page = await apiGet("admin/match-reviews?" + params.toString());
-        hasMore = page.hasMore === true;
-        loaded = [...loaded, ...(page.reviews || [])];
-        state.matchReviewsHasMore = hasMore;
-        state.matchReviews = { ...page, reviews: loaded };
-        renderMatchReviews(); // update count after each batch
+      state.matchReviewsLoading = true;
+      try {
+        while (hasMore && loaded.length < target) {
+          const params = new URLSearchParams({
+            scope: "registry",
+            limit: String(Math.min(REGISTRY_FETCH_PAGE, target - loaded.length)),
+            offset: String(loaded.length),
+          });
+          if (state.matchReviewsTier !== "all") params.set("tier", state.matchReviewsTier);
+          const page = await apiGet("admin/match-reviews?" + params.toString());
+          // The admin changed scope, tier or reloaded while this was fetching.
+          if (token !== matchReviewsLoadToken) return;
+          hasMore = page.hasMore === true;
+          loaded = [...loaded, ...(page.reviews || [])];
+          state.matchReviewsHasMore = hasMore;
+          state.matchReviews = { ...page, reviews: loaded };
+          renderMatchReviews(); // update the count after each page
+        }
+      } finally {
+        if (token === matchReviewsLoadToken) state.matchReviewsLoading = false;
       }
     } else {
       state.matchReviewsHasMore = false;
+      state.matchReviewsLoading = false; // a registry load this one replaced no longer owns the flag
       state.matchReviews = await apiGet("admin/match-reviews");
     }
     renderMatchReviews();
