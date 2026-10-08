@@ -601,6 +601,64 @@ async function requireClaimForOthers(supabase, callerSession) {
   }
 }
 
+const MAX_SHEET_SYNC_STATUS_NPIS = 200;
+
+function normalizeSheetSyncNpis(npis) {
+  if (!Array.isArray(npis) || npis.length === 0) throw httpError(400, "At least one NPI is required");
+
+  const normalized = npis.map((npi) => String(npi ?? "").replace(/\D/g, ""));
+  if (normalized.some((npi) => npi.length !== 10)) throw httpError(400, "Every NPI must contain exactly 10 digits");
+  const wanted = [...new Set(normalized)];
+  if (wanted.length > MAX_SHEET_SYNC_STATUS_NPIS) throw httpError(400, `At most ${MAX_SHEET_SYNC_STATUS_NPIS} NPIs per request`);
+  return wanted;
+}
+
+// Returns the current active owner for exactly the NPIs supplied by the sheet.
+// This deliberately uses two reads rather than a write-capable RPC: the bot
+// must be able to reconcile claims without changing a lead in any way.
+export async function getSheetSyncStatus(supabase, callerSession, npis) {
+  const wanted = normalizeSheetSyncNpis(npis);
+  await requireClaimForOthers(supabase, callerSession);
+
+  const { data, error } = await supabase
+    .from("leads")
+    .select("npi, claimed_by, claimed_at, status, status_updated_at")
+    .eq("is_disconnected", false)
+    .not("claimed_by", "is", null)
+    .in("npi", wanted);
+  if (error) throw httpError(500, "Failed to look up leads: " + error.message);
+
+  const rowsByNpi = new Map((data || []).map((row) => [String(row.npi), row]));
+  const ownerIds = [...new Set((data || []).map((row) => row.claimed_by).filter(Boolean))];
+  let ownersById = new Map();
+  if (ownerIds.length) {
+    const users = await supabase.from("app_users").select("id, display_name, username").in("id", ownerIds);
+    if (users.error) throw httpError(500, "Failed to load users: " + users.error.message);
+    ownersById = new Map((users.data || []).map((user) => [user.id, user]));
+  }
+
+  const leads = [];
+  const missingNpis = [];
+  for (const npi of wanted) {
+    const row = rowsByNpi.get(npi);
+    if (!row) {
+      missingNpis.push(npi);
+      continue;
+    }
+    const owner = ownersById.get(row.claimed_by) || {};
+    leads.push({
+      npi,
+      ownerId: row.claimed_by,
+      ownerName: owner.display_name || "(unknown user)",
+      ownerUsername: owner.username || "",
+      claimedAt: row.claimed_at || "",
+      status: row.status || "",
+      statusUpdatedAt: row.status_updated_at || "",
+    });
+  }
+  return { leads, missingNpis };
+}
+
 export async function claimForUser(supabase, callerSession, { username, companies, dryRun = false }, flattenCompany) {
   if (!username || !String(username).trim()) throw httpError(400, "username is required");
   if (!Array.isArray(companies) || companies.length === 0) throw httpError(400, "At least one company is required to claim");

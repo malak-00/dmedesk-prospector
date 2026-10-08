@@ -767,6 +767,17 @@ app.post("/admin/sheet-conflicts/lookup", async (c) => {
   return c.json(ok(data));
 });
 
+// Read-only reconciliation endpoint for BD MEETINGS. Like claim-for-user it
+// accepts the integration account's delegated permission, rather than making
+// that account a full admin. It only reports active claims; it never claims,
+// releases, or otherwise changes ownership.
+// Body: { npis: ["..."] }
+app.post("/admin/sheet-sync-status", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const data = await leadsRepo.getSheetSyncStatus(supabaseFor(c), c.get("session"), body.npis);
+  return c.json(ok(data));
+});
+
 // Claim leads on behalf of a named teammate, for integrations like BD
 // MEETINGS that sign in with their own account. Deliberately NOT
 // requireAdmin: the integration account shouldn't be an admin. The
