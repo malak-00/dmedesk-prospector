@@ -1,5 +1,24 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-08 — BD MEETINGS claim integration verification and export compatibility (Codex)
+
+### Objective
+
+Finish the incomplete review of the BD MEETINGS-to-Prospector sync and ensure a direct sheet-style export cannot corrupt its source or contact fields.
+
+### Actions Completed
+
+- Verified the supported integration is already implemented: `POST /admin/claim-for-user` authenticates the integration bot, checks `can_claim_for_others` afresh, enriches bare NPI rows through `npi_records`, and records the bot as the claim actor.
+- Kept and covered the existing `csvExport.flattenCompany()` compatibility change: string `sources` are preserved rather than expanded into character indexes; `customSources` is appended; scalar contact fields remain available when no decision-maker array is present.
+- Added a focused Worker regression test for that direct sheet-style payload.
+
+### Database / System Result
+
+No database or production changes. The required `sql/011_claim_for_user.sql` and deployed Worker status remain external setup/verification steps; no credentials were read or changed.
+
+### Safety Status
+
+No ownership rules, audit behavior, schema, secrets, or production data were changed. Manual deployment and the existing BD MEETINGS test-row check remain required.
 ## 2026-10-08 — Merge all eligible: timeouts after ~9,000 merges, and visible progress (sql/036, written, not run)
 
 ### Objective

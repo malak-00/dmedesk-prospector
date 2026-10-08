@@ -99,6 +99,28 @@ function fakeDb({ registry = [registryRow], dryVerdict, caller = { id: 'bot', is
 
 const sheetRow = { npi: '1134722390', name: 'clayton med', phone: '404-808-5118 / 7709975660', email: 'a@b.co', authorizedOfficial: 'Judy F', status: 'Onboarded', notes: 'Imported from BD MEETINGS — Opener: Ben', meetingOpenerNotes: 'Ask about billing' };
 
+// Codex, 2026-10-08: direct sheet exports may use scalar source/contact fields
+// instead of the enriched search-result shape. Keep them intact when flattened.
+test('flattenCompany preserves scalar sheet source and contact fields', () => {
+  const flat = flattenCompany({
+    npi: '1134722390',
+    name: 'Clayton Medical Supply',
+    sources: 'BD Meetings',
+    customSources: 'Manual review',
+    contactName: 'Judith Fairclough',
+    contactTitle: 'Owner',
+    contactRole: 'Decision Maker',
+    contactSource: 'bd-meetings',
+    contactPhone: '4048085119',
+  });
+
+  assert.equal(flat.sources, 'BD Meetings; Manual review');
+  assert.equal(flat.contactName, 'Judith Fairclough');
+  assert.equal(flat.contactTitle, 'Owner');
+  assert.equal(flat.contactRole, 'Decision Maker');
+  assert.equal(flat.contactSource, 'bd-meetings');
+  assert.equal(flat.contactPhone, '4048085119');
+});
 test('a sheet row is filled in from the registry and keeps its status, notes and opener', async () => {
   const [filled] = await enrichFromRegistry(fakeDb(), [sheetRow]);
   assert.equal(filled.name, 'CLAYTON MEDICAL SUPPLY INC');
