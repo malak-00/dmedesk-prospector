@@ -4,8 +4,8 @@
 -- Rerun-safe. Creates one small table; nothing existing is touched.
 --
 -- user_avatars: one row per person, the picture an admin uploaded in Admin > Controls. The browser shrinks it to
--- about 160 pixels before uploading, so it is stored as a small image (a data URL, up to 60,000 characters,
--- roughly 10 to 20 KB). It shows next to their name in the header, in Team activity, in kudos and birthday
+-- up to 320 pixels before uploading, so it is stored as a small image (a data URL, up to 60,000 characters,
+-- roughly 15 to 45 KB). It shows next to their name in the header, in Team activity, in kudos and birthday
 -- messages. A person without one gets a round badge with their initials. A picture is removed by setting
 -- image to null, never by deleting the row.
 --

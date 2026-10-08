@@ -158,8 +158,8 @@ Let each person have their own picture next to their name, uploaded by an admin 
 
 ### Actions Completed
 
-- **Upload** (Admin > Controls > Users > Edit): choose a picture; the browser crops it to a square and shrinks it to about 160 px
-  (under about 45 KB) before sending it, so nothing large is stored. Remove puts the person back to initials.
+- **Upload** (Admin > Controls > Users > Edit): choose a picture; the browser crops it to a square and shrinks it to up to 320 px
+  (under about 45 KB) before sending it, so nothing large is stored. Clicking any picture opens it larger. Remove puts the person back to initials.
 - **Where it shows**: the header chip (picture and name), Team activity (By rep and User activity), the Controls user
   list and kudos log, kudos pop-ups (the sender's picture next to Caro), birthday and anniversary messages (Caro keeps the
   birthday pose and the person's picture sits beside her, for the person themselves and for teammates), and the Team

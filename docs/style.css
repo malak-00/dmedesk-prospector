@@ -2993,3 +2993,19 @@ html:not(.call-open) body:has(.buddy:not([hidden])) .toast { right: 124px; max-w
 .ctl-avatar-actions { display: flex; gap: 12px; align-items: center; margin: 4px 0; }
 .ctl-name { display: flex; align-items: center; }
 .team-rep { vertical-align: middle; }
+
+/* Profile pictures: click to enlarge, and a person's picture as big as Caro's in the messages about them. */
+.av.has-pic img { cursor: zoom-in; }
+.av-zoom { position: fixed; inset: 0; z-index: 95; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.72); padding: 20px; }
+.av-zoom figure { margin: 0; display: grid; gap: 12px; justify-items: center; text-align: center; max-width: 100%; }
+.av-zoom img { width: min(80vw, 420px); height: min(80vw, 420px); object-fit: cover; border-radius: 18px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); background: var(--surface-2); }
+.av-zoom figcaption { color: #fff; font-size: 17px; font-weight: 650; }
+.av-zoom-close { border: 1px solid rgba(255, 255, 255, 0.5); background: transparent; color: #fff; border-radius: 999px; padding: 6px 18px; font: inherit; cursor: pointer; }
+.av-zoom-close:hover { background: rgba(255, 255, 255, 0.14); }
+.buddy-bubble.has-who { flex-wrap: wrap; justify-content: center; width: min(420px, 100%); }
+.buddy-bubble.has-who .buddy-body { flex: 1 1 100%; text-align: center; }
+.buddy-bubble.has-who .buddy-actions { justify-content: center; }
+.buddy-pose-wrap.is-pair { display: flex; gap: 16px; align-items: flex-end; justify-content: center; width: 100%; }
+.buddy-who-big { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.buddy-who-big .av { margin: 0; box-shadow: 0 0 0 3px var(--surface), 0 4px 14px rgba(0, 0, 0, 0.3); }
+.buddy-who-big em { font-style: normal; font-size: 12px; font-weight: 650; color: var(--muted); max-width: 128px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

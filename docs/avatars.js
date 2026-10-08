@@ -43,7 +43,7 @@
     const found = find(who);
     const name = (found && found.name) || (typeof who === "string" ? who : who && (who.name || who.displayName)) || "";
     const s = `--s:${size}px`;
-    if (found && found.image) return `<span class="av" style="${s}"><img src="${found.image}" alt="" width="${size}" height="${size}"></span>`;
+    if (found && found.image) return `<span class="av has-pic" style="${s}" data-name="${escapeHtml(name)}"><img src="${found.image}" alt="" width="${size}" height="${size}" title="Click to enlarge"></span>`;
     return `<span class="av av-initials" style="${s};--h:${hueOf(name)}" aria-hidden="true">${escapeHtml(initialsOf(name))}</span>`;
   }
 
@@ -72,7 +72,8 @@
 
   /* ---------- uploading (Controls) ---------- */
 
-  // Centre-crop to a square and shrink until it is small enough to store (the server accepts about 45 KB).
+  // Centre-crop to a square and shrink until it is small enough to store (the server accepts about 45 KB). 320 px keeps
+  // it sharp when someone clicks it to enlarge.
   function shrink(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
@@ -82,7 +83,7 @@
         const side = Math.min(img.naturalWidth, img.naturalHeight);
         const sx = (img.naturalWidth - side) / 2;
         const sy = (img.naturalHeight - side) / 2;
-        for (const px of [160, 128, 96]) {
+        for (const px of [320, 256, 192, 128]) {
           const canvas = document.createElement("canvas");
           canvas.width = px; canvas.height = px;
           canvas.getContext("2d").drawImage(img, sx, sy, side, side, 0, 0, px, px);
@@ -111,11 +112,35 @@
     await load(true);
   }
 
+  /* ---------- click a picture to see it bigger ---------- */
+
+  let zoom = null;
+  function closeZoom() { if (zoom) { zoom.remove(); zoom = null; } }
+
+  document.addEventListener("click", (e) => {
+    if (zoom && (e.target === zoom || e.target.closest(".av-zoom-close"))) { closeZoom(); return; }
+    const img = e.target.closest && e.target.closest(".av.has-pic img");
+    if (!img || e.target.closest(".av-zoom")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeZoom();
+    const name = img.closest(".av").dataset.name || "";
+    zoom = document.createElement("div");
+    zoom.className = "av-zoom";
+    zoom.setAttribute("role", "dialog");
+    zoom.setAttribute("aria-modal", "true");
+    zoom.setAttribute("aria-label", name ? `${name}'s picture` : "Profile picture");
+    zoom.innerHTML = `<figure><img src="${img.src}" alt="${escapeHtml(name)}">${name ? `<figcaption>${escapeHtml(name)}</figcaption>` : ""}<button type="button" class="av-zoom-close" aria-label="Close">Close</button></figure>`;
+    document.body.append(zoom);
+    zoom.querySelector("button").focus();
+  }, true);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && zoom) closeZoom(); });
+
   const hooks = window.dmeHooks;
   const previousSignedIn = hooks.onSignedIn;
   hooks.onSignedIn = () => { previousSignedIn?.(); paintHeader(); load(true); };
   const previousSignedOut = hooks.onSignedOut;
-  hooks.onSignedOut = () => { previousSignedOut?.(); list = []; index(); paintHeader(); loading = null; };
+  hooks.onSignedOut = () => { previousSignedOut?.(); closeZoom(); list = []; index(); paintHeader(); loading = null; };
 
   window.dmeAvatars = { html, load, ready: () => loading || load(), upload, remove, has: (who) => Boolean(find(who) && find(who).image), find };
   if (getSession()) { paintHeader(); load(true); }

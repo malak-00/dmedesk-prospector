@@ -369,8 +369,10 @@
   function renderBubble(item) {
     const bubble = $("buddyBubble");
     const n = item.react ? notes.find((x) => x.id === item.react) : null;
+    const pair = Boolean(item.who && window.dmeAvatars);
+    bubble.classList.toggle("has-who", pair);
     bubble.innerHTML = `
-      <span class="buddy-pose-wrap"><img class="buddy-pose" src="${IMG}${POSES[item.pose] || POSES.neutral}" alt="" width="128" height="128">${item.who && window.dmeAvatars ? `<span class="buddy-who" title="${escapeHtml(item.who.name || "")}">${window.dmeAvatars.html(item.who, 46)}</span>` : ""}</span>
+      <span class="buddy-pose-wrap${pair ? " is-pair" : ""}"><img class="buddy-pose" src="${IMG}${POSES[item.pose] || POSES.neutral}" alt="" width="128" height="128">${pair ? `<span class="buddy-who-big">${window.dmeAvatars.html(item.who, 128)}<em>${escapeHtml(item.who.name || "")}</em></span>` : ""}</span>
       <div class="buddy-body">
         <div class="buddy-name">${NAME}</div>
         ${item.title ? `<div class="buddy-title">${escapeHtml(item.title)}</div>` : ""}
