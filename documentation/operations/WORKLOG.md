@@ -1,5 +1,38 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-08 — Sheet conflicts panel in Admin → Controls (code only, not deployed)
+
+**Objective.** When a sheet is uploaded, claim the leads the app doesn't have for the sheet's opener (already done by the existing import) and show the ones the app already gives to someone else, with the app owner and the sheet owner side by side, and let an admin decide.
+
+**Actions Completed.**
+- `worker/src/repos/adminRepo.js` + `POST /admin/sheet-conflicts/lookup` (admin only, read-only): current owner, status and business group for up to 200 NPIs.
+- `claim_leads` blocked results now also carry `groupId` and `ownerIds` (`fromClaimResult`); additive.
+- `docs/sheetlib.js`: `sheetConflicts()` pairs each blocked row with the sheet's rep and the app owner; `verdictFor` keeps the group id on blocked rows.
+- `docs/controls.js`: after "Check what would happen" or "Import", a **Sheet conflicts** table (row, company, sheet says, app says) with **Give to <sheet rep>** and **Keep <app owner>**. Give calls the existing audited `POST /admin/conflicts/resolve` (reason required, recorded as a `reassigned` event, approver from the session); Keep only dismisses the row in the page. Rows whose opener is blank or matches no user are looked up too and get a rep dropdown on the row: if the app already owns the lead the action is Give to (same audited resolve), if the app has no owner it is **Claim for** (the normal `claim-for-user`), and Skip leaves it.
+- Tests: `worker/test/sheetConflicts.test.js`, additions to `worker/test/sheetlib.test.js`; suite 184/184.
+
+**Database / System Result.** No schema change, no SQL run, no production write. The panel is rebuilt on each upload (nothing is stored), so re-uploading the sheet shows what is still open.
+
+**Safety Status.** Nothing is moved without an admin clicking Give and confirming, and a reason. Moving a lead moves its whole business group (existing resolve behaviour). Needs the Worker deployed first; until then the panel says it could not load owners and the rows stay in the normal blocked list.
+
+## 2026-10-08 — BD MEETINGS bot sync diagnosis; two Onboarded leads claimed by hand
+
+**Objective.** Find why the BD MEETINGS "Onboarded" sync landed some leads and not others, and fix what was left over.
+
+**Actions Completed.**
+- Diagnosed the deployed Apps Script `syncNpiToProspector()`: it reads Opener/Company/Phone from hardcoded columns 2/5/7, but the tabs have MEDB/PPO/SUB checkbox columns A–C (Opener is D, Company G, Phone I). On Onboarded every row's opener read as a checkbox, so every row was skipped. Wrote the header-driven replacement `documentation/operations/bd-meetings-sync-fixed.gs` (not deployed from this repo; Ben owns the clasp project).
+- Read-only checks of production `leads`, `npi_records`, `lead_ownership_events`: no company-name-in-phone leads exist; two odd phones (Clayton two numbers, Bestchoice malformed).
+- Dry-run `claim_leads` for Home Care Medical Supplies (1235990193, Ben) and Allied Medical Health (1841989019, Jimmy): both clear.
+- Real claim of those two via `claim_leads(..., p_actor_id => bd-meetings-bot)`, status `onboarded`, sheet phone/email/notes and opener summary attached, registry address/specialty/official filled in.
+
+**Database / System Result.** Two `leads` rows inserted (ids 370650c0-…, 58ba9af8-…) with two `claimed` events (`source = claim_for_user`). No other rows touched; no schema change.
+
+- Reopened the three disconnected sheet leads and gave them to Ben (the sheet opener; Prime Ortho has no opener so it takes the default user): DME Direct Inc (was Rickk, disconnected), ADL Ortho (was Nora, status "disconnected"), Prime Ortho Fitting (was Nora, disconnected). Each got `is_disconnected = false`, `status = 'onboarded'`, `claimed_by = Ben`, and a `reassigned` event (source `admin_conflict_resolution`, approver Caroline Richards, previous status/owner in the event). `claimed_at`, notes and everything else were left alone.
+
+- Code (not deployed, not run against production): new `POST /admin/sync-lead-status` (`syncLeadStatusesFromSheet` in `worker/src/repos/leadsRepo.js`). The sheet wins on status for leads the named teammate already holds; Last Call moves `status_updated_at` forward only; never changes ownership, never reopens a disconnected lead, no team win announcements. Permission check pulled into a shared `requireClaimForOthers` used by both endpoints. Tests in `worker/test/sheetStatusSync.test.js`; whole worker suite 179/179 passing. `bd-meetings-sync-fixed.gs` now sends status + Last Call, re-sends a row only when it changes, uses a script lock, and has a 2-hour trigger helper.
+
+**Safety Status.** The claim went through the audited function; the three reassignments were one statement writing the event and the update together. No DROP/DELETE/TRUNCATE. Not changed (needs a decision): sheet-vs-app owner differences on Delta Medical, Caring Med, Direct DME (Colby), Mo Med, Platinumcare. The Ownership conflicts panel only lists a group with active leads owned by 2+ people, so these single-owner leads cannot appear there without creating a second active claim on the same NPI, and Resolve would skip that duplicate row (`resolve_ownership_conflict` skips a row when the target already holds the NPI).
+
 ## 2026-10-08 — Merge all eligible: timeouts after ~9,000 merges, and visible progress (sql/036, written, not run)
 
 ### Objective

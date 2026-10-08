@@ -796,6 +796,43 @@ export async function resolveOwnershipConflict(supabase, { groupId, toUserId, ap
   return data || {};
 }
 
+// Who holds each of these NPIs in the app right now, for the sheet-conflicts panel that sits
+// beside the sheet's own opener. Read-only; disconnected and released leads are not owned.
+const MAX_SHEET_CONFLICT_NPIS = 200;
+export async function getSheetConflictOwners(supabase, npis) {
+  const wanted = [...new Set((Array.isArray(npis) ? npis : []).map((n) => String(n ?? "").replace(/\D/g, "")).filter((n) => n.length === 10))];
+  if (wanted.length === 0) throw httpError(400, "At least one NPI is required");
+  if (wanted.length > MAX_SHEET_CONFLICT_NPIS) throw httpError(400, `At most ${MAX_SHEET_CONFLICT_NPIS} NPIs per request`);
+
+  const { data, error } = await supabase
+    .from("leads")
+    .select("npi, company_name, claimed_by, claimed_at, status, status_updated_at, group_id")
+    .eq("is_disconnected", false)
+    .not("claimed_by", "is", null)
+    .in("npi", wanted);
+  if (error) throw httpError(500, "Failed to look up leads: " + error.message);
+
+  const ownerIds = [...new Set((data || []).map((r) => r.claimed_by))];
+  let names = new Map();
+  if (ownerIds.length) {
+    const users = await supabase.from("app_users").select("id, display_name").in("id", ownerIds);
+    if (users.error) throw httpError(500, "Failed to load users: " + users.error.message);
+    names = new Map((users.data || []).map((u) => [u.id, u.display_name]));
+  }
+  return {
+    leads: (data || []).map((r) => ({
+      npi: String(r.npi),
+      companyName: r.company_name || "",
+      ownerId: r.claimed_by,
+      ownerName: names.get(r.claimed_by) || "(unknown user)",
+      status: r.status || "",
+      statusUpdatedAt: r.status_updated_at || "",
+      claimedAt: r.claimed_at || "",
+      groupId: r.group_id || null,
+    })),
+  };
+}
+
 // Per-rep activity for the Admin "Team activity" view: claims from the
 // ownership history, calls and meetings from the dated lines of each lead's
 // call log, and each rep's open leads right now. See lib/teamActivity.js.

@@ -758,6 +758,15 @@ app.post("/admin/conflicts/resolve", async (c) => {
   return c.json(ok(data));
 });
 
+// Who owns each NPI an uploaded sheet disagreed with (for the sheet-conflicts panel). Read-only.
+// Body: { npis: ["..."] }
+app.post("/admin/sheet-conflicts/lookup", async (c) => {
+  requireAdmin(c.get("session"));
+  const body = await c.req.json().catch(() => ({}));
+  const data = await adminRepo.getSheetConflictOwners(supabaseFor(c), body.npis);
+  return c.json(ok(data));
+});
+
 // Claim leads on behalf of a named teammate, for integrations like BD
 // MEETINGS that sign in with their own account. Deliberately NOT
 // requireAdmin: the integration account shouldn't be an admin. The
@@ -773,6 +782,18 @@ app.post("/admin/claim-for-user", async (c) => {
     { username: body.username, companies: body.companies, dryRun: body.dryRun === true },
     CsvExport.flattenCompany
   );
+  return c.json(ok(data));
+});
+
+// The BD MEETINGS sheet's status and Last Call for leads a teammate already holds.
+// Same permission and username rules as claim-for-user; the sheet wins on status.
+// Body: { username, leads: [{ npi, status?, lastCallAt? }] }
+app.post("/admin/sync-lead-status", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const data = await leadsRepo.syncLeadStatusesFromSheet(supabaseFor(c), c.get("session"), {
+    username: body.username,
+    leads: body.leads,
+  });
   return c.json(ok(data));
 });
 

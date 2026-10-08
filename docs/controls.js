@@ -579,6 +579,7 @@
     fileName: "", rows: null, q: null,
     options: { excludeSubs: "solar", excludeWords: "george", skipSynced: true, useSheetStatus: true, fixedStatus: "Onboarded" },
     openerUser: {}, phase: "idle", progress: { done: 0, total: 0 }, results: new Map(),
+    conflicts: [], conflictsError: "", // sheet-vs-app owner disagreements found by the last check/import
   };
 
   const activeUsers = () => (users || []).filter((u) => !u.disabled);
@@ -595,6 +596,8 @@
     imp.q = imp.rows ? sheetLib.qualify(imp.rows, imp.options) : null;
     if (imp.q) imp.q.openers.forEach((o) => { if (!(o.name in imp.openerUser)) imp.openerUser[o.name] = guessUser(o.name); });
     imp.results = new Map();
+    imp.conflicts = [];
+    imp.conflictsError = "";
     imp.phase = imp.q && imp.q.candidates.length ? "ready" : "idle";
   }
 
@@ -665,15 +668,144 @@
     const tally = {};
     rows.forEach(({ r }) => { tally[r.result] = (tally[r.result] || 0) + 1; });
     const chips = Object.entries(tally).map(([k, n]) => `<span class="role-badge ${k === "imported" || k === "would-import" ? "is-admin" : ""}">${n} ${escapeHtml(sheetLib.RESULT_LABELS[k] || k).toLowerCase()}</span>`).join(" ");
-    const problems = rows.filter(({ r }) => !["imported", "would-import", "already-theirs"].includes(r.result));
+    // Blocked rows have their own panel (sheet owner vs app owner); only list them here if that failed to load.
+    const problems = rows.filter(({ r }) => !["imported", "would-import", "already-theirs"].includes(r.result) && (r.result !== "blocked" || imp.conflictsError));
     return `<div class="ctl-results">
       <div class="ctl-summary">${imp.phase === "done" ? "Finished." : "Preview (nothing was written)."} ${chips}</div>
+      ${conflictsHtml()}
       ${problems.length ? `<table class="results-table ctl-table"><thead><tr><th>Row</th><th>Company</th><th>Result</th></tr></thead><tbody>${problems.slice(0, 40).map(({ c, r }) => `
         <tr><td class="mono">${c.rowNumber}</td><td>${escapeHtml(c.company || c.npi)}</td><td>${escapeHtml(sheetLib.RESULT_LABELS[r.result] || r.result)}: ${escapeHtml(r.detail)}</td></tr>`).join("")}</tbody></table>
         ${problems.length > 40 ? `<div class="muted-note">+ ${problems.length - 40} more in the download.</div>` : ""}` : ""}
       <button type="button" class="btn btn-ghost btn-small" data-sheet="results">Download result CSV</button>
       <span class="muted-note">Paste its SYNC column back into the sheet.</span>
     </div>`;
+  }
+
+  // ---- sheet conflicts: the sheet says one rep, the app says another ----
+  // Rows whose opener is blank or matches no user are looked up too: the admin picks the rep from a
+  // dropdown on the row. If the app already has the lead the action is "Give to"; if it doesn't,
+  // it is "Claim for".
+
+  function userForOpener(opener) {
+    const username = imp.openerUser[opener];
+    const u = username && activeUsers().find((x) => x.username === username);
+    return u ? { id: u.id, displayName: u.displayName } : null;
+  }
+
+  const userById = (id) => {
+    const u = id && activeUsers().find((x) => x.id === id);
+    return u ? { id: u.id, displayName: u.displayName, username: u.username } : null;
+  };
+  // The rep a row will go to: the one its opener maps to, else the one picked in the row's dropdown.
+  const targetOf = (x) => x.sheetUser || userById(x.pickId);
+
+  function currentStatusMode() {
+    return imp.options.useSheetStatus
+      ? { useSheet: true, fallback: imp.options.fixedStatus.trim() }
+      : { useSheet: false, fixed: imp.options.fixedStatus.trim() };
+  }
+
+  // After a check or import: who owns each flagged NPI in the app, beside who the sheet says.
+  async function loadConflicts() {
+    imp.conflicts = [];
+    imp.conflictsError = "";
+    const rows = imp.q.candidates.filter((c) => imp.results.has(c.npi)).map((c) => ({ c, r: imp.results.get(c.npi) }));
+    const unassigned = imp.q.candidates.filter((c) => !imp.openerUser[c.opener] && !imp.results.has(c.npi)).map((c) => ({ c, r: { result: "unassigned" } }));
+    const all = [...rows, ...unassigned];
+    const wanted = all.filter(({ r }) => r.result === "blocked" || r.result === "unassigned").map(({ c }) => c.npi);
+    if (!wanted.length) return;
+    try {
+      const owners = [];
+      for (let i = 0; i < wanted.length; i += 200) {
+        const data = await apiPost("admin/sheet-conflicts/lookup", { npis: wanted.slice(i, i + 200) });
+        owners.push(...(data.leads || []));
+      }
+      imp.conflicts = sheetLib.sheetConflicts(all, owners, userForOpener).map((x) => ({ ...x, pickId: "", outcome: "" }));
+    } catch (err) {
+      imp.conflictsError = err.message;
+    }
+  }
+
+  function conflictsHtml() {
+    if (imp.conflictsError) return `<div class="login-error">Couldn't load who owns the conflicting leads (${escapeHtml(imp.conflictsError)}). They are listed below as blocked.</div>`;
+    if (!imp.conflicts.length) return "";
+    const open = imp.conflicts.filter((x) => !x.outcome).length;
+    const rows = imp.conflicts.map((x) => {
+      const target = targetOf(x);
+      const free = x.kind === "free";
+      const sheetCell = x.sheetUser
+        ? escapeHtml(x.sheetUser.displayName)
+        : `<select data-conflict-pick="${escapeHtml(x.npi)}"><option value="">Choose a rep…</option>${activeUsers().map((u) =>
+            `<option value="${escapeHtml(u.id)}" ${x.pickId === u.id ? "selected" : ""}>${escapeHtml(u.displayName)}</option>`).join("")}</select>`;
+      const why = x.sheetOpener ? `Opener: ${escapeHtml(x.sheetOpener)}${x.sheetUser ? "" : " (no matching user)"}` : "No opener";
+      const appCell = free
+        ? '<span class="muted-note">Not in the app</span>'
+        : `${escapeHtml(x.appOwnerName)}<div class="muted-note">${x.appStatus ? escapeHtml(x.appStatus) : "no status"}</div>`;
+      let actions;
+      if (x.outcome) actions = `<span class="muted-note">${escapeHtml(x.outcome)}</span>`;
+      else if (!target) actions = '<span class="muted-note">Choose a rep</span>';
+      else if (!free && !x.groupId) actions = '<span class="muted-note">Can\'t move: no business group</span>';
+      else {
+        actions = `<button type="button" class="btn btn-ghost btn-small" data-sheet="give" data-npi="${escapeHtml(x.npi)}">${free ? "Claim for" : "Give to"} ${escapeHtml(target.displayName)}</button>`;
+      }
+      if (!x.outcome) actions += ` <button type="button" class="btn btn-ghost btn-small" data-sheet="keep" data-npi="${escapeHtml(x.npi)}">${free ? "Skip" : `Keep ${escapeHtml(x.appOwnerName)}`}</button>`;
+      return `<tr>
+        <td class="mono">${x.rowNumber}</td>
+        <td>${escapeHtml(x.company)}<div class="muted-note mono">${escapeHtml(x.npi)}</div></td>
+        <td>${sheetCell}<div class="muted-note">${why}${x.sheetStatus ? ` · ${escapeHtml(x.sheetStatus)}` : ""}</div></td>
+        <td>${appCell}</td>
+        <td>${actions}</td></tr>`;
+    }).join("");
+    return `<div class="team-block ctl-conflicts">
+      <h4>Sheet conflicts <span class="role-badge">${open} to decide</span></h4>
+      <p class="ctl-help">The sheet and the app disagree about who owns these, or the sheet has no usable rep for them. Nothing was taken over. Where there is no rep, choose one. "Give to" moves the lead (and the rest of that business) and records why; "Claim for" adds a lead the app doesn't have; "Keep"/"Skip" leaves it as it is.</p>
+      <table class="results-table ctl-table"><thead><tr><th>Row</th><th>Company</th><th>Sheet says</th><th>App says</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`;
+  }
+
+  async function giveConflict(npi) {
+    const x = imp.conflicts.find((k) => k.npi === npi);
+    const target = x && targetOf(x);
+    if (!x || !target || x.outcome) return;
+
+    if (x.kind === "free") {
+      if (!confirm(`Claim ${x.company} for ${target.displayName}?`)) return;
+      try {
+        const response = await apiPost("admin/claim-for-user", {
+          username: userById(target.id).username,
+          companies: [sheetLib.toPayload(x.cand, { stamp: stamp(), actor: getSession()?.displayName || "", statusMode: currentStatusMode() })],
+        });
+        const v = sheetLib.verdictFor([x.npi], response)[x.npi];
+        x.outcome = v.result === "imported" || v.result === "already-theirs" ? `Claimed for ${target.displayName}` : `${sheetLib.RESULT_LABELS[v.result] || v.result}: ${v.detail}`;
+        state.claimedLoaded = false;
+        showToast(x.outcome, v.result !== "imported" && v.result !== "already-theirs");
+      } catch (err) {
+        showToast(err.message, true);
+      }
+      refreshSheet();
+      return;
+    }
+
+    if (!confirm(`Move ${x.company} from ${x.appOwnerName} to ${target.displayName}? Everything in the same business group moves with it.`)) return;
+    const reason = (prompt("Why? This is recorded in the ownership history.", `Sheet lists ${x.sheetOpener || target.displayName} as the owner`) || "").trim();
+    if (!reason) { showToast("A reason is required", true); return; }
+    try {
+      const result = await apiPost("admin/conflicts/resolve", { groupId: x.groupId, toUserId: target.id, reason });
+      const skipped = (result.skipped || []).length;
+      x.outcome = skipped ? `Moved, ${skipped} skipped (already theirs)` : `Moved to ${target.displayName}`;
+      state.claimedLoaded = false;
+      showToast(x.outcome);
+    } catch (err) {
+      showToast(err.message, true);
+    }
+    refreshSheet();
+  }
+
+  function keepConflict(npi) {
+    const x = imp.conflicts.find((k) => k.npi === npi);
+    if (!x || x.outcome) return;
+    x.outcome = x.kind === "free" ? "Skipped" : `Kept with ${x.appOwnerName}`;
+    refreshSheet();
   }
 
   function download(name, text) {
@@ -700,9 +832,7 @@
     imp.progress = { done: 0, total: list.length };
     refreshSheet();
 
-    const statusMode = imp.options.useSheetStatus
-      ? { useSheet: true, fallback: imp.options.fixedStatus.trim() }
-      : { useSheet: false, fixed: imp.options.fixedStatus.trim() };
+    const statusMode = currentStatusMode();
     const actor = getSession()?.displayName || "";
     const byUser = new Map();
     list.forEach((c) => { const u = imp.openerUser[c.opener]; byUser.set(u, [...(byUser.get(u) || []), c]); });
@@ -728,6 +858,7 @@
       }
     }
     imp.phase = dry ? "previewed" : "done";
+    await loadConflicts();
     refreshSheet();
     if (!dry) {
       const n = [...imp.results.values()].filter((r) => r.result === "imported").length;
@@ -778,6 +909,8 @@
       if (confirm(`Claim ${n} lead${n === 1 ? "" : "s"} for the reps you chose? Leads someone else already owns are skipped, never taken over. Tip: run "Check what would happen" first.`)) run(false);
     } else if (act === "export") exportLeads();
     else if (act === "results") downloadResults();
+    else if (act === "give") giveConflict(btn.dataset.npi);
+    else if (act === "keep") keepConflict(btn.dataset.npi);
   });
   panel.addEventListener("change", (e) => {
     if (e.target.id === "ctlDefaultTaxonomy") { saveDefaultTaxonomy(e.target.value); return; }
@@ -785,8 +918,14 @@
     const pick = e.target.closest("[data-status-from]");
     if (pick) { statusPick[pick.dataset.statusFrom] = pick.value; statusResult = null; panel.querySelector(".ctl-status-table")?.closest(".team-block")?.replaceWith(Object.assign(document.createElement("div"), { innerHTML: statusesHtml() }).firstElementChild); return; }
     if (e.target.matches("[data-sheet-file]")) { onSheetFile(e.target.files[0]); return; }
+    const conflictPick = e.target.closest("[data-conflict-pick]");
+    if (conflictPick) {
+      const x = imp.conflicts.find((k) => k.npi === conflictPick.dataset.conflictPick);
+      if (x) { x.pickId = conflictPick.value; refreshSheet(); }
+      return;
+    }
     const opener = e.target.closest("[data-sheet-opener]");
-    if (opener) { imp.openerUser[opener.dataset.sheetOpener] = opener.value; imp.results = new Map(); refreshSheet(); return; }
+    if (opener) { imp.openerUser[opener.dataset.sheetOpener] = opener.value; imp.results = new Map(); imp.conflicts = []; imp.conflictsError = ""; refreshSheet(); return; }
     const opt = e.target.closest("[data-sheet-opt]");
     if (!opt) return;
     const key = opt.dataset.sheetOpt;

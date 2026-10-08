@@ -372,6 +372,9 @@ function fromClaimResult(data) {
       companyName: b.companyName || "",
       groupName: b.groupName || "",
       owners: (b.owners || []).map((o) => o.displayName || "(unknown user)"),
+      // For the admin's sheet-conflicts panel, which moves the group to the sheet's rep.
+      groupId: b.groupId || null,
+      ownerIds: (b.owners || []).map((o) => o.userId).filter(Boolean),
     })),
     heldForReview: (result.held || []).map((h) => ({
       npi: String(h.npi),
@@ -579,15 +582,9 @@ export async function enrichFromRegistry(supabase, inputs) {
   });
 }
 
-export async function claimForUser(supabase, callerSession, { username, companies, dryRun = false }, flattenCompany) {
-  if (!username || !String(username).trim()) throw httpError(400, "username is required");
-  if (!Array.isArray(companies) || companies.length === 0) throw httpError(400, "At least one company is required to claim");
-  if (companies.length > MAX_CLAIM_FOR_USER_COMPANIES) {
-    throw httpError(400, `At most ${MAX_CLAIM_FOR_USER_COMPANIES} companies per request -- split the batch`);
-  }
-
-  // Read the permission fresh from the database rather than trusting the
-  // token, so revoking can_claim_for_others takes effect immediately.
+// Read the permission fresh from the database rather than trusting the
+// token, so revoking can_claim_for_others takes effect immediately.
+async function requireClaimForOthers(supabase, callerSession) {
   const { data: caller, error: callerErr } = await supabase
     .from("app_users")
     .select("id, is_admin, can_claim_for_others")
@@ -602,6 +599,16 @@ export async function claimForUser(supabase, callerSession, { username, companie
   if (!caller || !(caller.is_admin || caller.can_claim_for_others)) {
     throw httpError(403, "This account isn't allowed to claim leads for other users.");
   }
+}
+
+export async function claimForUser(supabase, callerSession, { username, companies, dryRun = false }, flattenCompany) {
+  if (!username || !String(username).trim()) throw httpError(400, "username is required");
+  if (!Array.isArray(companies) || companies.length === 0) throw httpError(400, "At least one company is required to claim");
+  if (companies.length > MAX_CLAIM_FOR_USER_COMPANIES) {
+    throw httpError(400, `At most ${MAX_CLAIM_FOR_USER_COMPANIES} companies per request -- split the batch`);
+  }
+
+  await requireClaimForOthers(supabase, callerSession);
 
   const target = await findUserByUsernameExact(supabase, username, "id, username, display_name");
   if (!target) throw httpError(404, `No user with username "${String(username).trim()}"`);
@@ -627,6 +634,79 @@ export async function claimForUser(supabase, callerSession, { username, companie
     claimedFor: { username: target.username, displayName: target.display_name },
     claimedVia: callerSession.username,
   };
+}
+
+// The BD MEETINGS sheet is the source of truth for status: it overwrites the
+// status of leads the named teammate already holds, and moves the call date
+// (status_updated_at, which the Claimed view sorts on) forward when the sheet's
+// Last Call is newer. It never touches ownership, never reopens a disconnected
+// lead, and a lead someone else owns is reported as notOwned, not changed.
+// Wins aren't announced to the team: this is a bulk catch-up, not a rep's action.
+// Body: { username, leads: [{ npi, status?, lastCallAt? }] }
+export async function syncLeadStatusesFromSheet(supabase, callerSession, { username, leads }) {
+  if (!username || !String(username).trim()) throw httpError(400, "username is required");
+  if (!Array.isArray(leads) || leads.length === 0) throw httpError(400, "At least one lead is required to sync");
+  if (leads.length > MAX_CLAIM_FOR_USER_COMPANIES) {
+    throw httpError(400, `At most ${MAX_CLAIM_FOR_USER_COMPANIES} leads per request -- split the batch`);
+  }
+  await requireClaimForOthers(supabase, callerSession);
+  const target = await findUserByUsernameExact(supabase, username, "id, username, display_name");
+  if (!target) throw httpError(404, `No user with username "${String(username).trim()}"`);
+
+  const result = { updated: [], unchanged: [], notOwned: [], skipped: [] };
+  const seen = new Set();
+  const wanted = [];
+  const nowMs = Date.now();
+  for (const item of leads) {
+    const npi = String((item && item.npi) ?? "").trim();
+    if (!/^\d{10}$/.test(npi)) { result.skipped.push({ npi, reason: "invalid_npi" }); continue; }
+    if (seen.has(npi)) { result.skipped.push({ npi, reason: "duplicate_in_request" }); continue; }
+    seen.add(npi);
+
+    const typed = item.status == null ? "" : normalizeStatus(item.status);
+    if (typed && cleanStatus(typed) === "disconnected") { result.skipped.push({ npi, reason: "disconnected_not_synced" }); continue; }
+    if (typed && isJunkStatus(typed)) { result.skipped.push({ npi, reason: "junk_status" }); continue; }
+
+    // A date in the future is a typo; one a day ahead is clock skew and is allowed.
+    const callMs = item.lastCallAt ? Date.parse(item.lastCallAt) : NaN;
+    const lastCallAt = Number.isFinite(callMs) && callMs <= nowMs + 86400000 ? new Date(Math.min(callMs, nowMs)).toISOString() : null;
+    if (!typed && !lastCallAt) { result.skipped.push({ npi, reason: "nothing_to_sync" }); continue; }
+    wanted.push({ npi, status: typed, lastCallAt });
+  }
+
+  if (wanted.length > 0) {
+    const { data, error } = await supabase
+      .from("leads")
+      .select("npi, status, status_updated_at")
+      .eq("claimed_by", target.id)
+      .eq("is_disconnected", false)
+      .in("npi", wanted.map((w) => w.npi));
+    if (error) throw httpError(500, "Failed to load leads: " + error.message);
+    const byNpi = new Map((data || []).map((r) => [String(r.npi), r]));
+
+    for (const w of wanted) {
+      const row = byNpi.get(w.npi);
+      if (!row) { result.notOwned.push(w.npi); continue; }
+      const statusChanged = Boolean(w.status) && cleanStatus(row.status) !== cleanStatus(w.status);
+      const currentMs = row.status_updated_at ? Date.parse(row.status_updated_at) : null;
+      const newerCall = Boolean(w.lastCallAt) && (currentMs == null || Date.parse(w.lastCallAt) > currentMs);
+      if (!statusChanged && !newerCall) { result.unchanged.push(w.npi); continue; }
+
+      const patch = statusChanged
+        ? { status: w.status, status_updated_by: callerSession.id, status_updated_at: w.lastCallAt || new Date().toISOString() }
+        : { status_updated_at: w.lastCallAt };
+      const { error: updErr } = await supabase
+        .from("leads")
+        .update(patch)
+        .eq("claimed_by", target.id)
+        .eq("npi", w.npi)
+        .eq("is_disconnected", false);
+      if (updErr) throw httpError(500, "Failed to update lead " + w.npi + ": " + updErr.message);
+      result.updated.push(w.npi);
+    }
+  }
+
+  return { ...result, syncedFor: { username: target.username, displayName: target.display_name }, syncedVia: callerSession.username };
 }
 
 export async function exportCompaniesToDisconnected(supabase, companies, session, flattenCompany) {

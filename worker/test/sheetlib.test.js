@@ -68,6 +68,46 @@ test('the server\'s answer is sorted into one result per row', () => {
   assert.equal(dry['3'].result, 'blocked');
 });
 
+test('a blocked row keeps its business group so it can be moved later', () => {
+  const v = sheet.verdictFor(['3'], { blocked: [{ npi: '3', owners: ['Nora Atkins'], groupId: 'g1' }] });
+  assert.equal(v['3'].groupId, 'g1');
+  assert.deepEqual(v['3'].ownerNames, ['Nora Atkins']);
+});
+
+test('sheet conflicts pair the sheet\'s rep with the app\'s owner', () => {
+  const selene = { id: 's', displayName: 'Selene Myles' };
+  const rows = [
+    { c: { npi: '1', rowNumber: 5, company: 'DELTA', opener: 'Selene', status: 'Onboarded' }, r: { result: 'blocked', groupId: 'g1', ownerNames: ['Nora Atkins'] } },
+    { c: { npi: '2', rowNumber: 6, company: 'GONE', opener: 'Selene', status: '' }, r: { result: 'imported' } },
+    { c: { npi: '3', rowNumber: 7, company: 'NO REP', opener: 'Zed', status: '' }, r: { result: 'blocked', groupId: 'g3', ownerNames: ['Rick Nelson'] } },
+    { c: { npi: '4', rowNumber: 8, company: 'SAME', opener: 'Selene', status: '' }, r: { result: 'blocked', groupId: 'g4' } },
+  ];
+  const owners = [
+    { npi: '1', ownerId: 'n', ownerName: 'Nora Atkins', status: 'new', groupId: 'g1' },
+    { npi: '3', ownerId: 'r', ownerName: 'Rick Nelson', status: 'new', groupId: 'g3' },
+    { npi: '4', ownerId: 's', ownerName: 'Selene Myles', status: 'new', groupId: 'g4' },
+  ];
+  const out = sheet.sheetConflicts(rows, owners, (o) => (o === 'Selene' ? selene : null));
+  assert.deepEqual(out.map((x) => x.npi), ['1', '3'], 'only blocked rows where the sheet and app really differ');
+  assert.equal(out[0].appOwnerName, 'Nora Atkins');
+  assert.equal(out[0].sheetUser.displayName, 'Selene Myles');
+  assert.equal(out[0].kind, 'owned');
+  assert.equal(out[1].sheetUser, null, 'no rep for that opener: the panel offers a dropdown');
+  assert.equal(sheet.sheetConflicts(rows.slice(0, 1), [], () => selene)[0].appOwnerName, 'Nora Atkins', 'falls back to the name the server gave');
+});
+
+test('rows with no opener or an unknown one are offered for assignment, owned or not', () => {
+  const rows = [
+    { c: { npi: '1', rowNumber: 2, company: 'BLANK OPENER, OWNED', opener: '', status: 'Onboarded' }, r: { result: 'unassigned' } },
+    { c: { npi: '2', rowNumber: 3, company: 'UNKNOWN OPENER, FREE', opener: 'Zed', status: '' }, r: { result: 'unassigned' } },
+  ];
+  const owners = [{ npi: '1', ownerId: 'r', ownerName: 'Rick Nelson', status: 'booked', groupId: 'g1', companyName: 'X' }];
+  const out = sheet.sheetConflicts(rows, owners, () => null);
+  assert.deepEqual(out.map((x) => [x.npi, x.kind, x.sheetUser, x.appOwnerName]), [['1', 'owned', null, 'Rick Nelson'], ['2', 'free', null, 'a teammate']]);
+  assert.equal(out[0].groupId, 'g1');
+  assert.equal(out[1].cand.npi, '2', 'the row travels with the conflict so it can be claimed once a rep is chosen');
+});
+
 test('exports are safe to open in a spreadsheet', () => {
   assert.equal(sheet.csvEscape('=HYPERLINK("x")'), '"\'=HYPERLINK(""x"")"');
   assert.equal(sheet.csvEscape('@cmd'), "'@cmd");

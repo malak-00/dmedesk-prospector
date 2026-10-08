@@ -182,12 +182,48 @@
     for (const npi of npis) {
       if (response.dryRun ? allowed.has(npi) && !already.has(npi) : claimed.has(npi)) out[npi] = { result: response.dryRun ? "would-import" : "imported", detail: "" };
       else if (already.has(npi)) out[npi] = { result: "already-theirs", detail: "Already claimed by them" };
-      else if (blocked.has(npi)) out[npi] = { result: "blocked", detail: `Owned by ${(blocked.get(npi).owners || []).join(", ") || "a teammate"}` };
+      else if (blocked.has(npi)) {
+        const b = blocked.get(npi);
+        out[npi] = { result: "blocked", detail: `Owned by ${(b.owners || []).join(", ") || "a teammate"}`, groupId: b.groupId || null, ownerNames: b.owners || [] };
+      }
       else if (held.has(npi)) out[npi] = { result: "held", detail: "Held for admin review (possible duplicate)" };
       else if (invalid.has(npi)) out[npi] = { result: "invalid", detail: "Not a usable NPI" };
       else out[npi] = { result: "not-imported", detail: "The server didn't claim it" };
     }
     return out;
+  }
+
+  // The leads the sheet and the app disagree about, or the sheet has no usable rep for.
+  // rows: [{ c: candidate, r: result }] where r.result is "blocked" (the server refused: someone
+  // else owns it) or "unassigned" (the opener is blank or matches no user, so it was not checked).
+  // owners: the lookup from POST /admin/sheet-conflicts/lookup. userFor(opener) -> { id,
+  // displayName } for the rep the sheet's opener maps to, or null.
+  // kind "owned": the app has an owner (the action is to give it to the sheet's rep, which needs
+  // its business group); kind "free": the app has no active owner (the action is to claim it).
+  // A row whose sheet rep already is the app's owner is not a conflict.
+  function sheetConflicts(rows, owners, userFor) {
+    const byNpi = new Map((owners || []).map((o) => [String(o.npi), o]));
+    return (rows || [])
+      .filter(({ r }) => r.result === "blocked" || r.result === "unassigned")
+      .map(({ c, r }) => {
+        const app = byNpi.get(c.npi) || null;
+        const sheetUser = (userFor && userFor(c.opener)) || null;
+        return {
+          npi: c.npi,
+          rowNumber: c.rowNumber,
+          company: c.company || (app && app.companyName) || c.npi,
+          cand: c,
+          kind: app || r.result === "blocked" ? "owned" : "free",
+          sheetOpener: c.opener || "",
+          sheetUser,
+          sheetStatus: c.status || "",
+          appOwnerId: app ? app.ownerId : null,
+          appOwnerName: app ? app.ownerName : (r.ownerNames || []).join(", ") || "a teammate",
+          appStatus: app ? app.status : "",
+          groupId: (app && app.groupId) || r.groupId || null,
+        };
+      })
+      .filter((x) => !(x.sheetUser && x.appOwnerId && x.sheetUser.id === x.appOwnerId));
   }
 
   const RESULT_LABELS = {
@@ -216,7 +252,7 @@
         r.result === "imported" || r.result === "already-theirs" ? "TRUE" : "FALSE"]));
   }
 
-  const api = { parseCsv, toCsv, csvEscape, safeCell, headerMap, qualify, importNote, toPayload, verdictFor, RESULT_LABELS, leadsToCsv, resultsToCsv };
+  const api = { parseCsv, toCsv, csvEscape, safeCell, headerMap, qualify, importNote, toPayload, verdictFor, sheetConflicts, RESULT_LABELS, leadsToCsv, resultsToCsv };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.dmeSheet = api;
 })(typeof window !== "undefined" ? window : globalThis);
