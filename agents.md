@@ -6,6 +6,7 @@ This repository contains the DME Desk Prospector application. The live path is a
 
 - **Multi-Agent Collaboration**: This repository is actively co-developed by Ben, Malak, Antigravity, Claude, and Codex. To prevent context drift, all contributors must adhere to the folder authorities defined in `documentation/README.md`.
 - Keep plans, operational notes, architecture notes, and worklogs under `documentation/` (`plans/`, `planning/`, `operations/`, `reference/`, or `reviews/`).
+- You need to write all edits, written to the codebase with the author's name as well as the edits done to the relevent markdown files
 - Never place project documentation in `docs/`; `docs/` is the deployed browser frontend and its assets.
 - Significant fixes, schema changes, migrations, and architectural work must add a dated section to `documentation/operations/WORKLOG.md` with Objective, Actions Completed, Database / System Result, and Safety Status.
 - Keep active planning documents synchronized as implementation decisions are made. Use relative links and verify new links resolve.

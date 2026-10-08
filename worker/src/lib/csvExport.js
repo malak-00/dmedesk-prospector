@@ -71,10 +71,17 @@ function escapeCsvValue(value) {
 
 export function flattenCompany(company) {
   const primaryContact = (company.decisionMakers && company.decisionMakers[0]) || null;
-  const sources = company.sources || {};
-  const activeSources = Object.keys(sources)
-    .filter((k) => sources[k])
-    .join("; ");
+  let activeSources = "";
+  if (typeof company.sources === "string") {
+    activeSources = company.sources;
+  } else if (company.sources && typeof company.sources === "object") {
+    activeSources = Object.keys(company.sources)
+      .filter((k) => company.sources[k])
+      .join("; ");
+  }
+  if (company.customSources) {
+    activeSources = activeSources ? `${activeSources}; ${company.customSources}` : company.customSources;
+  }
   const address = company.address || {};
   const taxonomy = company.taxonomy || {};
   const places = company.places || {};
@@ -90,11 +97,11 @@ export function flattenCompany(company) {
     state: address.state,
     postalCode: address.postalCode,
     taxonomy: taxonomy.description,
-    contactName: primaryContact ? primaryContact.name : "",
-    contactTitle: primaryContact ? primaryContact.title : "",
-    contactRole: primaryContact ? primaryContact.roleCategory : "",
-    contactSource: primaryContact ? primaryContact.source : "",
-    contactPhone: primaryContact && primaryContact.phone ? primaryContact.phone : "",
+    contactName: primaryContact ? primaryContact.name : (company.contactName || ""),
+    contactTitle: primaryContact ? primaryContact.title : (company.contactTitle || ""),
+    contactRole: primaryContact ? primaryContact.roleCategory : (company.contactRole || ""),
+    contactSource: (primaryContact && primaryContact.source) || company.contactSource || "",
+    contactPhone: (primaryContact && primaryContact.phone) || company.contactPhone || "",
     additionalContacts: Math.max(((company.decisionMakers && company.decisionMakers.length) || 1) - 1, 0),
     rating: places.rating != null ? places.rating : "",
     // Leads are no longer scored. The two columns stay (empty) so every column
