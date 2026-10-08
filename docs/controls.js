@@ -55,7 +55,7 @@
   function userRows() {
     return users.map((u) => `
       <tr class="${u.disabled ? "is-removed" : ""}">
-        <td><div class="ctl-name">${escapeHtml(u.displayName)}${isMe(u) ? ' <span class="muted-note">(you)</span>' : ""}</div>
+        <td><div class="ctl-name">${window.dmeAvatars ? window.dmeAvatars.html(u, 30) : ""}${escapeHtml(u.displayName)}${isMe(u) ? ' <span class="muted-note">(you)</span>' : ""}</div>
           <div class="ctl-sub mono">${escapeHtml(u.username)}</div></td>
         <td>${roleBadges(u)}</td>
         <td>${u.disabled ? `<span class="status-pill is-removed" title="Removed ${escapeHtml(when(u.disabledAt))}">Removed</span>` : '<span class="status-pill is-active">Active</span>'}${u.lockedUntil ? ' <span class="status-pill is-removed" title="Too many wrong passwords. Open Edit to unlock.">Locked</span>' : ""}${u.mustChangePassword ? ' <span class="role-badge" title="Still on the temporary password you gave them">Temp password</span>' : ""}</td>
@@ -202,6 +202,7 @@
     const card = openDialog(`
       <h3>${escapeHtml(u.displayName)}</h3>
       <p class="suggestion-hint mono">${escapeHtml(u.username)}${u.disabled ? " · removed" : ""}</p>
+      ${avatarRowHtml(u)}
       <label class="checkbox"><input type="checkbox" id="ctlAdmin" ${u.isAdmin ? "checked" : ""} ${mine ? "disabled" : ""}><span>Admin${mine ? " (you can't change your own)" : ""}</span></label>
       ${features.claimForOthers ? `<label class="checkbox"><input type="checkbox" id="ctlClaimOthers" ${u.canClaimForOthers ? "checked" : ""}><span>Can claim leads for a teammate</span></label>` : ""}
       ${u.lockedUntil ? `<div class="ctl-locked">Locked after too many wrong passwords until ${escapeHtml(new Date(u.lockedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}. <button type="button" class="link-btn" data-ctl="unlock">Unlock now</button></div>` : ""}
@@ -217,6 +218,43 @@
       </div>`);
     card.dataset.id = id;
     card.querySelector("#ctlPassword").value = "";
+  }
+
+  // The profile picture row in a person's edit dialog.
+  function avatarRowHtml(u) {
+    const has = window.dmeAvatars && window.dmeAvatars.has(u);
+    return `<div class="ctl-avatar-row">${window.dmeAvatars ? window.dmeAvatars.html(u, 56) : ""}
+      <div><div class="ctl-sub">Profile picture</div>
+        <div class="ctl-avatar-actions"><label class="btn btn-ghost btn-small">${has ? "Change picture" : "Upload picture"}<input type="file" accept="image/png,image/jpeg,image/webp" data-ctl-avatar-file hidden></label>${has ? ' <button type="button" class="link-btn" data-ctl="avatar-remove">Remove</button>' : ""}</div>
+        <div class="muted-note">It's shrunk to a small square and shows next to their name.</div></div></div>`;
+  }
+
+  async function changeAvatar(file) {
+    const card = dialog && dialog.querySelector(".ctl-card");
+    const u = card && users.find((x) => x.id === card.dataset.id);
+    if (!u) return;
+    try {
+      await window.dmeAvatars.upload(u.id, file);
+      showToast(`Picture saved for ${u.displayName}`);
+      card.querySelector(".ctl-avatar-row").outerHTML = avatarRowHtml(u);
+      render();
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  }
+
+  async function removeAvatar() {
+    const card = dialog && dialog.querySelector(".ctl-card");
+    const u = card && users.find((x) => x.id === card.dataset.id);
+    if (!u) return;
+    try {
+      await window.dmeAvatars.remove(u.id);
+      showToast(`Picture removed for ${u.displayName}`);
+      card.querySelector(".ctl-avatar-row").outerHTML = avatarRowHtml(u);
+      render();
+    } catch (err) {
+      showToast(err.message, true);
+    }
   }
 
   async function update(patch, doneMessage) {
@@ -341,7 +379,7 @@
 
       <h4 style="margin-top:18px">Recent kudos</h4>
       ${kudos.length ? `<table class="results-table ctl-table"><thead><tr><th>From</th><th>To</th><th>Message</th><th>When</th></tr></thead><tbody>
-        ${kudos.map((k) => `<tr><td>${escapeHtml(k.from)}</td><td>${escapeHtml(k.to)}</td><td class="ctl-note-cell">${escapeHtml(k.body)}</td><td class="mono">${escapeHtml(when(k.at))}</td></tr>`).join("")}
+        ${kudos.map((k) => `<tr><td>${window.dmeAvatars ? window.dmeAvatars.html(k.from, 22) : ""}${escapeHtml(k.from)}</td><td>${window.dmeAvatars ? window.dmeAvatars.html(k.to, 22) : ""}${escapeHtml(k.to)}</td><td class="ctl-note-cell">${escapeHtml(k.body)}</td><td class="mono">${escapeHtml(when(k.at))}</td></tr>`).join("")}
       </tbody></table>` : '<div class="muted-note">No kudos yet.</div>'}`;
   }
 
@@ -796,6 +834,7 @@
     else if (act === "save") save();
     else if (act === "remove") remove();
     else if (act === "restore") update({ disabled: false }, "Access restored");
+    else if (act === "avatar-remove") removeAvatar();
     else if (act === "unlock") update({ unlock: true }, "Account unlocked");
     else if (act === "copycreds") {
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(btn.dataset.text).then(() => showToast("Copied"), () => showToast("Couldn't copy: select it by hand", true));
@@ -803,6 +842,9 @@
     }
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && dialog) closeDialog(); });
+  document.addEventListener("change", (e) => {
+    if (dialog && e.target.matches && e.target.matches("[data-ctl-avatar-file]") && e.target.files[0]) changeAvatar(e.target.files[0]);
+  });
 
   window.dmeHooks.onControlsShown = load;
   const previousSignedOut = window.dmeHooks.onSignedOut;

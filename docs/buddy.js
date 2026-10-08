@@ -326,7 +326,7 @@
   /* ---------- pop-ups ---------- */
 
   // kind: "note" (waits for "Got it"), "event" (a win or occasion, always shown), "big" (milestones), "small" (greetings, tips).
-  function say({ key, kind = "small", pose = "neutral", title = "", text, noteId = "", from = "", react = null, confetti = false, choices = null, onChoice = null, onSeen = null }) {
+  function say({ key, kind = "small", pose = "neutral", title = "", text, noteId = "", from = "", react = null, confetti = false, choices = null, onChoice = null, onSeen = null, who = null }) {
     if (!getSession() || mode() === "off") return;
     if (mode() === "big" && (kind === "small" || kind === "line")) return;
     const s = shownToday();
@@ -336,7 +336,7 @@
       if ((s.lines || 0) >= LINE_CAP || Date.now() - lastLineAt < LINE_GAP || showing || queue.length || isQuiet() || callOpen()) return;
     } else if (kind !== "note" && kind !== "event" && s.n >= DAILY_CAP) return;
     if (queue.some((q) => q.key && q.key === key)) return;
-    queue.push({ key, kind, pose, title, text, noteId, from, react, confetti, choices, onChoice, onSeen });
+    queue.push({ key, kind, pose, title, text, noteId, from, react, confetti, choices, onChoice, onSeen, who });
     next();
   }
 
@@ -370,7 +370,7 @@
     const bubble = $("buddyBubble");
     const n = item.react ? notes.find((x) => x.id === item.react) : null;
     bubble.innerHTML = `
-      <img class="buddy-pose" src="${IMG}${POSES[item.pose] || POSES.neutral}" alt="" width="128" height="128">
+      <span class="buddy-pose-wrap"><img class="buddy-pose" src="${IMG}${POSES[item.pose] || POSES.neutral}" alt="" width="128" height="128">${item.who && window.dmeAvatars ? `<span class="buddy-who" title="${escapeHtml(item.who.name || "")}">${window.dmeAvatars.html(item.who, 46)}</span>` : ""}</span>
       <div class="buddy-body">
         <div class="buddy-name">${NAME}</div>
         ${item.title ? `<div class="buddy-title">${escapeHtml(item.title)}</div>` : ""}
@@ -833,16 +833,18 @@
   function occasionsToSay() {
     for (const o of occasions) {
       const key = `occasion:${o.kind}:${o.userId}:${today()}`;
-      if (o.mine && o.kind === "birthday") say({ key, kind: "event", pose: "birthday", title: `Happy birthday${firstName() ? `, ${firstName()}` : ""}!`, text: "Hope it's a great one. The team is lucky to have you.", confetti: true });
-      else if (o.mine) say({ key, kind: "event", pose: "party", title: `${plural(o.years, "year")} with the team!`, text: "Happy work anniversary. Thank you for everything you do.", confetti: true });
-      else if (o.kind === "birthday") say({ key, kind: "event", pose: "wave", title: "A birthday today", text: `It's ${o.name}'s birthday. Say hi!` });
-      else say({ key, kind: "event", pose: "thumbs", title: "A work anniversary", text: `${o.name} is celebrating ${plural(o.years, "year")} with the team today.` });
+      const who = { userId: o.userId, name: o.name };
+      if (o.mine && o.kind === "birthday") say({ key, kind: "event", pose: "birthday", who, title: `Happy birthday${firstName() ? `, ${firstName()}` : ""}!`, text: "Hope it's a great one. The team is lucky to have you.", confetti: true });
+      else if (o.mine) say({ key, kind: "event", pose: "party", who, title: `${plural(o.years, "year")} with the team!`, text: "Happy work anniversary. Thank you for everything you do.", confetti: true });
+      else if (o.kind === "birthday") say({ key, kind: "event", pose: "birthday", who, title: "A birthday today", text: `It's ${o.name}'s birthday. Say hi!` });
+      else say({ key, kind: "event", pose: "thumbs", who, title: "A work anniversary", text: `${o.name} is celebrating ${plural(o.years, "year")} with the team today.` });
     }
   }
 
   async function loadNotes() {
     try {
       const data = await apiGet("buddy/notes", { day: today() });
+      try { await (window.dmeAvatars && window.dmeAvatars.ready && window.dmeAvatars.ready()); } catch { /* pictures are optional */ }
       notes = data.notes || [];
       occasions = data.occasions || [];
       fun()?.onKudos?.(data.kudos || []);

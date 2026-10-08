@@ -33,6 +33,7 @@ import * as userAdminRepo from "./repos/userAdminRepo.js";
 import * as SystemInfo from "./services/systemInfo.js";
 import * as buddyRepo from "./repos/buddyRepo.js";
 import * as buddyTeam from "./repos/buddyTeamRepo.js";
+import * as avatarRepo from "./repos/avatarRepo.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
 import { parseListParams } from "./lib/leadView.js";
@@ -597,6 +598,9 @@ app.get("/buddy/notes", async (c) => {
   return c.json(ok({ ...data, kudos }));
 });
 
+// Everyone's profile picture (or initials), for the header, Team activity, kudos and birthdays.
+app.get("/buddy/avatars", async (c) => c.json(ok(await avatarRepo.listAvatars(supabaseFor(c)))));
+
 // Teammates to thank; call scripts; kudos; and a one-tap daily mood.
 app.get("/buddy/team", async (c) => c.json(ok(await buddyTeam.teamInfo(supabaseFor(c), c.get("session")))));
 app.get("/buddy/scripts", async (c) => c.json(ok(await buddyTeam.listScripts(supabaseFor(c)))));
@@ -636,6 +640,14 @@ app.get("/admin/buddy", async (c) => {
   const supabase = supabaseFor(c);
   const [notes, extras] = await Promise.all([buddyRepo.listForAdmin(supabase), buddyTeam.adminExtras(supabase)]);
   return c.json(ok({ ...notes, ...extras }));
+});
+
+// Upload (or, with an empty image, remove) one person's profile picture.
+app.post("/admin/users/avatar", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await avatarRepo.setAvatar(supabaseFor(c), session, body)));
 });
 
 app.post("/admin/buddy/script", async (c) => {

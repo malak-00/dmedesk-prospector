@@ -117,6 +117,35 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-08 — Profile pictures for each person (sql/037)
+
+### Objective
+
+Let each person have their own picture next to their name, uploaded by an admin from Controls.
+
+### Actions Completed
+
+- **Upload** (Admin > Controls > Users > Edit): choose a picture; the browser crops it to a square and shrinks it to about 160 px
+  (under about 45 KB) before sending it, so nothing large is stored. Remove puts the person back to initials.
+- **Where it shows**: the header chip (picture and name), Team activity (By rep and User activity), the Controls user
+  list and kudos log, kudos pop-ups (the sender's picture next to Caro), birthday and anniversary messages (Caro keeps the
+  birthday pose and the person's picture sits beside her, for the person themselves and for teammates), and the Team
+  calendar card on Today. Anyone without a picture shows a round badge with their initials.
+- **Server** (`worker/src/repos/avatarRepo.js`, `worker/src/lib/buddy.js`, `worker/src/index.js`): `GET /buddy/avatars`
+  (everyone active, with a picture if they have one) and `POST /admin/users/avatar` (admin only; png, jpeg or webp data URL
+  up to 60,000 characters; blank removes it).
+
+### Database / System Result
+
+- New SQL file `sql/037_user_avatars.sql` (`user_avatars`, one row per person; a picture is removed by setting it to null,
+  never by deleting the row). Rerun-safe. **Not run by Claude; to be run by the user.** Until it is, everyone shows
+  initials and uploading says what it needs.
+- Worker tests: all pass (new: picture validation, listing, setting, replacing and removing, and the missing table).
+
+### Safety Status
+
+- Additive only. Only admins can set a picture. Manual browser testing required.
+
 ## 2026-10-08 — Avatar: removed the weekly call goal and the digest; a clearer team mood
 
 ### Objective

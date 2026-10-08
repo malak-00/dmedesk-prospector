@@ -190,3 +190,16 @@ export function upcomingOccasions(people, day, meId, nameOf = () => "", span = 7
   }
   return out;
 }
+
+/* ---------- profile pictures (sql/037) ---------- */
+
+export const MAX_AVATAR_CHARS = 60_000;
+
+// A small image the browser has already shrunk: a data URL of a png, jpeg or webp. "" removes the picture.
+export function cleanAvatarImage(image) {
+  const value = String(image ?? "").trim();
+  if (!value) return null;
+  if (value.length > MAX_AVATAR_CHARS) throw httpError(400, "That picture is too big. Try a smaller one");
+  if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) throw httpError(400, "Use a png, jpeg or webp picture");
+  return value;
+}

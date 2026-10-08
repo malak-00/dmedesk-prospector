@@ -159,7 +159,7 @@
       const claims = sum(r.claims);
       const noShows = sum(r.noShows);
       return `<tr>
-        <td><span class="team-rep">${escapeHtml(r.name)}</span>${r.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}</td>
+        <td>${window.dmeAvatars ? window.dmeAvatars.html(r.name, 24) : ""}<span class="team-rep">${escapeHtml(r.name)}</span>${r.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}</td>
         <td class="mono">${num(calls)}</td>
         <td class="mono">${num(held)}${noShows ? `<span class="team-muted"> / ${noShows} no-show</span>` : ""}</td>
         <td class="mono">${num(booked)}</td>
@@ -180,7 +180,7 @@
 
   function userActivityHtml(d) {
     const rows = (d.userActivity || []).map((u) => `
-      <tr><td><span class="team-rep">${escapeHtml(u.displayName || u.username)}</span>${u.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}
+      <tr><td>${window.dmeAvatars ? window.dmeAvatars.html({ userId: u.id, username: u.username, name: u.displayName || u.username }, 24) : ""}<span class="team-rep">${escapeHtml(u.displayName || u.username)}</span>${u.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}
           <div class="ctl-sub mono">${escapeHtml(u.username || "")}</div></td>
         <td class="mono">${num(u.claimedCount)}</td><td class="mono">${num(u.disconnectedCount)}</td>
         <td class="mono">${num(u.suggestionsCount)}</td><td class="mono">${num(u.distinctSearches)}</td>

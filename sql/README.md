@@ -37,6 +37,7 @@ Required manual sequence:
 032_avatar_extras.sql            (after 031: team wins, repeating notes, reactions and replies, birthdays and anniversaries)
 033_avatar_team.sql              (after 032: kudos between teammates, a daily mood tap, call scripts)
 034_avatar_handover.sql         (a note to tomorrow's you, shown once at the next sign-in)
+037_user_avatars.sql            (a small profile picture for each person, uploaded from Admin > Controls)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -98,6 +99,7 @@ in `003`); save their output with the run.
 | `032_avatar_extras.sql` | Adds `buddy_notes.kind` and `repeat_weekday`, and creates `buddy_reactions`, `buddy_people` (month-day birthday, start date) and `buddy_settings`. Rerun-safe, nothing dropped or rewritten | **Not yet run. Until it is, the avatar works as before; repeating notes, reactions and replies, birthdays and the team-win announcement need it** |
 | `033_avatar_team.sql` | Creates `buddy_kudos`, `buddy_mood` (one tap a day; admins see anonymous totals only) and `buddy_scripts`. Rerun-safe, touches nothing existing | **Not yet run. Until it is, kudos, the mood check-in and call scripts say what they need; everything else in the avatar works** |
 | `034_avatar_handover.sql` | Creates `buddy_handover` (one row per person: the note they left for their next shift, shown once). Rerun-safe, touches nothing existing | **Not yet run. Until it is, the handover note says what it needs; everything else works** |
+| `037_user_avatars.sql` | Creates `user_avatars` (one row per person: a small profile picture, set by an admin; removed by setting it to null). Rerun-safe, touches nothing existing | **Not yet run. Until it is, everyone shows their initials and uploading a picture says what it needs** |
 
 ## Notes on individual files
 

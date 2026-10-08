@@ -306,7 +306,7 @@
 
   function onKudos(list) {
     list.forEach((k) => api.say({
-      key: `kudos:${k.id}`, kind: "event", pose: "thumbs", title: `${k.from} says thanks`, text: k.body,
+      key: `kudos:${k.id}`, kind: "event", pose: "thumbs", who: { name: k.from }, title: `${k.from} says thanks`, text: k.body,
       onSeen: () => apiPost("buddy/kudos/seen", { id: k.id }).catch((err) => console.log("[buddy] " + err.message)),
     }));
   }
@@ -544,7 +544,7 @@
     const rows = upcoming.slice(0, 6).map((o) => {
       const who = o.mine ? "Your" : `${escapeHtml(o.name)}'s`;
       const what = o.kind === "birthday" ? "birthday" : `${o.years}-year work anniversary`;
-      return `<div class="team-cal-row"><span>${who} ${what}</span><span>${when(o)}</span></div>`;
+      return `<div class="team-cal-row"><span class="team-cal-who">${window.dmeAvatars ? window.dmeAvatars.html({ userId: o.userId, name: o.name }, 24) : ""}<span>${who} ${what}</span></span><span>${when(o)}</span></div>`;
     }).join("");
     return `<section class="today-card side-card"><header class="today-card-head"><h3>Team calendar</h3></header><div class="side-body">${rows}</div></section>`;
   }
