@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-08 — Sheet import: statement timeouts on "Check what would happen" (frontend only)
+
+**Objective.** The check/import failed with "Failed to check lead ownership: canceling statement due to statement timeout" when the database was slow on a batch of 5.
+
+**Actions Completed.** `docs/controls.js` `claimChunk()`: on a timeout the batch is split in half and each half retried, down to one lead at a time; a single lead that still times out is reported as an error row ("nothing was changed, run again"). A timed-out `claim_leads` call is one rolled-back transaction, so a retry cannot double-claim. Duplicates need no change: a repeated NPI in the file is imported once (counted as "repeated"), and a lead the rep already holds comes back "Already theirs" and is skipped (the unique index on active (npi, claimed_by) would refuse it anyway).
+
+**Database / System Result.** None. No SQL, no worker change.
+
+**Safety Status.** If the timeouts persist on single leads, the cause is the identity-match scan inside `claim_leads`' dry run (it reads every other rep's active lead per call); that would need a reviewed SQL change, not done here.
+
 ## 2026-10-08 — Sheet conflicts panel in Admin → Controls (code only, not deployed)
 
 **Objective.** When a sheet is uploaded, claim the leads the app doesn't have for the sheet's opener (already done by the existing import) and show the ones the app already gives to someone else, with the app owner and the sheet owner side by side, and let an admin decide.

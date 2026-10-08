@@ -822,6 +822,31 @@
   const today = () => new Date().toISOString().slice(0, 10);
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  const isTimeout = (err) => /timeout|timed out/i.test((err && err.message) || "");
+
+  // One batch for one rep. If the database runs out of time on it (a timed-out claim is rolled
+  // back whole, so trying again is safe), split it in half and try each half, down to one lead.
+  async function claimChunk(username, chunk, dry, { actor, statusMode }) {
+    try {
+      const response = await apiPost("admin/claim-for-user", {
+        username,
+        dryRun: dry,
+        companies: chunk.map((c) => sheetLib.toPayload(c, { stamp: stamp(), actor, statusMode })),
+      });
+      const verdicts = sheetLib.verdictFor(chunk.map((c) => c.npi), response);
+      chunk.forEach((c) => imp.results.set(c.npi, { ...verdicts[c.npi], rep: username }));
+    } catch (err) {
+      if (isTimeout(err) && chunk.length > 1) {
+        const mid = Math.ceil(chunk.length / 2);
+        await claimChunk(username, chunk.slice(0, mid), dry, { actor, statusMode });
+        await claimChunk(username, chunk.slice(mid), dry, { actor, statusMode });
+        return;
+      }
+      const detail = isTimeout(err) ? "The database timed out checking this lead. Nothing was changed; run it again in a minute." : err.message;
+      chunk.forEach((c) => imp.results.set(c.npi, { result: "error", detail, rep: username }));
+    }
+  }
+
   // A few leads at a time: claiming many at once makes the database work out every possible
   // business grouping in one statement, which can run out of time.
   async function run(dry) {
@@ -840,17 +865,7 @@
     for (const [username, items] of byUser) {
       for (let i = 0; i < items.length; i += 5) {
         const chunk = items.slice(i, i + 5);
-        try {
-          const response = await apiPost("admin/claim-for-user", {
-            username,
-            dryRun: dry,
-            companies: chunk.map((c) => sheetLib.toPayload(c, { stamp: stamp(), actor, statusMode })),
-          });
-          const verdicts = sheetLib.verdictFor(chunk.map((c) => c.npi), response);
-          chunk.forEach((c) => imp.results.set(c.npi, { ...verdicts[c.npi], rep: username }));
-        } catch (err) {
-          chunk.forEach((c) => imp.results.set(c.npi, { result: "error", detail: err.message, rep: username }));
-        }
+        await claimChunk(username, chunk, dry, { actor, statusMode });
         imp.progress.done += chunk.length;
         const label = document.getElementById("ctlProgress");
         if (label) label.textContent = progressText();
