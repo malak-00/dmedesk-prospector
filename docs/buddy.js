@@ -309,6 +309,7 @@
       </button>`;
     document.body.append(host);
     host.addEventListener("click", onClick);
+    host.addEventListener("dblclick", (e) => { if (e.target.closest("#buddyLaunch")) cornerSurprise(); });
     host.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("[data-buddy-reply-input]")) sendReply(e.target); });
     applyAccessory();
     setLaunchPose(restPose());
@@ -489,7 +490,7 @@
       <div class="buddy-panel-name">${NAME}</div>
       <div class="buddy-panel-head">
         <button type="button" class="buddy-surprise" data-buddy="surprise" title="Click me!"><img id="buddyPanelImg" src="${IMG}${POSES[panel.dataset.pose] || POSES.thinking}" alt="" width="96" height="96"></button>
-        <div class="buddy-panel-tip"><strong>${escapeHtml(panel.dataset.label || "Tip")}</strong><br>${escapeHtml(panel.dataset.line || pick(TIPS))}</div>
+        <div class="buddy-panel-tip"><strong>${escapeHtml(panel.dataset.label || "Tip")}</strong><br>${escapeHtml(panel.dataset.line || pick(TIPS))}<div class="buddy-hint">Click my picture for a surprise. Double-click my face for one in the corner.</div></div>
       </div>
       ${challengeHtml()}
       ${badgesHtml()}
@@ -530,9 +531,21 @@
   }
 
   // Click her picture for a random pose and line.
+  const surprisePose = () => (Math.random() < 0.35 ? "wink" : pick(SURPRISE_POSES));
+
+  // Double-click her face in the corner: she answers with a pose and a line, no panel needed.
+  function cornerSurprise() {
+    if (!getSession() || mode() === "off") return;
+    const pose = surprisePose();
+    const [title, text] = pick([["Tip", pick(TIPS)], ["Pep talk", pick(PEP)], ["Fun", pick(JOKES)]]);
+    closePanel();
+    queue.unshift({ kind: "event", pose, title, text, confetti: pose === "party" });
+    if (showing) dismiss(); else next();
+  }
+
   function surprise() {
     const panel = $("buddyPanel");
-    const pose = pick(SURPRISE_POSES);
+    const pose = surprisePose();
     const options = [["Tip", pick(TIPS)], ["Pep talk", pick(PEP)], ["Fun", pick(JOKES)]];
     const [label, line] = pick(options);
     panel.dataset.pose = pose;
