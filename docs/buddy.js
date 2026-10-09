@@ -153,6 +153,7 @@
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const $ = (id) => document.getElementById(id);
   const callOpen = () => document.documentElement.classList.contains("call-open");
+  const gameOpen = () => document.documentElement.classList.contains("game-open"); // a game window hides her, so she waits
   const minutesNow = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
   const clockText = (min) => {
     const h = Math.floor(min / 60) % 24;
@@ -333,7 +334,7 @@
     if (key && s.keys.includes(key)) return;
     if (kind === "line") {
       // A passing remark: rare, never queued behind something else, never while she is busy or you're on a call.
-      if ((s.lines || 0) >= LINE_CAP || Date.now() - lastLineAt < LINE_GAP || showing || queue.length || isQuiet() || callOpen()) return;
+      if ((s.lines || 0) >= LINE_CAP || Date.now() - lastLineAt < LINE_GAP || showing || queue.length || isQuiet() || callOpen() || gameOpen()) return;
     } else if (kind !== "note" && kind !== "event" && s.n >= DAILY_CAP) return;
     if (queue.some((q) => q.key && q.key === key)) return;
     queue.push({ key, kind, pose, title, text, noteId, from, react, confetti, choices, onChoice, onSeen, who });
@@ -342,7 +343,7 @@
 
   function next() {
     if (showing || !queue.length || !host) return;
-    if (callOpen() || document.hidden) { setTimeout(next, 4000); return; } // never in the middle of a call
+    if (callOpen() || gameOpen() || document.hidden) { setTimeout(next, 2500); return; } // never in the middle of a call or a game
     if (isQuiet()) { setTimeout(next, 30000); return; } // quiet hours, or you're probably on the phone
     const item = queue.shift();
     if (mode() === "off") return next();
@@ -516,6 +517,7 @@
         <label class="buddy-quiet">Quiet from <input type="time" data-buddy-quiet="from" value="${quietHours() ? toTime(quietHours().from) : ""}" aria-label="Quiet hours start">
           to <input type="time" data-buddy-quiet="to" value="${quietHours() ? toTime(quietHours().to) : ""}" aria-label="Quiet hours end"></label>
         <label class="buddy-sound"><input type="checkbox" data-buddy-sound ${read(SOUND_KEY, false) ? "checked" : ""}> Sound</label>
+        ${window.dmeHolidays && window.dmeHolidays.active && window.dmeHolidays.active() ? `<label class="buddy-sound" title="The little ornaments in the header around a holiday"><input type="checkbox" data-holiday-toggle ${window.dmeHolidays.enabled() ? "checked" : ""}> Decorations</label>` : ""}
       </div>`;
   }
 

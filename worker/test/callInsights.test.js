@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { cleanFlag, cleanNpiList, nationalNumber, prettyNumber } from '../src/lib/badNumbers.js';
 import { listForNpis, flagNumber, clearFlag } from '../src/repos/badNumbersRepo.js';
 import { classifyResult, buildBestTimes, summarize, smoothed, MIN_CELL } from '../src/lib/bestTimes.js';
@@ -27,14 +28,14 @@ test('flagging needs a real NPI, a number and one of two reasons', () => {
 });
 
 function fakeDb({ tables, missing = [] }) {
-  const state = { tables };
+  const state = { tables, selected: [] };
   const from = (table) => {
     const filters = [];
     let op = null;
     let patch = null;
     let range = null;
     const q = {
-      select: () => q,
+      select(c) { state.selected.push([table, String(c || '')]); return q; },
       order: () => q,
       limit: () => q,
       range(a, b) { range = [a, b]; return q; },
@@ -169,7 +170,7 @@ test('the repo answers from the claimed leads and names who holds them', async (
   clearRelatedCache();
   const db = fakeDb({
     tables: {
-      leads: [{ npi: '1000000001', company_name: 'Beta DME', city: 'Austin', state: 'TX', company_phone: '(404) 808-5118', contact_phone: '', contact_name: 'Jane Smith', claimed_by: 'a', status: 'voicemail', is_disconnected: false }],
+      leads: [{ npi: '1000000001', company_name: 'Beta DME', city: 'Austin', state: 'TX', phone: '(404) 808-5118', contact_phone: '', contact_name: 'Jane Smith', claimed_by: 'a', status: 'voicemail', is_disconnected: false }],
       app_users: [{ id: 'a', display_name: 'Ana' }],
     },
   });
@@ -177,5 +178,26 @@ test('the repo answers from the claimed leads and names who holds them', async (
   assert.deepEqual(Object.keys(res.related), ['2000000001']);
   assert.equal(res.related['2000000001'][0].claimedBy, 'Ana');
   assert.deepEqual(await checkRelated(db, { id: 'me' }, [], 1000), { related: {} });
+  clearRelatedCache();
+});
+
+// The fakes above answer whatever columns they are asked for, so this checks the real names: every column the new
+// repos read from `leads` must be one the existing lead code already reads (an earlier slip asked for company_phone,
+// which does not exist: the column is phone).
+test('the new repos only read columns that exist on leads', async () => {
+  const source = readFileSync(new URL('../src/repos/leadsRepo.js', import.meta.url), 'utf8');
+  const known = new Set([...source.matchAll(/row\.([a-z_]+)/g)].map((m) => m[1]));
+  ['npi', 'claimed_by', 'is_disconnected', 'notes', 'state', 'city', 'status'].forEach((c) => known.add(c));
+  assert.ok(known.has('phone') && known.has('contact_phone') && !known.has('company_phone'));
+
+  clearBestTimesCache();
+  clearRelatedCache();
+  const db = fakeDb({ tables: { leads: [{ npi: '1000000001', state: 'NY', notes: 'x', claimed_by: 'a', company_name: 'B', phone: '4048085118', contact_phone: '', contact_name: 'J', status: 's', is_disconnected: false }], app_users: [{ id: 'a', display_name: 'Ana' }] } });
+  await getBestTimes(db, { displayName: 'Ana' }, 1);
+  await checkRelated(db, { id: 'me' }, [{ npi: '2000000001', phones: ['404-808-5118'] }], 1);
+  const leadColumns = db.state.selected.filter(([t]) => t === 'leads').flatMap(([, c]) => c.split(',').map((x) => x.trim()));
+  assert.ok(leadColumns.length > 5);
+  for (const col of leadColumns) assert.ok(known.has(col), `leads has no column called ${col}`);
+  clearBestTimesCache();
   clearRelatedCache();
 });

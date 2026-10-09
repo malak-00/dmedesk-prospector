@@ -160,6 +160,45 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-09 — Holiday decorations, and two fixes found by testing in the live app
+
+### Objective
+
+Add small decorations for the holidays that don't get in the way of using the app, and test the day's features in the
+signed-in app (read-only apart from one clearly fake wrong-number flag that was undone straight away).
+
+### Actions Completed
+
+- **Decorations** (`docs/holidays.js`, styles in `docs/style.css`): around each holiday a short string of little
+  ornaments hangs in the empty middle of the header, between the logo and the user chip. It can't cover anything: it is
+  a flexible space that shrinks to nothing when the header needs the room, takes no clicks, is hidden under 1100 px wide,
+  and sways only if the person hasn't asked their computer to reduce motion. People can switch it off in Caro's panel
+  ("Decorations", shown only while there is a holiday). Holidays: Halloween (from 20 October), Thanksgiving (the ten days
+  before the fourth Thursday and the day after), Christmas (1 to 26 December, plus 5 to 7 January for Coptic Christmas),
+  New Year (27 December to 2 January), Valentine's (10 to 14 February), St. Patrick's (14 to 17 March), Easter (a week
+  before through Easter Monday, worked out for any year), Ramadan and both Eids (from the Islamic calendar the browser
+  provides), July 4th (1 to 4 July), and Mother's Day (the US weekend in May, and 21 March for Egypt). Where two overlap
+  the earlier in the list wins. `?holiday=halloween` (or any other key) in the address previews one.
+- **Fix: related-lead check** read a column that does not exist (`company_phone`; the column is `phone`), so it failed on
+  the live data and, by design, let every claim through unchecked. Fixed and redeployed; a new test checks that the new
+  repos only read columns the existing lead code already reads, and fails on the old mistake.
+- **Fix: Caro's pop-ups wait while a game window is open** (it hides her, so a win pop-up could fire where nobody could
+  see it).
+- Checked in the signed-in app: the Best times card (61 logged calls), the related-lead check (same phone and same owner
+  both found a real claimed lead, in 160 ms) and its dialog (Cancel), the wrong-number flow in call mode with a fake lead
+  (flag, next number offered, all numbers flagged, undo; the flag row was cleared straight away), the profile picture
+  enlarge, Caro's panel and every section in it, the game of the day (solved), the Admin tabs and Controls (sections
+  fold; no weekly goal or digest; the mood table).
+
+### Database / System Result
+
+- No SQL. The Worker was redeployed for the related-lead fix. All 220 Worker tests pass.
+
+### Safety Status
+
+- Display only for the decorations. The one test write was a wrong-number row for the made-up lead 0000000009, set and then
+  cleared (the row stays with `cleared_at` set, as the design says). Nothing else was written to live data.
+
 ## 2026-10-09 — Wrong-number flag, best times to call, related-lead warning, and real games (sql/038)
 
 ### Objective

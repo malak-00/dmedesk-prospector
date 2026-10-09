@@ -19,7 +19,7 @@ async function loadClaimed(supabase) {
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const { data, error } = await supabase
       .from("leads")
-      .select("npi, company_name, city, state, company_phone, contact_phone, contact_name, claimed_by, status")
+      .select("npi, company_name, city, state, phone, contact_phone, contact_name, claimed_by, status")
       .eq("is_disconnected", false)
       .not("claimed_by", "is", null)
       .order("npi", { ascending: true })
@@ -36,7 +36,7 @@ async function loadClaimed(supabase) {
   }
   return rows.map((r) => ({
     npi: String(r.npi), name: r.company_name, city: r.city, state: r.state, status: r.status,
-    phones: [r.company_phone, r.contact_phone], owner: r.contact_name,
+    phones: [r.phone, r.contact_phone], owner: r.contact_name,
     claimedBy: names.get(r.claimed_by) || "a teammate", claimedById: r.claimed_by,
   }));
 }
