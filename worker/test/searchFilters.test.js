@@ -252,3 +252,41 @@ test('the same question asked twice in a moment is counted once', async () => {
   await getInsights(supabase, 'user-cache', { states: ['OH'], hasPhone: true }); // a different question is counted
   assert.equal(calls.filter((c) => c.name === 'search_insights').length, 2);
 });
+
+test('quick picks are not counted until a state or specialty is chosen', async () => {
+  const calls = [];
+  const supabase = fakeSupabase({
+    search_quick_counts: async () => ({ data: [], error: null }),
+  }, calls);
+  const picks = await getQuickPicks(supabase, { hasPhone: true });
+  assert.equal(picks.length, 3);
+  assert.deepEqual(picks.map((p) => p.unclaimed), [null, null, null]);
+  assert.equal(calls.length, 0, 'no database call');
+});
+
+test('insights: loosening suggestions are counted one at a time and stop once enough are found', async () => {
+  let running = 0;
+  let peak = 0;
+  const calls = [];
+  const supabase = fakeSupabase({
+    search_insights: async ({ p_criteria }) => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      running -= 1;
+      const full = p_criteria.hasPhone && p_criteria.hasDecisionMaker && p_criteria.activeMedicare && p_criteria.zip && p_criteria.city;
+      return { data: full ? { matched: 0, unclaimed: 0, left: 0, cap: 5000 } : { matched: 9, unclaimed: 9, left: 9, cap: 5000 }, error: null };
+    },
+  }, calls);
+  const result = await getInsights(supabase, 'user-seq', { states: ['FL'], city: 'Miami', hasPhone: true, hasDecisionMaker: true, activeMedicare: true, zip: '33101' });
+  assert.equal(peak, 1);
+  assert.equal(result.suggestions.length, 3);
+  assert.equal(calls.filter((c) => c.name === 'search_insights').length, 4, 'the base count plus three suggestions, not all six');
+});
+
+test('insights: a count that times out says so plainly (503)', async () => {
+  const supabase = fakeSupabase({
+    search_insights: async () => ({ data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } }),
+  });
+  await assert.rejects(() => getInsights(supabase, 'user-timeout', { states: ['NV'] }), (err) => err.status === 503 && /too long/i.test(err.message));
+});

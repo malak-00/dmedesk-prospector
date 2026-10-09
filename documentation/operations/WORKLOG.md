@@ -1900,3 +1900,38 @@ resource, external account, migration, secret, or production data changed.
 The plan forbids splitting claims, notes, saved searches, or ownership across
 free accounts. External service setup remains subject to target review and
 separate credentials.
+
+## 2026-10-09 — Search timeouts: diagnosis and first fixes
+
+### Objective
+
+Find why search sometimes fails and reduce the failures.
+
+### Actions Completed
+
+- Read Supabase logs (project dmedesk-prospector, read-only). In ~24 hours,
+  `search_quick_counts` failed 106/281 calls, `search_insights` 62/332,
+  `search_providers_v2` 49/602 and `owned_group_npis` 22/118, all with
+  "canceling statement due to statement timeout" (API limit 8s). Mean times are
+  1.5-2.7s with maxima at the limit. The database is on small compute
+  (224MB shared buffers, 60 connections) and was slow even on plans that read
+  few rows.
+- Added `sql/039_last_updated_range.sql`: the "last updated" year filter is now
+  a date range so `idx_npi_records_lastupdated` can be used.
+- `worker/src/services/searchInsights.js`: quick picks are not counted until a
+  state or specialty is chosen; "loosen your search" counts run one at a time
+  and stop after three useful ones (was up to eight at once); a count timeout is
+  reported as a plain 503 instead of a generic 502.
+- Added tests in `worker/test/searchFilters.test.js` (226 worker tests pass).
+
+### Database / System Result
+
+Nothing was changed in Supabase. Read-only queries only, including two
+`EXPLAIN ANALYZE` runs of count queries. `sql/039` is NOT yet run and must be
+reviewed and pasted by hand; the Worker change is NOT yet deployed.
+
+### Safety Status
+
+No destructive command, secret change or production mutation. Still open:
+consider a larger Supabase compute size, and avoid opening
+`identity_review_candidates` in the dashboard (its plan estimates ~71 billion rows).

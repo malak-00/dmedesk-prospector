@@ -23,10 +23,16 @@ function isMissingFunction(error) {
   return Boolean(error) && (error.code === "PGRST202" || error.code === "42883" || /Could not find the function/i.test(error.message || ""));
 }
 
+// Postgres cancels a statement that outruns the API's limit (code 57014).
+export function isTimeout(error) {
+  return Boolean(error) && (error.code === "57014" || /statement timeout/i.test(error.message || ""));
+}
+
 async function callRpc(supabase, name, args) {
   const { data, error } = await supabase.rpc(name, args);
   if (error) {
     if (isMissingFunction(error)) throw httpError(503, "Search insights aren't installed yet. Run sql/021_search_insights.sql.");
+    if (isTimeout(error)) throw httpError(503, "Counting this search took too long. Narrow it down or try again in a moment.");
     throw httpError(502, `${name} failed: ${error.message}`);
   }
   return data;
@@ -103,21 +109,23 @@ async function computeInsights(supabase, criteria, seen) {
   // Nothing here (or nothing left for you): work out what would help.
   let suggestions = [];
   if (base.matched === 0 || base.left === 0) {
-    const tried = await Promise.all(relaxedVariants(criteria).slice(0, MAX_RELAXATIONS_TRIED).map(async (variant) => {
+    // One at a time, stopping once enough have something to offer: counting is
+    // the expensive part, and eight at once is what pushes them past the
+    // database's time limit.
+    const found = [];
+    for (const variant of relaxedVariants(criteria).slice(0, MAX_RELAXATIONS_TRIED)) {
+      if (found.length >= SUGGESTIONS_SHOWN) break;
       try {
         const raw = shapeInsights(await callRpc(supabase, "search_insights", {
           p_criteria: toFilterPayload(variant.criteria, { collapsed: true }),
           p_seen: seen,
         }));
-        return { key: variant.key, label: variant.label, matched: raw.matched, unclaimed: raw.unclaimed, left: raw.left, capped: raw.capped.left };
+        if (raw.left > 0) found.push({ key: variant.key, label: variant.label, matched: raw.matched, unclaimed: raw.unclaimed, left: raw.left, capped: raw.capped.left });
       } catch {
-        return null; // a suggestion that fails to count is simply not offered
+        // a suggestion that fails to count is simply not offered
       }
-    }));
-    suggestions = tried
-      .filter((s) => s && s.left > 0)
-      .sort((a, b) => b.left - a.left)
-      .slice(0, SUGGESTIONS_SHOWN);
+    }
+    suggestions = found.sort((a, b) => b.left - a.left);
   }
 
   return { ...base, seenCount: seen.length, suggestions };
@@ -126,6 +134,18 @@ async function computeInsights(supabase, criteria, seen) {
 export async function getQuickPicks(supabase, criteria) {
   const base = baseLocationCriteria(criteria);
   const definitions = quickPickDefinitions();
+
+  // With no state or specialty chosen yet, every pick would be counted across
+  // the whole table, the slowest count there is. Show the picks, uncounted.
+  const hasLocation = Boolean(
+    (base.states && base.states.length) || base.state ||
+    (base.taxonomyCodes && base.taxonomyCodes.length) || base.taxonomyCode ||
+    (base.taxonomyDescriptions && base.taxonomyDescriptions.length) || base.taxonomyDescription ||
+    base.city
+  );
+  if (!hasLocation) {
+    return definitions.map((pick) => ({ id: pick.id, label: pick.label, patch: pick.patch, unclaimed: null, capped: false }));
+  }
 
   // sql/022 counts all the picks in one call. Before it is installed, fall
   // back to one call per pick, which gives the same numbers more slowly.
