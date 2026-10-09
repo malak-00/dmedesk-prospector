@@ -26,7 +26,6 @@ export const FIRST_HOUR = 8; // 8 AM local to the lead
 export const LAST_HOUR = 16; // the 4 PM hour is the last one before 5 PM
 export const HOURS = Array.from({ length: LAST_HOUR - FIRST_HOUR + 1 }, (_, i) => FIRST_HOUR + i);
 export const MIN_CELL = 4; // fewer logged calls than this in one slot is too few to call "best"
-export const RANK_MIN = 10; // a slot needs at least this many calls to be named one of the best
 
 const NO_CONTACT = new Set(["voicemail", "no answer"]);
 const SAYS_NOTHING = new Set(["called", "new", ""]);
@@ -93,124 +92,6 @@ export function buildBestTimes(entries) {
 // A smoothed answer rate, so one lucky call in a slot is not read as 100%.
 export const smoothed = (calls, answered) => (answered + 1) / (calls + 2);
 
-// The lowest answer rate the data still supports (the lower end of a 95% Wilson interval). A slot with 80 calls at 60% beats
-// one with 5 calls at 80%, which is how the best times are ranked.
-export function wilsonInterval(calls, answered, z = 1.96) {
-  if (!calls) return [0, 0];
-  const p = answered / calls;
-  const z2 = z * z;
-  const centre = p + z2 / (2 * calls);
-  const spread = z * Math.sqrt((p * (1 - p) + z2 / (4 * calls)) / calls);
-  const scale = 1 + z2 / calls;
-  return [(centre - spread) / scale, (centre + spread) / scale];
-}
-export const wilsonLower = (calls, answered, z = 1.96) => wilsonInterval(calls, answered, z)[0];
-
-// Answer rates are close together across the day (most hours sit within a few points of the average), so a grid of percentages
-// is hard to act on. These are the four parts of the working day (the lead's local time), and a verdict for each day and part:
-// "strong" or "weak" only when the data clearly says it is above or below the average, otherwise "typical".
-export const PARTS = [
-  { label: "8\u201310 AM", from: 8, to: 10 },
-  { label: "10 AM\u201312", from: 10, to: 12 },
-  { label: "12\u20132 PM", from: 12, to: 14 },
-  { label: "2\u20135 PM", from: 14, to: 17 },
-];
-export const BLOCK_MIN = 60; // calls in a block before it may be called strong or weak
-export const BLOCK_Z = 1.28; // about 90% sure, one way
-
-// The one difference that holds up in the data: calls before noon against calls after noon (the lead's local time). Tested with a
-// two-proportion z-test at 95%, after the rep-style correction; a finer split (which hour, which day) is mostly noise.
-export const NOON = 12;
-export const HALF_Z = 1.96;
-export function halvesOf(grid) {
-  const half = (test) => {
-    let n = 0;
-    let a = 0;
-    grid.forEach((row) => row.forEach(([c, x], h) => { if (test(FIRST_HOUR + h)) { n += c; a += x; } }));
-    return { calls: n, answered: a, rate: n ? a / n : null };
-  };
-  const am = half((hour) => hour < NOON);
-  const pm = half((hour) => hour >= NOON);
-  let verdict = "same";
-  if (am.calls >= BLOCK_MIN && pm.calls >= BLOCK_MIN) {
-    const pooled = (am.answered + pm.answered) / (am.calls + pm.calls);
-    const z = (pm.rate - am.rate) / Math.sqrt(pooled * (1 - pooled) * (1 / am.calls + 1 / pm.calls));
-    verdict = z >= HALF_Z ? "pm" : z <= -HALF_Z ? "am" : "same";
-  } else {
-    verdict = "few";
-  }
-  return { am, pm, verdict, lift: am.rate && pm.rate ? pm.rate / am.rate - 1 : null };
-}
-
-export function blocksOf(grid) {
-  let calls = 0;
-  let answered = 0;
-  grid.forEach((row) => row.forEach(([n, a]) => { calls += n; answered += a; }));
-  const overall = calls ? answered / calls : 0;
-  const cells = PARTS.map((part) => DAYS.map((day, d) => {
-    let n = 0;
-    let a = 0;
-    for (let hour = part.from; hour < part.to; hour += 1) { const [c, x] = grid[d][hour - FIRST_HOUR] || [0, 0]; n += c; a += x; }
-    const rate = n ? a / n : null;
-    let verdict = "few";
-    if (n >= BLOCK_MIN) {
-      const [lo, hi] = wilsonInterval(n, a, BLOCK_Z);
-      verdict = lo > overall ? "strong" : hi < overall ? "weak" : "typical";
-    }
-    return { day, part: part.label, calls: n, answered: a, rate, verdict };
-  }));
-  const verdictOf = (n, a) => {
-    if (n < BLOCK_MIN) return "few";
-    const [lo, hi] = wilsonInterval(n, a, BLOCK_Z);
-    return lo > overall ? "strong" : hi < overall ? "weak" : "typical";
-  };
-  // Each part of the day over the whole week, and each weekday over the whole day.
-  const byPart = PARTS.map((part) => {
-    let n = 0;
-    let a = 0;
-    for (let d = 0; d < DAYS.length; d += 1) for (let hour = part.from; hour < part.to; hour += 1) { const [c, x] = grid[d][hour - FIRST_HOUR] || [0, 0]; n += c; a += x; }
-    return { label: part.label, from: part.from, to: part.to, calls: n, answered: a, rate: n ? a / n : null, verdict: verdictOf(n, a) };
-  });
-  const days = DAYS.map((day, d) => {
-    let n = 0;
-    let a = 0;
-    grid[d].forEach(([c, x]) => { n += c; a += x; });
-    return { day, calls: n, answered: a, rate: n ? a / n : null, verdict: verdictOf(n, a) };
-  });
-  const flat = cells.flat();
-  const strong = flat.filter((c) => c.verdict === "strong").sort((x, y) => y.rate - x.rate);
-  const weak = flat.filter((c) => c.verdict === "weak").sort((x, y) => x.rate - y.rate);
-  return { overall, parts: PARTS.map((p) => p.label), cells, strong, weak, byPart, days, halves: halvesOf(grid) };
-}
-
-// People log results differently: one rep writes "pharmacy" or "not qualified" whenever someone picks up, another writes only
-// "voicemail" or "no answer". If those reps also call at different hours, raw percentages would show their styles, not the hours.
-// This corrects for it: each hour is compared with what the reps who called then would be expected to get from their own
-// overall rate, and that comparison is applied to the team's overall rate. repGrids: Map(rep -> grid). A rep with fewer than
-// `minRepCalls` calls is treated as an average rep (nothing to correct). Cells are [calls, answered], answered may be fractional.
-export function standardize(repGrids, minRepCalls = 40) {
-  const grids = [...repGrids.values()];
-  if (!grids.length) return null;
-  const sum = (grid, k) => grid.flat().reduce((t, c) => t + c[k], 0);
-  const calls = grids.reduce((t, g) => t + sum(g, 0), 0);
-  const pooled = calls ? grids.reduce((t, g) => t + sum(g, 1), 0) / calls : 0;
-  const rates = grids.map((g) => { const n = sum(g, 0); return n >= minRepCalls ? sum(g, 1) / n : pooled; });
-  return grids[0].map((row, d) => row.map((_, h) => {
-    let n = 0; let observed = 0; let expected = 0;
-    grids.forEach((g, i) => { const [c, a] = g[d][h]; n += c; observed += a; expected += c * rates[i]; });
-    if (!n) return [0, 0];
-    const lift = expected > 0 ? observed / expected : 1;
-    return [n, Math.min(1, pooled * lift) * n];
-  }));
-}
-
-// Two grids added together (cells are [calls, answered]); either may be missing.
-export function mergeGrids(a, b) {
-  if (!a) return b || null;
-  if (!b) return a;
-  return a.map((row, d) => row.map(([n, x], h) => [n + (b[d]?.[h]?.[0] || 0), x + (b[d]?.[h]?.[1] || 0)]));
-}
-
 // What to show for one grid: the cells, the best three slots, and each day's and hour's overall rate.
 export function summarize(grid) {
   const cells = [];
@@ -218,13 +99,11 @@ export function summarize(grid) {
   let answered = 0;
   grid.forEach((row, d) => row.forEach(([n, a], h) => {
     calls += n; answered += a;
-    if (n >= RANK_MIN) cells.push({ day: DAYS[d], hour: HOURS[h], calls: n, answered: a, rate: a / n, sure: wilsonLower(n, a) });
+    if (n >= MIN_CELL) cells.push({ day: DAYS[d], hour: HOURS[h], calls: n, answered: a, rate: smoothed(n, a) });
   }));
-  cells.sort((x, y) => y.sure - x.sure || y.calls - x.calls);
+  cells.sort((x, y) => y.rate - x.rate || y.calls - x.calls);
   const sum = (items) => items.reduce((t, [n, a]) => [t[0] + n, t[1] + a], [0, 0]);
   const byDay = grid.map((row, d) => { const [n, a] = sum(row); return { day: DAYS[d], calls: n, answered: a, rate: n ? a / n : null }; });
   const byHour = HOURS.map((hour, h) => { const [n, a] = sum(grid.map((row) => row[h])); return { hour, calls: n, answered: a, rate: n ? a / n : null }; });
-  // The best whole hour and the best whole day, when there are enough calls to say (at least 30), by the same standard.
-  const top = (list) => list.filter((x) => x.calls >= 30).sort((x, y) => wilsonLower(y.calls, y.answered) - wilsonLower(x.calls, x.answered))[0] || null;
-  return { cells: grid, calls, answered, rate: calls ? answered / calls : null, best: cells.slice(0, 3), byDay, byHour, bestHour: top(byHour), bestDay: top(byDay), blocks: blocksOf(grid) };
+  return { cells: grid, calls, answered, rate: calls ? answered / calls : null, best: cells.slice(0, 3), byDay, byHour };
 }

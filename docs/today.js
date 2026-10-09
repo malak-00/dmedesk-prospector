@@ -71,12 +71,10 @@
     };
   }
 
-  // Leads whose local time is a good time to call come first, strongest part of the day first; the rest keep their order.
+  // Leads whose local time is a good time to call come first; the rest keep their order.
   function openFirst(list) {
     const good = (l) => (window.dmeTime && window.dmeTime.localInfo(l.state)?.good ? 0 : 1);
-    // Among the leads open now, the ones in the part of the day that gets the most pick-ups come first (see besttimes.js).
-    const hot = (l) => -((window.dmeBest && window.dmeBest.score && window.dmeBest.score(l.state)) || 0);
-    return list.map((l, i) => ({ l, i })).sort((a, b) => good(a.l) - good(b.l) || hot(a.l) - hot(b.l) || a.i - b.i).map((x) => x.l);
+    return list.map((l, i) => ({ l, i })).sort((a, b) => good(a.l) - good(b.l) || a.i - b.i).map((x) => x.l);
   }
   const unique = (list) => list.filter((l, i, all) => all.findIndex((x) => x.npi === l.npi) === i);
 

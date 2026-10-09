@@ -170,6 +170,32 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-09 — Best times to call: rolled back to the first version (calls logged in the app only)
+
+### Objective
+
+The earlier calling sheet and the three redesigns that followed did not give the user a card they wanted, so go back to the first
+version: only the calls logged in the app, and the hour-by-hour look.
+
+### Actions Completed
+
+- **Restored** the first version of the card (`docs/besttimes.js`: the three best slots as pills, the weekday-by-hour table of the
+  share of logged calls that reached a person, Team and Mine) and of its Worker code (`worker/src/lib/bestTimes.js`,
+  `worker/src/repos/insightsRepo.js`), exactly as they were before the sheet was added (commit `491f8a1`'s parent). The Worker reads
+  call logs only again. The test for the column names it reads (the earlier `company_phone` mistake) stays.
+- **Removed** the earlier calling sheet's reader, its counts file and its builder script, their tests, the second and third looks'
+  styles, and Today's reordering by time of day. All of it is still in the git history (commits `491f8a1`, `f82adce`, `aa92f14`,
+  `8faf09d`) if it is wanted again; nothing was lost.
+- The CSV itself was never in the repository.
+
+### Database / System Result
+
+- No SQL. Worker redeployed.
+
+### Safety Status
+
+- Code only. Manual look required.
+
 ## 2026-10-09 — Best times to call, third version: one clear finding, and a stricter meaning of "picked up"
 
 ### Objective

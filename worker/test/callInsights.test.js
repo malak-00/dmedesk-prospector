@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { cleanFlag, cleanNpiList, nationalNumber, prettyNumber } from '../src/lib/badNumbers.js';
 import { listForNpis, flagNumber, clearFlag } from '../src/repos/badNumbersRepo.js';
-import { classifyResult, buildBestTimes, summarize, smoothed, MIN_CELL, RANK_MIN } from '../src/lib/bestTimes.js';
+import { classifyResult, buildBestTimes, summarize, smoothed, MIN_CELL } from '../src/lib/bestTimes.js';
 import { getBestTimes, clearBestTimesCache } from '../src/repos/insightsRepo.js';
 import { findRelatedClaims, phoneKey, ownerKey } from '../src/lib/relatedClaims.js';
 import { checkRelated, clearRelatedCache } from '../src/repos/relatedClaimsRepo.js';
@@ -114,11 +114,11 @@ test('weekends and out-of-hours calls are left out', () => {
 
 test('the best slots need enough calls, and a lucky one is not read as perfect', () => {
   const lines = [];
-  for (let i = 0; i < RANK_MIN; i += 1) lines.push(`2026-10-06 19:${10 + i} — Ana: interested`);
+  for (let i = 0; i < MIN_CELL; i += 1) lines.push(`2026-10-06 19:${10 + i} — Ana: interested`);
   lines.push('2026-10-07 19:10 — Ana: interested'); // one answered call elsewhere: too few to rank
   const s = summarize(buildBestTimes([{ state: 'NY', notes: lines.join('\n') }]).team);
   assert.equal(s.best.length, 1);
-  assert.deepEqual([s.best[0].day, s.best[0].hour, s.best[0].calls], ['Tue', 15, RANK_MIN]);
+  assert.deepEqual([s.best[0].day, s.best[0].hour, s.best[0].calls], ['Tue', 15, MIN_CELL]);
   assert.ok(smoothed(1, 1) < 1 && smoothed(1, 1) < smoothed(10, 10));
   assert.equal(s.byDay[2].rate, 1);
 });
@@ -126,13 +126,13 @@ test('the best slots need enough calls, and a lucky one is not read as perfect',
 test('the repo reads every claimed lead once and keeps the result for a while', async () => {
   clearBestTimesCache();
   const db = fakeDb({ tables: { leads: [{ npi: '1', state: 'NY', notes: '2026-10-06 19:40 — Ana: interested', claimed_by: 'a' }] } });
-  const a = await getBestTimes(db, { displayName: 'Ana' }, 1000, null);
+  const a = await getBestTimes(db, { displayName: 'Ana' }, 1000);
   assert.equal(a.sample, 1);
   assert.ok(a.mine);
   db.state.tables.leads.push({ npi: '2', state: 'NY', notes: '2026-10-06 19:41 — Ana: voicemail', claimed_by: 'a' });
-  assert.equal((await getBestTimes(db, { displayName: 'Ben' }, 2000, null)).sample, 1); // still the kept result
-  assert.equal((await getBestTimes(db, { displayName: 'Ben' }, 2000, null)).mine, null); // Ben has no logged calls
-  assert.equal((await getBestTimes(db, { displayName: 'Ana' }, 11 * 60 * 1000, null)).sample, 2); // refreshed
+  assert.equal((await getBestTimes(db, { displayName: 'Ben' }, 2000)).sample, 1); // still the kept result
+  assert.equal((await getBestTimes(db, { displayName: 'Ben' }, 2000)).mine, null); // Ben has no logged calls
+  assert.equal((await getBestTimes(db, { displayName: 'Ana' }, 11 * 60 * 1000)).sample, 2); // refreshed
   clearBestTimesCache();
 });
 
@@ -193,7 +193,7 @@ test('the new repos only read columns that exist on leads', async () => {
   clearBestTimesCache();
   clearRelatedCache();
   const db = fakeDb({ tables: { leads: [{ npi: '1000000001', state: 'NY', notes: 'x', claimed_by: 'a', company_name: 'B', phone: '4048085118', contact_phone: '', contact_name: 'J', status: 's', is_disconnected: false }], app_users: [{ id: 'a', display_name: 'Ana' }] } });
-  await getBestTimes(db, { displayName: 'Ana' }, 1, null);
+  await getBestTimes(db, { displayName: 'Ana' }, 1);
   await checkRelated(db, { id: 'me' }, [{ npi: '2000000001', phones: ['404-808-5118'] }], 1);
   const leadColumns = db.state.selected.filter(([t]) => t === 'leads').flatMap(([, c]) => c.split(',').map((x) => x.trim()));
   assert.ok(leadColumns.length > 5);
