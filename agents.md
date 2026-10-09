@@ -38,3 +38,5 @@ This repository contains the DME Desk Prospector application. The live path is a
 - Use `rg` first for code searches.
 - Run safe, relevant static checks and unit tests; do not claim deployment or production verification unless it actually occurred.
 - Summarize changed files, checks run, database impact, and any manual deployment/browser steps still required.
+
+## dont forget to update worklog !
