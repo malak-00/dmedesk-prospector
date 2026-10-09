@@ -196,6 +196,15 @@ last called and what happened, so use it to give the card a lot more history and
   few calls cannot top the list; the card also says the best hour and the best day.
 - **Card** (`docs/besttimes.js`): shows the sheet's share of the calls and explains the allowance. "Mine" adds the sheet's calls for
   the rep with the same first name to the ones logged here.
+- **Card redesigned the same day** because the answer rates are all close together (about 45 to 60%), so an hour-by-hour grid of
+  percentages looked flat and told nobody what to do. It now says it in a sentence ("Best: Tuesday 2-5 PM and Monday 2-5 PM (60%,
+  58%). Slower: Friday 12-2 PM, Thursday 2-5 PM, Wednesday 8-10 AM. Everything else is about average, 53%"), and shows a small
+  map of the working week in four parts of the day where only the windows that clearly differ from the average (about 90% sure,
+  at least 60 calls) are marked stronger or slower, plus a "right now" line for each US time zone (Eastern, Central, Mountain,
+  Pacific: its local time and whether that window is strong, average or slow). The hour-by-hour numbers are still there under
+  "Hour by hour". If the rep's own calls are too few to pick out windows, "Mine" shows the team's picture and says so.
+- On the sheet only a few windows clearly differ: Monday and Tuesday 2 to 5 PM are stronger; Friday 12 to 2 PM, Thursday 2 to 5 PM
+  and Wednesday and Monday 8 to 10 AM are slower. The rest is about the average (53%).
 
 ### Database / System Result
 

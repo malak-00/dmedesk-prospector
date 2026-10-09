@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { classifySheetResult, parseSheetTime, wallClockToMs, buildSheetBaseline } from '../src/lib/sheetCalls.js';
-import { mergeGrids, standardize, summarize, wilsonLower, RANK_MIN } from '../src/lib/bestTimes.js';
+import { blocksOf, BLOCK_MIN, mergeGrids, standardize, summarize, wilsonLower, wilsonInterval, RANK_MIN } from '../src/lib/bestTimes.js';
 import { getBestTimes, clearBestTimesCache } from '../src/repos/insightsRepo.js';
 import baseline from '../src/data/bestTimesBaseline.js';
 
@@ -141,4 +141,44 @@ test('a rep with only a few calls is treated as average, so the correction chang
   const out = standardize(new Map([['new', few]]));
   assert.deepEqual(out[2][3], [5, 5]);
   assert.equal(standardize(new Map()), null);
+});
+
+test('only a window that clearly differs from the average is marked strong or slower', () => {
+  const grid = blank();
+  // an average of 50%: every cell 50%, with plenty of calls (30 a cell across an hour)
+  grid.forEach((row) => row.forEach((_, h) => { row[h] = [30, 15]; }));
+  grid[1][6] = [60, 45]; grid[1][7] = [60, 45]; // Tuesday 2 to 5 PM: hours 14 and 15 at 75%
+  grid[4][4] = [70, 20]; grid[4][5] = [70, 20]; // Friday 12 to 2 PM: hours 12 and 13 at 29%
+  const b = blocksOf(grid);
+  const at = (part, day) => b.cells[part][day];
+  assert.equal(at(3, 1).verdict, 'strong'); // Tuesday 2 to 5 PM
+  assert.equal(at(2, 4).verdict, 'weak'); // Friday 12 to 2 PM
+  assert.equal(at(1, 0).verdict, 'typical'); // an ordinary window stays unmarked
+  assert.deepEqual(b.strong.map((c) => `${c.day} ${c.part}`), ['Tue 2–5 PM']);
+  assert.deepEqual(b.weak.map((c) => `${c.day} ${c.part}`), ['Fri 12–2 PM']);
+  assert.ok(b.overall > 0.4 && b.overall < 0.6);
+});
+
+test('a window with too few calls is never called strong or weak, however it looks', () => {
+  const grid = blank();
+  grid.forEach((row) => row.forEach((_, h) => { row[h] = [30, 15]; }));
+  grid[0][0] = [Math.floor(BLOCK_MIN / 2) - 1, Math.floor(BLOCK_MIN / 2) - 1]; // all answered, but few
+  grid[0][1] = [0, 0];
+  const b = blocksOf(grid);
+  assert.equal(b.cells[0][0].verdict, 'few');
+  assert.equal(b.strong.length, 0);
+});
+
+test('the intervals widen with fewer calls', () => {
+  const [lo1, hi1] = wilsonInterval(20, 10);
+  const [lo2, hi2] = wilsonInterval(2000, 1000);
+  assert.ok(hi1 - lo1 > 4 * (hi2 - lo2));
+  assert.ok(lo2 < 0.5 && hi2 > 0.5);
+});
+
+test('with the real sheet counts, the verdicts match what the data shows: Monday and Tuesday afternoons stand out', () => {
+  const s = summarize(standardize(new Map(Object.entries(baseline.byOwner))));
+  assert.ok(s.blocks.strong.some((c) => c.part === '2–5 PM'), 'an afternoon window should be marked strong');
+  assert.ok(s.blocks.weak.length >= 1);
+  assert.ok(s.blocks.overall > 0.45 && s.blocks.overall < 0.6);
 });
