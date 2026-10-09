@@ -265,7 +265,7 @@
         <div class="cm-label">How did it go? <span class="cm-hint-inline">Tap a result to claim this lead and move on</span></div>
         <div class="cm-chips">${PROSPECT_RESULTS.map(([value, label]) => `<button type="button" class="choice-chip cm-status${value === "disconnected" ? " is-danger" : ""}" data-value="${value}">${label}</button>`).join("")}</div>
         <textarea class="cm-note" rows="3" maxlength="500" placeholder="Add a note first (optional)">${escapeHtml(run.note)}</textarea>
-        <div class="cm-more"><button type="button" class="text-action" data-cm="primary">Claim without a result</button></div>`;
+        <button type="button" class="btn btn-primary cm-claim-note" data-cm="primary" title="Ctrl+Enter">Enter note &amp; claim</button>`;
     }
 
     drawer.innerHTML = `
@@ -295,7 +295,7 @@
         <button type="button" class="btn btn-ghost" data-cm="skip" title="Skip this lead (→)">Skip</button>
         ${primaryLabel ? `<button type="button" class="btn btn-primary" data-cm="primary" title="Ctrl+Enter">${primaryLabel}</button>` : ""}
       </div>
-      <div class="cm-keys">← back · → skip · ${run.mode === "claimed" ? "Ctrl+Enter save · " : "Ctrl+Enter claim without a result · "}Esc close</div>`;
+      <div class="cm-keys">← back · → skip · ${run.mode === "claimed" ? "Ctrl+Enter save · " : "Ctrl+Enter enter note & claim · "}Esc close</div>`;
   }
 
   function renderDone() {

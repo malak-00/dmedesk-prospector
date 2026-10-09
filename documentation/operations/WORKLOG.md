@@ -1526,3 +1526,53 @@ No application code, database schema, production data, calendar events, or deplo
 
 No destructive commands or production SQL were executed. No spreadsheet rows, Supabase records, claims, or calendar events were modified.
 
+## 2026-10-09 — Saved-search persistence plan
+
+### Objective
+
+Plan a durable replacement for browser-only saved-search storage, which is
+lost when browser storage or the deployed frontend context changes.
+
+### Actions Completed
+
+- Confirmed that `docs/app.js` stores named saved searches only in
+  `localStorage` under `dmeProspectorSavedSearches`.
+- Confirmed the live Worker already has authenticated, per-user Supabase
+  persistence patterns suitable for this feature.
+- Added `documentation/plans/SAVED_SEARCH_PERSISTENCE_PLAN.md`, covering the
+  additive schema, authenticated API, one-time local migration, ownership,
+  retention, verification, and rollout.
+
+### Database / System Result
+
+No application code, SQL migration, production database, deployed frontend,
+or user search data was changed. The plan proposes a future manual SQL file
+(`sql/038_saved_searches.sql`) only.
+
+### Safety Status
+
+No destructive commands, production mutations, or secrets were used. Existing
+browser-local saved searches are untouched and cannot be recovered if they
+were already cleared before the future migration.
+## 2026-10-09 — Prospect call-note claim control
+
+### Objective
+
+Make the note in the Prospect calling drawer visibly saveable by providing a
+clear action that claims the prospect and records the typed note.
+
+### Actions Completed
+
+- Replaced the ambiguous “Claim without a result” text link with a primary
+  **Enter note & claim** button immediately below the note field.
+- Kept the existing claim-then-note persistence flow and `Ctrl+Enter`
+  shortcut; only the user-facing affordance and shortcut wording changed.
+
+### Database / System Result
+
+No schema or production-data change was made. The existing authenticated
+Worker routes continue to create the claim and append the entered note.
+
+### Safety Status
+
+No destructive command, production mutation, or secret change was performed.

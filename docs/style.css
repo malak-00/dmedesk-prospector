@@ -2426,6 +2426,7 @@ html.call-open .toast { z-index: 70; }
 .cm-label { font-size: 12px; font-weight: 650; color: var(--muted); letter-spacing: 0.02em; margin-top: 6px; }
 .cm-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .cm-note { width: 100%; resize: vertical; min-height: 64px; }
+.cm-claim-note { width: 100%; justify-content: center; margin-top: 2px; }
 .cm-foot { display: flex; gap: 10px; justify-content: space-between; padding: 14px 20px 18px; border-top: 1px solid var(--line); background: var(--surface); }
 .cm-foot .btn-primary { flex: 1; justify-content: center; }
 .cm-done { align-items: center; justify-content: center; text-align: center; }
