@@ -170,6 +170,47 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-09 — Best times to call: add the earlier calling sheet (Last Called + Comments)
+
+### Objective
+
+The Best times card had only 61 logged calls to go on. The team's earlier calling sheet records, for every lead, when it was
+last called and what happened, so use it to give the card a lot more history and steadier percentages.
+
+### Actions Completed
+
+- **Reading the sheet** (`worker/src/lib/sheetCalls.js`, `worker/scripts/buildBestTimesBaseline.mjs`): 7,178 rows. "Last Called"
+  (month/day/year, 24-hour, Cairo time with its daylight saving) is converted to the lead's own weekday and hour from its state.
+  The last line of "Comments" says what happened ("VM 4/28", "Pharmacy 7/6", "No answer", "Hung Up"): voicemail, no answer, busy and
+  full-mailbox wordings count as nobody answering; pharmacy, not qualified, not interested, no CGM/ORT, clinic, hung up, gatekeeper,
+  callback and similar count as a person picking up; bad numbers, closed businesses, notes and blanks are left out. 5,552 calls
+  counted (1,565 rows said nothing usable, 61 fell outside 8 AM to 5 PM local).
+- **Only counts are kept**: weekday-by-hour totals for the team and for each rep (by the first name in the sheet's Owner column) are
+  written to `worker/src/data/bestTimesBaseline.js`. No lead name, number, email or comment goes in the repository; a test checks
+  that. Re-run the script with a newer export to refresh it.
+- **Allowing for how each rep logs** (`standardize` in `worker/src/lib/bestTimes.js`): the sheet's reps log very differently (one
+  rep's results are 62 to 66% "answered", two others' about 22 to 24%), so an hour that one style happens to call at would look
+  better or worse than it is. Each hour is compared with what the reps who called then would be expected to get from their own
+  overall rate, applied to the team's overall rate. Counts of calls are unchanged. "Mine" is not adjusted.
+- **Ranking** now uses the lowest rate the data still supports (a 95% interval) and needs at least 10 calls in a slot, so a lucky
+  few calls cannot top the list; the card also says the best hour and the best day.
+- **Card** (`docs/besttimes.js`): shows the sheet's share of the calls and explains the allowance. "Mine" adds the sheet's calls for
+  the rep with the same first name to the ones logged here.
+
+### Database / System Result
+
+- No SQL. Worker redeployed. All 235 Worker tests pass (new: the sheet's wording, dates and Cairo daylight saving, counting by the
+  lead's local hour, ranking, merging, the logging-style correction and that the committed file holds only counts).
+- On the sheet: 53% of the last calls reached a person (not comparable with the 11% from calls logged in the app, which count
+  every call, not just each lead's last). After the correction, 8 to 9 AM is lowest (49 to 51%), noon to 4 PM highest (55 to 57%),
+  Monday and Tuesday best (55%), Friday lowest (50%).
+
+### Safety Status
+
+- The sheet itself stays in Downloads and is not committed. Percentages from the sheet describe each lead's last call, which
+  over-states how often a call is answered (leads stop being called once someone picks up); the pattern across hours and days is the
+  useful part. Manual look required.
+
 ## 2026-10-09 — Holidays limited to the ones with a picture of Caro; her outfits follow the same dates
 
 ### Objective

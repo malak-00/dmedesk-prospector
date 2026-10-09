@@ -3102,3 +3102,4 @@ html.game-open .buddy { display: none; }
 @keyframes hd-sway { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
 @media (max-width: 1100px) { .holiday-strip { display: none; } }
 @media (prefers-reduced-motion: reduce) { .hd-glyph { animation: none; } }
+.bt-headline { font-size: 13px; margin-bottom: 8px; color: var(--ink); }
