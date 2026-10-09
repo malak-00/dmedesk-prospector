@@ -1,4 +1,4 @@
-/* Small holiday decorations (and the dates Caro dresses up for). Around each holiday a short string of little ornaments hangs in the empty middle of the
+/* Small holiday decorations, and the dates Caro dresses up for: only the holidays that have a picture of her. Around each holiday a short string of little ornaments hangs in the empty middle of the
    header, between the logo and your name. It can't cover anything: it only uses space that is otherwise empty, never
    takes clicks, shrinks to nothing when the header needs the room, and is hidden on narrow screens. Anyone can switch
    it off from Caro's panel. Add ?holiday=halloween (or any key below) to the address to preview one.
@@ -28,21 +28,6 @@
     return { m: month, d: day };
   }
 
-  // Orthodox (Coptic) Easter Sunday in the Gregorian calendar (the Julian rule, 13 days on), as { m, d }.
-  function orthodoxEaster(year) {
-    const a = year % 4;
-    const b = year % 7;
-    const c = year % 19;
-    const d = (19 * c + 15) % 30;
-    const e = (2 * a + 4 * b - d + 34) % 7;
-    const month = Math.floor((d + e + 114) / 31);
-    const day = ((d + e + 114) % 31) + 1;
-    const gregorian = new Date(year, month - 1, day + 13);
-    return { m: gregorian.getMonth() + 1, d: gregorian.getDate() };
-  }
-
-  const shifted = (date, days) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + days, 12);
-
   // Day of the Islamic (Umm al-Qura) calendar for a local date, or null where the browser has no such calendar.
   function hijri(date) {
     try {
@@ -53,16 +38,7 @@
     } catch { return null; }
   }
 
-  // Is a given Islamic date (month, day) within `span` days of this date?
-  function hijriNear(date, month, day, span) {
-    for (let k = -span; k <= span; k += 1) {
-      const h = hijri(shifted(date, k));
-      if (h && h.month === month && h.day === day) return true;
-    }
-    return false;
-  }
-
-  const KEYS = ["eid", "ramadan", "armedforces", "jan25", "sinai", "june30", "july23", "labour", "shamelnessim", "hijri", "mawlid", "easter", "christmas", "newyear", "halloween", "thanksgiving", "july4", "valentine", "stpatrick", "mothers"];
+  const KEYS = ["eid", "ramadan", "armedforces", "easter", "christmas", "newyear", "halloween", "thanksgiving", "july4", "valentine", "stpatrick"];
 
   // Which holiday (if any) the decorations should show for this date. Earlier in KEYS wins when two overlap.
   function holidayFor(date) {
@@ -76,18 +52,8 @@
     if (h && ((h.month === 10 && h.day <= 3) || (h.month === 12 && h.day >= 9 && h.day <= 13))) return "eid";
     if (h && h.month === 9) return "ramadan";
 
-    // Egypt's national days and feasts: the whole week around each (three days either side).
-    const week = (m1, d1) => Math.abs(today - dayNumber(y, m1, d1)) <= 3;
-    if (week(10, 6)) return "armedforces"; // 6th of October, Armed Forces Day
-    if (week(1, 25)) return "jan25"; // 25 January Revolution and Police Day
-    if (week(4, 25)) return "sinai"; // Sinai Liberation Day
-    if (week(6, 30)) return "june30"; // 30 June Revolution
-    if (week(7, 23)) return "july23"; // 23 July Revolution Day
-    if (week(5, 1)) return "labour"; // Labour Day
-    const o = orthodoxEaster(y);
-    if (Math.abs(today - (dayNumber(y, o.m, o.d) + 1)) <= 3) return "shamelnessim"; // Sham El-Nessim, the Monday after Coptic Easter
-    if (hijriNear(date, 1, 1, 3)) return "hijri"; // Islamic New Year
-    if (hijriNear(date, 3, 12, 3)) return "mawlid"; // the Prophet's birthday (Mawlid)
+    // 6th of October (Armed Forces Day): the whole week around it, three days either side.
+    if (Math.abs(today - dayNumber(y, 10, 6)) <= 3) return "armedforces";
 
     const e = easter(y);
     const eDay = dayNumber(y, e.m, e.d);
@@ -105,16 +71,10 @@
     if (inRange(2, 10, 2, 14)) return "valentine";
     if (inRange(3, 14, 3, 17)) return "stpatrick";
 
-    // Mother's Day: the weekend of the second Sunday of May (US), and 21 March (Egypt).
-    if (m === 5) {
-      const sunday = 1 + ((7 - new Date(y, 4, 1).getDay()) % 7) + 7;
-      if (d >= sunday - 2 && d <= sunday) return "mothers";
-    }
-    if (inRange(3, 19, 3, 21)) return "mothers";
     return "";
   }
 
-  const api = { holidayFor, easter, orthodoxEaster, KEYS };
+  const api = { holidayFor, easter, KEYS };
   if (typeof module === "object" && module.exports) { module.exports = api; return; }
   root.dmeHolidays = api;
 
@@ -140,15 +100,9 @@
     flower: ["fill", '<circle cx="12" cy="6" r="3.500"/><circle cx="18" cy="11" r="3.500"/><circle cx="16" cy="18" r="3.500"/><circle cx="8" cy="18" r="3.500"/><circle cx="6" cy="11" r="3.500"/><circle cx="12" cy="12" r="3" fill="#f7d86b"/>'],
     flag: ["fill", '<path d="M3 3v19" fill="none" stroke="#8a6a3a" stroke-width="1.600" stroke-linecap="round"/><rect x="3.800" y="4" width="17" height="4.300" fill="#ce1126"/><rect x="3.800" y="8.300" width="17" height="4.300" fill="#ffffff"/><rect x="3.800" y="12.600" width="17" height="4.300" fill="#1a1a1a"/><circle cx="12.300" cy="10.450" r="1.500" fill="#c8a43a"/>'],
     usflag: ["fill", '<path d="M3 3v19" fill="none" stroke="#8a6a3a" stroke-width="1.600" stroke-linecap="round"/><rect x="3.800" y="4" width="17" height="2.800" fill="#d64545"/><rect x="3.800" y="6.800" width="17" height="2.800" fill="#ffffff"/><rect x="3.800" y="9.600" width="17" height="2.800" fill="#d64545"/><rect x="3.800" y="12.400" width="17" height="2.800" fill="#ffffff"/><rect x="3.800" y="4" width="7.500" height="5.600" fill="#2f4f9e"/><circle cx="6" cy="6" r=".7" fill="#ffffff"/><circle cx="8.500" cy="6" r=".7" fill="#ffffff"/><circle cx="7.200" cy="8" r=".7" fill="#ffffff"/>'],
-    pyramid: ["fill", '<path d="M12 3l10 17H2z"/><path d="M12 3v17" fill="none" stroke="#8a6a3a" stroke-width="1.200"/>'],
-    sun: ["fill", '<circle cx="12" cy="12" r="4.500"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'],
     jet: ["fill", '<path d="M12 2c1 0 1.500 1 1.500 2.500V10l8 5v2l-8-2v4l2.500 2v1.500L12 21l-4 1.500V21l2.500-2v-4l-8 2v-2l8-5V4.500C10.500 3 11 2 12 2z"/>'],
     shield: ["fill", '<path d="M12 2l8 3v6c0 5-3.500 9-8 11C7.500 20 4 16 4 11V5z"/><path d="M12 7.500l1.300 2.800 3 .4-2.200 2.100.6 3L12 14.300 9.300 15.800l.6-3-2.200-2.100 3-.4z" fill="#ffffff"/>'],
     laurel: ["fill", '<path d="M8.500 21C4 17 3.500 9.500 8 3.500M15.500 21c4.500-4 5-11.500.5-17.500" fill="none" stroke="currentColor" stroke-width="1.600" stroke-linecap="round"/><ellipse cx="6" cy="8" rx="1.600" ry="3" transform="rotate(-25 6 8)"/><ellipse cx="5.500" cy="13" rx="1.600" ry="3" transform="rotate(-10 5.500 13)"/><ellipse cx="7.500" cy="17.500" rx="1.600" ry="3" transform="rotate(10 7.500 17.500)"/><ellipse cx="18" cy="8" rx="1.600" ry="3" transform="rotate(25 18 8)"/><ellipse cx="18.500" cy="13" rx="1.600" ry="3" transform="rotate(10 18.500 13)"/><ellipse cx="16.500" cy="17.500" rx="1.600" ry="3" transform="rotate(-10 16.500 17.500)"/>'],
-    mountain: ["fill", '<path d="M1 21l8-14 4.500 8 3-5L23 21z"/><path d="M9 7l-2.200 3.800L9 10l2.200.8z" fill="#ffffff"/>'],
-    palm: ["fill", '<path d="M12 22c0-5 1-9 2.500-13" fill="none" stroke="#8a5a2b" stroke-width="2" stroke-linecap="round"/><path d="M14.500 9C10 5 6 7 4.500 10.500M14.500 9c-1.500-4.500 1-7.500 5-7.500M14.500 9c4.500-3 8-1 8 3M14.500 9c3.500 1 5.500 4 4.500 8M14.500 9c-3.500 2-4.500 5.500-3.500 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'],
-    wave: ["fill", '<path d="M2 12c3-4 5 3.500 8 0s5 3.500 8 0c1.500-1.500 3-1.500 4-.5V21H2z"/>'],
-    lotus: ["fill", '<path d="M12 20C6.500 18 4.500 12.500 5.500 8.500c3 .8 5 3 6.500 6.500 1.500-3.500 3.500-5.700 6.500-6.500 1 4-1 9.500-6.500 11.500z"/><path d="M12 3.500c3.200 3.200 3.200 9.500 0 14-3.200-4.500-3.200-10.800 0-14z" fill="#ffffff" fill-opacity="0.75"/>'],
     wheat: ["fill", '<path d="M12 22V8" fill="none" stroke="#8a6a1f" stroke-width="1.600" stroke-linecap="round"/><ellipse cx="9.200" cy="9" rx="1.700" ry="3.200" transform="rotate(-28 9.200 9)"/><ellipse cx="14.800" cy="9" rx="1.700" ry="3.200" transform="rotate(28 14.800 9)"/><ellipse cx="9" cy="14" rx="1.700" ry="3.200" transform="rotate(-28 9 14)"/><ellipse cx="15" cy="14" rx="1.700" ry="3.200" transform="rotate(28 15 14)"/><ellipse cx="12" cy="5" rx="1.700" ry="3.200"/>'],
     gift: ["fill", '<rect x="4" y="10" width="16" height="11" rx="1.500"/><rect x="3" y="7" width="18" height="4" rx="1.500"/><path d="M12 7v14" fill="none" stroke="#ffffff" stroke-width="2"/><path d="M12 7c-3-4-6-2-4 0M12 7c3-4 6-2 4 0" fill="none" stroke="#ffffff" stroke-width="1.500" stroke-linecap="round"/>'],
   };
@@ -166,15 +120,6 @@
     eid: [["crescent", "#e0b84a"], ["gift", "#2f9e63"], ["star", "#f6c945"], ["lantern", "#e0b84a"], ["gift", "#2aa7b0"], ["crescent", "#e0b84a"], ["star", "#f6c945"]],
     july4: [["usflag", "#d64545"], ["star", "#e9eef8"], ["firework", "#4f8ff7"], ["usflag", "#d64545"], ["star", "#4f8ff7"], ["firework", "#d64545"], ["usflag", "#d64545"]],
     armedforces: [["flag", "#ce1126"], ["jet", "#e9eef8"], ["firework", "#ce1126"], ["shield", "#c8a43a"], ["laurel", "#c8a43a"], ["jet", "#e9eef8"], ["flag", "#ce1126"]],
-    jan25: [["flag", "#ce1126"], ["shield", "#2f6fb8"], ["star", "#c8a43a"], ["shield", "#2f6fb8"], ["sparkle", "#e9eef8"], ["star", "#c8a43a"], ["flag", "#ce1126"]],
-    sinai: [["sun", "#f0b429"], ["mountain", "#b5794a"], ["wave", "#2aa7b0"], ["palm", "#3f9e5a"], ["mountain", "#c98a56"], ["wave", "#2aa7b0"], ["sun", "#f0b429"]],
-    june30: [["lotus", "#f08ab4"], ["flag", "#ce1126"], ["firework", "#c8a43a"], ["lotus", "#f4a6c8"], ["star", "#e9eef8"], ["flag", "#ce1126"], ["lotus", "#f08ab4"]],
-    july23: [["wheat", "#d9a21b"], ["flag", "#ce1126"], ["wheat", "#e0b84a"], ["star", "#c8a43a"], ["wheat", "#d9a21b"], ["flag", "#ce1126"], ["wheat", "#e0b84a"]],
-    labour: [["flag", "#ce1126"], ["star", "#c8a43a"], ["sparkle", "#2aa7b0"], ["flag", "#ce1126"], ["star", "#c8a43a"], ["sparkle", "#e9eef8"], ["flag", "#ce1126"]],
-    shamelnessim: [["egg", "#f4a6c8"], ["sun", "#f7c948"], ["flower", "#f7d86b"], ["egg", "#8fd8c0"], ["leaf", "#4caf6a"], ["wave", "#4aa8d8"], ["egg", "#b99be8"]],
-    hijri: [["crescent", "#e0b84a"], ["sparkle", "#e9eef8"], ["star", "#2aa7b0"], ["firework", "#e0b84a"], ["crescent", "#e0b84a"], ["sparkle", "#2aa7b0"], ["star", "#e0b84a"]],
-    mawlid: [["lantern", "#e0b84a"], ["star", "#e75a8f"], ["crescent", "#2aa7b0"], ["lantern", "#2f9e63"], ["sparkle", "#f6c945"], ["star", "#4f8ff7"], ["lantern", "#d64545"]],
-    mothers: [["flower", "#f08ab4"], ["heart", "#e75a8f"], ["gift", "#f4a6c8"], ["flower", "#ff9a8b"], ["heart", "#e75a8f"], ["gift", "#f08ab4"], ["flower", "#f4a6c8"]],
   };
 
   const OFF_KEY = "dmeHolidayDecor"; // "off" when switched off

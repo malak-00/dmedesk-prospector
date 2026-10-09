@@ -186,7 +186,7 @@
   const MOOD_REPLY = {
     3: { pose: "thumbs", text: "Love to hear it. Let's make it a great shift." },
     2: { pose: "neutral", text: "Steady wins it. Take a breath between calls." },
-    1: { pose: "encourage", text: "Sorry it's a rough one. Be kind to yourself, one call at a time. I'm in your corner." },
+    1: { pose: "rainy", text: "Sorry it's a rough one. Be kind to yourself, one call at a time. I'm in your corner." },
   };
 
   function askMood() {

@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { existsSync, readFileSync } from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const h = require('../../docs/holidays.js');
 const on = (iso) => h.holidayFor(new Date(`${iso}T12:00:00`));
+const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
 test('Easter is worked out for any year', () => {
   assert.deepEqual(h.easter(2026), { m: 4, d: 5 });
@@ -24,10 +26,18 @@ test('the fixed holidays start and stop on their days', () => {
   assert.equal(on('2027-01-03'), '');
   assert.equal(on('2027-01-06'), 'christmas'); // Coptic Christmas Eve, 7 January is Christmas Day
   assert.equal(on('2027-01-08'), '');
-  assert.equal(on('2026-07-03'), 'june30'); // Egypt's 30 June week runs to 3 July
+  assert.equal(on('2026-07-01'), 'july4');
   assert.equal(on('2026-07-04'), 'july4');
   assert.equal(on('2026-07-06'), '');
   assert.equal(on('2026-09-15'), '');
+});
+
+test('6th of October shows for the whole week around it', () => {
+  assert.equal(on('2026-10-02'), '');
+  assert.equal(on('2026-10-03'), 'armedforces');
+  assert.equal(on('2026-10-06'), 'armedforces');
+  assert.equal(on('2026-10-09'), 'armedforces');
+  assert.equal(on('2026-10-10'), '');
 });
 
 test('Thanksgiving covers the ten days before the fourth Thursday and the day after', () => {
@@ -46,12 +56,15 @@ test('Easter week: a week before, through Easter Monday', () => {
   assert.equal(on('2026-04-08'), '');
 });
 
-test('Mother\'s Day: the US weekend in May, and 21 March in Egypt', () => {
-  assert.equal(on('2026-05-08'), 'mothers');
-  assert.equal(on('2026-05-10'), 'mothers'); // the second Sunday of May 2026
-  assert.equal(on('2026-05-11'), '');
-  assert.equal(on('2023-03-20'), 'mothers'); // a year when Ramadan had not yet begun
-  assert.equal(on('2023-03-22'), '');
+test('St. Patrick\'s and Valentine\'s', () => {
+  assert.equal(on('2023-03-13'), '');
+  assert.equal(on('2023-03-14'), 'stpatrick');
+  assert.equal(on('2023-03-17'), 'stpatrick');
+  assert.equal(on('2023-03-18'), '');
+  assert.equal(on('2025-02-09'), '');
+  assert.equal(on('2025-02-10'), 'valentine'); // Ramadan 2025 began on 1 March
+  assert.equal(on('2025-02-14'), 'valentine');
+  assert.equal(on('2025-02-15'), '');
 });
 
 test('Ramadan and the two Eids follow the Islamic calendar', () => {
@@ -70,59 +83,30 @@ test('where two holidays overlap, the earlier one in the list wins (Ramadan over
   assert.equal(on('2023-03-16'), 'stpatrick'); // in 2023 Ramadan began on 23 March
 });
 
-test('Egypt\'s national days show for the whole week around them (three days either side)', () => {
-  assert.equal(on('2026-10-02'), '');
-  assert.equal(on('2026-10-03'), 'armedforces');
-  assert.equal(on('2026-10-06'), 'armedforces'); // 6th of October
-  assert.equal(on('2026-10-09'), 'armedforces');
-  assert.equal(on('2026-10-10'), '');
-  assert.equal(on('2027-01-22'), 'jan25');
-  assert.equal(on('2027-01-28'), 'jan25');
-  assert.equal(on('2027-01-29'), '');
-  assert.equal(on('2026-04-25'), 'sinai');
-  assert.equal(on('2026-05-01'), 'labour');
-  assert.equal(on('2026-06-30'), 'june30');
-  assert.equal(on('2026-07-23'), 'july23');
-  assert.equal(on('2026-07-27'), '');
-});
-
-test('Sham El-Nessim is the Monday after Coptic Easter, and that Easter is worked out for any year', () => {
-  assert.deepEqual(h.orthodoxEaster(2026), { m: 4, d: 12 });
-  assert.deepEqual(h.orthodoxEaster(2027), { m: 5, d: 2 });
-  assert.equal(on('2026-04-13'), 'shamelnessim');
-  assert.equal(on('2026-04-10'), 'shamelnessim');
-  assert.equal(on('2026-04-17'), '');
-});
-
-test('the Islamic New Year and the Mawlid get their week too', () => {
-  assert.equal(on('2026-06-16'), 'hijri'); // 1 Muharram 1448
-  assert.equal(on('2026-06-21'), '');
-  assert.equal(on('2026-08-25'), 'mawlid'); // 12 Rabi al-awwal 1448
-  assert.equal(on('2026-08-29'), '');
-});
-
-test('every holiday key has a way to be drawn', () => {
-  // The key list and the decoration sets must agree, or a holiday would show nothing. The sets are inside the page
-  // code, so read the source.
-  const source = require('node:fs').readFileSync(new URL('../../docs/holidays.js', import.meta.url), 'utf8');
-  for (const key of h.KEYS) assert.ok(source.includes(`${key}: [[`), `${key} has no decoration set`);
+test('only holidays that have a picture of Caro are decorated', () => {
+  const buddy = read('../../docs/buddy.js');
+  for (const key of h.KEYS) {
+    assert.ok(existsSync(new URL(`../../docs/avatar/bd-${key}.webp`, import.meta.url)), `${key} has no picture in docs/avatar`);
+    assert.ok(buddy.includes(`${key}: "bd-${key}.webp"`), `${key} is not one of Caro's looks in buddy.js`);
+  }
+  // and nothing else is drawn: the decoration sets are exactly the holidays on the list
+  const source = read('../../docs/holidays.js');
+  const block = source.slice(source.indexOf('const SETS = {') + 'const SETS = '.length, source.indexOf('};', source.indexOf('const SETS = {')) + 1);
+  const sets = new Function(`return ${block}`)();
+  assert.deepEqual(Object.keys(sets).sort(), [...h.KEYS].sort());
 });
 
 test('every holiday has its own look: no two sets are the same, and each uses at least three different drawings', () => {
-  const source = require('node:fs').readFileSync(new URL('../../docs/holidays.js', import.meta.url), 'utf8');
+  const source = read('../../docs/holidays.js');
   const block = source.slice(source.indexOf('const SETS = {') + 'const SETS = '.length, source.indexOf('};', source.indexOf('const SETS = {')) + 1);
   const sets = new Function(`return ${block}`)();
+  const glyphs = new Function(`${source.slice(source.indexOf('const G = {'), source.indexOf('// Which little drawings'))}; return G;`)();
   const looks = new Map();
   for (const [key, items] of Object.entries(sets)) {
     assert.ok(new Set(items.map(([name]) => name)).size >= 3, `${key} uses fewer than three different drawings`);
+    for (const [name] of items) assert.ok(glyphs[name], `${key} uses a drawing called ${name} that does not exist`);
     const signature = [...new Set(items.map(([name]) => name))].sort().join(',');
     assert.ok(!looks.has(signature), `${key} looks the same as ${looks.get(signature)}`);
     looks.set(signature, key);
-  }
-  // the Egyptian national days in particular must differ from each other
-  const egypt = ['armedforces', 'jan25', 'sinai', 'june30', 'july23'].map((k) => new Set(sets[k].map(([n]) => n)));
-  for (let i = 0; i < egypt.length; i += 1) for (let j = i + 1; j < egypt.length; j += 1) {
-    const shared = [...egypt[i]].filter((n) => egypt[j].has(n));
-    assert.ok(shared.length <= 2, `two Egyptian days share too many drawings: ${shared.join(', ')}`);
   }
 });

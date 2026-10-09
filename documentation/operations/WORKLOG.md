@@ -160,6 +160,35 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-09 — Holidays limited to the ones with a picture of Caro; her outfits follow the same dates
+
+### Objective
+
+The user added pictures for some holidays and will not add the rest, so the app should decorate and dress Caro for those
+and nothing else.
+
+### Actions Completed
+
+- **New pictures** (resized to 420 px WebP, the originals not committed): 4th of July, 6th of October (Armed Forces Day), Easter,
+  Eid, Ramadan, St. Patrick's, a Monday look and a rainy-day look. The rainy-day picture came with a grey layer behind her; the
+  grey joined to the edge was cleared so she sits on the page like the others.
+- **Holidays now decorated** (`docs/holidays.js`): Halloween, Thanksgiving, Christmas (and Coptic Christmas Eve to Day, 5 to 7
+  January), New Year, Valentine's, St. Patrick's, Easter, Ramadan, Eid, July 4th, and 6th of October for the whole week around it. The
+  other Egyptian days, Mother's Day, Sham El-Nessim, the Islamic New Year and the Mawlid were taken out again, with their drawings.
+- **Caro's outfits** (`docs/buddy.js`) now use the same dates as the decorations (one list), so the ornaments and her outfit
+  start and end together (Halloween from 20 October, for example, not 24). Mondays get the coffee look (Friday keeps the
+  sunglasses); the rainy look is used for her reply to a "rough" mood tap and as a click-me surprise.
+- A test now checks that every decorated holiday has a picture file and is one of Caro's looks, that the decoration sets are
+  exactly that list, and that no two holidays look alike.
+
+### Database / System Result
+
+- Frontend only; no SQL, no Worker change. All 223 Worker tests pass.
+
+### Safety Status
+
+- Display only. Manual look required (`?holiday=armedforces` and the other keys preview a holiday, ornaments and outfit).
+
 ## 2026-10-09 — Egyptian holidays: a week of decorations, and outfits for Caro when the pictures exist
 
 ### Objective
