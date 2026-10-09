@@ -86,7 +86,71 @@
       add(item.contactName ? `${item.contactName} (direct)` : "Contact", item.contactPhone);
       add("Main line", item.companyPhone);
     }
-    return list;
+    // A number the team flagged as wrong or not in service goes to the end, marked, so the next one is offered.
+    const flagged = run.bad && run.bad.get(String(item.npi));
+    list.forEach((p) => { const f = flagged && flagged.get(digits(p.number)); if (f) p.bad = f; });
+    return list.filter((p) => !p.bad).concat(list.filter((p) => p.bad));
+  }
+
+  /* ---------- wrong numbers (sql/038) ---------- */
+
+  function setBad(npi, number, info) {
+    const key = String(npi);
+    if (!run.bad.has(key)) run.bad.set(key, new Map());
+    run.bad.get(key).set(digits(number), info);
+  }
+
+  async function loadBad(list) {
+    const npis = [...new Set(list.map((i) => String(i.npi)).filter((n) => /^\d{10}$/.test(n)))];
+    for (let i = 0; i < npis.length; i += 100) {
+      try {
+        const res = await apiGet("leads/bad-numbers", { npis: npis.slice(i, i + 100).join(",") });
+        (res.flags || []).forEach((f) => setBad(f.npi, f.number, f));
+      } catch (err) { console.log("[callmode] " + err.message); }
+    }
+    if (isOpen() && run.bad.size) render();
+  }
+
+  async function flagBad(number, reason) {
+    const item = run.queue[run.pos];
+    if (!item || run.busy) return;
+    run.busy = true;
+    try {
+      await apiPost("leads/bad-number", { npi: item.npi, number, reason });
+      setBad(item.npi, number, { reason, by: getSession()?.displayName || "" });
+      run.badUndo = { npi: String(item.npi), number: digits(number), reason };
+      render();
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      run.busy = false;
+    }
+  }
+
+  async function unflagBad(number) {
+    const item = run.queue[run.pos];
+    if (!item || run.busy) return;
+    run.busy = true;
+    try {
+      await apiPost("leads/bad-number/clear", { npi: item.npi, number });
+      const m = run.bad.get(String(item.npi));
+      if (m) m.delete(digits(number));
+      run.badUndo = null;
+      render();
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      run.busy = false;
+    }
+  }
+
+  const REASON_LABEL = { wrong: "Wrong number", disconnected: "Not in service" };
+
+  function badUndoHtml() {
+    const u = run.badUndo;
+    if (!u || u.npi !== String((run.queue[run.pos] || {}).npi)) return "";
+    return `<div class="cm-undo" role="status"><span>Flagged <strong>${escapeHtml(u.number.replace(/(\d{3})(\d{3})(\d{4})/, "($1) $2-$3"))}</strong> as ${escapeHtml((REASON_LABEL[u.reason] || "bad").toLowerCase())}. It won't be offered again.</span>
+      <button type="button" class="link-btn" data-cm="unbad" data-number="${escapeHtml(u.number)}">Undo</button></div>`;
   }
 
   function describe(item) {
@@ -141,19 +205,33 @@
 
   function callBlockHtml(phones) {
     if (!phones.length) return '<div class="cm-hint cm-nophone">No phone number on file for this lead.</div>';
-    const [first, ...others] = phones;
     const href = (n) => `tel:${escapeHtml(n.replace(/[^\d+*#]/g, ""))}`;
+    const flag = (p, reason, label) => `<button type="button" class="link-btn" data-cm="badnum" data-reason="${reason}" data-number="${escapeHtml(digits(p.number))}">${label}</button>`;
+    const badRows = phones.filter((p) => p.bad).map((p) => `
+        <div class="cm-other is-bad">
+          <span class="cm-other-label">${escapeHtml(p.label)}</span>
+          <span class="cm-bad-number">${escapeHtml(p.number)}</span>
+          <span class="cm-bad-tag">${escapeHtml(REASON_LABEL[p.bad.reason] || "Bad number")}${p.bad.by ? ` \u00b7 ${escapeHtml(p.bad.by)}` : ""}</span>
+          <button type="button" class="link-btn" data-cm="unbad" data-number="${escapeHtml(digits(p.number))}">Undo</button>
+        </div>`).join("");
+    const good = phones.filter((p) => !p.bad);
+    if (!good.length) {
+      return `<div class="cm-hint cm-nophone">Every number on file for this lead was flagged as wrong. Skip it, or send it to Disconnected.</div><div class="cm-others">${badRows}</div>`;
+    }
+    const [first, ...others] = good;
     return `<div class="cm-call">
         <a class="btn btn-primary cm-call-btn" href="${href(first.number)}" data-cm="called">${SIGNAL_ICONS.phone}<span>Call ${escapeHtml(first.number)}</span></a>
         <button type="button" class="btn btn-ghost" data-copy-phone="${escapeHtml(first.number)}">${SIGNAL_ICONS.copy}<span>Copy</span></button>
       </div>
       <div class="cm-hint">${escapeHtml(first.label)}</div>
-      ${others.length ? `<div class="cm-others">${others.map((p) => `
+      <div class="cm-flag">${flag(first, "wrong", "Wrong number")}${flag(first, "disconnected", "Not in service")}</div>
+      ${others.length || badRows ? `<div class="cm-others">${others.map((p) => `
         <div class="cm-other">
           <span class="cm-other-label">${escapeHtml(p.label)}</span>
           <a class="btn btn-ghost btn-small" href="${href(p.number)}" data-cm="called">${SIGNAL_ICONS.phone}${escapeHtml(p.number)}</a>
           <button type="button" class="link-btn" data-copy-phone="${escapeHtml(p.number)}">Copy</button>
-        </div>`).join("")}</div>` : ""}`;
+          ${flag(p, "wrong", "Wrong")}
+        </div>`).join("")}${badRows}</div>` : ""}`;
   }
 
   function upNextHtml() {
@@ -280,7 +358,7 @@
       </div>
       <div class="cm-progress" aria-hidden="true"><span style="width:${pct}%"></span></div>
       <div class="cm-body">
-        ${undoHtml()}
+        ${undoHtml()}${badUndoHtml()}
         <div class="cm-name">${escapeHtml(info.name)}</div>
         ${info.contact ? `<div class="cm-sub">${escapeHtml(info.contact)}</div>` : ""}
         <div class="cm-sub cm-muted">${escapeHtml([info.place, info.specialty].filter(Boolean).join(" · "))} ${window.dmeHooks.localTime?.(info.stateCode) || ""}</div>
@@ -365,6 +443,10 @@
   }
 
   async function claimProspect(company) {
+    if (window.dmeClaimGuard) {
+      const allowed = await window.dmeClaimGuard.check([company]);
+      if (!allowed || !allowed.length) { showToast("Not claimed. You held off because it looks related to a claimed lead."); return null; }
+    }
     const data = await apiPost("export/sheets", { companies: [company] });
     state.claimedLoaded = false;
     const npi = String(company.npi);
@@ -487,6 +569,8 @@
       else if (act === "shuffle") toggleShuffle();
       else if (act === "meeting") bookMeeting();
       else if (act === "redo") redoSkipped();
+      else if (act === "badnum") flagBad(cm.dataset.number, cm.dataset.reason);
+      else if (act === "unbad") unflagBad(cm.dataset.number);
       // "called" is a plain tel: link; nothing to do beyond letting it dial.
       return;
     }
@@ -537,7 +621,7 @@
     clearTimeout(undoTimer);
     Object.assign(run, {
       mode, queue: list, outcome: list.map(() => null), pos: -1, busy: false, status: "", remind: "", note: "", startedAt: Date.now(),
-      shuffle, order: new Map(list.map((item, i) => [item, i])), undo: null,
+      shuffle, order: new Map(list.map((item, i) => [item, i])), undo: null, bad: new Map(), badUndo: null,
     });
     if (shuffle) reorderRest(); // pos -1: every lead is still to call
     run.pos = 0;
@@ -546,6 +630,7 @@
     document.documentElement.classList.add("call-open");
     render();
     drawer.focus();
+    loadBad(list);
   }
 
   function close() {

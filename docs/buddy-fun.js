@@ -1,9 +1,10 @@
 /* The avatar's extra fun and team features, plugged into buddy.js:
-   - A daily puzzle (riddle, word scramble, quick maths or trivia, rotating), with a solve streak.
+   - A game of the day (seven short ones: memory, a sliding picture, copy the pattern, catch the stars, timing,
+     tic-tac-toe against her, odd one out), plus any of them to play for fun; winning today's keeps a streak.
    - Spin the wheel after a goal day, a "lead of the day", and kudos between teammates.
    - A one-tap daily mood (only anonymous totals are shared), a stretch reminder,
      and call scripts beside call mode.
-   Also: a weekly bingo card, seasonal puzzles, a gallery of her poses (pick her resting pose), a nudge when leads are
+   Also: a weekly bingo card, a gallery of her poses (pick her resting pose), a nudge when leads are
    in a good time to call, a reminder before a callback or meeting, a note to tomorrow's you, a team calendar card on
    Today, and "on a roll" / lull remarks.
    Loaded after buddy.js. Kudos, mood and scripts need sql/033, the handover note sql/034. */
@@ -14,191 +15,60 @@
   if (!buddy || !buddy.api) return;
   const api = buddy.api;
 
-  const RIDDLE_KEY = "dmeFunRiddle"; // { day, solved, revealed, tries }
-  const RIDDLE_STATS_KEY = "dmeFunRiddleStats"; // { solved, streak, last }
+  const GAME_KEY = "dmeFunGame"; // { day, won, tries }
+  const GAME_STATS_KEY = "dmeFunGameStats"; // { won, streak, last }
   const WHEEL_KEY = "dmeFunWheel"; // { day, prize }
   const MOOD_KEY = "dmeFunMood"; // { day }
 
-  /* ---------- the daily puzzle ---------- */
+  /* ---------- the game of the day ---------- */
 
-  const PUZZLES = {
-    riddle: [
-      { q: "I speak without a mouth and hear without ears. I have no body, but I come alive with the wind. What am I?", a: ["echo", "an echo"] },
-      { q: "What has hands but can't clap?", a: ["clock", "a clock", "watch"] },
-      { q: "What gets wetter the more it dries?", a: ["towel", "a towel"] },
-      { q: "What has keys but can't open a single lock?", a: ["piano", "keyboard", "a piano", "a keyboard"] },
-      { q: "The more of me you take, the more you leave behind. What am I?", a: ["footsteps", "steps", "footprints"] },
-      { q: "What can you catch but never throw?", a: ["cold", "a cold"] },
-      { q: "What has a neck but no head?", a: ["bottle", "a bottle", "shirt"] },
-      { q: "I have cities but no houses, mountains but no trees, and water but no fish. What am I?", a: ["map", "a map"] },
-      { q: "What has one eye but cannot see?", a: ["needle", "a needle"] },
-      { q: "What comes once in a minute, twice in a moment, but never in a thousand years?", a: ["m", "the letter m", "letter m"] },
-      { q: "What can travel around the world while staying in one corner?", a: ["stamp", "a stamp"] },
-      { q: "What has teeth but cannot bite?", a: ["comb", "a comb", "zipper", "saw"] },
-      { q: "What is full of holes but still holds water?", a: ["sponge", "a sponge"] },
-      { q: "What can fill a room but takes up no space?", a: ["light", "air", "sound"] },
-      { q: "What has words but never speaks?", a: ["book", "a book"] },
-      { q: "What begins with T, ends with T, and has T inside it?", a: ["teapot", "a teapot"] },
-      { q: "What belongs to you, but other people use it more than you do?", a: ["name", "your name"] },
-      { q: "I'm light as a feather, yet the strongest person can't hold me for more than a few minutes. What am I?", a: ["breath", "your breath"] },
-      { q: "What rings but is never worn on a finger?", a: ["phone", "a phone", "telephone", "bell", "a bell"] },
-      { q: "What has to be broken before you can use it?", a: ["egg", "an egg"] },
-      { q: "What gets bigger the more you take away?", a: ["hole", "a hole"] },
-      { q: "What kind of room has no doors or windows?", a: ["mushroom", "a mushroom"] },
-    ],
-    scramble: [
-      { q: "Unscramble this word: LCAL", a: ["call"], hint: "What you do all shift" },
-      { q: "Unscramble this word: DAEL", a: ["lead"], hint: "What you're chasing" },
-      { q: "Unscramble this word: ESLAS", a: ["sales"], hint: "The name of the game" },
-      { q: "Unscramble this word: NIETMGE", a: ["meeting"], hint: "A great outcome" },
-      { q: "Unscramble this word: CLTIEN", a: ["client"], hint: "Who we serve" },
-      { q: "Unscramble this word: PSOCTERP", a: ["prospect"], hint: "A lead you haven't won yet" },
-      { q: "Unscramble this word: KCABLLAC", a: ["callback"], hint: "Set one before you forget" },
-      { q: "Unscramble this word: DIOCRAMEE", a: ["medicare"], hint: "Federal health insurance" },
-      { q: "Unscramble this word: ECVOIIN", a: ["invoice"], hint: "Sent after the contract" },
-      { q: "Unscramble this word: TNCCOTRA", a: ["contract"], hint: "Signed before onboarding" },
-      { q: "Unscramble this word: LLOFWOU", a: ["followup", "follow up"], hint: "Two words, one idea" },
-      { q: "Unscramble this word: RGTEA", a: ["great"], hint: "How today will go" },
-    ],
-    math: [
-      { q: "A rep makes 12 calls an hour. How many calls in a 4-hour stretch?", a: ["48"] },
-      { q: "If 3 of every 10 calls get answered, how many answers come from 50 calls?", a: ["15"] },
-      { q: "A meeting gets booked every 8 calls. How many meetings from 40 calls?", a: ["5", "five"] },
-      { q: "What is 15% of 200?", a: ["30", "thirty"] },
-      { q: "I'm thinking of a number. Double it, add 6, then halve it, and you get 10. What's my number?", a: ["7", "seven"] },
-      { q: "How many minutes are in an 8-hour shift?", a: ["480"] },
-      { q: "What comes next? 2, 4, 8, 16, ...", a: ["32"] },
-      { q: "What comes next? 1, 1, 2, 3, 5, 8, ...", a: ["13"] },
-      { q: "If a call lasts 6 minutes, how many fit in one hour?", a: ["10", "ten"] },
-      { q: "What is 7 x 8?", a: ["56"] },
-      { q: "You make 5 calls and book 1 meeting. At that rate, how many meetings from 35 calls?", a: ["7", "seven"] },
-      { q: "What is 25% of 80?", a: ["20", "twenty"] },
-    ],
-    trivia: [
-      { q: "Which planet is known as the Red Planet?", a: ["mars"] },
-      { q: "How many continents are there?", a: ["7", "seven"] },
-      { q: "What is the capital of Egypt?", a: ["cairo"] },
-      { q: "Which river runs through Egypt?", a: ["nile", "the nile"] },
-      { q: "How many sides does a hexagon have?", a: ["6", "six"] },
-      { q: "What is the largest ocean on Earth?", a: ["pacific", "the pacific", "pacific ocean"] },
-      { q: "What is the chemical formula for water?", a: ["h2o"] },
-      { q: "What is the capital of the US state of Georgia?", a: ["atlanta"] },
-      { q: "How many days are in a leap year?", a: ["366"] },
-      { q: "Which US state is nicknamed the Sunshine State?", a: ["florida"] },
-      { q: "What does DME stand for?", a: ["durable medical equipment"] },
-      { q: "How many hours are in a day?", a: ["24", "twenty four", "twenty-four"] },
-    ],
+  const WIN_LINES = ["Nailed it!", "Sharp.", "That's how it's done.", "Brilliant.", "Easy for you."];
+
+  // Everyone gets the same game each day; the rest can still be played any time for fun.
+  const todaysGame = () => window.dmeGames.list[api.dayNumber() % window.dmeGames.list.length];
+
+  const gameState = () => {
+    const g = api.read(GAME_KEY, null);
+    return g && g.day === api.today() ? g : { day: api.today(), won: false, tries: 0 };
   };
-  // In the weeks around a holiday the day's puzzle is a themed one.
-  const SEASONAL = {
-    halloween: {
-      label: "Halloween riddle", from: [10, 20], to: [10, 31],
-      list: [
-        { q: "What do you call a witch who lives at the beach?", a: ["sandwitch", "sand witch", "a sandwitch", "a sand witch"] },
-        { q: "What is a skeleton's favourite musical instrument?", a: ["xylophone", "a xylophone", "trombone", "a trombone"] },
-        { q: "Why don't skeletons fight each other?", a: ["no guts", "they have no guts", "they dont have the guts", "guts", "they dont have any guts"] },
-        { q: "I'm orange and round, and at Halloween I'm carved with a grin. What am I?", a: ["pumpkin", "a pumpkin", "jack o lantern", "jackolantern", "a jackolantern"] },
-        { q: "What do you get when you cross a vampire with a snowman?", a: ["frostbite"] },
-        { q: "What do ghosts like to eat for dessert?", a: ["ice scream", "i scream", "ice cream"] },
-        { q: "What flies at night, hangs upside down, and isn't a vampire?", a: ["bat", "a bat"] },
-        { q: "What has eight legs, spins webs, and is a Halloween favourite?", a: ["spider", "a spider"] },
-      ],
-    },
-    thanksgiving: {
-      label: "Thanksgiving trivia", from: [11, 15], to: [11, 27],
-      list: [
-        { q: "Which US president made Thanksgiving a national holiday during the Civil War?", a: ["lincoln", "abraham lincoln"] },
-        { q: "Which bird is the traditional centrepiece of a Thanksgiving dinner?", a: ["turkey", "a turkey"] },
-        { q: "In which month is US Thanksgiving?", a: ["november"] },
-        { q: "Which pie is the classic Thanksgiving dessert?", a: ["pumpkin", "pumpkin pie"] },
-        { q: "What colour is cranberry sauce?", a: ["red"] },
-        { q: "Which ship carried the Pilgrims to America in 1620?", a: ["mayflower", "the mayflower"] },
-        { q: "On which day of the week does US Thanksgiving fall?", a: ["thursday"] },
-        { q: "What do people do at the table on Thanksgiving, as the name says?", a: ["give thanks", "giving thanks", "thanks"] },
-      ],
-    },
-    christmas: {
-      label: "Holiday riddle", from: [12, 10], to: [12, 26],
-      list: [
-        { q: "What do snowmen eat for breakfast?", a: ["snowflakes", "frosted flakes", "snow flakes"] },
-        { q: "How many reindeer pull Santa's sleigh, not counting Rudolph?", a: ["8", "eight"] },
-        { q: "Who goes 'ho ho ho' and has a big white beard?", a: ["santa", "santa claus", "father christmas"] },
-        { q: "What do you call a snowman in the summer?", a: ["puddle", "a puddle", "water"] },
-        { q: "On which date is Christmas Day?", a: ["25 december", "december 25", "25th december", "december 25th", "dec 25"] },
-        { q: "Which reindeer has a famous red nose?", a: ["rudolph"] },
-        { q: "Which green character tried to steal Christmas?", a: ["grinch", "the grinch"] },
-        { q: "How many days of Christmas are there in the song?", a: ["12", "twelve"] },
-      ],
-    },
-  };
-  function seasonalTheme(now = new Date()) {
-    const m = now.getMonth() + 1;
-    const d = now.getDate();
-    return Object.values(SEASONAL).find((t) => (m > t.from[0] || (m === t.from[0] && d >= t.from[1])) && (m < t.to[0] || (m === t.to[0] && d <= t.to[1]))) || null;
-  }
-  const TYPES = ["riddle", "scramble", "math", "trivia"];
-  const TYPE_LABEL = { riddle: "Riddle", scramble: "Word scramble", math: "Quick maths", trivia: "Trivia" };
-  const SOLVE_LINES = ["Nailed it!", "Sharp mind.", "Got it in one.", "Brilliant.", "That's the one!"];
 
-  const norm = (text) => String(text || "").toLowerCase().replace(/[^a-z0-9 ]+/g, "").replace(/^(a|an|the|your) /, "").replace(/\s+/g, " ").trim();
-
-  function todaysPuzzle() {
-    const d = api.dayNumber();
-    const theme = seasonalTheme();
-    if (theme) return { type: "seasonal", label: theme.label, ...theme.list[d % theme.list.length] };
-    const type = TYPES[d % TYPES.length];
-    const list = PUZZLES[type];
-    return { type, ...list[Math.floor(d / TYPES.length) % list.length] };
-  }
-
-  const riddleState = () => {
-    const s = api.read(RIDDLE_KEY, null);
-    return s && s.day === api.today() ? s : { day: api.today(), solved: false, revealed: false, tries: 0 };
-  };
-  let riddleMessage = "";
-
-  function checkRiddle(guess) {
-    const p = todaysPuzzle();
-    const s = riddleState();
-    const g = norm(guess);
-    if (!g) return;
-    if (p.a.map(norm).includes(g)) {
-      s.solved = true;
-      api.write(RIDDLE_KEY, s);
-      const stats = api.read(RIDDLE_STATS_KEY, { solved: 0, streak: 0, last: "" });
-      const yesterday = new Date(Date.now() - 86400000);
-      const y = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
-      stats.streak = stats.last === y ? stats.streak + 1 : stats.last === api.today() ? stats.streak : 1;
-      stats.last = api.today();
-      stats.solved += 1;
-      api.write(RIDDLE_STATS_KEY, stats);
-      riddleMessage = "";
-      api.say({ key: `puzzle:${api.today()}`, kind: "event", pose: "thumbs", title: "Solved!", text: `${api.pick(SOLVE_LINES)}${stats.streak > 1 ? ` ${stats.streak} puzzles in a row.` : ""}`, confetti: stats.streak > 1 });
-      if (stats.solved >= 5) api.earn("riddler");
-      bingoMark("puzzle");
-    } else {
-      s.tries += 1;
-      api.write(RIDDLE_KEY, s);
-      riddleMessage = s.tries >= 2 ? "Not quite. There's a hint if you want it." : "Not quite, try again.";
+  function onGameFinished(result, daily) {
+    if (!result.won) {
+      if (daily) { const g = gameState(); g.tries += 1; api.write(GAME_KEY, g); }
+      api.rerender();
+      return;
     }
+    if (!daily || gameState().won) { api.rerender(); return; } // fun games don't count; today's counts once
+    const g = gameState();
+    g.won = true;
+    api.write(GAME_KEY, g);
+    const stats = api.read(GAME_STATS_KEY, { won: 0, streak: 0, last: "" });
+    const yesterday = new Date(Date.now() - 86400000);
+    const y = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+    stats.streak = stats.last === y ? stats.streak + 1 : stats.last === api.today() ? stats.streak : 1;
+    stats.last = api.today();
+    stats.won += 1;
+    api.write(GAME_STATS_KEY, stats);
+    api.say({ key: `game:${api.today()}`, kind: "event", pose: "thumbs", title: "You won today's game!", text: `${api.pick(WIN_LINES)}${stats.streak > 1 ? ` ${stats.streak} days in a row.` : ""}`, confetti: stats.streak > 1 });
+    if (stats.won >= 5) api.earn("riddler");
+    bingoMark("puzzle");
     api.rerender();
   }
 
-  function riddleSection() {
-    const p = todaysPuzzle();
-    const s = riddleState();
-    const stats = api.read(RIDDLE_STATS_KEY, { solved: 0, streak: 0 });
-    let body;
-    if (s.solved) body = `<div class="buddy-fun-note">Solved! ${stats.streak > 1 ? `${stats.streak} in a row. ` : ""}Come back tomorrow for a new one.</div>`;
-    else if (s.revealed) body = `<div class="buddy-fun-note">The answer was <strong>${escapeHtml(p.a[0])}</strong>. Tomorrow's a fresh one.</div>`;
-    else {
-      const hint = p.hint || `Starts with "${String(p.a[0]).charAt(0).toUpperCase()}"`;
-      body = `<div class="buddy-fun-row"><input type="text" data-fun-riddle-input maxlength="60" placeholder="Your answer" aria-label="Your answer" autocomplete="off"><button type="button" class="btn btn-primary btn-small" data-fun="riddle-check">Check</button></div>
-        ${riddleMessage ? `<div class="buddy-fun-note">${escapeHtml(riddleMessage)}</div>` : ""}
-        ${s.tries >= 2 ? `<div class="buddy-fun-note">Hint: ${escapeHtml(hint)}</div>` : ""}
-        <button type="button" class="link-btn" data-fun="riddle-reveal">Show answer</button>`;
-    }
-    return section("riddle", `${uiIcon("puzzle")} Daily puzzle${s.solved ? ` ${uiIcon("check")}` : ""}`, `<div class="buddy-fun-label">${escapeHtml(p.label || TYPE_LABEL[p.type])}</div><div class="buddy-fun-q">${escapeHtml(p.q)}</div>${body}`);
+  function gameSection() {
+    if (!window.dmeGames) return "";
+    const today = todaysGame();
+    const g = gameState();
+    const stats = api.read(GAME_STATS_KEY, { won: 0, streak: 0 });
+    const others = window.dmeGames.list.filter((x) => x.id !== today.id);
+    const status = g.won
+      ? `<div class="buddy-fun-note">Won! ${stats.streak > 1 ? `${stats.streak} days in a row. ` : ""}A new one tomorrow. Play it again for fun if you like.</div>`
+      : `<div class="buddy-fun-note">${g.tries ? "So close. Have another go." : "Win it for a streak, a bingo square and a badge."}</div>`;
+    return section("game", `${uiIcon("puzzle")} Game of the day${g.won ? ` ${uiIcon("check")}` : ""}`,
+      `<div class="buddy-fun-label">${escapeHtml(today.title)}</div><div class="buddy-fun-q">${escapeHtml(today.blurb)}</div>${status}
+       <button type="button" class="btn btn-primary btn-small" data-fun="game-play" data-game="${escapeHtml(today.id)}" data-daily="1">${uiIcon(today.icon)} ${g.won ? "Play again" : "Play"}</button>
+       <div class="buddy-fun-label" style="margin-top:6px">More to play, just for fun</div>
+       <div class="buddy-games-more">${others.map((x) => `<button type="button" class="buddy-game-chip" data-fun="game-play" data-game="${escapeHtml(x.id)}" title="${escapeHtml(x.blurb)}">${uiIcon(x.icon)}<span>${escapeHtml(x.title)}</span></button>`).join("")}</div>`);
   }
 
   /* ---------- spin the wheel ---------- */
@@ -398,7 +268,7 @@
     { id: "result", text: "Log a result on a lead", icon: "check" },
     { id: "callback", text: "Set a callback", icon: "bell" },
     { id: "kudos", text: "Send kudos", icon: "megaphone" },
-    { id: "puzzle", text: "Solve the daily puzzle", icon: "puzzle" },
+    { id: "puzzle", text: "Win the game of the day", icon: "puzzle" },
     { id: "claim", text: "Claim a new lead", icon: "sparkle" },
     { id: "cold", text: "Work a going-cold lead", icon: "flame" },
     { id: "streak3", text: "Call 3 days in a row", icon: "sunrise" },
@@ -558,7 +428,7 @@
   }
 
   function panelHtml() {
-    return `<div class="buddy-secs">${riddleSection()}${bingoSection()}${wheelSection()}${leadSection()}${kudosSection()}${handoverSection()}${gallerySection()}</div>`;
+    return `<div class="buddy-secs">${gameSection()}${bingoSection()}${wheelSection()}${leadSection()}${kudosSection()}${handoverSection()}${gallerySection()}</div>`;
   }
 
   document.addEventListener("toggle", (e) => {
@@ -569,8 +439,7 @@
   }, true);
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && e.target.matches && e.target.matches("[data-fun-riddle-input]")) checkRiddle(e.target.value);
-    else if (e.key === "Enter" && e.target.matches && e.target.matches("[data-fun-kudos-body]")) sendKudos(e.target.closest(".buddy-sec-body"));
+    if (e.key === "Enter" && e.target.matches && e.target.matches("[data-fun-kudos-body]")) sendKudos(e.target.closest(".buddy-sec-body"));
   });
 
   // Returns true when the click was one of ours, so buddy.js leaves it alone.
@@ -578,9 +447,10 @@
     const el = e.target.closest && e.target.closest("[data-fun]");
     if (!el) return false;
     const act = el.dataset.fun;
-    if (act === "riddle-check") checkRiddle(el.closest(".buddy-sec-body").querySelector("[data-fun-riddle-input]").value);
-    else if (act === "riddle-reveal") { const s = riddleState(); s.revealed = true; api.write(RIDDLE_KEY, s); api.rerender(); }
-    else if (act === "spin") spin();
+    if (act === "game-play" && window.dmeGames) {
+      const daily = Boolean(el.dataset.daily);
+      window.dmeGames.play(el.dataset.game, (result) => onGameFinished(result, daily));
+    } else if (act === "spin") spin();
     else if (act === "kudos-send") sendKudos(el.closest(".buddy-sec-body"));
     else if (act === "lead-open" && lead) {
       state.claimedSearchQuery = lead.name;
@@ -612,8 +482,8 @@
     bingoFromStats(stats, calls > (lastCalls ?? calls) && api.minutesNow() >= 20 * 60);
     paceCheck(calls);
     goodTimeNudge(view);
-    if (lastCalls === 0 && calls >= 1 && !riddleState().solved && !riddleState().revealed) {
-      api.say({ key: `puzzleinvite:${api.today()}`, kind: "small", pose: "thinking", title: "Puzzle time?", text: "Nice first call. Today's puzzle is waiting in my panel when you want a short break." });
+    if (lastCalls === 0 && calls >= 1 && window.dmeGames && !gameState().won) {
+      api.say({ key: `gameinvite:${api.today()}`, kind: "small", pose: "wink", title: "Game break?", text: `Nice first call. Today's game is ${todaysGame().title}, waiting in my panel whenever you want a short break.` });
     }
     lastCalls = calls;
     askMood();

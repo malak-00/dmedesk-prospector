@@ -38,6 +38,7 @@ Required manual sequence:
 033_avatar_team.sql              (after 032: kudos between teammates, a daily mood tap, call scripts)
 034_avatar_handover.sql         (a note to tomorrow's you, shown once at the next sign-in)
 037_user_avatars.sql            (a small profile picture for each person, uploaded from Admin > Controls)
+038_bad_numbers.sql              (phone numbers the team flagged as wrong or not in service, so nobody redials them)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -100,6 +101,7 @@ in `003`); save their output with the run.
 | `033_avatar_team.sql` | Creates `buddy_kudos`, `buddy_mood` (one tap a day; admins see anonymous totals only) and `buddy_scripts`. Rerun-safe, touches nothing existing | **Not yet run. Until it is, kudos, the mood check-in and call scripts say what they need; everything else in the avatar works** |
 | `034_avatar_handover.sql` | Creates `buddy_handover` (one row per person: the note they left for their next shift, shown once). Rerun-safe, touches nothing existing | **Not yet run. Until it is, the handover note says what it needs; everything else works** |
 | `037_user_avatars.sql` | Creates `user_avatars` (one row per person: a small profile picture, set by an admin; removed by setting it to null). Rerun-safe, touches nothing existing | **Not yet run. Until it is, everyone shows their initials and uploading a picture says what it needs** |
+| `038_bad_numbers.sql` | Creates `bad_numbers` (one row per lead and 10-digit number flagged in call mode; taken back by setting `cleared_at`). Rerun-safe, touches nothing existing | **Not yet run. Until it is, call mode works as before and flagging a number says what it needs** |
 
 ## Notes on individual files
 

@@ -34,6 +34,10 @@ import * as SystemInfo from "./services/systemInfo.js";
 import * as buddyRepo from "./repos/buddyRepo.js";
 import * as buddyTeam from "./repos/buddyTeamRepo.js";
 import * as avatarRepo from "./repos/avatarRepo.js";
+import * as badNumbers from "./repos/badNumbersRepo.js";
+import * as insightsRepo from "./repos/insightsRepo.js";
+import * as relatedClaimsRepo from "./repos/relatedClaimsRepo.js";
+import { prettyNumber } from "./lib/badNumbers.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
 import { parseListParams } from "./lib/leadView.js";
@@ -475,6 +479,34 @@ app.post("/leads/status", async (c) => {
 });
 
 // A tap on the lead's phone number: logged as a call. Body: { npi, number }.
+// Phone numbers the team found to be wrong (sql/038): list them for a set of leads, flag one, take a flag back.
+app.get("/leads/bad-numbers", async (c) => c.json(ok(await badNumbers.listForNpis(supabaseFor(c), c.req.query("npis")))));
+app.post("/leads/bad-number", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const session = c.get("session");
+  const supabase = supabaseFor(c);
+  const flag = await badNumbers.flagNumber(supabase, session, body);
+  // On a lead you hold, leave a line in its call log so the history says why the number was dropped.
+  try {
+    const why = flag.reason === "disconnected" ? "Not in service" : "Wrong number";
+    await leadsRepo.addLeadNote(supabase, flag.npi, `${why}: ${prettyNumber(flag.number)}`, session);
+  } catch { /* not your lead (or no call log): the flag itself is what matters */ }
+  return c.json(ok(flag));
+});
+app.post("/leads/bad-number/clear", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await badNumbers.clearFlag(supabaseFor(c), c.get("session"), body)));
+});
+
+// Before claiming: which of these leads look like ones that are already claimed (same phone or same owner)?
+app.post("/leads/related-check", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await relatedClaimsRepo.checkRelated(supabaseFor(c), c.get("session"), body.companies)));
+});
+
+// When calls get answered, by the lead's own weekday and hour, from the team's call logs.
+app.get("/insights/best-times", async (c) => c.json(ok(await insightsRepo.getBestTimes(supabaseFor(c), c.get("session")))));
+
 app.post("/leads/dial", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return c.json(ok(await leadsRepo.logDial(supabaseFor(c), body.npi, body.number, c.get("session"))));

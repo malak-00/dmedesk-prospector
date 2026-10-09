@@ -113,7 +113,7 @@
     { id: "booked", icon: "calendar", label: "Booked it", how: "Book your first meeting" },
     { id: "closer", icon: "trophy", label: "Closer", how: "Onboard a lead" },
     { id: "challenge", icon: "target", label: "Challenger", how: "Finish a daily challenge" },
-    { id: "riddler", icon: "puzzle", label: "Riddler", how: "Solve 5 daily puzzles" },
+    { id: "riddler", icon: "puzzle", label: "Gamer", how: "Win the game of the day 5 times" },
     { id: "cheer", icon: "megaphone", label: "Cheerleader", how: "Send a teammate kudos" },
     { id: "bingo", icon: "sparkle", label: "Bingo", how: "Get a line on the weekly bingo card" },
   ];

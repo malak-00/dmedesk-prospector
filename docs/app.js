@@ -2638,10 +2638,16 @@ function removeCompaniesFromProspect(companies) {
 }
 
 async function exportSheets() {
-  const companies = getSelectedProspectCompanies();
+  let companies = getSelectedProspectCompanies();
   if (companies.length === 0) {
     showToast("Check at least one lead to claim", true);
     return;
+  }
+  // A heads-up if any of them look like a business a teammate already holds (claimguard.js).
+  if (window.dmeClaimGuard) {
+    const allowed = await window.dmeClaimGuard.check(companies);
+    if (!allowed || !allowed.length) return;
+    companies = allowed;
   }
   const who = getSession()?.displayName || "you";
   // Claiming leads is a shared, team-visible action with no undo -- confirm

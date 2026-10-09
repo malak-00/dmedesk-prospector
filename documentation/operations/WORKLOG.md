@@ -160,6 +160,53 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-09 — Wrong-number flag, best times to call, related-lead warning, and real games (sql/038)
+
+### Objective
+
+Four requests: stop reps redialing numbers that are wrong, show when calls actually get answered, warn before
+claiming a lead that looks like one a teammate already holds, and replace the math and word puzzles with things
+to do.
+
+### Actions Completed
+
+- **Wrong number** (call mode): "Wrong number" and "Not in service" under the number being called, and "Wrong" on
+  each other number. A flagged number is struck through, marked, moved to the end, and the next number on file is
+  offered; every number flagged says so and suggests Skip or Disconnected. Undo is one tap. Flags are shared by the
+  team. On a lead you hold, a call-log line ("Wrong number: (404) 808-5118") is added. Server:
+  `GET /leads/bad-numbers`, `POST /leads/bad-number`, `POST /leads/bad-number/clear`.
+- **Best times to call** (a card on Today): from every call log, the share of logged calls that reached a person
+  (any result except voicemail and no answer), by weekday and hour in the lead's own time zone (state to zone), with
+  the three best slots (slots with fewer than 4 calls are not ranked; rates are smoothed so one lucky call is not
+  read as 100%) and a Team / Mine switch. The aggregate is kept for ten minutes. Server: `GET /insights/best-times`.
+- **Related-lead warning**: before a Prospect claim, and before a claim made from call mode, the leads are compared
+  with every claimed lead by phone number and by owner name in the same state (the same rule as the Related
+  businesses chip). If one looks like a lead a teammate holds, a dialog names it and who has it, with Claim anyway,
+  Skip these, or Cancel. A lead you hold yourself does not stop you. If the check fails the claim carries on; the
+  server's ownership rules are unchanged. Server: `POST /leads/related-check`.
+- **Games** (`docs/gamelogic.js`, `docs/buddy-games.js`, `docs/buddy-fun.js`): the daily math, word, riddle and
+  trivia puzzles are gone. Seven short games replace them: memory match, a sliding picture of Caro, copy the pattern,
+  catch the stars, perfect timing, tic-tac-toe against Caro (who can slip) and odd one out. One is the game of the
+  day (the same for everyone); the others can be played any time. Winning today's keeps a streak, fills the bingo
+  square and earns the Gamer badge after five. The rules are tested separately from the screen.
+
+### Database / System Result
+
+- New SQL file `sql/038_bad_numbers.sql` (`bad_numbers`, one row per lead and number; a flag is taken back by setting
+  `cleared_at`, never by deleting). Rerun-safe. **Not run by Claude; to be run by the user.** Until it is, flagging
+  says what it needs and call mode works as before. Best times and the related-lead warning need no SQL.
+- Worker tests: all 212 pass (new: flag rules and the missing table, result classification, the time-zone
+  grid, the cached aggregate, related-claim matching, and the game rules).
+- The three new screens and the games were exercised in a browser on a standalone test page (no sign-in, no real
+  data): memory, odd one out, catch, tic-tac-toe, the sliding picture, copy the pattern and timing all played to an
+  end; the Best times card and the claim dialog drew and returned the right answers for Claim anyway, Skip, Cancel
+  and Escape. They were not run against the live app.
+
+### Safety Status
+
+- Additive only. Nothing in the leads table changes except the call-log line on a lead you hold. The claim warning
+  never blocks on its own failure. Manual testing in the live app is still required.
+
 ## 2026-10-08 — Profile pictures for each person (sql/037)
 
 ### Objective
