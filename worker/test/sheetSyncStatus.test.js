@@ -42,7 +42,7 @@ test('returns active claimed leads with their owner details', async () => {
     missingNpis: [],
   });
   assert.ok(db.calls.some((call) => call.join('|') === 'leads|eq|is_disconnected|false'));
-  assert.ok(db.calls.some((call) => call.join('|') === 'leads|not|claimed_by|is|null'));
+  assert.ok(db.calls.some((call) => call[0] === 'leads' && call[1] === 'not' && call[2] === 'claimed_by' && call[3] === 'is' && call[4] === null));
 });
 
 test('allows delegated claim-for-others access but rejects callers without it', async () => {
