@@ -1576,3 +1576,30 @@ Worker routes continue to create the claim and append the entered note.
 ### Safety Status
 
 No destructive command, production mutation, or secret change was performed.
+## 2026-10-09 — Supabase free-tier support-services plan
+
+### Objective
+
+Plan complementary free-tier services that preserve Supabase as the durable
+source of truth while keeping large files, disposable caches, backups, and
+non-production experimentation outside its core 500 MB budget.
+
+### Actions Completed
+
+- Added `documentation/plans/SUPABASE_FREE_TIER_SUPPORT_PLAN.md`.
+- Defined Supabase as authoritative; R2 for objects/archives, KV and Redis
+  for disposable cache/locks, B2 for independent backups, and Neon only for
+  preview/staging or reproducible reporting summaries.
+- Added the requested Neon setup/deploy instructions as a deferred, explicit
+  runbook—not a production database migration.
+
+### Database / System Result
+
+No Neon project was linked or deployed. No Supabase database, Cloudflare
+resource, external account, migration, secret, or production data changed.
+
+### Safety Status
+
+The plan forbids splitting claims, notes, saved searches, or ownership across
+free accounts. External service setup remains subject to target review and
+separate credentials.
