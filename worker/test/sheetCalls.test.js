@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { classifySheetResult, parseSheetTime, wallClockToMs, buildSheetBaseline } from '../src/lib/sheetCalls.js';
-import { blocksOf, BLOCK_MIN, mergeGrids, standardize, summarize, wilsonLower, wilsonInterval, RANK_MIN } from '../src/lib/bestTimes.js';
+import { blocksOf, halvesOf, BLOCK_MIN, mergeGrids, standardize, summarize, wilsonLower, wilsonInterval, RANK_MIN } from '../src/lib/bestTimes.js';
 import { getBestTimes, clearBestTimesCache } from '../src/repos/insightsRepo.js';
 import baseline from '../src/data/bestTimesBaseline.js';
 
@@ -9,9 +9,11 @@ test('the sheet\'s wording says whether anyone picked up', () => {
   for (const missed of ['VM', 'vm 4/28', 'left a v.m', 'left a v,m 5/4', 'lefta v.m 5/4', 'FTVM', 'vm full 4/23', 'VM is not set', 'no answer 4/28', 'NA 3/10', 'Busy 3/26', 'Line is busy 5/11', 'left av.m 4/29', 'vmfull', 'DMEDESK VM 4/29', 'VM x3 6/18']) {
     assert.equal(classifySheetResult(missed), 'missed', missed);
   }
-  for (const answered of ['Pharmacy 7/6', 'Not Qualified 10/2', 'NO ORT NO CGM', 'Hung Up 6/19', 'hungup', 'Not Interested 6/19', 'NI', 'GK 3/23', 'cb later', 'Clinic 10/2', 'no dme 4/23', 'Part D only 9/22', "Can't dropship 9/17", 'Doctor Office 6/19', 'the operator took a msg', 'Home Health Agency']) {
+  for (const answered of ['NO ORT NO CGM', 'Hung Up 6/19', 'hungup', 'Not Interested 6/19', 'NI', 'GK 3/23', 'cb later', 'no dme 4/23', 'Part D only 9/22', "Can't dropship 9/17", 'the operator took a msg']) {
     assert.equal(classifySheetResult(answered), 'answered', answered);
   }
+  // what kind of business it is says nothing about whether the phone was picked up
+  for (const kind of ['Pharmacy 7/6', 'Not Qualified 10/2', 'Clinic 10/2', 'Doctor Office 6/19', 'Home Health Agency', 'Long Term Care Pharmacy']) assert.equal(classifySheetResult(kind), null, kind);
   for (const nothing of ['', '-', 'Dir 3/10', 'Directory', 'Disconnected 10/6', 'Invalid Number 8/20', 'Company Closed 6/25', 'closed', 'SHUT DOWN', 'sent an email 4/17/26 admin@x.com 4/17', '46133', '747-343-9575 6/25', 'stayed on hold']) {
     assert.equal(classifySheetResult(nothing), null, nothing);
   }
@@ -40,7 +42,7 @@ test('Cairo time becomes the right instant, with daylight saving either side of 
 test('calls are counted by the lead\'s own weekday and hour, and only answered/missed ones count', () => {
   // 9 March 2026 21:14 Cairo = 19:14 UTC = 3:14 PM Eastern (EDT began 8 March) on a Monday; 12:14 PM Pacific
   const out = buildSheetBaseline([
-    { state: 'NY', lastCalled: '3/9/2026 21:14:06', comments: 'Pharmacy 3/9', owner: 'Jasmine' },
+    { state: 'NY', lastCalled: '3/9/2026 21:14:06', comments: 'Not Interested 3/9', owner: 'Jasmine' },
     { state: 'NY', lastCalled: '3/9/2026 21:30:00', comments: 'VM 3/9', owner: 'Jasmine Lee' },
     { state: 'CA', lastCalled: '3/9/2026 21:14:06', comments: 'NA 3/9', owner: 'Jane' },
     { state: 'NY', lastCalled: '3/9/2026 21:14:06', comments: 'Disconnected 3/9', owner: 'Jane' }, // not a call about picking up
@@ -178,7 +180,44 @@ test('the intervals widen with fewer calls', () => {
 
 test('with the real sheet counts, the verdicts match what the data shows: Monday and Tuesday afternoons stand out', () => {
   const s = summarize(standardize(new Map(Object.entries(baseline.byOwner))));
-  assert.ok(s.blocks.strong.some((c) => c.part === '2–5 PM'), 'an afternoon window should be marked strong');
+  assert.ok(s.blocks.strong.some((c) => c.part === '2–5 PM' || c.part === '12–2 PM'), 'an afternoon window should be marked strong');
   assert.ok(s.blocks.weak.length >= 1);
-  assert.ok(s.blocks.overall > 0.45 && s.blocks.overall < 0.6);
+  assert.ok(s.blocks.overall > 0.2 && s.blocks.overall < 0.4); // about a quarter to a third of calls are picked up
+  const am = s.blocks.byPart.slice(0, 2).reduce((t, p) => [t[0] + p.calls, t[1] + p.answered], [0, 0]);
+  const pm = s.blocks.byPart.slice(2).reduce((t, p) => [t[0] + p.calls, t[1] + p.answered], [0, 0]);
+  assert.ok(pm[1] / pm[0] > am[1] / am[0], 'after noon should be better than before noon');
+});
+
+test('each part of the day and each weekday gets a verdict over the whole week', () => {
+  const grid = blank();
+  grid.forEach((row) => row.forEach((_, h) => { row[h] = [40, h >= 4 ? 20 : 8]; })); // from noon: half picked up; before noon: a fifth
+  const b = blocksOf(grid);
+  assert.deepEqual(b.byPart.map((p) => p.verdict), ['weak', 'weak', 'strong', 'strong']);
+  assert.ok(b.byPart.every((p) => p.calls > BLOCK_MIN));
+  assert.deepEqual(b.days.map((d) => d.verdict), ['typical', 'typical', 'typical', 'typical', 'typical']); // every day is the same here
+});
+
+test('before noon against after noon: only a clear difference is reported', () => {
+  const grid = blank();
+  grid.forEach((row) => row.forEach((_, h) => { row[h] = [40, h < 4 ? 8 : 14]; })); // a fifth before noon, 35% after
+  const clear = halvesOf(grid);
+  assert.equal(clear.verdict, 'pm');
+  assert.ok(Math.abs(clear.lift - 0.75) < 1e-9);
+  const even = blank();
+  even.forEach((row) => row.forEach((_, h) => { row[h] = [40, 12]; }));
+  assert.equal(halvesOf(even).verdict, 'same');
+  const small = blank();
+  small[0][0] = [10, 1]; small[0][8] = [10, 9];
+  assert.equal(halvesOf(small).verdict, 'few'); // 10 calls a side is too few to say
+  const morning = blank();
+  morning.forEach((row) => row.forEach((_, h) => { row[h] = [40, h < 4 ? 20 : 8]; }));
+  assert.equal(halvesOf(morning).verdict, 'am');
+});
+
+test('on the real sheet, after noon is clearly ahead of before noon', () => {
+  const s = summarize(standardize(new Map(Object.entries(baseline.byOwner))));
+  const h = s.blocks.halves;
+  assert.equal(h.verdict, 'pm');
+  assert.ok(h.pm.rate > h.am.rate + 0.02);
+  assert.ok(h.lift > 0.1 && h.lift < 0.4);
 });

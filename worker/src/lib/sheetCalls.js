@@ -48,8 +48,11 @@ export function classifySheetResult(comment) {
     || /\bv[ .,]*m\b/.test(text) || /^(na|n\/a)\b/.test(text) || /\blefta\b/.test(text) || /\bleft av\b/.test(text)) {
     return "missed";
   }
-  // Someone picked up and said something about the business, or hung up.
-  if (/\b(pharmacy|pharma|qualified|ort|cgm|interested|ni|hung ?up|hanged up|gk|gatekeeper|cb|call ?back|clinic|dme|doctor|physician|therapist|home health|respiratory|cpap|prosthe\w*|medicare|part d|insurance|workers comp|va|dropship|oxygen|rx|compounding|long term care|agency|spoke|owner|manager|receptionist|operator|dnc|english|spanish|rude|pain medicine|sounds)\b/.test(text)) return "answered";
+  // Someone picked up and talked, or hung up. Words that only say what kind of business it is ("Pharmacy", "Clinic", "Doctor Office",
+  // "Not Qualified") are left out on purpose: they can be written from a website or a list without anyone answering, so they say
+  // nothing about whether a call was picked up. They made the sheet look as if 53% of calls were answered; the real figure is
+  // nearer a quarter.
+  if (/\b(interested|ni|hung ?up|hanged up|hungup|gk|gatekeeper|cb|call ?back|ort|cgm|dme|medicare|part d|dropship|spoke|owner|manager|receptionist|operator|dnc|english|spanish|rude|not here|sounds)\b/.test(text)) return "answered";
   return null; // "dir", "directory", and anything else that does not say whether someone picked up
 }
 

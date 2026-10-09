@@ -170,6 +170,47 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-09 — Best times to call, third version: one clear finding, and a stricter meaning of "picked up"
+
+### Objective
+
+The card was still not useful: every window sat in the same range, so the grid and then the map of windows told nobody what to do.
+Find out what the sheet really supports and make the card say that, plainly.
+
+### Actions Completed
+
+- **A stricter meaning of "picked up"** (`worker/src/lib/sheetCalls.js`): the first version counted comments like "Pharmacy",
+  "Clinic", "Doctor Office" and "Not Qualified" as someone answering. Those say what kind of business it is and can be written
+  from a list or a website without a call being picked up, and they made it look as if 53% of calls were answered. They are now
+  left out; "picked up" means someone talked or hung up (not interested, hung up, gatekeeper, callback, "no CGM/ORT", and so on).
+  3,615 calls count, and 28% of them were picked up.
+- **What holds up** (checked with a regression that allows for each rep's logging style, the time of day, the weekday, the time zone,
+  the contact's position and the business type): calls after noon (the lead's local time) are picked up about 1.3 times as often
+  as calls before noon (z = 3.3; before noon about 26 in 100, after noon about 30, roughly 17% more pick-ups), and three of the
+  four busiest reps show it on their own. Splitting finer (8 to 10 against 10 to 12, or 12 to 2 against 2 to 5) and the weekday
+  show nothing beyond chance, and the earlier "Monday and Tuesday afternoons" and "Friday is slow" findings were noise.
+- **The card** (`docs/besttimes.js`) now gives one recommendation ("Call after noon, the lead's time", with the numbers), two bars
+  (before and after noon), which time zones are before or after noon right now and, for those still before noon, when they reach it
+  on your own clock, and a note that the day of the week makes no real difference. The day-by-day and hour-by-hour numbers are
+  folded away with a warning that single squares are mostly chance. If the data does not separate the halves it says "Time of day
+  makes little difference so far" rather than inventing a pattern. "Mine" shows your own calls only once they show a clear
+  difference themselves, otherwise the team's, and says so.
+- **Today's call order** (`docs/today.js`): among the leads that are open right now, those that are after noon where they are come
+  first. It changes only when the data clearly separates the halves.
+- **Worker** (`worker/src/lib/bestTimes.js`): a before/after-noon test (two-proportion z-test at 95%) alongside the earlier
+  windows. Tests: all pass.
+- Other things the sheet shows that are about who is called, not when, and were not built into the card: pharmacies and
+  prosthetic/orthotic offices pick up about 3 times as often as DME suppliers, presidents more than managers, and one rep's results
+  are far more often logged as picked up than another's.
+
+### Database / System Result
+
+- No SQL. Worker redeployed. The counts file was rebuilt with the stricter meaning (`worker/src/data/bestTimesBaseline.js`).
+
+### Safety Status
+
+- Counts only; the sheet itself is not in the repository. Manual look required.
+
 ## 2026-10-09 — Best times to call: add the earlier calling sheet (Last Called + Comments)
 
 ### Objective

@@ -118,6 +118,30 @@ export const PARTS = [
 export const BLOCK_MIN = 60; // calls in a block before it may be called strong or weak
 export const BLOCK_Z = 1.28; // about 90% sure, one way
 
+// The one difference that holds up in the data: calls before noon against calls after noon (the lead's local time). Tested with a
+// two-proportion z-test at 95%, after the rep-style correction; a finer split (which hour, which day) is mostly noise.
+export const NOON = 12;
+export const HALF_Z = 1.96;
+export function halvesOf(grid) {
+  const half = (test) => {
+    let n = 0;
+    let a = 0;
+    grid.forEach((row) => row.forEach(([c, x], h) => { if (test(FIRST_HOUR + h)) { n += c; a += x; } }));
+    return { calls: n, answered: a, rate: n ? a / n : null };
+  };
+  const am = half((hour) => hour < NOON);
+  const pm = half((hour) => hour >= NOON);
+  let verdict = "same";
+  if (am.calls >= BLOCK_MIN && pm.calls >= BLOCK_MIN) {
+    const pooled = (am.answered + pm.answered) / (am.calls + pm.calls);
+    const z = (pm.rate - am.rate) / Math.sqrt(pooled * (1 - pooled) * (1 / am.calls + 1 / pm.calls));
+    verdict = z >= HALF_Z ? "pm" : z <= -HALF_Z ? "am" : "same";
+  } else {
+    verdict = "few";
+  }
+  return { am, pm, verdict, lift: am.rate && pm.rate ? pm.rate / am.rate - 1 : null };
+}
+
 export function blocksOf(grid) {
   let calls = 0;
   let answered = 0;
@@ -135,10 +159,28 @@ export function blocksOf(grid) {
     }
     return { day, part: part.label, calls: n, answered: a, rate, verdict };
   }));
+  const verdictOf = (n, a) => {
+    if (n < BLOCK_MIN) return "few";
+    const [lo, hi] = wilsonInterval(n, a, BLOCK_Z);
+    return lo > overall ? "strong" : hi < overall ? "weak" : "typical";
+  };
+  // Each part of the day over the whole week, and each weekday over the whole day.
+  const byPart = PARTS.map((part) => {
+    let n = 0;
+    let a = 0;
+    for (let d = 0; d < DAYS.length; d += 1) for (let hour = part.from; hour < part.to; hour += 1) { const [c, x] = grid[d][hour - FIRST_HOUR] || [0, 0]; n += c; a += x; }
+    return { label: part.label, from: part.from, to: part.to, calls: n, answered: a, rate: n ? a / n : null, verdict: verdictOf(n, a) };
+  });
+  const days = DAYS.map((day, d) => {
+    let n = 0;
+    let a = 0;
+    grid[d].forEach(([c, x]) => { n += c; a += x; });
+    return { day, calls: n, answered: a, rate: n ? a / n : null, verdict: verdictOf(n, a) };
+  });
   const flat = cells.flat();
   const strong = flat.filter((c) => c.verdict === "strong").sort((x, y) => y.rate - x.rate);
   const weak = flat.filter((c) => c.verdict === "weak").sort((x, y) => x.rate - y.rate);
-  return { overall, parts: PARTS.map((p) => p.label), cells, strong, weak };
+  return { overall, parts: PARTS.map((p) => p.label), cells, strong, weak, byPart, days, halves: halvesOf(grid) };
 }
 
 // People log results differently: one rep writes "pharmacy" or "not qualified" whenever someone picks up, another writes only
