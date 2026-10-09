@@ -4349,16 +4349,34 @@ function refreshCityOptions() {
   cityOptions.innerHTML = cities.map((c) => `<option value="${c}"></option>`).join("");
 }
 
+function setSelectedStates(stateCodes) {
+  const selectedStates = new Set(stateCodes);
+  stateOptionsContainer.querySelectorAll('input[name="states"]').forEach((cb) => {
+    cb.checked = selectedStates.has(cb.value);
+  });
+  cityInput.value = ""; // A city may no longer belong to the selected states.
+  updateStateSummary();
+  refreshCityOptions();
+}
+
 stateOptionsContainer.addEventListener("change", () => {
   cityInput.value = ""; // stale city from a state that's no longer checked would silently mis-filter
   updateStateSummary();
   refreshCityOptions();
 });
+document.getElementById("stateCallWindowBtn").addEventListener("click", () => {
+  const openStates = window.dmeTime?.openStates?.();
+  if (!Array.isArray(openStates)) {
+    showToast("Calling-window states are unavailable right now", true);
+    return;
+  }
+  setSelectedStates(openStates);
+});
+document.getElementById("stateSelectAllBtn").addEventListener("click", () => {
+  setSelectedStates([...stateOptionsContainer.querySelectorAll('input[name="states"]')].map((cb) => cb.value));
+});
 document.getElementById("stateClearBtn").addEventListener("click", () => {
-  stateOptionsContainer.querySelectorAll('input[name="states"]:checked').forEach((cb) => { cb.checked = false; });
-  cityInput.value = "";
-  updateStateSummary();
-  refreshCityOptions();
+  setSelectedStates([]);
 });
 updateStateSummary();
 refreshCityOptions();

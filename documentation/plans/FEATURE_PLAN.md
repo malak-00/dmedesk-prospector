@@ -255,61 +255,21 @@ After the enabled taxonomy list loads on init, if any has `defaultForSearch: tru
 
 ### What
 
-In the state multiselect on the search form, visually indicate which states are currently in the **9am–5pm calling window** (local time). Passive indicator only — no auto-selection, no overriding saved searches or current selections.
+In the state multiselect on the search form, visually indicate which states are currently in the calling window (local time). The picker also offers explicit **Good time now**, **Select all**, and **Clear** actions; it never changes a saved search or current selection without the user clicking one of those actions.
 
-**UX:** State checkboxes currently in-window get a subtle green dot or tint. States outside the window are still fully selectable — just visually unmarked.
+**UX:** State checkboxes currently in-window get a subtle green dot or tint. **Good time now** replaces the checked states with the current calling-window states; states outside the window are still fully selectable. **Select all** checks every available state.
 
 ### Implementation
 
-Reuse `STATE_TO_TZ` from Feature 2 (exported from `docs/usLocations.js`).
-
-```js
-function statesInCallWindow(windowStart = 9, windowEnd = 17) {
-  const now = new Date();
-  return Object.keys(window.STATE_TO_TZ || {}).filter((state) => {
-    const h = parseInt(
-      new Intl.DateTimeFormat("en-US", {
-        timeZone: window.STATE_TO_TZ[state], hour: "numeric", hour12: false
-      }).format(now),
-      10
-    );
-    return h >= windowStart && h < windowEnd;
-  });
-}
-
-function refreshCallWindowIndicators() {
-  const inWindow = new Set(statesInCallWindow());
-  document.querySelectorAll("#stateOptions .multiselect-option").forEach((el) => {
-    const code = el.querySelector("input")?.value;
-    el.classList.toggle("in-call-window", Boolean(code && inWindow.has(code)));
-  });
-}
-```
-
-Call `refreshCallWindowIndicators()` after state options render, and again every 5 minutes:
-```js
-refreshCallWindowIndicators();
-setInterval(refreshCallWindowIndicators, 5 * 60 * 1000);
-```
-
-**CSS (`docs/style.css`):**
-```css
-.multiselect-option.in-call-window::before {
-  content: "●";
-  color: var(--score-high); /* reuse existing green token */
-  font-size: 0.55em;
-  margin-right: 0.35em;
-  vertical-align: middle;
-}
-```
+`docs/localtime.js` owns the shared calling-window policy and exposes `window.dmeTime.openStates()`. It uses each state's time zone and the established weekday, 8 AM–5 PM, lunch-hour-excluded rule. The State picker calls that method only when the user presses **Good time now**, so the picker and local-time badges cannot drift apart.
 
 ### Affected files
 
 | File | Change |
 |---|---|
-| `docs/usLocations.js` | Export `STATE_TO_TZ` as `window.STATE_TO_TZ` |
-| `docs/app.js` | `statesInCallWindow()`, `refreshCallWindowIndicators()`, `setInterval` |
-| `docs/style.css` | `.in-call-window` indicator style |
+| `docs/localtime.js` | Shared `window.dmeTime.openStates()` calling-window policy and visual indicators |
+| `docs/index.html` | State picker actions: Good time now, Select all, Clear |
+| `docs/app.js` | Explicit state-selection handlers and synchronized city options |
 
 ---
 

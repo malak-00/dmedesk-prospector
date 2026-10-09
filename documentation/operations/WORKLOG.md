@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-09 — State picker calling-window and select-all actions (frontend only)
+
+**Objective.** Let a rep explicitly select all states that are currently sensible to call, or every state, directly from the search form's State picker.
+
+**Actions Completed.** `docs/index.html` adds **Good time now** and **Select all** beside **Clear**. `docs/app.js` uses the existing `window.dmeTime.openStates()` calling-window calculation for the first action, and a shared selection helper for all three actions so the displayed summary and city choices stay synchronized. The browser cache version for `app.js` is now `v=67`. `documentation/plans/FEATURE_PLAN.md` now records the explicit-action behavior.
+
+**Database / System Result.** No Worker, Supabase, SQL, authentication, or production-data change.
+
+**Safety Status.** The controls change state only after an explicit click and do not submit or run a search. The calling-window action preserves the established weekday, 8 AM–5 PM, lunch-hour-excluded rule. Manual browser verification remains required after deployment.
+
 ## 2026-10-08 — Sheet import: statement timeouts on "Check what would happen" (frontend only)
 
 **Objective.** The check/import failed with "Failed to check lead ownership: canceling statement due to statement timeout" when the database was slow on a batch of 5.
