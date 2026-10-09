@@ -112,6 +112,8 @@
 
   function cardHtml() {
     if (!data && !failed) return "";
+    // A Worker that hasn't been updated yet sends numbers without the windows; show nothing rather than break Today.
+    if (data && !failed && !(data.team && data.team.blocks)) return "";
     const body = (() => {
       if (failed) return '<span class="muted-note">Couldn’t load this right now.</span>';
       let view = scope === "mine" && data.mine ? data.mine : data.team;
