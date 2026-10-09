@@ -46,6 +46,13 @@
   const LINE_CAP = 5; // little remarks after logging a call, per day
   const LINE_GAP = 20 * 60 * 1000;
   const ON_CALL_QUIET_MS = 10 * 60 * 1000; // after tapping a phone number, assume you're on a call
+  // Outfits for holidays that are worked out in holidays.js. A picture is used only if it has been added
+  // (avatar/bd-<name>.webp); until then she keeps her usual look and the header decorations still show.
+  const HOLIDAY_OUTFITS = {
+    armedforces: "Armed Forces Day", jan25: "25 January", sinai: "Sinai Liberation Day", june30: "30 June", july23: "23 July",
+    labour: "Labour Day", shamelnessim: "Sham El-Nessim", hijri: "Islamic New Year", mawlid: "Mawlid", easter: "Easter",
+    ramadan: "Ramadan", eid: "Eid", july4: "4th of July", mothers: "Mother's Day", stpatrick: "St. Patrick's",
+  };
   const POSE_LABELS = {
     neutral: "Hello", wave: "Wave", thumbs: "Thumbs up", party: "Party", thinking: "Thinking", sleepy: "Sleepy", note: "Note", phone: "On the phone",
     wink: "Wink", encourage: "Encouraging", halloween: "Halloween", thanksgiving: "Thanksgiving", christmas: "Christmas", newyear: "New Year",
@@ -261,11 +268,27 @@
     if (m === 2 && d >= 10 && d <= 14) return "valentine";
     return "";
   }
+  // The holiday outfit for today from holidays.js, once its picture is known to exist (checked once, only on that day,
+  // so a missing picture costs one failed request on that day rather than one on every page load).
+  const outfitState = {}; // holiday key -> "loading" | "yes" | "no"
+  function holidayOutfit() {
+    const key = window.dmeHolidays && window.dmeHolidays.active && window.dmeHolidays.active();
+    if (!key || !HOLIDAY_OUTFITS[key]) return "";
+    if (!outfitState[key]) {
+      outfitState[key] = "loading";
+      const img = new Image();
+      img.onload = () => { outfitState[key] = "yes"; POSES[key] = `bd-${key}.webp`; POSE_LABELS[key] = HOLIDAY_OUTFITS[key]; if (host) setLaunchPose(restPose()); };
+      img.onerror = () => { outfitState[key] = "no"; };
+      img.src = `${IMG}bd-${key}.webp`;
+    }
+    return outfitState[key] === "yes" ? key : "";
+  }
+
   // Her usual look today: her birthday outfit on the person's own birthday, then the season, then Friday's sunglasses,
   // then the pose this person picked in her gallery.
   const restPose = () => {
     if (occasions.some((o) => o.mine && o.kind === "birthday")) return "birthday";
-    const season = seasonPose();
+    const season = seasonPose() || holidayOutfit();
     if (season) return season;
     if (new Date().getDay() === 5) return "friday";
     const pref = read(PREF_KEY, "");

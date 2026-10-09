@@ -160,6 +160,34 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-09 — Egyptian holidays: a week of decorations, and outfits for Caro when the pictures exist
+
+### Objective
+
+Add Egypt's own days (the 6th of October and the others) to the holiday decorations, shown for the whole week around
+each, and let Caro dress up for them once the pictures are made.
+
+### Actions Completed
+
+- **Dates** (`docs/holidays.js`): 6th of October (Armed Forces Day), 25 January (Revolution and Police Day), Sinai Liberation
+  Day (25 April), Labour Day (1 May), 30 June, 23 July, Sham El-Nessim (the Monday after Coptic Easter, worked out for any
+  year), the Islamic New Year and the Mawlid (from the Islamic calendar). Each shows for three days either side, a full
+  week. They rank above Easter, Christmas and the US holidays when two overlap (so 1 to 3 July shows 30 June, not July 4th).
+  New drawings: the Egyptian flag, a pyramid and a sun, plus sets of ornaments for each day.
+- **Caro's outfits** (`docs/buddy.js`): for any holiday worked out in `holidays.js` she wears `avatar/bd-<name>.webp` when that
+  file exists, for the same week (names: armedforces, jan25, sinai, june30, july23, labour, shamelnessim, hijri, mawlid, plus
+  easter, ramadan, eid, july4, mothers, stpatrick). Until a picture is added she keeps her usual look. The check is made only
+  on the day, so a missing picture is one failed request that day, not one on every page load.
+
+### Database / System Result
+
+- Frontend only; no SQL, no Worker change. Worker tests: all pass (new: the week around each Egyptian day, Coptic Easter,
+  the Islamic dates, and a check that every holiday key has decorations).
+
+### Safety Status
+
+- Display only. Manual look at the new ornaments required (`?holiday=armedforces` previews one).
+
 ## 2026-10-09 — Holiday decorations, and two fixes found by testing in the live app
 
 ### Objective

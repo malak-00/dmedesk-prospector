@@ -1,4 +1,4 @@
-/* Small holiday decorations. Around each holiday a short string of little ornaments hangs in the empty middle of the
+/* Small holiday decorations (and the dates Caro dresses up for). Around each holiday a short string of little ornaments hangs in the empty middle of the
    header, between the logo and your name. It can't cover anything: it only uses space that is otherwise empty, never
    takes clicks, shrinks to nothing when the header needs the room, and is hidden on narrow screens. Anyone can switch
    it off from Caro's panel. Add ?holiday=halloween (or any key below) to the address to preview one.
@@ -28,6 +28,21 @@
     return { m: month, d: day };
   }
 
+  // Orthodox (Coptic) Easter Sunday in the Gregorian calendar (the Julian rule, 13 days on), as { m, d }.
+  function orthodoxEaster(year) {
+    const a = year % 4;
+    const b = year % 7;
+    const c = year % 19;
+    const d = (19 * c + 15) % 30;
+    const e = (2 * a + 4 * b - d + 34) % 7;
+    const month = Math.floor((d + e + 114) / 31);
+    const day = ((d + e + 114) % 31) + 1;
+    const gregorian = new Date(year, month - 1, day + 13);
+    return { m: gregorian.getMonth() + 1, d: gregorian.getDate() };
+  }
+
+  const shifted = (date, days) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + days, 12);
+
   // Day of the Islamic (Umm al-Qura) calendar for a local date, or null where the browser has no such calendar.
   function hijri(date) {
     try {
@@ -38,7 +53,16 @@
     } catch { return null; }
   }
 
-  const KEYS = ["eid", "ramadan", "easter", "christmas", "newyear", "halloween", "thanksgiving", "july4", "valentine", "stpatrick", "mothers"];
+  // Is a given Islamic date (month, day) within `span` days of this date?
+  function hijriNear(date, month, day, span) {
+    for (let k = -span; k <= span; k += 1) {
+      const h = hijri(shifted(date, k));
+      if (h && h.month === month && h.day === day) return true;
+    }
+    return false;
+  }
+
+  const KEYS = ["eid", "ramadan", "armedforces", "jan25", "sinai", "june30", "july23", "labour", "shamelnessim", "hijri", "mawlid", "easter", "christmas", "newyear", "halloween", "thanksgiving", "july4", "valentine", "stpatrick", "mothers"];
 
   // Which holiday (if any) the decorations should show for this date. Earlier in KEYS wins when two overlap.
   function holidayFor(date) {
@@ -51,6 +75,19 @@
     const h = hijri(date);
     if (h && ((h.month === 10 && h.day <= 3) || (h.month === 12 && h.day >= 9 && h.day <= 13))) return "eid";
     if (h && h.month === 9) return "ramadan";
+
+    // Egypt's national days and feasts: the whole week around each (three days either side).
+    const week = (m1, d1) => Math.abs(today - dayNumber(y, m1, d1)) <= 3;
+    if (week(10, 6)) return "armedforces"; // 6th of October, Armed Forces Day
+    if (week(1, 25)) return "jan25"; // 25 January Revolution and Police Day
+    if (week(4, 25)) return "sinai"; // Sinai Liberation Day
+    if (week(6, 30)) return "june30"; // 30 June Revolution
+    if (week(7, 23)) return "july23"; // 23 July Revolution Day
+    if (week(5, 1)) return "labour"; // Labour Day
+    const o = orthodoxEaster(y);
+    if (Math.abs(today - (dayNumber(y, o.m, o.d) + 1)) <= 3) return "shamelnessim"; // Sham El-Nessim, the Monday after Coptic Easter
+    if (hijriNear(date, 1, 1, 3)) return "hijri"; // Islamic New Year
+    if (hijriNear(date, 3, 12, 3)) return "mawlid"; // the Prophet's birthday (Mawlid)
 
     const e = easter(y);
     const eDay = dayNumber(y, e.m, e.d);
@@ -77,7 +114,7 @@
     return "";
   }
 
-  const api = { holidayFor, easter, KEYS };
+  const api = { holidayFor, easter, orthodoxEaster, KEYS };
   if (typeof module === "object" && module.exports) { module.exports = api; return; }
   root.dmeHolidays = api;
 
@@ -101,6 +138,9 @@
     lantern: ["fill", '<path d="M10 3h4v2h-4zM8 6h8l1.500 4-1.500 8H8L6.500 10z"/><path d="M10 18h4v3h-4z" fill="#8a6a1f"/><path d="M12 6v12M9.200 10h5.600" fill="none" stroke="#6b4e10" stroke-width="1"/>'],
     firework: ["line", '<path d="M12 3v5M12 16v5M3 12h5M16 12h5M5.600 5.600l3.500 3.500M14.900 14.900l3.500 3.500M18.400 5.600l-3.500 3.500M9.100 14.900l-3.500 3.500"/>'],
     flower: ["fill", '<circle cx="12" cy="6" r="3.500"/><circle cx="18" cy="11" r="3.500"/><circle cx="16" cy="18" r="3.500"/><circle cx="8" cy="18" r="3.500"/><circle cx="6" cy="11" r="3.500"/><circle cx="12" cy="12" r="3" fill="#f7d86b"/>'],
+    flag: ["fill", '<path d="M3 3v19" fill="none" stroke="#8a6a3a" stroke-width="1.600" stroke-linecap="round"/><rect x="3.800" y="4" width="17" height="4.300" fill="#ce1126"/><rect x="3.800" y="8.300" width="17" height="4.300" fill="#ffffff"/><rect x="3.800" y="12.600" width="17" height="4.300" fill="#1a1a1a"/><circle cx="12.300" cy="10.450" r="1.500" fill="#c8a43a"/>'],
+    pyramid: ["fill", '<path d="M12 3l10 17H2z"/><path d="M12 3v17" fill="none" stroke="#8a6a3a" stroke-width="1.200"/>'],
+    sun: ["fill", '<circle cx="12" cy="12" r="4.500"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'],
     gift: ["fill", '<rect x="4" y="10" width="16" height="11" rx="1.500"/><rect x="3" y="7" width="18" height="4" rx="1.500"/><path d="M12 7v14" fill="none" stroke="#ffffff" stroke-width="2"/><path d="M12 7c-3-4-6-2-4 0M12 7c3-4 6-2 4 0" fill="none" stroke="#ffffff" stroke-width="1.500" stroke-linecap="round"/>'],
   };
 
@@ -116,6 +156,15 @@
     ramadan: [["crescent", "#e0b84a"], ["lantern", "#e0b84a"], ["star", "#2aa7b0"], ["lantern", "#d9a21b"], ["crescent", "#e0b84a"], ["star", "#2aa7b0"], ["lantern", "#e0b84a"]],
     eid: [["crescent", "#e0b84a"], ["gift", "#2f9e63"], ["star", "#f6c945"], ["lantern", "#e0b84a"], ["gift", "#2aa7b0"], ["crescent", "#e0b84a"], ["star", "#f6c945"]],
     july4: [["star", "#d64545"], ["firework", "#4f8ff7"], ["star", "#e9eef8"], ["star", "#4f8ff7"], ["firework", "#d64545"], ["star", "#e9eef8"], ["star", "#d64545"]],
+    armedforces: [["flag", "#ce1126"], ["star", "#c8a43a"], ["firework", "#ce1126"], ["flag", "#ce1126"], ["star", "#c8a43a"], ["firework", "#e9eef8"], ["flag", "#ce1126"]],
+    jan25: [["flag", "#ce1126"], ["star", "#c8a43a"], ["sparkle", "#e9eef8"], ["flag", "#ce1126"], ["star", "#c8a43a"], ["sparkle", "#ce1126"], ["flag", "#ce1126"]],
+    sinai: [["sun", "#f0b429"], ["pyramid", "#d9b36c"], ["flag", "#ce1126"], ["star", "#2aa7b0"], ["pyramid", "#d9b36c"], ["sun", "#f0b429"], ["flag", "#ce1126"]],
+    june30: [["flag", "#ce1126"], ["firework", "#c8a43a"], ["star", "#e9eef8"], ["flag", "#ce1126"], ["firework", "#ce1126"], ["star", "#c8a43a"], ["flag", "#ce1126"]],
+    july23: [["flag", "#ce1126"], ["star", "#c8a43a"], ["firework", "#e9eef8"], ["flag", "#ce1126"], ["star", "#c8a43a"], ["firework", "#ce1126"], ["flag", "#ce1126"]],
+    labour: [["flag", "#ce1126"], ["star", "#c8a43a"], ["sparkle", "#2aa7b0"], ["flag", "#ce1126"], ["star", "#c8a43a"], ["sparkle", "#e9eef8"], ["flag", "#ce1126"]],
+    shamelnessim: [["egg", "#f4a6c8"], ["flower", "#f7d86b"], ["egg", "#8fd8c0"], ["leaf", "#4caf6a"], ["egg", "#b99be8"], ["flower", "#f4a6c8"], ["egg", "#f7d86b"]],
+    hijri: [["crescent", "#e0b84a"], ["star", "#2aa7b0"], ["lantern", "#e0b84a"], ["crescent", "#e0b84a"], ["star", "#2aa7b0"], ["lantern", "#d9a21b"], ["crescent", "#e0b84a"]],
+    mawlid: [["lantern", "#e0b84a"], ["star", "#e75a8f"], ["crescent", "#2aa7b0"], ["lantern", "#2f9e63"], ["sparkle", "#f6c945"], ["star", "#4f8ff7"], ["lantern", "#d64545"]],
     mothers: [["flower", "#f08ab4"], ["heart", "#e75a8f"], ["flower", "#f4a6c8"], ["flower", "#ff9a8b"], ["heart", "#e75a8f"], ["flower", "#f08ab4"], ["flower", "#f4a6c8"]],
   };
 
@@ -137,7 +186,7 @@
   function glyphSvg([name, colour], i) {
     const [kind, shapes] = G[name];
     const paint = kind === "fill" ? `fill="${colour}"` : `fill="none" stroke="${colour}" stroke-width="2" stroke-linecap="round"`;
-    return `<svg class="hd-glyph" style="--i:${i}" viewBox="0 0 24 24" ${paint} aria-hidden="true">${shapes}</svg>`;
+    return `<svg class="hd-glyph" style="--i:${i};color:${colour}" viewBox="0 0 24 24" ${paint} aria-hidden="true">${shapes}</svg>`;
   }
 
   function unmount() {
