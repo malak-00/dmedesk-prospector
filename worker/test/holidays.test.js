@@ -107,3 +107,22 @@ test('every holiday key has a way to be drawn', () => {
   const source = require('node:fs').readFileSync(new URL('../../docs/holidays.js', import.meta.url), 'utf8');
   for (const key of h.KEYS) assert.ok(source.includes(`${key}: [[`), `${key} has no decoration set`);
 });
+
+test('every holiday has its own look: no two sets are the same, and each uses at least three different drawings', () => {
+  const source = require('node:fs').readFileSync(new URL('../../docs/holidays.js', import.meta.url), 'utf8');
+  const block = source.slice(source.indexOf('const SETS = {') + 'const SETS = '.length, source.indexOf('};', source.indexOf('const SETS = {')) + 1);
+  const sets = new Function(`return ${block}`)();
+  const looks = new Map();
+  for (const [key, items] of Object.entries(sets)) {
+    assert.ok(new Set(items.map(([name]) => name)).size >= 3, `${key} uses fewer than three different drawings`);
+    const signature = [...new Set(items.map(([name]) => name))].sort().join(',');
+    assert.ok(!looks.has(signature), `${key} looks the same as ${looks.get(signature)}`);
+    looks.set(signature, key);
+  }
+  // the Egyptian national days in particular must differ from each other
+  const egypt = ['armedforces', 'jan25', 'sinai', 'june30', 'july23'].map((k) => new Set(sets[k].map(([n]) => n)));
+  for (let i = 0; i < egypt.length; i += 1) for (let j = i + 1; j < egypt.length; j += 1) {
+    const shared = [...egypt[i]].filter((n) => egypt[j].has(n));
+    assert.ok(shared.length <= 2, `two Egyptian days share too many drawings: ${shared.join(', ')}`);
+  }
+});

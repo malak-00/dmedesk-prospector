@@ -173,7 +173,12 @@ each, and let Caro dress up for them once the pictures are made.
   Day (25 April), Labour Day (1 May), 30 June, 23 July, Sham El-Nessim (the Monday after Coptic Easter, worked out for any
   year), the Islamic New Year and the Mawlid (from the Islamic calendar). Each shows for three days either side, a full
   week. They rank above Easter, Christmas and the US holidays when two overlap (so 1 to 3 July shows 30 June, not July 4th).
-  New drawings: the Egyptian flag, a pyramid and a sun, plus sets of ornaments for each day.
+  New drawings: the Egyptian flag, a pyramid and a sun, plus sets of ornaments for each day. The first version gave
+  the 6th of October, 25 January, Sinai, 30 June and 23 July nearly the same ornaments (flag, star, firework), so each now
+  has its own look: jets, a laurel wreath and badges for 6th of October; police badges for 25 January; mountains, waves,
+  palms and a sun for Sinai; lotus flowers for 30 June; wheat for 23 July (also a US flag for July 4th, and different
+  drawings for Thanksgiving, Valentine's, St. Patrick's, Easter, Mother's Day, Sham El-Nessim and the Islamic New Year). A test
+  now fails if two holidays have the same set of drawings or if any uses fewer than three.
 - **Caro's outfits** (`docs/buddy.js`): for any holiday worked out in `holidays.js` she wears `avatar/bd-<name>.webp` when that
   file exists, for the same week (names: armedforces, jan25, sinai, june30, july23, labour, shamelnessim, hijri, mawlid, plus
   easter, ramadan, eid, july4, mothers, stpatrick). Until a picture is added she keeps her usual look. The check is made only
