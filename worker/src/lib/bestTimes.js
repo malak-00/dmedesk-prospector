@@ -1,5 +1,5 @@
 // When do calls get answered? From the call logs the team already writes, count how often a logged call reached a
-// person, by the lead's own local weekday and hour. Pure, so it is tested without a database.
+// person, by weekday and hour in Cairo time (the team's clock), counting only calls made inside the lead's own business hours. Pure, so it is tested without a database.
 //
 // A call-log line looks like "2026-10-07 19:40 — Ana: voicemail — left a message" (the time is UTC). The first
 // part of the text, before the dash, is the result the rep picked. "Answered" means a person picked up: any result
@@ -22,8 +22,11 @@ export const STATE_TO_TZ = {};
 Object.entries(ZONES).forEach(([zone, list]) => list.split(" ").forEach((s) => { STATE_TO_TZ[s] = zone; }));
 
 export const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-export const FIRST_HOUR = 8; // 8 AM local to the lead
-export const LAST_HOUR = 16; // the 4 PM hour is the last one before 5 PM
+export const CAIRO = "Africa/Cairo";
+export const LEAD_FIRST_HOUR = 8; // calls count when it is 8 AM to 5 PM where the lead is
+export const LEAD_LAST_HOUR = 16;
+export const FIRST_HOUR = 14; // the grid's hours are Cairo time: 2 PM ...
+export const LAST_HOUR = 23; // ... to the 11 PM hour (the team's shift is 3:30 PM to 11:30 PM)
 export const HOURS = Array.from({ length: LAST_HOUR - FIRST_HOUR + 1 }, (_, i) => FIRST_HOUR + i);
 export const MIN_CELL = 4; // fewer logged calls than this in one slot is too few to call "best"
 
@@ -58,7 +61,7 @@ function localParts(timeZone, ms) {
 const emptyGrid = () => DAYS.map(() => HOURS.map(() => [0, 0]));
 
 // entries: [{ state, notes }] (one per lead). Returns { sample, team, byName } where each grid is
-// grid[day][hour] = [calls, answered], with the weekday and hour local to the lead.
+// grid[day][hour] = [calls, answered], with the weekday and hour in Cairo time.
 export function buildBestTimes(entries) {
   const team = emptyGrid();
   const byName = new Map();
@@ -70,7 +73,10 @@ export function buildBestTimes(entries) {
       if (noteKind(line.text) !== "call") continue;
       const verdict = classifyResult(line.text);
       if (!verdict) continue;
-      const { weekday, hour } = localParts(tz, Date.parse(`${line.date}T${line.time}:00Z`));
+      const ms = Date.parse(`${line.date}T${line.time}:00Z`);
+      const lead = localParts(tz, ms).hour;
+      if (lead < LEAD_FIRST_HOUR || lead > LEAD_LAST_HOUR) continue;
+      const { weekday, hour } = localParts(CAIRO, ms);
       const d = DAYS.indexOf(weekday);
       const h = hour - FIRST_HOUR;
       if (d < 0 || h < 0 || h >= HOURS.length) continue;

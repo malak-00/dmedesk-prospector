@@ -94,16 +94,16 @@ test('a logged result says whether a person answered', () => {
   assert.equal(classifyResult('Spoke to the owner about Friday'), null);
 });
 
-// 19:40 UTC on Tuesday 6 Oct 2026 is 3:40 PM Eastern (EDT) and 12:40 PM Pacific.
-test('calls are counted by the lead\'s own weekday and hour', () => {
+// 19:40 UTC on Tuesday 6 Oct 2026 is 3:40 PM Eastern (EDT) and 10:40 PM in Cairo; 17:40 UTC is 10:40 AM Pacific and 8:40 PM in Cairo.
+test('calls are counted by weekday and hour in Cairo time', () => {
   const eastern = '2026-10-06 19:40 — Ana: interested\n2026-10-06 19:50 — Ana: voicemail\n2026-10-06 19:55 — Ben: no answer';
-  const pacific = '2026-10-06 19:40 — Ana: voicemail';
+  const pacific = '2026-10-06 17:40 — Ana: voicemail';
   const out = buildBestTimes([{ state: 'NY', notes: eastern }, { state: 'CA', notes: pacific }, { state: 'ZZ', notes: eastern }]);
   assert.equal(out.sample, 4); // the unknown state is skipped
-  assert.deepEqual(out.team[1][7], [3, 1]); // Tuesday, 3 PM local (hour 15 = index 7)
-  assert.deepEqual(out.team[1][4], [1, 0]); // Tuesday, noon local (Pacific)
-  assert.deepEqual(out.byName.get('Ana')[1][7], [2, 1]);
-  assert.deepEqual(out.byName.get('Ben')[1][7], [1, 0]);
+  assert.deepEqual(out.team[1][8], [3, 1]); // Tuesday, 10 PM Cairo (hour 22 = index 8)
+  assert.deepEqual(out.team[1][6], [1, 0]); // Tuesday, 8 PM Cairo (the Pacific lead)
+  assert.deepEqual(out.byName.get('Ana')[1][8], [2, 1]);
+  assert.deepEqual(out.byName.get('Ben')[1][8], [1, 0]);
 });
 
 test('weekends and out-of-hours calls are left out', () => {
@@ -118,7 +118,7 @@ test('the best slots need enough calls, and a lucky one is not read as perfect',
   lines.push('2026-10-07 19:10 — Ana: interested'); // one answered call elsewhere: too few to rank
   const s = summarize(buildBestTimes([{ state: 'NY', notes: lines.join('\n') }]).team);
   assert.equal(s.best.length, 1);
-  assert.deepEqual([s.best[0].day, s.best[0].hour, s.best[0].calls], ['Tue', 15, MIN_CELL]);
+  assert.deepEqual([s.best[0].day, s.best[0].hour, s.best[0].calls], ['Tue', 22, MIN_CELL]);
   assert.ok(smoothed(1, 1) < 1 && smoothed(1, 1) < smoothed(10, 10));
   assert.equal(s.byDay[2].rate, 1);
 });

@@ -170,6 +170,28 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-09 — Best times to call: hours shown in Cairo time
+
+### Objective
+
+The card showed the lead's local time (mostly Eastern). The team works on Cairo time, so show that instead.
+
+### Actions Completed
+
+- `worker/src/lib/bestTimes.js`: calls are now grouped by weekday and hour in Cairo time (2 PM to the 11 PM hour, covering the 3:30 PM to
+  11:30 PM shift). Only calls made while it was 8 AM to 5 PM where the lead is are counted, as before. The Cairo clock follows Egypt's
+  daylight saving automatically.
+- `docs/besttimes.js`: row labels, the best-slot pills ("Tue 10 PM Cairo") and the footnote say Cairo time.
+- `worker/test/callInsights.test.js` updated to the Cairo hours. All tests pass.
+
+### Database / System Result
+
+- No SQL. Worker redeployed and frontend pushed.
+
+### Safety Status
+
+- Code only. Manual look required.
+
 ## 2026-10-09 — Best times to call: rolled back to the first version (calls logged in the app only)
 
 ### Objective
