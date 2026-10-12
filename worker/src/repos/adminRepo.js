@@ -24,11 +24,13 @@ function httpError(status, message) {
 const FETCH_ALL_PAGE_SIZE = 1000;
 const FETCH_ALL_MAX_PAGES = 200; // safety net (200k+ rows even at a pessimistic 1k/page cap), not an expected ceiling
 
-async function fetchAllRows(queryFactory, errorContext) {
+// byId: also order by the table's id, so paging never skips or repeats a row (not for views, which have no id).
+async function fetchAllRows(queryFactory, errorContext, byId = false) {
   const rows = [];
   let offset = 0;
   for (let page = 0; page < FETCH_ALL_MAX_PAGES; page++) {
-    const { data, error } = await queryFactory().range(offset, offset + FETCH_ALL_PAGE_SIZE - 1);
+    const query = byId ? queryFactory().order("id") : queryFactory();
+    const { data, error } = await query.range(offset, offset + FETCH_ALL_PAGE_SIZE - 1);
     if (error) throw httpError(500, `Failed to load ${errorContext}: ` + error.message);
     const batch = data || [];
     rows.push(...batch);
@@ -50,9 +52,9 @@ export async function getUserActivitySummary(supabase) {
   if (usersRes.error) throw httpError(500, "Failed to load users: " + usersRes.error.message);
 
   const [leadsRows, suggestionsRows, searchesRows] = await Promise.all([
-    fetchAllRows(() => supabase.from("leads").select("claimed_by, is_disconnected"), "leads"),
-    fetchAllRows(() => supabase.from("suggestions").select("submitted_by"), "suggestions"),
-    fetchAllRows(() => supabase.from("search_progress").select("user_id"), "search activity"),
+    fetchAllRows(() => supabase.from("leads").select("claimed_by, is_disconnected"), "leads", true),
+    fetchAllRows(() => supabase.from("suggestions").select("submitted_by"), "suggestions", true),
+    fetchAllRows(() => supabase.from("search_progress").select("user_id"), "search activity", true),
   ]);
 
   const claimedCounts = {};
@@ -844,19 +846,19 @@ export async function getTeamActivity(supabase, { weeks = 8 } = {}) {
   const since = new Date(Date.now() - (span * 7 + 7) * 86_400_000).toISOString();
   const events = await fetchAllRows(
     () => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at").eq("event_type", "claimed").gte("created_at", since),
-    "claim history");
+    "claim history", true);
 
   // meeting_at only exists once sql/020 has been run; the view still works without it.
   let leads;
   try {
-    leads = await fetchAllRows(() => supabase.from("leads").select("npi, claimed_by, is_disconnected, notes, reminder_at, meeting_at, status, status_updated_at"), "leads");
+    leads = await fetchAllRows(() => supabase.from("leads").select("npi, claimed_by, is_disconnected, notes, reminder_at, meeting_at, status, status_updated_at"), "leads", true);
   } catch {
-    leads = await fetchAllRows(() => supabase.from("leads").select("npi, claimed_by, is_disconnected, notes, reminder_at, status, status_updated_at"), "leads");
+    leads = await fetchAllRows(() => supabase.from("leads").select("npi, claimed_by, is_disconnected, notes, reminder_at, status, status_updated_at"), "leads", true);
   }
   // Taps on phone numbers (sql/029), claimed or not; none before it is installed.
   let taps = [];
   try {
-    taps = await fetchAllRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at").gte("tapped_at", since), "phone taps");
+    taps = await fetchAllRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at").gte("tapped_at", since), "phone taps", true);
   } catch { /* the counts simply have no taps */ }
   const result = buildTeamActivity({ users: usersRes.data || [], events, leads, taps, weeks: span });
   // The per-person totals the Review queues tab calls "User activity", shown here too:
@@ -880,9 +882,9 @@ export async function getFunnel(supabase, { days = 90 } = {}) {
   const columns = "claimed_by, claimed_at, status, notes, specialty, state, is_disconnected";
   let leads;
   try {
-    leads = await fetchAllRows(() => supabase.from("leads").select(columns + ", meeting_at").not("claimed_by", "is", null), "leads");
+    leads = await fetchAllRows(() => supabase.from("leads").select(columns + ", meeting_at").not("claimed_by", "is", null), "leads", true);
   } catch {
-    leads = await fetchAllRows(() => supabase.from("leads").select(columns).not("claimed_by", "is", null), "leads"); // before sql/020
+    leads = await fetchAllRows(() => supabase.from("leads").select(columns).not("claimed_by", "is", null), "leads", true); // before sql/020
   }
   return buildFunnel({ leads, users: usersRes.data || [], sinceMs: span ? Date.now() - span * 86_400_000 : 0 });
 }
@@ -905,7 +907,7 @@ export async function getLeadsForExport(supabase, { userId = "" } = {}) {
 // Every distinct spelling of a status in use, with how many leads carry it and what it should
 // probably become (see lib/statuses.js). Read-only.
 export async function getStatusCleanup(supabase) {
-  const rows = await fetchAllRows(() => supabase.from("leads").select("status"), "statuses");
+  const rows = await fetchAllRows(() => supabase.from("leads").select("status"), "statuses", true);
   const counts = new Map();
   rows.forEach((r) => { const s = String(r.status ?? "").trim(); if (s) counts.set(s, (counts.get(s) || 0) + 1); });
   return { statuses: statusCleanupRows(counts), canonical: CANONICAL_STATUSES, totalLeads: rows.length };
@@ -934,7 +936,7 @@ export async function applyStatusMerges(supabase, merges) {
   const summary = [];
   for (const { from, to } of plan) {
     if (from === to) continue;
-    const affected = await fetchAllRows(() => supabase.from("leads").select("npi").eq("status", from), `leads with status "${from}"`);
+    const affected = await fetchAllRows(() => supabase.from("leads").select("npi").eq("status", from), `leads with status "${from}"`, true);
     if (affected.length === 0) { summary.push({ from, to, leads: 0 }); continue; }
     const { error } = await supabase.from("leads").update({ status: to }).eq("status", from);
     if (error) throw httpError(500, `Failed to change "${from}" to "${to}": ` + error.message);

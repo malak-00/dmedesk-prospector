@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-12 — Admin counts: stable paging (Worker only)
+
+**Objective.** Final number check across the remaining cards.
+
+**Actions Completed.** `fetchAllRows` in `adminRepo.js` paged with no sort order, so Team activity (claims, leads, taps), User activity, the funnel and status cleanup could skip or repeat rows between pages and miscount. It now orders by id for the id-bearing tables (not for views). Checked and consistent: Today call counts include phone taps on any lead (2,058 taps in 28 days vs 1,974 team calls after de-duplicating a tap and its result), Claimed-view counts, Open leads, Controls status lights.
+
+**Database / System Result.** Read-only SELECTs only.
+
+**Safety Status.** Counting only; no writes.
+
 ## 2026-10-12 — Possible duplicates timeout fix, Compare searches removed, Best times / Controls audit
 
 **Objective.** Review queues → Possible duplicates failed with timeouts; Compare searches is no longer needed; audit Best times and Controls.
