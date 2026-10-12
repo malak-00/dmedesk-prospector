@@ -357,42 +357,41 @@ const REGISTRY_QUEUE_COLUMNS = QUEUE_COLUMNS + ", source, left_is_lead, right_is
 export const REGISTRY_PAGE_DEFAULT = 25;
 export const REGISTRY_PAGE_MAX = 100;
 
-async function getRegistryMatchReviews(supabase, { tier, offset, limit }) {
+async function getRegistryMatchReviews(supabase, { tier, after, limit }) {
   const pageSize = Math.min(Math.max(Number.parseInt(limit, 10) || REGISTRY_PAGE_DEFAULT, 1), REGISTRY_PAGE_MAX);
-  const start = Math.max(Number.parseInt(offset, 10) || 0, 0);
   const tierNumber = Number.parseInt(tier, 10);
+  const afterLeft = after && /^\d{10}$/.test(String(after.leftNpi || "")) ? String(after.leftNpi) : null;
+  const afterRight = after && /^\d{10}$/.test(String(after.rightNpi || "")) ? String(after.rightNpi) : null;
 
-  // Ordered by the primary key so Postgres can stop after one page. Ordering
-  // by tier would force it to evaluate the whole queue for every page.
-  let query = supabase
-    .from("registry_review_queue")
-    .select(REGISTRY_QUEUE_COLUMNS)
-    .order("left_npi")
-    .order("right_npi")
-    .range(start, start + pageSize); // one extra row tells us whether there is a next page
-  if (tierNumber === 2 || tierNumber === 3) query = query.eq("tier", tierNumber);
-
-  const { data, error } = await query;
+  // sql/037: pages through the candidates table in key order and only then
+  // applies the expensive "already decided" test, to one page of pairs. The
+  // registry_review_queue view applied it to every pair scanned and timed out
+  // once many groups had been merged.
+  const { data, error } = await supabase.rpc("registry_review_page", {
+    p_tier: tierNumber === 2 || tierNumber === 3 ? tierNumber : null,
+    p_after_left: afterLeft && afterRight ? afterLeft : null,
+    p_after_right: afterLeft && afterRight ? afterRight : null,
+    p_limit: pageSize,
+  });
   if (error) {
-    if (isMissingRelation(error, "registry_review_queue")) {
+    if (isMissingRpc(error) || isMissingRelation(error, "registry_match_candidates")) {
       return {
         available: false,
         scope: "registry",
         reviews: [],
-        reason: "Registry-wide matching isn't installed yet. Run sql/030_registry_identity_matching.sql, then python -m nppes_ingest --match-registry.",
+        reason: "Registry-wide matching isn't installed yet. Run sql/030, sql/036 and sql/037 in Supabase, then python -m nppes_ingest --match-registry.",
       };
     }
     throw httpError(500, "Failed to load registry matches: " + error.message);
   }
 
-  const rows = data || [];
-  const hasMore = rows.length > pageSize;
-  const reviews = await buildMatchReviews(supabase, rows.slice(0, pageSize));
-  return { available: true, scope: "registry", reviews, offset: start, limit: pageSize, hasMore };
+  const result = data || {};
+  const rows = (result.rows || []).map((row) => ({ ...row, source: "registry" }));
+  const reviews = await buildMatchReviews(supabase, rows);
+  return { available: true, scope: "registry", reviews, limit: pageSize, hasMore: result.hasMore === true, next: result.next || null };
 }
-
-export async function getMatchReviews(supabase, { scope = "leads", tier = null, offset = 0, limit = null } = {}) {
-  if (scope === "registry") return getRegistryMatchReviews(supabase, { tier, offset, limit });
+export async function getMatchReviews(supabase, { scope = "leads", tier = null, after = null, limit = null } = {}) {
+  if (scope === "registry") return getRegistryMatchReviews(supabase, { tier, after, limit });
 
   let pairs;
   try {
@@ -610,6 +609,55 @@ async function getPendingReviewsForPairs(supabase, requested) {
   return buildMatchReviews(supabase, [...rowsByKey.values()]);
 }
 
+// "Merge selected" for the All providers list. The leads path above re-reads
+// the lead queue and the registry queue view to confirm each pair is still
+// pending, which timed out on large merged groups. Here the database does the
+// whole check itself, atomically with the merge (merge_identity_pair_if_safe,
+// sql/035/036): already decided, owned by different agents, or fine.
+export async function bulkMergeRegistryPairs(supabase, { pairs, decidedBy }) {
+  if (!Array.isArray(pairs) || pairs.length === 0) throw httpError(400, "At least one pair is required");
+  if (pairs.length > 40) throw httpError(400, "A maximum of 40 pairs can be merged per request");
+
+  const requested = [];
+  const seen = new Set();
+  for (const pair of pairs) {
+    const [leftNpi, rightNpi] = canonicalReviewPair(pair?.leftNpi, pair?.rightNpi);
+    if (!/^\d{10}$/.test(leftNpi) || !/^\d{10}$/.test(rightNpi) || leftNpi === rightNpi) continue;
+    const key = `${leftNpi}:${rightNpi}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const matchedKeys = Array.isArray(pair.matchedKeys) ? pair.matchedKeys.join("+") : String(pair.matchedKeys || "");
+    requested.push({ leftNpi, rightNpi, key, tier: Number.isInteger(pair.tier) ? pair.tier : null, matchedKeys: matchedKeys || null });
+  }
+  if (requested.length === 0) throw httpError(400, "At least one valid pair is required");
+
+  // Stable order keeps two admins' overlapping batches taking locks the same way.
+  requested.sort((a, b) => a.key.localeCompare(b.key));
+  const merged = [];
+  const skipped = [];
+  const failed = [];
+  for (const pair of requested) {
+    const { data, error } = await supabase.rpc("merge_identity_pair_if_safe", {
+      p_left_npi: pair.leftNpi,
+      p_right_npi: pair.rightNpi,
+      p_decided_by: decidedBy,
+      p_reason: `Bulk merge of selected registry match${pair.matchedKeys ? ` (${pair.matchedKeys})` : ""}; no other agent owns anything in either group.`,
+      p_tier: pair.tier,
+      p_matched_keys: pair.matchedKeys,
+    });
+    const info = { leftNpi: pair.leftNpi, rightNpi: pair.rightNpi };
+    if (error) {
+      if (isMissingRpc(error)) throw httpError(503, "Bulk merge needs the latest update. Run sql/035 and sql/036 in Supabase, then try again.");
+      if (/already been decided/i.test(error.message || "")) skipped.push({ ...info, reason: "Already decided." });
+      else failed.push({ ...info, reason: error.message || "Failed to merge this pair." });
+    } else if (data && data.skipped) {
+      skipped.push({ ...info, reason: data.reason || "Not eligible." });
+    } else {
+      merged.push(info);
+    }
+  }
+  return { requested: requested.length, merged, skipped, failed };
+}
 export async function bulkMergeEligibleMatchReviews(supabase, { pairs, decidedBy }) {
   if (!Array.isArray(pairs) || pairs.length === 0) throw httpError(400, "At least one pair is required");
   if (pairs.length > 500) throw httpError(400, "A maximum of 500 pairs can be merged at once");

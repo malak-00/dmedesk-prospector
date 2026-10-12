@@ -815,12 +815,13 @@ app.post("/admin/provider-changes/resolve", async (c) => {
 
 app.get("/admin/match-reviews", async (c) => {
   requireAdmin(c.get("session"));
-  // scope=registry (sql/030) is read one page at a time: tier, offset, limit.
+  // scope=registry (sql/030, sql/037) is read one page at a time: tier, limit,
+  // and a cursor (afterLeft/afterRight) that continues after the last pair returned.
   const scope = c.req.query("scope") === "registry" ? "registry" : "leads";
   const data = await adminRepo.getMatchReviews(supabaseFor(c), {
     scope,
     tier: c.req.query("tier"),
-    offset: c.req.query("offset"),
+    after: { leftNpi: c.req.query("afterLeft"), rightNpi: c.req.query("afterRight") },
     limit: c.req.query("limit"),
   });
   return c.json(ok(data));
@@ -851,7 +852,11 @@ app.post("/admin/match-reviews/bulk-merge", async (c) => {
   const session = c.get("session");
   requireAdmin(session);
   const body = await c.req.json().catch(() => ({}));
-  const data = await adminRepo.bulkMergeEligibleMatchReviews(supabaseFor(c), {
+  // The All providers list sends scope "registry": those pairs are checked and
+  // merged inside the database (merge_identity_pair_if_safe) rather than by
+  // re-reading the review views, which time out on large groups.
+  const merge = body.scope === "registry" ? adminRepo.bulkMergeRegistryPairs : adminRepo.bulkMergeEligibleMatchReviews;
+  const data = await merge(supabaseFor(c), {
     pairs: body.pairs,
     decidedBy: session.id,
   });

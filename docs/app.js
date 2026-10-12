@@ -135,6 +135,7 @@ const state = {
   // "leads" loads the whole queue; "registry" (sql/030) is paged by the Worker.
   matchReviewsScope: "leads",
   matchReviewsHasMore: false,
+  matchReviewsCursor: null,
   matchReviewsLoading: false,
   matchReviewSelected: new Set(),
   providerChanges: null,
@@ -1146,6 +1147,7 @@ async function loadMatchReviews(silent = false, append = false) {
       // screen; the registry holds far more than anyone can review at once, so
       // "Load more" adds one page at a time beyond that.
       let loaded = append && state.matchReviews ? state.matchReviews.reviews || [] : [];
+      let cursor = append ? state.matchReviewsCursor : null;
       const target = append ? loaded.length + REGISTRY_FETCH_PAGE : REGISTRY_AUTOLOAD_CAP;
       let hasMore = true;
       state.matchReviewsLoading = true;
@@ -1154,13 +1156,20 @@ async function loadMatchReviews(silent = false, append = false) {
           const params = new URLSearchParams({
             scope: "registry",
             limit: String(Math.min(REGISTRY_FETCH_PAGE, target - loaded.length)),
-            offset: String(loaded.length),
           });
+          // A cursor, not an offset: pages can come back short and pairs leave
+          // the list as they are merged, so "how many I have" is not a position.
+          if (cursor) {
+            params.set("afterLeft", cursor.leftNpi);
+            params.set("afterRight", cursor.rightNpi);
+          }
           if (state.matchReviewsTier !== "all") params.set("tier", state.matchReviewsTier);
           const page = await apiGet("admin/match-reviews?" + params.toString());
           // The admin changed scope, tier or reloaded while this was fetching.
           if (token !== matchReviewsLoadToken) return;
-          hasMore = page.hasMore === true;
+          cursor = page.next || null;
+          state.matchReviewsCursor = cursor;
+          hasMore = page.hasMore === true && Boolean(cursor);
           loaded = [...loaded, ...(page.reviews || [])];
           state.matchReviewsHasMore = hasMore;
           state.matchReviews = { ...page, reviews: loaded };
@@ -3995,38 +4004,87 @@ async function bulkMergeSelectedMatchReviews() {
     " Each merge will be recorded with an automatic ownership-consistency reason.";
   if (!confirm(message)) return;
 
-  els.matchReviewsBulkMergeBtn.disabled = true;
-  els.matchReviewsBulkMergeBtn.textContent = `Merging 0/${eligible.length}…`;
+  const isRegistry = state.matchReviewsScope === "registry";
+  const btn = els.matchReviewsBulkMergeBtn;
+  const startedAt = Date.now();
+  const timeEl = document.getElementById("mergeAllProgressTime");
   let merged = 0;
   let skipped = 0;
+  let failedPairs = 0;
   let failedBatches = 0;
+  const finishedKeys = new Set(); // merged or already decided: leave the list without a reload
+
+  btn.disabled = true;
+  btn.textContent = `Merging 0/${eligible.length}…`;
+  document.querySelector("#mergeAllProgress .spinner").hidden = false;
+  timeEl.textContent = "0:00";
+  const clock = setInterval(() => { timeEl.textContent = formatElapsed(Date.now() - startedAt); }, 1000);
+  const showProgress = (done) => setMergeAllProgress(
+    `Merging selected pairs… ${merged.toLocaleString()} merged · ${done}/${eligible.length} done` +
+      (skipped ? ` · ${skipped} held back` : "") + (failedPairs ? ` · ${failedPairs} failed` : ""),
+    eligible.length ? done / eligible.length : null
+  );
+  showProgress(0);
+
   try {
     for (let offset = 0; offset < eligible.length; offset += BULK_MERGE_BATCH_SIZE) {
       const batch = eligible.slice(offset, offset + BULK_MERGE_BATCH_SIZE);
       try {
         const result = await apiPost("admin/match-reviews/bulk-merge", {
-          pairs: batch.map((review) => ({ leftNpi: review.leftNpi, rightNpi: review.rightNpi })),
+          scope: isRegistry ? "registry" : "leads",
+          pairs: batch.map((review) => ({
+            leftNpi: review.leftNpi,
+            rightNpi: review.rightNpi,
+            tier: review.tier,
+            matchedKeys: review.matchedKeys,
+          })),
         });
         merged += result.merged?.length || 0;
-        skipped += (result.skipped?.length || 0) + (result.failed?.length || 0);
+        skipped += result.skipped?.length || 0;
+        failedPairs += result.failed?.length || 0;
+        (result.merged || []).forEach((pair) => finishedKeys.add(`${pair.leftNpi}:${pair.rightNpi}`));
+        (result.skipped || []).filter((pair) => /already decided|no longer pending/i.test(pair.reason || "")).forEach((pair) => finishedKeys.add(`${pair.leftNpi}:${pair.rightNpi}`));
       } catch (err) {
-        // A retry is safe: pairs completed before a timeout are no longer in
-        // the pending queue and the Worker reports them as skipped.
+        // Pairs completed before a timeout are already decided; the rest stay in the list.
         failedBatches += 1;
       }
-      els.matchReviewsBulkMergeBtn.textContent = `Merging ${Math.min(offset + batch.length, eligible.length)}/${eligible.length}…`;
+      const done = Math.min(offset + batch.length, eligible.length);
+      btn.textContent = `Merging ${done}/${eligible.length}…`;
+      showProgress(done);
     }
+  } finally {
+    clearInterval(clock);
+    // Whatever happened above, the button must come back.
+    btn.disabled = false;
+    btn.textContent = "Merge selected";
     state.matchReviewSelected.clear();
+    document.querySelector("#mergeAllProgress .spinner").hidden = true;
+    setMergeAllProgress(
+      `Finished in ${formatElapsed(Date.now() - startedAt)} — ${merged.toLocaleString()} merged` +
+        (skipped ? `, ${skipped} held back` : "") + (failedPairs ? `, ${failedPairs} failed` : "") +
+        (failedBatches ? `, ${failedBatches} batch${failedBatches === 1 ? "" : "es"} timed out` : "") + ".",
+      1
+    );
     showToast(`Merged ${merged} pair${merged === 1 ? "" : "s"}.` +
-      (skipped ? ` ${skipped} skipped or failed; refresh to review them.` : "") +
-      (failedBatches ? ` ${failedBatches} batch${failedBatches === 1 ? "" : "es"} timed out or failed.` : ""));
+      (skipped ? ` ${skipped} held back or already decided.` : "") +
+      (failedPairs ? ` ${failedPairs} failed.` : "") +
+      (failedBatches ? ` ${failedBatches} batch${failedBatches === 1 ? "" : "es"} timed out or failed.` : ""),
+      failedPairs > 0 || failedBatches > 0);
+  }
+
+  // Take finished pairs off the list here instead of re-reading it: the re-read
+  // is what hung. Other pairs a merge settled stay until the list is reloaded.
+  if (isRegistry && state.matchReviews) {
+    state.matchReviews = {
+      ...state.matchReviews,
+      reviews: (state.matchReviews.reviews || []).filter((review) => !finishedKeys.has(matchReviewKey(review))),
+    };
+    renderMatchReviews();
+    loadConflicts(true).catch(() => {});
+  } else {
     await Promise.all([loadMatchReviews(true), loadConflicts(true)]);
-  } catch (err) {
-    showToast(err.message, true);
-    renderMatchReviewBulkControls(filteredMatchReviews());
   }
 }
-
 async function bookClaimedMeeting(index) {
   const lead = state.claimedLeads[index];
   if (!lead) return;

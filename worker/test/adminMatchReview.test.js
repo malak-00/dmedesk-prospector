@@ -87,38 +87,87 @@ const registryRow = (left, right) => ({
   left_is_lead: false, right_is_lead: false, first_seen_at: "2026-10-07T00:00:00Z",
 });
 
-test("registry scope reads one page, asks for one extra row, and reports hasMore", async () => {
+test("registry scope reads one page through registry_review_page and passes the cursor on", async () => {
   const { getMatchReviews } = await import("../src/repos/adminRepo.js");
-  // Page size 2 -> the Worker requests 3 rows; a 3rd row means there is a next page.
+  const calls = [];
   const supabase = fakeSupabase({
-    registry_review_queue: { data: [registryRow("1", "2"), registryRow("1", "3"), registryRow("1", "4")], error: null },
     npi_records: { data: [{ npi: "1", name: "A", address_state: "FL", authorizedofficial_firstname: "F", authorizedofficial_lastname: "S", phone: "8132526078", authorizedofficial_phone: "8137205106" }], error: null },
     leads: { data: [], error: null },
     lead_group_members: { data: [], error: null },
     app_users: { data: [], error: null },
   });
-  const result = await getMatchReviews(supabase, { scope: "registry", tier: "3", offset: "4", limit: "2" });
+  supabase.rpc = async (name, args) => {
+    calls.push([name, args]);
+    return { data: { rows: [registryRow("1", "2"), registryRow("1", "3")], hasMore: true, next: { leftNpi: "1000000001", rightNpi: "1000000003" } }, error: null };
+  };
+
+  const result = await getMatchReviews(supabase, {
+    scope: "registry", tier: "3", after: { leftNpi: "1000000000", rightNpi: "1000000002" }, limit: "2",
+  });
   assert.equal(result.scope, "registry");
   assert.equal(result.hasMore, true);
+  assert.deepEqual(result.next, { leftNpi: "1000000001", rightNpi: "1000000003" });
   assert.equal(result.reviews.length, 2);
   assert.equal(result.reviews[0].source, "registry");
   assert.equal(result.reviews[0].left.isLead, false);
   // Location and official phones are both shown so a match on either is visible.
   assert.equal(result.reviews[0].left.officialPhone, "(813) 720-5106");
-  const queueCall = supabase.calls.find((call) => call.table === "registry_review_queue");
-  assert.deepEqual(queueCall.range, [4, 6]);
-  assert.deepEqual(queueCall.filters, [["eq", "tier", 3]]);
+  assert.deepEqual(calls[0], ["registry_review_page", { p_tier: 3, p_after_left: "1000000000", p_after_right: "1000000002", p_limit: 2 }]);
+  // The slow review views are not read for this list any more.
+  assert.ok(!supabase.calls.some((call) => call.table.endsWith("_review_queue")));
 });
 
-test("registry scope caps the page size and degrades when sql/030 is missing", async () => {
+test("registry scope ignores a malformed cursor, caps the page size and degrades when sql/037 is missing", async () => {
   const { getMatchReviews, REGISTRY_PAGE_MAX } = await import("../src/repos/adminRepo.js");
-  const supabase = fakeSupabase({ registry_review_queue: { data: null, error: { code: "42P01", message: 'relation "registry_review_queue" does not exist' } } });
-  const result = await getMatchReviews(supabase, { scope: "registry", limit: "100000" });
+  const calls = [];
+  const supabase = { calls: [], rpc: async (name, args) => { calls.push(args); return { data: null, error: { code: "PGRST202", message: "Could not find the function public.registry_review_page" } }; } };
+  const result = await getMatchReviews(supabase, { scope: "registry", limit: "100000", after: { leftNpi: "1),or(1=1", rightNpi: "x" } });
   assert.equal(result.available, false);
-  assert.match(result.reason, /sql\/030/);
-  assert.deepEqual(supabase.calls[0].range, [0, REGISTRY_PAGE_MAX]);
+  assert.match(result.reason, /sql\/037/);
+  assert.equal(calls[0].p_limit, REGISTRY_PAGE_MAX);
+  assert.equal(calls[0].p_after_left, null);
+  assert.equal(calls[0].p_after_right, null);
 });
 
+test("bulk merge of registry pairs goes straight to the safe-merge function and never reads the queue views", async () => {
+  const { bulkMergeRegistryPairs } = await import("../src/repos/adminRepo.js");
+  const calls = [];
+  const supabase = {
+    from() { throw new Error("must not read a table or view"); },
+    rpc: async (name, args) => {
+      calls.push([name, args]);
+      if (args.p_right_npi === "1000000003") return { data: { skipped: true, reason: "Different agents own these NPIs or others in their groups; review manually." }, error: null };
+      if (args.p_right_npi === "1000000004") return { data: null, error: { message: "this pair has already been decided" } };
+      if (args.p_right_npi === "1000000005") return { data: null, error: { message: "boom" } };
+      return { data: { skipped: false }, error: null };
+    },
+  };
+  const result = await bulkMergeRegistryPairs(supabase, {
+    decidedBy: "admin-1",
+    pairs: [
+      { leftNpi: "1000000002", rightNpi: "1000000001", tier: 3, matchedKeys: ["official", "phone"] }, // given reversed
+      { leftNpi: "1000000001", rightNpi: "1000000003" },
+      { leftNpi: "1000000001", rightNpi: "1000000004" },
+      { leftNpi: "1000000001", rightNpi: "1000000005" },
+      { leftNpi: "1000000001", rightNpi: "1000000005" }, // duplicate
+      { leftNpi: "not-an-npi", rightNpi: "1000000001" }, // ignored
+    ],
+  });
+  assert.equal(result.requested, 4);
+  assert.equal(result.merged.length, 1);
+  assert.deepEqual(result.merged[0], { leftNpi: "1000000001", rightNpi: "1000000002" });
+  assert.equal(result.skipped.length, 2);
+  assert.equal(result.failed.length, 1);
+  assert.ok(calls.every(([name]) => name === "merge_identity_pair_if_safe"));
+  const first = calls.find(([, args]) => args.p_right_npi === "1000000002")[1];
+  assert.equal(first.p_matched_keys, "official+phone");
+  assert.equal(first.p_tier, 3);
+  assert.match(first.p_reason, /Bulk merge of selected registry match/);
+
+  await assert.rejects(() => bulkMergeRegistryPairs(supabase, { pairs: [], decidedBy: "a" }), (error) => error.status === 400);
+  const many = Array.from({ length: 41 }, (_, i) => ({ leftNpi: "1000000001", rightNpi: String(2000000000 + i) }));
+  await assert.rejects(() => bulkMergeRegistryPairs(supabase, { pairs: many, decidedBy: "a" }), (error) => error.status === 400);
+});
 test("bulk merge re-reads only the requested pairs, not a whole queue", async () => {
   const { bulkMergeEligibleMatchReviews } = await import("../src/repos/adminRepo.js");
   const rpcCalls = [];

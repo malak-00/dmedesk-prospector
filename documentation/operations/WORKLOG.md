@@ -1,5 +1,23 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-12 — "Merge selected" stuck at 498/498; the All providers list hangs (sql/037, written, not run)
+
+### Objective
+Selecting all eligible pairs in All providers and clicking Merge selected left the button on "Merging 498/498…" indefinitely.
+
+### Actions Completed
+- Cause (inferred from the code, not confirmed on the database): each batch re-read `identity_review_queue` and `registry_review_queue` to confirm the pair was pending, and when it finished the page re-read the whole list through `registry_review_queue`. Both call `identity_pair_decided()` per scanned row, which expands whole groups and is slow once many groups are merged (same cause as sql/036). The final step was silent on failure and never reset the button.
+- `sql/037_registry_review_page.sql`: `registry_review_page()` pages through `registry_match_candidates` with cheap indexed tests and applies the group-level decided check only to the returned page; paging uses a cursor (`afterLeft`/`afterRight`).
+- Worker: the registry list reads `registry_review_page`; new `bulkMergeRegistryPairs` sends each selected pair straight to `merge_identity_pair_if_safe` (max 40 per request, no queue-view reads); `/admin/match-reviews/bulk-merge` takes `scope: "registry"`.
+- Admin tab (app.js v=66): the button always recovers; shows the same progress strip as Merge all; finished pairs are removed from the on-screen list instead of re-reading it; list paging uses the cursor.
+- 229 worker tests pass (includes tests added by others). Frontend load-checked against a stub page; no browser testing.
+
+### Database / System Result
+None yet: sql/037 has not been run. Merges completed before the hang are in place.
+
+### Safety Status
+Same merge rules as sql/035-036 (refuses groups owned by different agents; honors "already decided"). Merges cannot be undone from the app. Read-only function added; no data changed.
+
 ## 2026-10-12 — Refresh keeps the tab and the Prospect results (frontend only)
 
 **Objective.** Refreshing the page sent reps back to Today and dropped the leads they had just searched.
