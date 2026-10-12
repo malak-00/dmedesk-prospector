@@ -16,10 +16,8 @@ import * as leadsRepo from "./repos/leadsRepo.js";
 import * as taxonomiesRepo from "./repos/taxonomiesRepo.js";
 import * as suggestionsRepo from "./repos/suggestionsRepo.js";
 import * as adminRepo from "./repos/adminRepo.js";
-import * as Nppes from "./services/nppes.js";
 import * as ProviderSearch from "./services/providerSearch.js";
 import * as ProviderSource from "./services/providerSource.js";
-import * as SearchCompare from "./services/searchCompare.js";
 import * as Cms from "./services/cms.js";
 import * as Foursquare from "./services/foursquare.js";
 import * as Scraper from "./services/scraper.js";
@@ -219,57 +217,6 @@ app.get("/search/nppes", async (c) => {
   criteria = await attachTaxonomyCodes(supabaseFor(c), criteria);
   const data = await ProviderSource.searchProviders(c.get("config"), supabaseFor(c), criteria);
   return c.json(ok(Object.assign({ source: ProviderSource.resolveSource(c.get("config")) }, data)));
-});
-
-// The cutover check: run one search against both copies of NPPES and show
-// what each returned. Nothing is written, and neither source is changed --
-// it exists so the switch is flipped on evidence rather than on hope.
-//
-// What it reports is coverage, not page overlap: every provider the mirror
-// returned is looked up by NPI in our own table (services/searchCompare.js).
-// Intersecting the two pages would measure ordering instead -- the sources
-// page differently, so two correct 50-row pages of the same 8,000 matches
-// can share nothing at all.
-app.get("/admin/search-compare", async (c) => {
-  requireAdmin(c.get("session"));
-  // A state alone is too broad for a rep's search but is exactly what an
-  // admin wants to compare -- "does DME Desk have Virginia?" -- and the
-  // comparison only ever reads one page.
-  let criteria = readSearchCriteria(c);
-  if (!hasAnySearchCriteria(criteria) && !criteria.state) {
-    return c.json({ success: false, status: 400, error: "Give a search to compare: a state, NPI, company name, city or specialty" }, 400);
-  }
-  criteria = await attachTaxonomyCodes(supabaseFor(c), criteria);
-  criteria = Object.assign({}, criteria, { limit: Number(c.req.query("limit")) || 50, skip: Number(c.req.query("skip")) || 0 });
-
-  const config = c.get("config");
-  const supabase = supabaseFor(c);
-  const timed = async (run) => {
-    const startedAt = Date.now();
-    try {
-      const result = await run();
-      return { ok: true, ms: Date.now() - startedAt, count: result.count, countCapped: result.countCapped === true, results: result.results };
-    } catch (err) {
-      return { ok: false, ms: Date.now() - startedAt, error: err.message, count: 0, results: [] };
-    }
-  };
-
-  const [mirror, dmedesk] = await Promise.all([
-    timed(() => Nppes.searchProviders(config, criteria)),
-    timed(() => ProviderSearch.searchProviders(supabase, criteria)),
-  ]);
-
-  const coverage = await SearchCompare.compareCoverage(supabase, mirror.results, criteria);
-
-  return c.json(ok({
-    activeSource: ProviderSource.resolveSource(config),
-    criteria: { state: criteria.state || null, city: criteria.city || null, taxonomyCode: criteria.taxonomyCode || null,
-                organizationName: criteria.organizationName || null, npi: criteria.npi || null,
-                limit: criteria.limit, skip: criteria.skip },
-    mirror: { ok: mirror.ok, error: mirror.error || null, ms: mirror.ms, count: mirror.count, countCapped: mirror.countCapped === true, returned: mirror.results.length },
-    dmedesk: { ok: dmedesk.ok, error: dmedesk.error || null, ms: dmedesk.ms, count: dmedesk.count, countCapped: dmedesk.countCapped === true, returned: dmedesk.results.length },
-    coverage,
-  }));
 });
 
 // The quality filters, sorting and text/phone lookups run in DME Desk's own

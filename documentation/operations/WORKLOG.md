@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-12 — Possible duplicates timeout fix, Compare searches removed, Best times / Controls audit
+
+**Objective.** Review queues → Possible duplicates failed with timeouts; Compare searches is no longer needed; audit Best times and Controls.
+
+**Actions Completed.** Duplicates: `identity_review_queue` took ~50 s for 8 rows (EXPLAIN ANALYZE). `identity_pair_decided()` was pushed into the candidate joins (~16,000 calls) and each call scanned 56k decisions. `sql/040_fast_review_queue.sql` rewrites the function as two index lookups (checked equal to the old one on 120 pairs, 0 mismatches) and fences the view with OFFSET 0. Compare searches: removed the Search source block from `docs/index.html`, its code in `docs/app.js` (cache v=68), the `/admin/search-compare` route and `services/searchCompare.js`. Controls: per-user Claimed count paged without an order, so rows could be skipped or repeated; now ordered by id. Best times: logic reads correctly; the sample is small (~100 logged results, mostly voicemail) so few slots reach the 4-call minimum, and free-text results such as "shutting down" are not counted as answered by design.
+
+**Database / System Result.** Read-only SELECT/EXPLAIN only so far. sql/040 is written but NOT applied.
+
+**Safety Status.** 040 changes one function body and one view definition, no data; replaces objects in place, safe to re-run. Needs the user to approve running it, then a Worker deploy and a docs push.
+
 ## 2026-10-12 — Audit of other cards: Claimed-leads total and Today meetings held (Worker only, not deployed)
 
 **Objective.** Check the remaining Admin/Today cards against the database.

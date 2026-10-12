@@ -315,12 +315,6 @@ const els = {
   claimResultHeld: document.getElementById("claimResultHeld"),
   claimResultHeldList: document.getElementById("claimResultHeldList"),
   claimResultCloseBtn: document.getElementById("claimResultCloseBtn"),
-  searchSourceSummary: document.getElementById("searchSourceSummary"),
-  compareState: document.getElementById("compareState"),
-  compareSpecialty: document.getElementById("compareSpecialty"),
-  compareSourcesBtn: document.getElementById("compareSourcesBtn"),
-  searchCompareEmpty: document.getElementById("searchCompareEmpty"),
-  searchCompareResult: document.getElementById("searchCompareResult"),
   providerChangesSummary: document.getElementById("providerChangesSummary"),
   providerChangesEmpty: document.getElementById("providerChangesEmpty"),
   providerChangesList: document.getElementById("providerChangesList"),
@@ -1003,112 +997,6 @@ function renderMatchReviews() {
   const remaining = reviews.length - visible.length;
   els.matchReviewsMoreBtn.hidden = remaining <= 0;
   els.matchReviewsMoreBtn.textContent = `Show ${Math.min(remaining, MATCH_REVIEWS_PAGE)} more (${remaining} left)`;
-}
-
-// Provider search reads either from the mirror project over HTTP or from
-// this project's own npi_records (sql/018), and NPI_SOURCE decides which.
-// This runs one search against both and shows what each returned, so the
-// switch gets flipped on evidence: a gap is almost always a provider the
-// last monthly refresh hasn't loaded, which is worth seeing before a rep
-// does.
-const SOURCE_LABELS = { mirror: "the mirror project (fakeNPI)", dmedesk: "DME Desk's own npi_records" };
-
-// Each bucket is a different answer to "why isn't this provider in our
-// results?", and only one of them is a problem.
-const COVERAGE_LABELS = {
-  covered: "in DME Desk, and this search returns them",
-  deactivated: "we have them; NPPES has since deactivated them",
-  individual: "we have them; they are a person, not an organization",
-  differentState: "we have them in a different state",
-  differentSpecialty: "we have them under a different specialty",
-  missing: "not in DME Desk at all",
-};
-
-function coverageHtml(coverage) {
-  if (!coverage || !coverage.checked) return "";
-  if (coverage.error) return `<div class="claim-result-detail">Couldn't check coverage: ${escapeHtml(coverage.error)}</div>`;
-
-  const rows = Object.keys(COVERAGE_LABELS)
-    .filter((bucket) => (coverage.counts[bucket] || 0) > 0)
-    .map((bucket) => {
-      const samples = (coverage.samples[bucket] || [])
-        .map((s) => `<div class="claim-result-detail"><span class="mono">${escapeHtml(s.npi)}</span> ${escapeHtml(s.name)}${s.ours ? ` — mirror says ${escapeHtml(s.mirror || "?")}, we hold ${escapeHtml(s.ours)}` : ""}</div>`)
-        .join("");
-      return `
-        <tr class="${bucket === "missing" ? "is-match" : ""}">
-          <th scope="row">${coverage.counts[bucket]}</th>
-          <td>${escapeHtml(COVERAGE_LABELS[bucket])}${samples}</td>
-        </tr>`;
-    })
-    .join("");
-
-  return `
-    <table class="match-review-table">
-      <thead><tr><th scope="col">Of ${coverage.checked}</th><th scope="col">Where the mirror's results are in DME Desk</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-}
-
-function renderSearchCompare(data) {
-  const row = (label, side) => `
-    <tr>
-      <th scope="row">${escapeHtml(label)}</th>
-      <td>${side.ok ? `${Number(side.count).toLocaleString()}${side.countCapped ? "+" : ""} match${side.count === 1 ? "" : "es"}` : `<span class="provider-change-old">${escapeHtml(side.error || "failed")}</span>`}</td>
-      <td class="mono">${side.ok ? `${side.returned} returned` : "—"}</td>
-      <td class="mono">${side.ms} ms</td>
-    </tr>`;
-
-  els.searchCompareEmpty.hidden = true;
-  els.searchCompareResult.innerHTML = `
-    <div class="conflict-card match-review-card">
-      <div class="conflict-card-header">
-        <div>
-          <div class="conflict-title">${data.coverage && data.coverage.coveredPercent !== null
-            ? `${data.coverage.coveredPercent}% of the mirror's results are in DME Desk and returned by this search`
-            : "Nothing to compare"}</div>
-          <div class="match-key-chips">
-            ${Object.entries(data.criteria).filter(([, v]) => v).map(([k, v]) => `<span class="match-key-chip">${escapeHtml(k)}: ${escapeHtml(String(v))}</span>`).join("")}
-          </div>
-        </div>
-      </div>
-      <table class="match-review-table">
-        <thead><tr><th scope="col">Source</th><th scope="col">Total</th><th scope="col">This page</th><th scope="col">Time</th></tr></thead>
-        <tbody>
-          ${row("Mirror (fakeNPI)", data.mirror)}
-          ${row("DME Desk", data.dmedesk)}
-        </tbody>
-      </table>
-      ${coverageHtml(data.coverage)}
-      <div class="claim-result-detail">
-        The two sources page in different orders, so the 50 rows above aren't
-        the same 50 providers. What matters is the table: only "not in DME
-        Desk at all" is a gap.
-      </div>
-    </div>`;
-}
-
-async function compareSearchSources() {
-  const params = new URLSearchParams();
-  if (els.compareState.value.trim()) params.set("state", els.compareState.value.trim());
-  if (els.compareSpecialty.value.trim()) params.set("taxonomyDescription", els.compareSpecialty.value.trim());
-  if (![...params.keys()].length) {
-    showToast("Give a state or a specialty to compare", true);
-    return;
-  }
-  els.compareSourcesBtn.disabled = true;
-  els.searchCompareEmpty.hidden = false;
-  els.searchCompareEmpty.textContent = "Running the same search against both…";
-  els.searchCompareResult.innerHTML = "";
-  try {
-    const data = await apiGet(`admin/search-compare?${params.toString()}`);
-    els.searchSourceSummary.textContent = `Searches currently read from ${SOURCE_LABELS[data.activeSource] || data.activeSource}`;
-    renderSearchCompare(data);
-  } catch (err) {
-    els.searchCompareEmpty.hidden = false;
-    els.searchCompareEmpty.textContent = "Couldn't compare: " + err.message;
-  } finally {
-    els.compareSourcesBtn.disabled = false;
-  }
 }
 
 // What the last NPPES refresh changed about leads people own (sql/015).
@@ -4674,7 +4562,6 @@ els.matchReviewsSelectAll.addEventListener("change", (e) => {
 });
 els.matchReviewsBulkMergeBtn.addEventListener("click", bulkMergeSelectedMatchReviews);
 els.matchReviewsMergeAllBtn.addEventListener("click", mergeAllEligibleRegistry);
-els.compareSourcesBtn.addEventListener("click", compareSearchSources);
 els.providerChangesList.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-provider-change]");
   if (!btn) return;

@@ -79,7 +79,7 @@ function toDTO(row, claimedCounts = {}) {
 async function claimedCountsByUser(supabase) {
   const counts = {};
   for (let offset = 0, page = 0; page < 200; page++) {
-    const { data, error } = await supabase.from("leads").select("claimed_by").eq("is_disconnected", false).not("claimed_by", "is", null).range(offset, offset + 999);
+    const { data, error } = await supabase.from("leads").select("claimed_by").eq("is_disconnected", false).not("claimed_by", "is", null).order("id").range(offset, offset + 999);
     if (error) throw httpError(500, "Failed to count claimed leads: " + error.message);
     if (!data || data.length === 0) break;
     data.forEach((row) => { counts[row.claimed_by] = (counts[row.claimed_by] || 0) + 1; });
