@@ -14,7 +14,12 @@
 // rewrites a note changes their own history; that is acceptable for a
 // leaderboard, and the view says what it counts.
 
-const LINE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(?: — (.+?))?: (.*)$/;
+// Statuses that mean a meeting was booked / held / the lead was won. Shared with the funnel.
+export const WON_STATUS = /onboard|closed.?won|\bwon\b|signed|customer/i;
+export const HELD_STATUS = /meeting held|contract|invoice|onboard|closed.?won|\bwon\b|signed/i; // later stages imply the meeting happened
+export const BOOKED_STATUS = /meeting booked|booked/i;
+
+const LINE =/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(?: — (.+?))?: (.*)$/;
 
 // A tap kept in call_taps ({ user_id, npi, tapped_at }) as a call-log style line, so it can be paired
 // with the same person's results exactly like a "Dialed" note. nameOf(user_id) is their display name.
@@ -148,12 +153,24 @@ export function buildTeamActivity({ users = [], events = [], leads = [], taps = 
       }
     }
     const parsed = parseNoteLines(lead.notes);
+    const seen = new Set();
     for (const line of parsed) {
       const rep = repFor(line.by);
       const kind = noteKind(line.text);
+      seen.add(kind);
       if (kind === "booked") bump(rep, "meetingsBooked", line.date);
       else if (kind === "held") bump(rep, "meetingsHeld", line.date);
       else if (kind === "noShow") bump(rep, "noShows", line.date);
+    }
+    // Many meetings are only recorded by setting the status (Meeting booked, Onboarded ...), with no
+    // call-log line. Count those once, on the day the status was set, for the lead's owner.
+    const owner = lead.claimed_by && reps.get(lead.claimed_by);
+    const status = String(lead.status || "").trim();
+    const day = String(lead.status_updated_at || "").slice(0, 10);
+    if (owner && day && !lead.is_disconnected) {
+      const held = HELD_STATUS.test(status) || WON_STATUS.test(status);
+      if (held && !seen.has("held")) bump(owner, "meetingsHeld", day);
+      if ((held || BOOKED_STATUS.test(status)) && !seen.has("booked")) bump(owner, "meetingsBooked", day);
     }
   }
 

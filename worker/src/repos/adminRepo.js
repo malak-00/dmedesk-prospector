@@ -849,9 +849,9 @@ export async function getTeamActivity(supabase, { weeks = 8 } = {}) {
   // meeting_at only exists once sql/020 has been run; the view still works without it.
   let leads;
   try {
-    leads = await fetchAllRows(() => supabase.from("leads").select("npi, claimed_by, is_disconnected, notes, reminder_at, meeting_at"), "leads");
+    leads = await fetchAllRows(() => supabase.from("leads").select("npi, claimed_by, is_disconnected, notes, reminder_at, meeting_at, status, status_updated_at"), "leads");
   } catch {
-    leads = await fetchAllRows(() => supabase.from("leads").select("npi, claimed_by, is_disconnected, notes, reminder_at"), "leads");
+    leads = await fetchAllRows(() => supabase.from("leads").select("npi, claimed_by, is_disconnected, notes, reminder_at, status, status_updated_at"), "leads");
   }
   // Taps on phone numbers (sql/029), claimed or not; none before it is installed.
   let taps = [];
@@ -877,7 +877,7 @@ export async function getFunnel(supabase, { days = 90 } = {}) {
   const usersRes = await supabase.from("app_users").select("id, username, display_name");
   if (usersRes.error) throw httpError(500, "Failed to load users: " + usersRes.error.message);
 
-  const columns = "claimed_by, claimed_at, status, notes, specialty, state";
+  const columns = "claimed_by, claimed_at, status, notes, specialty, state, is_disconnected";
   let leads;
   try {
     leads = await fetchAllRows(() => supabase.from("leads").select(columns + ", meeting_at").not("claimed_by", "is", null), "leads");

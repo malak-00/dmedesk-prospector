@@ -129,3 +129,17 @@ test('clearing a meeting can record that it happened or was a no-show', () => {
   assert.equal(normalizeMeetingInput({ meetingAt: '', outcome: 'something else' }).outcome, null); // anything else is a plain cancellation
   assert.equal(normalizeMeetingInput({ meetingAt: '' }).outcome, null);
 });
+
+test('meetings recorded only by status count once for the owner, and disconnected leads are left out', () => {
+  const now = new Date('2026-10-12T12:00:00Z');
+  const users = [{ id: 'u1', display_name: 'Ann' }];
+  const leads = [
+    { npi: '1', claimed_by: 'u1', status: 'Meeting Booked', status_updated_at: '2026-10-08T10:00:00Z', notes: '' },
+    { npi: '2', claimed_by: 'u1', status: 'Onboarded', status_updated_at: '2026-10-09T10:00:00Z', notes: '' },
+    { npi: '3', claimed_by: 'u1', status: 'Onboarded', status_updated_at: '2026-10-09T10:00:00Z', notes: '2026-10-09 10:00 — Ann: Meeting held' },
+    { npi: '4', claimed_by: 'u1', status: 'onboarded', is_disconnected: true, status_updated_at: '2026-10-09T10:00:00Z', notes: '' },
+  ];
+  const ann = buildTeamActivity({ users, leads, weeks: 2, now }).reps.find((r) => r.name === 'Ann');
+  assert.equal(ann.meetingsBooked.reduce((a, b) => a + b, 0), 3, 'lead 1, lead 2 and lead 3 (booked implied by held)');
+  assert.equal(ann.meetingsHeld.reduce((a, b) => a + b, 0), 2, 'lead 2 by status, lead 3 by its call-log line');
+});

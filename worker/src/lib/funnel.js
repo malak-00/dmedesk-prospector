@@ -7,11 +7,7 @@
 // also counted as having had a meeting and a call, even if nobody wrote that
 // down, so each stage is never smaller than the next and the conversion rates
 // can't go over 100%.
-import { noteKind, parseNoteLines } from "./teamActivity.js";
-
-const WON = /onboard|closed.?won|\bwon\b|signed|customer/i;
-const HELD = /meeting held|contract|invoice|onboard|closed.?won|\bwon\b|signed/i; // later stages imply the meeting happened
-const BOOKED = /meeting booked|booked/i;
+import { BOOKED_STATUS as BOOKED, HELD_STATUS as HELD, WON_STATUS as WON, noteKind, parseNoteLines } from "./teamActivity.js";
 
 export const STAGES = [
   { key: "claimed", label: "Claimed" },
@@ -55,6 +51,8 @@ export function buildFunnel({ leads = [], users = [], sinceMs = 0 } = {}) {
 
   for (const lead of leads) {
     if (!lead.claimed_by) continue; // released leads are not anyone's pipeline
+    // Disconnected leads were moved to the bin, not worked: counting them made one rep look like 859 claims.
+    if (lead.is_disconnected || String(lead.status || "").trim().toLowerCase() === "disconnected") continue;
     if (sinceMs && (Date.parse(lead.claimed_at) || 0) < sinceMs) continue;
     const stages = leadStages(lead);
     add(totals, stages);

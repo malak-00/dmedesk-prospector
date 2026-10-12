@@ -139,3 +139,15 @@ test('a dry run says what would happen and writes nothing', async () => {
   assert.deepEqual(result.blocked.map((b) => b.owners), [['Selene Myles']]);
   assert.ok(db.rpcCalls.every((c) => c.args.p_dry_run === true), 'only the dry-run form of claim_leads was called');
 });
+
+test('funnel leaves out leads that were moved to Disconnected', () => {
+  const users = [{ id: 'u1', display_name: 'Rick' }];
+  const leads = [
+    { claimed_by: 'u1', claimed_at: new Date().toISOString(), status: 'disconnected', is_disconnected: true, notes: '' },
+    { claimed_by: 'u1', claimed_at: new Date().toISOString(), status: 'Disconnected', notes: '' },
+    { claimed_by: 'u1', claimed_at: new Date().toISOString(), status: 'new', notes: '' },
+  ];
+  const f = buildFunnel({ leads, users });
+  assert.equal(f.total, 1);
+  assert.equal(f.reps[0].contacted, 0);
+});

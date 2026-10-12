@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-12 — Team activity / funnel numbers made consistent (Worker only, not deployed)
+
+**Objective.** The Admin Team activity table and the "Claimed in the last 30 days" funnel disagreed (Rick Nelson 14 vs 859 claims; 0 meetings held vs 39; 1 booked vs 53).
+
+**Actions Completed.** Diagnosed read-only against Supabase: Rick's 849 funnel "claims" are leads moved to the Disconnected bin (`is_disconnected`, no claim events), and the meetings are recorded only through the lead status, with no "Meeting held/booked" call-log line. `worker/src/lib/funnel.js` now skips disconnected leads. `worker/src/lib/teamActivity.js` also counts a meeting booked/held implied by the lead's status (once per lead, on `status_updated_at`, for the owner) when no call-log line already records it; the status patterns are now shared by both files. `adminRepo.getTeamActivity` and `getFunnel` select the extra columns. Tests added in `worker/test/teamActivity.test.js` and `pipeline.test.js`.
+
+**Database / System Result.** None: read-only SELECTs only, no SQL migration, no data change.
+
+**Safety Status.** Counting only; ownership/audit untouched. Needs a Worker deploy; manual browser check of Admin → Team activity afterwards.
+
 ## 2026-10-09 — State picker calling-window and select-all actions (frontend only)
 
 **Objective.** Let a rep explicitly select all states that are currently sensible to call, or every state, directly from the search form's State picker.
