@@ -91,7 +91,7 @@ export async function getUserActivitySummary(supabase) {
 export async function getAggregateStats(supabase) {
   const [usersRes, activeLeadsRes, disconnectedLeadsRes, suggestionsRes] = await Promise.all([
     supabase.from("app_users").select("id", { count: "exact", head: true }),
-    supabase.from("leads").select("id", { count: "exact", head: true }).eq("is_disconnected", false),
+    supabase.from("leads").select("id", { count: "exact", head: true }).eq("is_disconnected", false).not("claimed_by", "is", null), // released leads are nobody's
     supabase.from("leads").select("id", { count: "exact", head: true }).eq("is_disconnected", true),
     supabase.from("suggestions").select("id", { count: "exact", head: true }),
   ]);

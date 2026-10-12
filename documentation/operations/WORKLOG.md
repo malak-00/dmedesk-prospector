@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-12 — Audit of other cards: Claimed-leads total and Today meetings held (Worker only, not deployed)
+
+**Objective.** Check the remaining Admin/Today cards against the database.
+
+**Actions Completed.** Admin overview "Claimed leads" counted released (unowned) leads: 3,937 shown vs 2,344 actually claimed and active; `getAggregateStats` now requires `claimed_by` not null. Today "Meetings held this week" ignored meetings recorded only by status; `buildTodayView` now adds them (same rule as Team activity). Checked and found correct: per-rep Open leads (sum 2,344), User activity claimed/disconnected counts, Calls (sum of reps). Noted, not code: no lead has `meeting_at` set, so Meetings ahead / Meetings today are 0 until meetings are booked through the app.
+
+**Database / System Result.** Read-only SELECTs; no change.
+
+**Safety Status.** Counting only. Needs Worker deploy.
+
 ## 2026-10-12 — Team activity / funnel numbers made consistent (Worker only, not deployed)
 
 **Objective.** The Admin Team activity table and the "Claimed in the last 30 days" funnel disagreed (Rick Nelson 14 vs 859 claims; 0 meetings held vs 39; 1 booked vs 53).

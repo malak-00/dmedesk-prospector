@@ -3,7 +3,7 @@
 //
 //   parseListParams   the query string of GET /leads/page -> a safe, clamped description
 //   buildTodayView    the lists, numbers and nudges of the Today screen from a rep's leads
-import { allCallEvents, noteKind, parseNoteLines, tapsToLines } from "./teamActivity.js";
+import { allCallEvents, noteKind, parseNoteLines, tapsToLines, HELD_STATUS } from "./teamActivity.js";
 
 const DAY = 86_400_000;
 
@@ -132,6 +132,10 @@ export function buildTodayView(leads, opts) {
   }
   ahead.sort((a, b) => t(a.at) - t(b.at));
 
+  // Meetings recorded only by setting the status (Onboarded, Contract sent ...) have no call-log line.
+  const statusHeldWeek = leads.filter((l) => HELD_STATUS.test(String(l.status || "")) && t(l.lastUpdated) >= startOfWeekMs
+    && !parseNoteLines(l.notes).some((line) => noteKind(line.text) === "held")).length;
+
   const cap = (list, n) => list.slice(0, n);
   return {
     totals: { claimed: leads.length, touched: leads.filter((l) => !isNew(l) || String(l.notes || "").trim()).length },
@@ -145,7 +149,7 @@ export function buildTodayView(leads, opts) {
     stats: {
       callsToday: calls.filter((l) => l.at >= startOfDayMs).length,
       callsWeek: calls.filter((l) => l.at >= startOfWeekMs).length,
-      heldWeek: lines.filter((l) => l.kind === "held" && l.at >= startOfWeekMs).length,
+      heldWeek: lines.filter((l) => l.kind === "held" && l.at >= startOfWeekMs).length + statusHeldWeek,
       streak: streakOf(days, localDay(nowMs)),
     },
     pipeline: [...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 7).map(([status, count]) => ({ status, count })),
