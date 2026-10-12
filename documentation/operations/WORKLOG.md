@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-12 — Refresh keeps the tab and the Prospect results (frontend only)
+
+**Objective.** Refreshing the page sent reps back to Today and dropped the leads they had just searched.
+
+**Actions Completed.** `docs/app.js` (v=69) saves the open tab and the Prospect result pages (plus Search more bookkeeping) to sessionStorage, tagged with the signed-in username, and puts them back on reload; `docs/today.js` (v=13) lands on the saved tab instead of always Today. Sign-out clears both; a different user never sees them; a fresh sign-in still lands on Today. Results over ~3 MB are not kept; blocked or full storage just means the old behaviour.
+
+**Database / System Result.** None. No Worker or SQL change.
+
+**Safety Status.** Per-tab storage only, nothing sent anywhere. Needs a manual browser check: search, refresh, then try Claimed and Admin tabs, and sign out and in as another user.
+
 ## 2026-10-12 — Admin counts: stable paging (Worker only)
 
 **Objective.** Final number check across the remaining cards.

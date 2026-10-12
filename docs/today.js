@@ -593,8 +593,10 @@
   hooks.onSignedIn = () => {
     // Nothing loads for a temporary password until it has been changed.
     if (getSession()?.mustChangePassword) return;
-    // Land on Today after signing in, whatever the tab was before.
-    switchView("today");
+    // Land on Today after signing in, whatever the tab was before; a page refresh goes back to the tab it was on.
+    const back = window.dmeRestoreView;
+    window.dmeRestoreView = null;
+    switchView(back || "today");
   };
   const previousSignedOut = hooks.onSignedOut;
   hooks.onSignedOut = () => {

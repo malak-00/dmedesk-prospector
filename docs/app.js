@@ -595,6 +595,7 @@ async function handleLogin(evt) {
 async function handleSignOut() {
   try { await apiPost("auth/logout", {}); } catch { /* best effort */ }
   clearSession();
+  forgetSavedScreen();
   excludeKeywordsChipInput.setAll([]); // don't leave this account's chips sitting in memory for whoever signs in next
   showLogin();
 }
@@ -1406,8 +1407,78 @@ function stopAdminAutoRefresh() {
   }
 }
 
+/* ---------- Surviving a page refresh ---------- */
+// A refresh used to land on Today and drop the Prospect results. The tab and the search results are kept in
+// sessionStorage (this tab only, never shared) together with who was signed in, so a refresh puts the rep back
+// where they were. Sign-out clears both, and a different person signing in never sees them.
+const LAST_VIEW_KEY = "dmeProspectorLastView";
+const LAST_RESULTS_KEY = "dmeProspectorLastResults";
+const MAX_SAVED_RESULTS_CHARS = 3_000_000;
+
+function rememberView(view) {
+  const session = getSession();
+  if (!session) return;
+  try { sessionStorage.setItem(LAST_VIEW_KEY, JSON.stringify({ u: session.username, view })); } catch { /* storage blocked or full: a refresh just lands on Today */ }
+}
+
+function savedViewForRefresh() {
+  const session = getSession();
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(LAST_VIEW_KEY) || "null");
+    if (!session || !saved || saved.u !== session.username) return null;
+    if (!["today", "search", "claimed", "admin"].includes(saved.view)) return null;
+    if (saved.view === "admin" && !session.isAdmin) return null;
+    return saved.view;
+  } catch { return null; }
+}
+
+function persistProspectResults() {
+  const session = getSession();
+  if (!session || !state.lastSearchParams || !state.resultPages.length) return;
+  try {
+    const json = JSON.stringify({
+      u: session.username,
+      pages: state.resultPages,
+      cur: state.currentPage,
+      params: state.lastSearchParams,
+      skips: state.searchMoreVariantSkips,
+      seen: state.searchMoreSeenNpis,
+      exhausted: Boolean(state.searchExhausted),
+      rescanTried: Boolean(state.rescanTried),
+      insightsLeft: state.insightsLeft || 0,
+      excluded: state.excludedAsClaimed || 0,
+    });
+    if (json.length > MAX_SAVED_RESULTS_CHARS) sessionStorage.removeItem(LAST_RESULTS_KEY); // too big to keep: better none than a stale half
+    else sessionStorage.setItem(LAST_RESULTS_KEY, json);
+  } catch { /* storage blocked or full: the results just won't survive a refresh */ }
+}
+
+function restoreProspectResults() {
+  const session = getSession();
+  if (!session) return;
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(LAST_RESULTS_KEY) || "null");
+    if (!saved || saved.u !== session.username || !Array.isArray(saved.pages) || !saved.pages.length) return;
+    state.resultPages = saved.pages;
+    state.lastSearchParams = saved.params || null;
+    state.searchMoreVariantSkips = saved.skips || {};
+    state.searchMoreSeenNpis = saved.seen || [];
+    state.rescanTried = Boolean(saved.rescanTried);
+    state.insightsLeft = saved.insightsLeft || 0;
+    state.excludedAsClaimed = saved.excluded || 0;
+    state.currentPage = Math.min(Math.max(Number(saved.cur) || 0, 0), saved.pages.length - 1);
+    applyCurrentPage();
+    updateSearchMoreButton(Boolean(saved.exhausted));
+  } catch { /* unreadable: start with an empty Prospect page */ }
+}
+
+function forgetSavedScreen() {
+  try { sessionStorage.removeItem(LAST_VIEW_KEY); sessionStorage.removeItem(LAST_RESULTS_KEY); } catch { /* ignore */ }
+}
+
 function switchView(view) {
   state.view = view;
+  rememberView(view);
   document.querySelectorAll(".view-tabs .tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.view === view);
   });
@@ -1805,6 +1876,7 @@ async function executeSearch(params, { isMore: more = false, isRescan = false } 
     }
 
     state.lastSearchParams = params;
+    persistProspectResults();
     setStatus("ready", "Ready");
 
     // NPPES flat-out rejects some taxonomy_description values (not just
@@ -1887,6 +1959,7 @@ function goToPage(index) {
   state.selected.clear();
   state.expandedIndex = null;
   applyCurrentPage();
+  persistProspectResults();
 }
 
 function applyCurrentPage() {
@@ -2523,6 +2596,7 @@ function removeCompaniesFromProspect(companies) {
   state.selected.clear();
   state.expandedIndex = null;
   renderResults();
+  persistProspectResults();
 }
 
 async function exportSheets() {
@@ -5654,6 +5728,8 @@ document.addEventListener("keydown", (e) => {
 })();
 
 if (getSession()) {
+  window.dmeRestoreView = savedViewForRefresh(); // read by today.js when it lands the signed-in rep on a tab
+  window.addEventListener("load", restoreProspectResults); // after every script is in, so the row hooks (related chips ...) exist
   hideLogin();
   loadTaxonomyOptions(); // page was reloaded while already signed in -- this also re-applies restoreSearchFormState() once the taxonomy checkboxes exist
 } else {
