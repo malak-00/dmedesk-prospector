@@ -41,8 +41,8 @@ function top(map, limit, minClaimed = 1) {
 }
 
 // leads: rows with claimed_by, claimed_at, status, notes, meeting_at, specialty, state.
-// sinceMs: only leads claimed on or after this time; 0 or null means all of them.
-export function buildFunnel({ leads = [], users = [], sinceMs = 0 } = {}) {
+// sinceMs / untilMs: only leads claimed on or after / before these times; 0 or null means no limit.
+export function buildFunnel({ leads = [], users = [], sinceMs = 0, untilMs = 0 } = {}) {
   const names = new Map(users.map((u) => [u.id, u.display_name || u.username || "Unknown"]));
   const totals = blank();
   const byRep = new Map();
@@ -54,6 +54,7 @@ export function buildFunnel({ leads = [], users = [], sinceMs = 0 } = {}) {
     // Disconnected leads were moved to the bin, not worked: counting them made one rep look like 859 claims.
     if (lead.is_disconnected || String(lead.status || "").trim().toLowerCase() === "disconnected") continue;
     if (sinceMs && (Date.parse(lead.claimed_at) || 0) < sinceMs) continue;
+    if (untilMs && (Date.parse(lead.claimed_at) || 0) >= untilMs) continue;
     const stages = leadStages(lead);
     add(totals, stages);
 

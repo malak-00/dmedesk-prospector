@@ -694,7 +694,7 @@ app.post("/admin/statuses/merge", async (c) => {
 // Claimed -> contacted -> meeting -> onboarded, by rep, specialty and state. Admin only.
 app.get("/admin/funnel", async (c) => {
   requireAdmin(c.get("session"));
-  return c.json(ok(await adminRepo.getFunnel(supabaseFor(c), { days: c.req.query("days") })));
+  return c.json(ok(await adminRepo.getFunnel(supabaseFor(c), { days: c.req.query("days"), from: c.req.query("from"), to: c.req.query("to") })));
 });
 
 // Active claimed leads (all, or one rep's) for the admin CSV export. Admin only.
@@ -706,7 +706,7 @@ app.get("/admin/export/leads", async (c) => {
 // Calls, meetings and claims per rep, by week. Admin only.
 app.get("/admin/team-activity", async (c) => {
   requireAdmin(c.get("session"));
-  const data = await adminRepo.getTeamActivity(supabaseFor(c), { weeks: c.req.query("weeks") });
+  const data = await adminRepo.getTeamActivity(supabaseFor(c), { weeks: c.req.query("weeks"), from: c.req.query("from"), to: c.req.query("to") });
   return c.json(ok(data));
 });
 

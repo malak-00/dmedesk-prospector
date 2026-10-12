@@ -112,8 +112,18 @@ const labelOf = (iso) => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.sl
 
 const zeros = (n) => Array.from({ length: n }, () => 0);
 
-export function buildTeamActivity({ users = [], events = [], leads = [], taps = [], weeks = 8, now = new Date() } = {}) {
-  const starts = weekStartsEndingAt(now, weeks);
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+export const isDay = (s) => DAY_RE.test(String(s || "")) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
+
+// weeks: how many Monday-weeks to chart, ending with the current one. from/to (YYYY-MM-DD, UTC): count only
+// that date range instead; the chart then shows the weeks it touches (at most 26).
+export function buildTeamActivity({ users = [], events = [], leads = [], taps = [], weeks = 8, from = "", to = "", now = new Date() } = {}) {
+  const ranged = isDay(from) && isDay(to) && from <= to;
+  if (ranged) {
+    const gap = (Date.parse(`${weekStartOf(to)}T00:00:00Z`) - Date.parse(`${weekStartOf(from)}T00:00:00Z`)) / (7 * DAY_MS);
+    weeks = Math.min(26, Math.round(gap) + 1);
+  }
+  const starts = weekStartsEndingAt(ranged ? new Date(`${to}T00:00:00Z`) : now, weeks);
   const indexOfWeek = new Map(starts.map((s, i) => [s, i]));
   const nowMs = now.getTime();
 
@@ -133,6 +143,7 @@ export function buildTeamActivity({ users = [], events = [], leads = [], taps = 
   const other = blank("other", "Other / removed users", false);
 
   const bump = (rep, field, dateStr) => {
+    if (ranged && (dateStr < from || dateStr > to)) return;
     const w = indexOfWeek.get(weekStartOf(dateStr));
     if (w !== undefined) rep[field][w] += 1;
   };

@@ -143,3 +143,17 @@ test('meetings recorded only by status count once for the owner, and disconnecte
   assert.equal(ann.meetingsBooked.reduce((a, b) => a + b, 0), 3, 'lead 1, lead 2 and lead 3 (booked implied by held)');
   assert.equal(ann.meetingsHeld.reduce((a, b) => a + b, 0), 2, 'lead 2 by status, lead 3 by its call-log line');
 });
+
+test('a custom date range counts only those days and charts the weeks it touches', () => {
+  const users = [{ id: 'u1', display_name: 'Ann' }];
+  const events = [
+    { event_type: 'claimed', to_user_id: 'u1', created_at: '2026-10-05T10:00:00Z' },
+    { event_type: 'claimed', to_user_id: 'u1', created_at: '2026-10-08T10:00:00Z' },
+    { event_type: 'claimed', to_user_id: 'u1', created_at: '2026-10-12T10:00:00Z' },
+  ];
+  const r = buildTeamActivity({ users, events, from: '2026-10-06', to: '2026-10-09', now: new Date('2026-10-12T12:00:00Z') });
+  assert.equal(r.reps.find((p) => p.name === 'Ann').claims.reduce((a, b) => a + b, 0), 1, 'only the 8th is inside 6th..9th');
+  assert.equal(r.weeks.length, 1);
+  const week = buildTeamActivity({ users, events, weeks: 1, now: new Date('2026-10-12T12:00:00Z') });
+  assert.equal(week.reps.find((p) => p.name === 'Ann').claims[0], 3, 'This week = the Monday week that holds today');
+});

@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-12 — Team activity and funnel: This week and Custom dates (Worker + frontend)
+
+**Objective.** The time pickers only offered fixed spans; add This week and a custom date range.
+
+**Actions Completed.** Team activity "Show": This week, Last 4/8/12 weeks, Custom dates. Pipeline funnel: Claimed this week, 30 days, 90 days, All time, Custom dates. `/admin/team-activity` and `/admin/funnel` accept `from`/`to` (YYYY-MM-DD, UTC, at most 26 weeks); `buildTeamActivity` and `buildFunnel` filter to the range. `docs/team.js` v=9. Test added.
+
+**Database / System Result.** None; read-only queries.
+
+**Safety Status.** Counting only. Weeks start Monday (UTC), as before. Needs Worker deploy and a manual browser check of both pickers.
+
 ## 2026-10-12 — "Merge selected" stuck at 498/498; the All providers list hangs (sql/037, written, not run)
 
 ### Objective

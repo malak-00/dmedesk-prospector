@@ -2,7 +2,7 @@
 // already checked session.isAdmin (see index.js's /admin routes); nothing
 // in this file re-checks it, same trust boundary as leadsRepo's
 // listClaimedLeadsForUser.
-import { buildTeamActivity } from "../lib/teamActivity.js";
+import { buildTeamActivity, isDay } from "../lib/teamActivity.js";
 import { buildFunnel } from "../lib/funnel.js";
 import { cleanStatus, isJunkStatus, normalizeStatus, statusCleanupRows, CANONICAL_STATUSES } from "../lib/statuses.js";
 import { toLeadDTO } from "./leadsRepo.js";
@@ -886,12 +886,14 @@ export async function getSheetConflictOwners(supabase, npis) {
 // Per-rep activity for the Admin "Team activity" view: claims from the
 // ownership history, calls and meetings from the dated lines of each lead's
 // call log, and each rep's open leads right now. See lib/teamActivity.js.
-export async function getTeamActivity(supabase, { weeks = 8 } = {}) {
+export async function getTeamActivity(supabase, { weeks = 8, from = "", to = "" } = {}) {
   const span = Math.min(Math.max(Math.round(Number(weeks)) || 8, 1), 26);
   const usersRes = await supabase.from("app_users").select("id, username, display_name, is_admin");
   if (usersRes.error) throw httpError(500, "Failed to load users: " + usersRes.error.message);
 
-  const since = new Date(Date.now() - (span * 7 + 7) * 86_400_000).toISOString();
+  const ranged = isDay(from) && isDay(to) && from <= to;
+  if (ranged && (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000 > 26 * 7) throw httpError(400, "Pick at most 26 weeks");
+  const since = ranged ? new Date(Date.parse(`${from}T00:00:00Z`) - 86_400_000).toISOString() : new Date(Date.now() - (span * 7 + 7) * 86_400_000).toISOString();
   const events = await fetchAllRows(
     () => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at").eq("event_type", "claimed").gte("created_at", since),
     "claim history", true);
@@ -908,7 +910,7 @@ export async function getTeamActivity(supabase, { weeks = 8 } = {}) {
   try {
     taps = await fetchAllRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at").gte("tapped_at", since), "phone taps", true);
   } catch { /* the counts simply have no taps */ }
-  const result = buildTeamActivity({ users: usersRes.data || [], events, leads, taps, weeks: span });
+  const result = buildTeamActivity({ users: usersRes.data || [], events, leads, taps, weeks: span, from: ranged ? from : "", to: ranged ? to : "" });
   // The per-person totals the Review queues tab calls "User activity", shown here too:
   // claimed, disconnected, suggestions sent and distinct searches run. Best effort.
   try {
@@ -922,7 +924,7 @@ export async function getTeamActivity(supabase, { weeks = 8 } = {}) {
 
 // How far claimed leads get: claimed, contacted, meeting booked, meeting held, onboarded.
 // `days` limits it to leads claimed in the last N days (0 = all time). See lib/funnel.js.
-export async function getFunnel(supabase, { days = 90 } = {}) {
+export async function getFunnel(supabase, { days = 90, from = "", to = "" } = {}) {
   const span = Math.min(Math.max(Math.round(Number(days)) || 0, 0), 3650);
   const usersRes = await supabase.from("app_users").select("id, username, display_name");
   if (usersRes.error) throw httpError(500, "Failed to load users: " + usersRes.error.message);
@@ -934,6 +936,8 @@ export async function getFunnel(supabase, { days = 90 } = {}) {
   } catch {
     leads = await fetchAllRows(() => supabase.from("leads").select(columns).not("claimed_by", "is", null), "leads", true); // before sql/020
   }
+  const ranged = isDay(from) && isDay(to) && from <= to;
+  if (ranged) return buildFunnel({ leads, users: usersRes.data || [], sinceMs: Date.parse(`${from}T00:00:00Z`), untilMs: Date.parse(`${to}T00:00:00Z`) + 86_400_000 });
   return buildFunnel({ leads, users: usersRes.data || [], sinceMs: span ? Date.now() - span * 86_400_000 : 0 });
 }
 

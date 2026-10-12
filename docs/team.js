@@ -11,13 +11,18 @@
   const controls = document.getElementById("controlsPanel");
   const SEG_KEY = "dmeProspectorAdminSeg"; // "team" | "queues"
   const RANGE_KEY = "dmeProspectorTeamWeeks";
-  const RANGES = [4, 8, 12];
+  const RANGES = [1, 4, 8, 12]; // weeks; 1 is "This week"
 
   let seg = "queues";
   let weeks = 8;
   let data = null;
   let funnel = null;
-  let funnelDays = 90; // 0 = all time
+  let funnelDays = 90; // 0 = all time; "week" = since Monday; "custom" = funnelFrom..funnelTo
+  let custom = false; // Team activity: pick a date range instead of a number of weeks
+  let rangeFrom = "";
+  let rangeTo = "";
+  let funnelFrom = "";
+  let funnelTo = "";
   let funnelBy = "reps";
   let funnelError = "";
   let loading = false;
@@ -29,6 +34,13 @@
     const saved = Number(localStorage.getItem(RANGE_KEY));
     if (RANGES.includes(saved)) weeks = saved;
   } catch { /* storage blocked: defaults apply for this page view */ }
+
+  const todayUtc = () => new Date().toISOString().slice(0, 10);
+  const mondayUtc = () => {
+    const d = new Date();
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - ((d.getUTCDay() + 6) % 7))).toISOString().slice(0, 10);
+  };
+  const dateInputs = (kind, from, to) => `<span class="inline-field"><input type="date" data-team-date="${kind}-from" value="${from}" max="${todayUtc()}" aria-label="From"> <span>to</span> <input type="date" data-team-date="${kind}-to" value="${to}" max="${todayUtc()}" aria-label="To"></span>`;
 
   const sum = (list) => (list || []).reduce((a, b) => a + b, 0);
   const num = (n) => Number(n || 0).toLocaleString();
@@ -53,7 +65,7 @@
     render();
     const funnelLoaded = loadFunnel();
     try {
-      data = await apiGet("admin/team-activity", { weeks });
+      data = await apiGet("admin/team-activity", custom && rangeFrom && rangeTo ? { from: rangeFrom, to: rangeTo } : { weeks });
     } catch (err) {
       error = err.message;
     } finally {
@@ -67,7 +79,9 @@
   async function loadFunnel() {
     funnelError = "";
     try {
-      funnel = await apiGet("admin/funnel", { days: funnelDays });
+      if (funnelDays === "week") funnel = await apiGet("admin/funnel", { from: mondayUtc(), to: todayUtc() });
+      else if (funnelDays === "custom") funnel = funnelFrom && funnelTo ? await apiGet("admin/funnel", { from: funnelFrom, to: funnelTo }) : funnel;
+      else funnel = await apiGet("admin/funnel", { days: funnelDays });
     } catch (err) {
       funnelError = err.message;
     }
@@ -82,7 +96,7 @@
   };
 
   function funnelHtml() {
-    const options = [[30, "Claimed in the last 30 days"], [90, "Claimed in the last 90 days"], [0, "All time"]]
+    const options = [["week", "Claimed this week"], [30, "Claimed in the last 30 days"], [90, "Claimed in the last 90 days"], [0, "All time"], ["custom", "Custom dates\u2026"]]
       .map(([d, label]) => `<option value="${d}"${d === funnelDays ? " selected" : ""}>${label}</option>`).join("");
     let body;
     if (funnelError) body = `<div class="team-state">${escapeHtml(funnelError)}</div>`;
@@ -112,7 +126,7 @@
     }
     return `<div class="team-block team-funnel">
       <div class="funnel-head"><h4>Pipeline funnel</h4>
-        <select data-team="funnel-days" aria-label="Which leads to count">${options}</select></div>
+        <select data-team="funnel-days" aria-label="Which leads to count">${options}</select>${funnelDays === "custom" ? dateInputs("funnel", funnelFrom, funnelTo) : ""}</div>
       ${body}
       <p class="team-foot">A lead counts at every stage it has reached. Stages come from the lead's status, its booked meeting and its call log; "Onboarded" means the status says onboarded, closed won or signed. Recently claimed leads haven't had time to convert yet.</p>
     </div>`;
@@ -193,7 +207,8 @@
 
   function render() {
     if (!panel) return;
-    const rangeOptions = RANGES.map((n) => `<option value="${n}"${n === weeks ? " selected" : ""}>Last ${n} weeks</option>`).join("");
+    const rangeOptions = RANGES.map((n) => `<option value="${n}"${!custom && n === weeks ? " selected" : ""}>${n === 1 ? "This week" : `Last ${n} weeks`}</option>`).join("")
+      + `<option value="custom"${custom ? " selected" : ""}>Custom dates\u2026</option>`;
     let body;
     if (error) {
       body = `<div class="team-state">${escapeHtml(error)} <button type="button" class="link-btn" data-team="reload">Try again</button></div>`;
@@ -202,7 +217,7 @@
     } else {
       body = `
         <div class="admin-stats team-stats">
-          ${totalsRow("Calls", sum(data.totals.calls), `last ${data.weeks.length} weeks`)}
+          ${totalsRow("Calls", sum(data.totals.calls), custom && rangeFrom && rangeTo ? `${rangeFrom} to ${rangeTo}` : weeks === 1 ? "this week" : `last ${data.weeks.length} weeks`)}
           ${totalsRow("Meetings held", sum(data.totals.meetingsHeld))}
           ${totalsRow("Meetings booked", sum(data.totals.meetingsBooked))}
           ${totalsRow("Claims", sum(data.totals.claims))}
@@ -223,6 +238,7 @@
         </div>
         <div class="results-actions">
           <label class="inline-field"><span>Show</span><select data-team="range" ${loading ? "disabled" : ""}>${rangeOptions}</select></label>
+          ${custom ? dateInputs("range", rangeFrom, rangeTo) : ""}
           <button type="button" class="btn btn-ghost" data-team="reload" ${loading ? "disabled" : ""}>
             <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span>Refresh</span>
@@ -248,8 +264,22 @@
     if (by) { funnelBy = by.dataset.funnelBy; render(); }
   });
   panel?.addEventListener("change", async (e) => {
+    const dateBox = e.target.closest("[data-team-date]");
+    if (dateBox) {
+      const [kind, end] = dateBox.dataset.teamDate.split("-");
+      if (kind === "funnel") { if (end === "from") funnelFrom = dateBox.value; else funnelTo = dateBox.value; }
+      else if (end === "from") rangeFrom = dateBox.value; else rangeTo = dateBox.value;
+      const from = kind === "funnel" ? funnelFrom : rangeFrom;
+      const to = kind === "funnel" ? funnelTo : rangeTo;
+      if (!from || !to) return; // wait until both dates are picked
+      if (from > to) { showToast("The start date is after the end date", true); return; }
+      if (kind === "funnel") { funnel = null; render(); await loadFunnel(); render(); } else load();
+      return;
+    }
     if (e.target.matches('[data-team="funnel-days"]')) {
-      funnelDays = Number(e.target.value);
+      const v = e.target.value;
+      funnelDays = v === "week" || v === "custom" ? v : Number(v);
+      if (funnelDays === "custom" && !(funnelFrom && funnelTo)) { render(); return; } // dates first
       funnel = null;
       render();
       await loadFunnel();
@@ -257,6 +287,8 @@
       return;
     }
     if (!e.target.matches('[data-team="range"]')) return;
+    if (e.target.value === "custom") { custom = true; if (!(rangeFrom && rangeTo)) { render(); return; } load(); return; }
+    custom = false;
     weeks = Number(e.target.value);
     try { localStorage.setItem(RANGE_KEY, String(weeks)); } catch { /* ignore */ }
     load();
