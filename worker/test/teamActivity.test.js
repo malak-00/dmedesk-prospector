@@ -155,5 +155,5 @@ test('a custom date range counts only those days and charts the weeks it touches
   assert.equal(r.reps.find((p) => p.name === 'Ann').claims.reduce((a, b) => a + b, 0), 1, 'only the 8th is inside 6th..9th');
   assert.equal(r.weeks.length, 1);
   const week = buildTeamActivity({ users, events, weeks: 1, now: new Date('2026-10-12T12:00:00Z') });
-  assert.equal(week.reps.find((p) => p.name === 'Ann').claims[0], 3, 'This week = the Monday week that holds today');
+  assert.equal(week.reps.find((p) => p.name === 'Ann').claims[0], 1, 'This week starts Monday the 12th, so only the 12th counts');
 });
