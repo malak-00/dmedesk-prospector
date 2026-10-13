@@ -25,7 +25,7 @@
   const STATE_TO_TZ = {};
   Object.entries(ZONES).forEach(([zone, list]) => list.split(" ").forEach((s) => { STATE_TO_TZ[s] = zone; }));
 
-  const OPEN_HOUR = 8;
+  const OPEN_HOUR = 9;
   const LUNCH_START = 12;
   const LUNCH_END = 13;
   const CLOSE_HOUR = 17;
