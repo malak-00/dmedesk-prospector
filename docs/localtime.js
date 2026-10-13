@@ -34,7 +34,7 @@
   const formatters = new Map();
   function parts(timeZone, ms) {
     if (!formatters.has(timeZone)) {
-      formatters.set(timeZone, new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", hour: "numeric", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" }));
+      formatters.set(timeZone, new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" }));
     }
     const out = {};
     formatters.get(timeZone).formatToParts(new Date(ms)).forEach((p) => { out[p.type] = p.value; });
