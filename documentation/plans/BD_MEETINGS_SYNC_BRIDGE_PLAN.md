@@ -284,3 +284,59 @@ For each processed row:
 ### Step 3: Trigger & Manual Verification
 - In the spreadsheet, run `setupProspectorSyncTrigger()` to ensure the 30-minute recurring trigger is active.
 - Perform a manual test run on an unchecked row to confirm the `SYNC` checkbox flips to `TRUE` and the lead appears in Prospector under the expected sales rep.
+
+---
+
+## 8. Root Cause Diagnosis: Why the 279-Row Sync Stall Occurs
+
+When running `checkProspectorSyncStatus()` ("🔗 Check Prospector Sync"), the spreadsheet reports:
+```text
+Checked 284 valid Prospector row(s).
+⚠️ 279 row(s) need attention.
+Synced: 5
+Skipped exclusions: 5
+Pending rows: ... claim pending, status/Last Call pending
+```
+
+Analysis of `BD MEETINGS 2026/src/code.js` and the Worker backend revealed five compounding root causes:
+
+### 1. Silent Failure & Missing UI Error Surfacing
+In `syncNpiToProspector()` and `runProspectorSync_()`:
+- Missing `PROSPECTOR_WORKER_URL`, `PROSPECTOR_BOT_USERNAME`, or `PROSPECTOR_BOT_PASSWORD` logs to Apps Script `Logger.log` and silently aborts with no spreadsheet UI message.
+- `loginBot_()` catches HTTP errors, logs silently, and returns `null`.
+- When an administrator clicks `🚀 Sync Prospector Now`, the function finishes silently even if 0 rows were synced, masking authentication or configuration failures.
+
+### 2. Apps Script 6-Minute Execution Timeout (Individual Cell Writes)
+- For 280 rows, `runProspectorSync_()` invokes `sheet.getRange(rowNum, syncCol).setValue(true)` and `writeLog_(it, msg)` inside the per-chunk loop.
+- In Google Apps Script, every individual `setValue()` call incurs a separate synchronous RPC to Google Sheets (~100–250ms each).
+- 280 rows × 2 cell updates = **560 separate API round trips** (~70–140 seconds of pure Sheets API overhead), which easily hits the Apps Script 6-minute wall clock timeout and crashes mid-execution.
+
+### 3. Statement Timeouts on Large Claim Batches
+- Documented in [`2026-10-09-backend-performance-audit.md`](../reviews/2026-10-09-backend-performance-audit.md) (P1 finding): the Postgres `claim_leads` RPC performs identity grouping, locking, and multi-tier conflict matching atomically. Batches exceeding 5 leads risk PostgreSQL statement timeouts.
+- `BD MEETINGS 2026/src/code.js` chunks at `CHUNK = 10` leads. When a chunk times out, the Worker returns HTTP 500 (`statement timeout`), the chunk fails, and the script writes `Sync error:` to the log column.
+
+### 4. False-Positive "Claim Pending" on Blocked & Held Rows
+- When a lead is blocked (already owned by another sales rep) or held for admin review, the sync script deliberately leaves `SYNC` unchecked (`false`) and records the reason in the `Log` column (e.g., `Blocked: owned by ...`).
+- However, `checkProspectorSyncStatus()` checks **only** `row[col.sync - 1] === true`. It ignores the `Log` column! As a result, every blocked or held lead is perpetually classified as `claim pending`, inflating the pending count.
+
+### 5. Opener Username Discrepancies
+- If an opener in column `Opener` is missing from `PROSPECTOR_USER_FALLBACKS_` and has no `PROSPECTOR_USER_<Opener>` property in Script Properties, `dmeUser` is resolved via `PROSPECTOR_USER_DEFAULT`.
+- If `PROSPECTOR_USER_DEFAULT` is empty or the target username does not exist in `public.app_users`, the Worker rejects the batch with `HTTP 404 No user with username...`.
+
+---
+
+## 9. Sync Engine Hardening & Fix Plan
+
+1. **Batch Spreadsheet Cell Writes (Bulk Array Update)**
+   - Read the entire `SYNC` and `Log` columns into memory as 2D arrays.
+   - Update values in memory during the batch loop.
+   - Flush with two atomic calls: `range.setValues(...)` per sheet at the end of the run. Reduces 560 Sheets RPCs to 2.
+2. **Explicit User Feedback & Error Modals**
+   - In `syncNpiToProspector()`, catch top-level exceptions and display an alert (`SpreadsheetApp.getUi().alert(...)`) if credentials fail or the worker is unreachable.
+3. **Enforce Max Batch Size of 5 Leads**
+   - Constrain `CHUNK = 5` in `runProspectorSync_()` to guarantee compliance with the Postgres `claim_leads` statement-timeout safety ceiling.
+4. **Log-Aware Sync Status Check**
+   - Update `checkProspectorSyncStatus()` to check `col.log`. If a lead is marked `Blocked: owned by ...` or `Held for admin review`, count it as an active resolution rather than an untriaged `claim pending`.
+5. **Credentials & Account Verification**
+   - Confirm in `BD MEETINGS 2026` Project Settings that `PROSPECTOR_WORKER_URL`, `PROSPECTOR_BOT_USERNAME` (`bd-meetings-bot`), and `PROSPECTOR_BOT_PASSWORD` are populated.
+
