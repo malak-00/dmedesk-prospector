@@ -126,6 +126,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip taxonomy filtering entirely instead of reading public.taxonomies",
     )
 
+    filters.add_argument(
+        "--exclude-keywords",
+        default=None,
+        help="Comma-separated terms; a provider whose name contains any is not staged (case-insensitive)",
+    )
+    filters.add_argument(
+        "--exclude-keywords-file",
+        type=Path,
+        default=None,
+        help="Text file with one exclusion term per line (# comments allowed); combined with --exclude-keywords",
+    )
+
     guards = parser.add_argument_group("safety guards")
     guards.add_argument("--expect-rows", type=int, help="Expected source row count; guards against a truncated file")
     guards.add_argument(
@@ -176,6 +188,19 @@ def resolve_taxonomy_codes(args: argparse.Namespace, client: SupabaseClient | No
             "Pass --taxonomy-codes or --all-taxonomies to run offline."
         )
     return fetch_enabled_taxonomy_codes(client)
+
+
+def load_exclude_keywords(inline: str | None, path: Path | None) -> tuple[str, ...] | None:
+    """Merge --exclude-keywords and --exclude-keywords-file into one lowercase tuple."""
+    terms: list[str] = []
+    if inline:
+        terms.extend(inline.split(","))
+    if path is not None:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip() and not line.lstrip().startswith("#"):
+                terms.append(line)
+    cleaned = tuple(dict.fromkeys(t.strip().lower() for t in terms if t.strip()))
+    return cleaned or None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -265,6 +290,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {err}", flush=True)
         return 2
 
+    try:
+        exclude_keywords = load_exclude_keywords(args.exclude_keywords, args.exclude_keywords_file)
+    except OSError as err:
+        print(f"error: {err}", flush=True)
+        return 2
+
     options = IngestOptions(
         source_path=args.source,
         run_type=args.run_type,
@@ -280,6 +311,7 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         limit=args.limit,
         organizations_only=not args.include_individuals,
+        exclude_keywords=exclude_keywords,
         skip_checksum=args.skip_checksum,
     )
 

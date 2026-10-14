@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import bcrypt from 'bcryptjs';
-import { loginWith, changePassword } from '../src/lib/auth.js';
+import { loginWith, changePassword, setExcludeKeywords } from '../src/lib/auth.js';
 import { afterFailedLogin, lockMinutesLeft, MAX_FAILED_LOGINS } from '../src/lib/loginGuard.js';
 import { applyUserFlags } from '../src/lib/userGate.js';
 
@@ -107,4 +107,8 @@ test('someone with a temporary password is flagged on every request until they c
   assert.equal(applyUserFlags({ id: 'u1' }, flags).session.mustChangePassword, true);
   flags.set('u1', { isAdmin: false, disabled: false, mustChange: false });
   assert.equal(applyUserFlags({ id: 'u1' }, flags).session.mustChangePassword, false);
+});
+
+test('exclude keywords: over 4000 characters is refused (limit raised from 500)', async () => {
+  await assert.rejects(() => setExcludeKeywords(config, { id: 'u1' }, 'a'.repeat(4001)), (err) => err.status === 400 && /4000/.test(err.message));
 });

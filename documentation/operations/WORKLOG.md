@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-14 — Exclusion keywords: 4000-char cap and ingest filter (phases 1b and 2)
+
+**Objective.** Per `documentation/plans/exclusion_audit_and_filtering_plan.md`: let long exclude-keyword lists save, and stop the monthly NPPES refresh re-importing excluded providers.
+
+**Actions Completed.** `worker/src/lib/auth.js`: `MAX_EXCLUDE_KEYWORDS_LENGTH` 500 -> 4000 (column is unbounded `text`). `scripts/nppes_ingest`: new `keyword_excluded` reject reason in `validate.py`, `--exclude-keywords` / `--exclude-keywords-file` in `cli.py`, keywords recorded in the manifest filters; not applied to deactivation files. Added `exclude_keywords.example.txt` (no default list is applied; `oxygen`, `sleep`, `therapy` deliberately left out as real DME names). Tests added in `scripts/tests/test_ingest.py` and `worker/test/auth.test.js`.
+
+**Database / System Result.** None. No migration, no production run. Existing `npi_records` rows are NOT cleaned by this; that is plan phase 3 (audit first). Still open: chip box UI (1a), audit script, cleanup design (see review notes on soft-deactivation vs a separate exclusion flag). Worker needs deploy for the new cap.
+
+**Safety Status.** No destructive command, secret change or production mutation.
+
 ## 2026-10-12 — Team activity and funnel: This week and Custom dates (Worker + frontend)
 
 **Objective.** The time pickers only offered fixed spans; add This week and a custom date range.

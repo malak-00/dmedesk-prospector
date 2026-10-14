@@ -21,6 +21,7 @@ REASON_MISSING_NAME = "missing_name"
 REASON_STATE_FILTERED = "state_not_selected"
 REASON_TAXONOMY_FILTERED = "taxonomy_not_enabled"
 REASON_NOT_ORGANIZATION = "individual_provider"
+REASON_KEYWORD_EXCLUDED = "keyword_excluded"
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,7 @@ class RowValidator:
         taxonomy_codes: frozenset[str] | None = None,
         require_name: bool = True,
         organizations_only: bool = False,
+        exclude_keywords: tuple[str, ...] | None = None,
     ) -> None:
         self.states = states
         self.taxonomy_codes = taxonomy_codes
@@ -81,6 +83,9 @@ class RowValidator:
         # Search and leads only ever use organizations (NPI type 2); enabled
         # specialties like Internal Medicine are otherwise mostly individuals.
         self.organizations_only = organizations_only
+        # Same rule as search: a name containing any term (case-insensitive
+        # substring) is dropped, so refreshes don't re-import excluded providers.
+        self.exclude_keywords = tuple(t.strip().lower() for t in exclude_keywords or () if t and t.strip()) or None
         self._seen_npis: dict[str, int] = {}
 
     def check(self, provider: StagedProvider) -> Rejection | None:
@@ -104,6 +109,12 @@ class RowValidator:
 
         if self.organizations_only and provider.isorganization is False:
             return Rejection(provider.source_row_number, npi, REASON_NOT_ORGANIZATION, provider.enumerationtype or "")
+
+        if self.exclude_keywords and provider.name:
+            name_lower = provider.name.lower()
+            for term in self.exclude_keywords:
+                if term in name_lower:
+                    return Rejection(provider.source_row_number, npi, REASON_KEYWORD_EXCLUDED, term)
 
         if self.states is not None and (provider.address_state or "") not in self.states:
             return Rejection(

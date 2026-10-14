@@ -95,6 +95,7 @@ class IngestOptions:
     # The CLI turns this on by default (--include-individuals turns it off).
     organizations_only: bool = False
     skip_checksum: bool = False
+    exclude_keywords: tuple[str, ...] | None = None
 
 
 @dataclass
@@ -232,6 +233,7 @@ def run_ingest(
             "states": sorted(options.states) if options.states else None,
             "taxonomy_codes": sorted(options.taxonomy_codes) if options.taxonomy_codes else None,
             "limit": options.limit,
+            "exclude_keywords": list(options.exclude_keywords) if options.exclude_keywords else None,
             "organizations_only": options.organizations_only and options.run_type != RUN_TYPE_DEACTIVATION,
         },
     )
@@ -263,6 +265,8 @@ def run_ingest(
         require_name=options.run_type != RUN_TYPE_DEACTIVATION,
         # A deactivation row carries no entity type, so it can't be filtered.
         organizations_only=options.organizations_only and options.run_type != RUN_TYPE_DEACTIVATION,
+        # Deactivation rows carry no name, so keywords can't apply to them.
+        exclude_keywords=options.exclude_keywords if options.run_type != RUN_TYPE_DEACTIVATION else None,
     )
     mapper = _mapper_for(options.run_type)
     rejects = RejectsWriter(options.output_dir / f"{stem}.rejects.csv")

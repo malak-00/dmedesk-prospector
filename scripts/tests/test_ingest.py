@@ -359,6 +359,33 @@ class StreamingIngestTests(unittest.TestCase):
             )
             self.assertEqual([row["npi"] for row in client.staged], ["1598747552", "1881462752"])
 
+    def test_exclude_keywords_reject_matching_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FakeSupabaseClient()
+            result = run_ingest(self._options(tmp, organizations_only=True, exclude_keywords=("inocras",)), client, log=quiet)
+            self.assertNotIn("1881462752", [row["npi"] for row in client.staged])
+            self.assertEqual(result.manifest.rejections_by_reason.get("keyword_excluded"), 2)  # fixture has a duplicate INOCRAS row
+            self.assertEqual(result.manifest.filters["exclude_keywords"], ["inocras"])
+
+    def test_exclude_keywords_are_ignored_for_deactivation_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FakeSupabaseClient()
+            run_ingest(
+                self._options(tmp, source_path=DEACTIVATION_SAMPLE, run_type=RUN_TYPE_DEACTIVATION,
+                              taxonomy_codes=None, exclude_keywords=("inocras",)),
+                client, log=quiet,
+            )
+            self.assertEqual([row["npi"] for row in client.staged], ["1598747552", "1881462752"])
+
+    def test_load_exclude_keywords_merges_inline_and_file(self) -> None:
+        from nppes_ingest.cli import load_exclude_keywords
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "kw.txt"
+            path.write_text("# comment\nHospital\n\n  Lin Care Inc \n", encoding="utf-8")
+            self.assertEqual(load_exclude_keywords("Clinic, hospital", path), ("clinic", "hospital", "lin care inc"))
+            self.assertIsNone(load_exclude_keywords(None, None))
+
     def test_cli_defaults_to_organizations_only(self) -> None:
         from unittest import mock
 

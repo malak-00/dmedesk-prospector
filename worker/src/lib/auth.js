@@ -14,7 +14,7 @@ import { clearUserGate } from "./userGate.js";
 import { validatePassword } from "../repos/userAdminRepo.js";
 
 const SESSION_TTL_SECONDS = 6 * 60 * 60; // 6h, same as the old CacheService TTL
-const MAX_EXCLUDE_KEYWORDS_LENGTH = 500;
+const MAX_EXCLUDE_KEYWORDS_LENGTH = 4000;
 
 function httpError(status, message) {
   const err = new Error(message);
