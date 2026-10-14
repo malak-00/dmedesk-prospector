@@ -26,6 +26,8 @@ While [`architecture/`](../architecture/) documents the system as it currently r
   Upcoming meeting scheduler on claimed leads: opener notes, privacy protection triggers on reassignment, browser reminder badges, and Today screen meeting outcome tracking (`sql/020`).
 - **[`FEATURE_PLAN.md`](FEATURE_PLAN.md)** `[✅ Live]`  
   Five confirmed features ported from the DME Dialer: unified call mode with one-tap prospect claim on disposition click, lead local time display, shuffle queue toggle, admin default taxonomy (`sql/028`), and "9am States" calling-window indicator.
+- **[`CALL_MODE_DISPOSITION_LATENCY_FIX_PLAN.md`](CALL_MODE_DISPOSITION_LATENCY_FIX_PLAN.md)** `[📋 Approved / Ready to Implement]`  
+  Plan to eliminate disposition click latency when dialing via optimistic queue advance, single-call prospect claim enrichment, and a unified `POST /leads/disposition` endpoint.
 
 ### 3. 🏢 Lead Identity Grouping & Ownership
 - **[`MASTER_PLAN.md`](MASTER_PLAN.md)** `[🟡 In Progress Roadmap]`  
