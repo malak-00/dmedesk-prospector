@@ -68,23 +68,51 @@ function sourceTrialActive() {
   try { return localStorage.getItem(SOURCE_TRIAL_KEY) !== "off"; } catch { return true; }
 }
 
+// A request that never answers must not leave the screen waiting for ever
+// ("Claiming...", a disabled button, call mode locked): without a limit the only
+// way out was a refresh. After the limit it fails with a message instead, and
+// everything that waits on it is released by its own finally block.
+const API_GET_TIMEOUT_MS = 120000;
+const API_POST_TIMEOUT_MS = 90000;
+
+async function fetchJson(url, options, timeoutMs, isWrite) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    try {
+      return await res.json();
+    } catch {
+      // Not JSON: a gateway or network error page instead of the app's answer.
+      throw new Error(`The server sent an unexpected reply (${res.status}). Please try again in a moment.`);
+    }
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      throw new Error(isWrite
+        ? "The server didn't answer in time. It may still have gone through: check Claimed leads before trying again."
+        : "The server didn't answer in time. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function apiGet(path, params = {}) {
   // Drop undefined/null/empty entries so e.g. `state: undefined` doesn't
   // end up as the literal query string "state=undefined".
   const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""));
   const query = new URLSearchParams(clean);
   const qs = query.toString();
-  const res = await fetch(`${API_BASE_URL}/${path}${qs ? `?${qs}` : ""}`, { headers: authHeaders() });
-  return unwrap(await res.json());
+  return unwrap(await fetchJson(`${API_BASE_URL}/${path}${qs ? `?${qs}` : ""}`, { headers: authHeaders() }, API_GET_TIMEOUT_MS, false));
 }
 
 async function apiPost(path, body) {
-  const res = await fetch(`${API_BASE_URL}/${path}`, {
+  return unwrap(await fetchJson(`${API_BASE_URL}/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
-  });
-  return unwrap(await res.json());
+  }, API_POST_TIMEOUT_MS, true));
 }
 
 function unwrap(payload) {
@@ -1522,17 +1550,28 @@ function switchView(view) {
 
 /* ---------- UI helpers ---------- */
 
+// The header light is a "last thing that happened" indicator. A red "Error"
+// used to stay until the next action finished, so one failed claim looked like
+// the app was broken for as long as the tab stayed open; it now settles back.
+const STATUS_ERROR_MS = 8000;
+let statusErrorTimer = null;
+
 function setStatus(mode, text) {
+  clearTimeout(statusErrorTimer);
   els.statusDot.className = `status-dot ${mode === "ready" ? "" : mode}`;
   els.statusText.textContent = text;
+  if (mode === "error") statusErrorTimer = setTimeout(() => setStatus("ready", "Ready"), STATUS_ERROR_MS);
 }
+
+let toastTimer = null;
 
 function showToast(message, isError = false, linkUrl = null) {
   els.toast.innerHTML = linkUrl
     ? `${message} — <a href="${linkUrl}" target="_blank" rel="noopener">open sheet</a>`
     : message;
   els.toast.className = `toast visible ${isError ? "error" : ""}`;
-  setTimeout(() => { els.toast.className = "toast"; }, 5000);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { els.toast.className = "toast"; }, isError ? 8000 : 5000);
 }
 
 function escapeHtml(str) {

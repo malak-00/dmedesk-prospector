@@ -2033,3 +2033,33 @@ reviewed and pasted by hand; the Worker change is NOT yet deployed.
 No destructive command, secret change or production mutation. Still open:
 consider a larger Supabase compute size, and avoid opening
 `identity_review_candidates` in the dashboard (its plan estimates ~71 billion rows).
+
+## 2026-10-14 — Frontend: errors and waits no longer outlive the problem
+
+### Objective
+
+A rep hit an error claiming a lead and, without refreshing, stayed blocked for
+two days. Remove the ways an error or a wait could outlast its cause.
+
+### Actions Completed
+
+- `docs/app.js`: every API call now has a time limit (GET 120s, POST 90s) and
+  a non-JSON reply gives a plain message. Before, a request that never answered
+  left "Claiming...", a disabled Claim button, or call mode's busy lock in place
+  until a refresh. A timed-out write says it may still have gone through.
+- The red header "Error" status settles back to Ready after 8 seconds; before,
+  it stayed until the next successful action.
+- Error toasts last 8 seconds, and an older toast's timer can no longer hide a
+  newer one.
+- `docs/index.html`: app.js cache version 70 -> 71 so open tabs get the
+  "new version" prompt.
+
+### Database / System Result
+
+No database or Worker change. Exact cause of the two-day case is not proven
+from the code (no user log was available); these are the ways the code could
+leave a screen stuck.
+
+### Safety Status
+
+No destructive command, secret change or production mutation.
