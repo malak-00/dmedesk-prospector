@@ -2093,3 +2093,33 @@ plan improvement is expected but NOT yet measured on the live database.
 ### Safety Status
 
 No destructive command, secret change or production mutation.
+
+## 2026-10-14 — Log recheck after sql/040 and the smaller first page
+
+### Objective
+
+Check the Supabase logs after the Worker deploy and sql/040, and confirm the new index is used.
+
+### Actions Completed
+
+- Logs: no search traffic after the deploy yet (last search call 19:31 UTC, before
+  it), so failure rates are unchanged from the previous check (about 11% of
+  search-related calls since 12:00 UTC).
+- sql/040 is present in the database. Read-only EXPLAIN ANALYZE: it is used, and a
+  Florida DME page at offset 4000 dropped from ~27,000 to ~5,900 buffers, but still
+  read all 6,401 matches and sorted them (filter written as = any('{FL}')).
+  With plain equality the same page read 3,838 buffers in 7 ms, and a first page
+  of 80 read 55 buffers in 0.26 ms.
+- Added `sql/041_single_value_equality.sql` (provider_filter_sql emits equality
+  for one state / one specialty). Not run.
+- The same 5,900-buffer query took 3.5 s on one run and 0.23 s on another:
+  the database's speed varies a lot, which supports the compute-size concern.
+
+### Database / System Result
+
+Nothing changed in Supabase by the agent (read-only queries). sql/041 must be
+reviewed and pasted by hand.
+
+### Safety Status
+
+No destructive command, secret change or production mutation.

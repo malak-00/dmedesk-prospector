@@ -41,6 +41,7 @@ Required manual sequence:
 038_bad_numbers.sql              (phone numbers the team flagged as wrong or not in service, so nobody redials them)
 039_last_updated_range.sql      (the "last updated" year filter as a date range, so its index is used)
 040_search_page_index.sql       (one index so a search page reads only its own rows instead of the whole state)
+041_single_value_equality.sql  (one state / specialty as plain equality so the page index stops early)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -107,6 +108,7 @@ in `003`); save their output with the run.
 | `038_bad_numbers.sql` | Creates `bad_numbers` (one row per lead and 10-digit number flagged in call mode; taken back by setting `cleared_at`). Rerun-safe, touches nothing existing | **Not yet run. Until it is, call mode works as before and flagging a number says what it needs** |
 | `039_last_updated_range.sql` | Replaces only `provider_filter_sql()` so the year filter is `lastupdated >= Jan 1 and < next Jan 1` instead of `to_char(...)` on every row. Same rows match. No table, index or data touched; rerun-safe | **Not yet run. Searches work as before until it is, just slower on "Updated in YYYY"** |
 | `040_search_page_index.sql` | Creates `idx_npi_records_active_state_taxonomy` (state, specialty, NPI; active organisations) and refreshes statistics on `npi_records`. No table or data changed; rerun-safe; takes about a second and briefly blocks writes to `npi_records` | **Not yet run. Searches work as before, just reading far more per page** |
+| `041_single_value_equality.sql` | Replaces only `provider_filter_sql()`: a single state or specialty is `= 'FL'` instead of `= any('{FL}')`, so sql/040's index returns rows in NPI order and a page stops after its own rows. Same rows; two or more values unchanged. No table, index or data touched; rerun-safe | **Not yet run. Searches work as before (a page reads ~6,000 rows and sorts them)** |
 
 ## Notes on individual files
 
