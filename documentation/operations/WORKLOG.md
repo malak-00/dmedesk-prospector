@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-14 — Exclusion keyword audit (phase 3, read-only)
+
+**Objective.** Count what each exclusion keyword matches before any cleanup, so DME-sensitive terms can be reviewed.
+
+**Actions Completed.** Added `sql/audit_exclusions.sql`: per-keyword counts in `npi_records` (active, rep-held, unclaimed), distinct providers matched overall, random samples for one term, and rep-held leads that would be affected. Placeholder term list; edit before running.
+
+**Database / System Result.** None. The file contains only SELECTs and has NOT been run. Paste into the Supabase SQL editor by hand.
+
+**Safety Status.** Read-only. No cleanup or deactivation is proposed or run; that waits on the audit results and the choice between a status change and a separate exclusion flag.
+
 ## 2026-10-14 — Exclusion keywords: 4000-char cap and ingest filter (phases 1b and 2)
 
 **Objective.** Per `documentation/plans/exclusion_audit_and_filtering_plan.md`: let long exclude-keyword lists save, and stop the monthly NPPES refresh re-importing excluded providers.
