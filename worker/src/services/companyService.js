@@ -31,6 +31,8 @@ import * as taxonomiesRepo from "../repos/taxonomiesRepo.js";
 import { isLookup, usesAdvancedSearch } from "../lib/searchFilters.js";
 
 const NPPES_PAGE_SIZE = 200;
+const FIRST_PAGE_MIN = 60;    // rows read the first time a variant is looked at, at least
+const FIRST_PAGE_FACTOR = 4;  // ...or this many times what the variant has to show
 // A variant is exhausted once its page comes back short of
 // NPPES_PAGE_SIZE (or empty) -- there's no separate skip ceiling
 // (unlike the real NPPES API, which caps skip at ~1000; fakeNPI
@@ -316,9 +318,16 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
   const variantExhausted = variants.map((variant) => variantSkips[variantKey(variant)] === EXHAUSTED_SKIP);
   const anyVariantLeft = () => variantExhausted.some((done, i) => !done && !paused[i]);
 
+  let firstRound = true;
   while (acceptedCount() < desiredLimit && !hitScanBudget && anyVariantLeft()) {
     const remainingVariants = variantExhausted.filter((done, i) => !done && !paused[i]).length;
     const roundQuota = Math.max(1, Math.ceil((desiredLimit - acceptedCount()) / remainingVariants));
+    // The first look at each variant reads only a few times what it must show
+    // (most of a 200-row page was read, checked for owners and thrown away to
+    // show 20 leads). If claimed leads eat into it, later rounds read full pages.
+    // The bookmark counts rows, so a page of any size continues cleanly.
+    const pageSize = firstRound ? Math.min(NPPES_PAGE_SIZE, Math.max(FIRST_PAGE_MIN, roundQuota * FIRST_PAGE_FACTOR)) : NPPES_PAGE_SIZE;
+    firstRound = false;
 
     // Every not-yet-exhausted variant this round is an independent NPPES
     // query -- fetched at up to NPPES_FETCH_CONCURRENCY at a time instead
@@ -349,10 +358,10 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
         // many leads came back, not how many providers matched -- and it runs
         // dozens of these per search, so it asks not to be counted for.
         const result = await ProviderSource.searchProviders(
-          config, supabase, Object.assign({}, variant, { limit: NPPES_PAGE_SIZE, skip, includeCount: false }));
-        return { v, key, skip, ok: true, result };
+          config, supabase, Object.assign({}, variant, { limit: pageSize, skip, includeCount: false }));
+        return { v, key, skip, size: pageSize, ok: true, result };
       } catch (err) {
-        return { v, key, skip, ok: false, err };
+        return { v, key, skip, size: pageSize, ok: false, err };
       }
     });
 
@@ -430,11 +439,11 @@ async function fetchFreshProviders(config, supabase, criteria, desiredLimit, use
           // the next "Search more" (moving it by the whole page would silently
           // drop the unread rows from every later click).
           skip += consumed;
-        } else if (fetched < NPPES_PAGE_SIZE) {
+        } else if (fetched < pr.size) {
           variantExhausted[pr.v] = true;
           skip = EXHAUSTED_SKIP;
         } else {
-          skip += NPPES_PAGE_SIZE;
+          skip += pr.size;
         }
       }
 

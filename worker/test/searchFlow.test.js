@@ -157,6 +157,18 @@ test('a page that is only partly used is not marked as done', async () => {
   assert.equal(Object.values(result.variantSkips)[0], 20, 'the bookmark moves by what was shown, not by the page size');
 });
 
+test('the first look at a search reads a small page, not 200 rows to show 20 leads', async () => {
+  const limits = [];
+  const db = fakeDb({
+    search_providers_v2: async ({ p_limit, p_skip }) => { limits.push(p_limit); return { data: table.slice(p_skip, p_skip + p_limit), error: null }; },
+  });
+  const result = await searchCompanies(dmedesk, db, {
+    states: ['FL'], taxonomyDescriptions: ['DME'], taxonomyCodes: ['332B00000X'], limit: 20, source: 'dmedesk',
+  }, { userId: 'user-1' });
+  assert.equal(result.companies.length, 20);
+  assert.deepEqual(limits, [80], 'one query of 4x what is shown');
+});
+
 // ---- saved bookmarks from before the paging fix --------------------------------
 
 import { readPositions } from '../src/repos/searchProgressRepo.js';

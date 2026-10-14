@@ -40,6 +40,7 @@ Required manual sequence:
 037_user_avatars.sql            (a small profile picture for each person, uploaded from Admin > Controls)
 038_bad_numbers.sql              (phone numbers the team flagged as wrong or not in service, so nobody redials them)
 039_last_updated_range.sql      (the "last updated" year filter as a date range, so its index is used)
+040_search_page_index.sql       (one index so a search page reads only its own rows instead of the whole state)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -105,6 +106,7 @@ in `003`); save their output with the run.
 | `037_user_avatars.sql` | Creates `user_avatars` (one row per person: a small profile picture, set by an admin; removed by setting it to null). Rerun-safe, touches nothing existing | **Not yet run. Until it is, everyone shows their initials and uploading a picture says what it needs** |
 | `038_bad_numbers.sql` | Creates `bad_numbers` (one row per lead and 10-digit number flagged in call mode; taken back by setting `cleared_at`). Rerun-safe, touches nothing existing | **Not yet run. Until it is, call mode works as before and flagging a number says what it needs** |
 | `039_last_updated_range.sql` | Replaces only `provider_filter_sql()` so the year filter is `lastupdated >= Jan 1 and < next Jan 1` instead of `to_char(...)` on every row. Same rows match. No table, index or data touched; rerun-safe | **Not yet run. Searches work as before until it is, just slower on "Updated in YYYY"** |
+| `040_search_page_index.sql` | Creates `idx_npi_records_active_state_taxonomy` (state, specialty, NPI; active organisations) and refreshes statistics on `npi_records`. No table or data changed; rerun-safe; takes about a second and briefly blocks writes to `npi_records` | **Not yet run. Searches work as before, just reading far more per page** |
 
 ## Notes on individual files
 

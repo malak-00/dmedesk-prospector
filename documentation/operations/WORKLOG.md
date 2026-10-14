@@ -2063,3 +2063,33 @@ leave a screen stuck.
 ### Safety Status
 
 No destructive command, secret change or production mutation.
+
+## 2026-10-14 — Main search path: read less per page
+
+### Objective
+
+Search still failed about 1 call in 9 in the Supabase logs (search_providers_v2
+36/283, search_insights 40/234), peaking in busy hours, after sql/039 and the
+Worker changes. Reduce the work each search page does.
+
+### Actions Completed
+
+- Measured (read-only EXPLAIN ANALYZE): one Florida DME page at offset 4000 took
+  230ms idle but read ~27,000 buffers, because the only usable index was the
+  state one and ~29,000 rows of other specialties were discarded on every page.
+- Added `sql/040_search_page_index.sql`: index on (state, taxonomy_code, npi) for
+  active organisations, plus ANALYZE (stale stats made the planner expect 1 row
+  for ~6,000). Not run.
+- `worker/src/services/companyService.js`: the first read of each variant is
+  4x what it must show (min 60, max 200) instead of always 200; later rounds
+  read 200 as before. This also cuts the per-round owned_group_npis check.
+  Bookmarks count rows, so paging is unchanged (test added; 232 worker tests pass).
+
+### Database / System Result
+
+Nothing changed in Supabase. sql/040 must be reviewed and pasted by hand; the
+plan improvement is expected but NOT yet measured on the live database.
+
+### Safety Status
+
+No destructive command, secret change or production mutation.
