@@ -1,7 +1,7 @@
 /* Local time and "good time to call" for a lead, from its state.
    Each state uses its main time zone (a few states are split; the larger part is used, so a
    lead in the Florida panhandle or west Texas can be an hour off). Calling hours are
-   8 AM to 5 PM on weekdays, local to the lead, with the lunch hour (12 to 1) marked as a poor
+   9 AM to 5 PM on weekdays, local to the lead, with the lunch hour (12 to 1) marked as a poor
    time. The calculation is pure (tested in worker/test/localtime.test.js); the rest adds a
    small coloured time to the rows and keeps it current. */
 (function (root) {

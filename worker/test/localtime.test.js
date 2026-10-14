@@ -27,20 +27,20 @@ test('good time, lunch hour, early, late and weekend', () => {
   assert.equal(localInfo('TX', NOON_ET).good, true);
   assert.equal(localInfo('CA', NOON_ET).status, 'good', '9:00 AM');
   assert.equal(localInfo('HI', NOON_ET).status, 'early', '6:00 AM');
-  assert.match(localInfo('HI', NOON_ET).label, /opens at 8:00 AM/);
+  assert.match(localInfo('HI', NOON_ET).label, /opens at 9:00 AM/);
 
   const evening = Date.parse('2026-10-07T22:00:00Z'); // 6 PM in New York
   assert.equal(localInfo('NY', evening).status, 'late');
   assert.match(localInfo('NY', evening).label, /tomorrow/);
   const fridayEvening = Date.parse('2026-10-09T22:00:00Z');
-  assert.match(localInfo('NY', fridayEvening).label, /Mon 8:00 AM/, 'Friday evening opens on Monday');
+  assert.match(localInfo('NY', fridayEvening).label, /Mon 9:00 AM/, 'Friday evening opens on Monday');
   const saturday = Date.parse('2026-10-10T16:00:00Z');
   assert.equal(localInfo('NY', saturday).status, 'weekend');
 });
 
 test('the edges of the day follow the lead\'s clock, not the viewer\'s', () => {
-  const justBefore = Date.parse('2026-10-07T11:59:00Z'); // 7:59 AM in New York
-  const justAfter = Date.parse('2026-10-07T12:00:00Z');  // 8:00 AM
+  const justBefore = Date.parse('2026-10-07T12:59:00Z'); // 8:59 AM in New York
+  const justAfter = Date.parse('2026-10-07T13:00:00Z');  // 9:00 AM
   assert.equal(localInfo('NY', justBefore).status, 'early');
   assert.equal(localInfo('NY', justAfter).status, 'good');
   const winter = Date.parse('2026-01-14T17:00:00Z'); // EST: noon again, so the offset changed with daylight saving
