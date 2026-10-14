@@ -1,9 +1,0 @@
-# One exclusion term per line; matched case-insensitively anywhere in the provider name.
-# Copy to exclude_keywords.txt and pass --exclude-keywords-file. Applies at ingest only.
-# Do NOT add oxygen, sleep or therapy here: they are real DME business names
-# and a refresh would drop those suppliers for good. Keep them as per-user
-# search excludes instead.
-hospital
-pharmacy
-dentist
-salon

@@ -5,13 +5,20 @@
 --
 -- Edit the term list in the first CTE of each query, then run the queries one at
 -- a time (each is a single statement). If one hits the statement timeout, run
--- it with fewer terms. The sample terms are placeholders, NOT the real list.
+-- it with fewer terms. The term list is the team's list (same as
+-- scripts/nppes_ingest/exclude_keywords.txt); keep the three copies in sync.
 
 -- 1) Per keyword: matches in npi_records, how many are active, and how many are
 --    leads held by someone / not held / disconnected.
 with terms(term) as (
-  values ('hospital'), ('pharmacy'), ('dentist'), ('salon'),
-         ('oxygen'), ('sleep'), ('therapy')     -- DME-sensitive: review samples (query 3)
+  values ('sleep'), ('hospital'), ('university'), ('regents of'), ('pharmacy'), ('drug'),
+         ('apothecary'), ('ostomy'), ('government'), ('optical'), ('eye care'), ('dentist'),
+         ('dds'), ('therapy'), ('wig'), ('optometry'), ('oxygen'), ('mayo clinic'),
+         ('lincare inc'), ('eye center'), ('eyewear'), ('eye'), ('medical center'), ('bioelectronics'),
+         ('dental'), ('optum'), ('pulmonary'), ('diagnostic'), ('lab'), ('medical group'),
+         ('foundation'), ('hair'), ('foot clinic'), ('walgreen co'), ('clinic'), ('foot & ankle center pc'),
+         ('foot & ankle center'), ('oorthopedic surgery & sports medicine'), ('community health center'), ('health center'), ('supply and salon'), ('salon'),
+         ('cancer'), ('hearing aid'), ('d.d.s')
 ), hits as (
   select t.term, r.npi, r.status, r.deactivation_date
     from terms t
@@ -32,8 +39,14 @@ select h.term,
 
 -- 2) Overall: distinct providers matched by ANY term, against the table total.
 with terms(term) as (
-  values ('hospital'), ('pharmacy'), ('dentist'), ('salon'),
-         ('oxygen'), ('sleep'), ('therapy')
+  values ('sleep'), ('hospital'), ('university'), ('regents of'), ('pharmacy'), ('drug'),
+         ('apothecary'), ('ostomy'), ('government'), ('optical'), ('eye care'), ('dentist'),
+         ('dds'), ('therapy'), ('wig'), ('optometry'), ('oxygen'), ('mayo clinic'),
+         ('lincare inc'), ('eye center'), ('eyewear'), ('eye'), ('medical center'), ('bioelectronics'),
+         ('dental'), ('optum'), ('pulmonary'), ('diagnostic'), ('lab'), ('medical group'),
+         ('foundation'), ('hair'), ('foot clinic'), ('walgreen co'), ('clinic'), ('foot & ankle center pc'),
+         ('foot & ankle center'), ('oorthopedic surgery & sports medicine'), ('community health center'), ('health center'), ('supply and salon'), ('salon'),
+         ('cancer'), ('hearing aid'), ('d.d.s')
 )
 select count(*) as distinct_providers_matched,
        (select count(*) from public.npi_records) as total_npi_records
@@ -49,9 +62,19 @@ select r.npi, r.name, r.address_state, r.status
 
 -- 4) Rep-held leads that would be affected (never touched by any cleanup
 --    without an admin decision). Change the pattern list to match query 1.
+with terms(term) as (
+  values ('sleep'), ('hospital'), ('university'), ('regents of'), ('pharmacy'), ('drug'),
+         ('apothecary'), ('ostomy'), ('government'), ('optical'), ('eye care'), ('dentist'),
+         ('dds'), ('therapy'), ('wig'), ('optometry'), ('oxygen'), ('mayo clinic'),
+         ('lincare inc'), ('eye center'), ('eyewear'), ('eye'), ('medical center'), ('bioelectronics'),
+         ('dental'), ('optum'), ('pulmonary'), ('diagnostic'), ('lab'), ('medical group'),
+         ('foundation'), ('hair'), ('foot clinic'), ('walgreen co'), ('clinic'), ('foot & ankle center pc'),
+         ('foot & ankle center'), ('oorthopedic surgery & sports medicine'), ('community health center'), ('health center'), ('supply and salon'), ('salon'),
+         ('cancer'), ('hearing aid'), ('d.d.s')
+)
 select l.npi, l.company_name, l.claimed_by, l.claimed_at
   from public.leads l
  where l.claimed_by is not null and not l.is_disconnected
-   and l.company_name ilike any (array['%hospital%','%pharmacy%','%dentist%','%salon%'])
+   and l.company_name ilike any (select '%' || term || '%' from terms)
  order by l.claimed_at desc nulls last
  limit 200;

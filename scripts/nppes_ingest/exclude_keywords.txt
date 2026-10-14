@@ -1,0 +1,48 @@
+# Exclusion terms for the NPPES ingest (matched case-insensitively anywhere in the provider name).
+# Use: --exclude-keywords-file scripts/nppes_ingest/exclude_keywords.txt
+# Not applied unless that flag is passed. Same list as the team's search excludes.
+sleep
+hospital
+university
+regents of
+pharmacy
+drug
+apothecary
+ostomy
+government
+optical
+eye care
+dentist
+dds
+therapy
+wig
+optometry
+oxygen
+mayo clinic
+lincare inc
+eye center
+eyewear
+eye
+medical center
+bioelectronics
+dental
+optum
+pulmonary
+diagnostic
+lab
+medical group
+foundation
+hair
+foot clinic
+walgreen co
+clinic
+foot & ankle center pc
+foot & ankle center
+oorthopedic surgery & sports medicine
+community health center
+health center
+supply and salon
+salon
+cancer
+hearing aid
+d.d.s

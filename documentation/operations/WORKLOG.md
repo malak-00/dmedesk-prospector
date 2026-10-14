@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-14 — Real exclusion list added to the ingest file and the audit
+
+**Objective.** Use the team's 45-term exclusion list instead of placeholders.
+
+**Actions Completed.** Added `scripts/nppes_ingest/exclude_keywords.txt` (replaces the example file) and put the same list in `sql/audit_exclusions.sql`. The list includes `oxygen`, `sleep`, `therapy`, `lab`, `eye`, `wig`, `dds`, which are short or DME-adjacent and will also match unrelated names (e.g. `lab` in `Global`); the audit counts each so they can be reviewed before the refresh filter or any cleanup is used.
+
+**Database / System Result.** None; nothing run. The ingest filter still only applies when `--exclude-keywords-file` is passed.
+
+**Safety Status.** Read-only SQL and a text file.
+
 ## 2026-10-14 — Exclusion keyword audit (phase 3, read-only)
 
 **Objective.** Count what each exclusion keyword matches before any cleanup, so DME-sensitive terms can be reviewed.
