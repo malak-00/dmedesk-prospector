@@ -13,6 +13,7 @@ This plan defines the architectural and UX specifications for two core system im
 
 1. **Unified Call-Mode "Disconnected" Flow:** Replaces the confusing dual-mechanism ("Not in service" inline under the phone number vs. "Disconnected" under outcome chips) with a single, intelligent **"Disconnected"** button that flags the bad number, automatically detects alternative numbers on file, prompts to dial the alternative number, or finalizes company-level disconnection if no other numbers exist.
 2. **Keyword Exemption Tracking & Audit System (Hybrid Model):** Combines granular event logging (tracking every time a rep removes/exempts or adds a keyword) with an Admin-facing diff and analytics view (showing which reps have exempted which baseline keywords and team-wide exemption frequencies).
+3. **Search Progress Reset Auto-Toggle Off:** Automatically unchecks the "Start over from the beginning" (`resetProgress`) checkbox upon running a search, preventing reps from getting stuck in an infinite loop that keeps re-showing the initial leads on every subsequent search.
 
 ---
 
@@ -137,7 +138,22 @@ When `POST /auth/exclude-keywords` is invoked:
 
 ---
 
-## 4. Implementation Phasing & Checklist
+## 4. Part III: Search Form Reset Progress Auto-Toggle Off
+
+### 4.1 The Flaw
+* In the Prospect search panel, reps can check **"Start over from the beginning"** (`<input type="checkbox" name="resetProgress">`).
+* When checked, the backend bypasses `search_progress` bookmarks and returns leads starting from skip 0.
+* However, the checkbox remained checked in the DOM across subsequent form submissions.
+* Every subsequent click on "Search leads" (even after altering filters) continued to send `resetProgress=true`, forcing reps into an infinite reset loop where they saw the exact same top leads instead of paging forward.
+
+### 4.2 Solution Specification
+1. **Auto-Uncheck on Submit (`docs/app.js`):** In `runSearch(evt)`, immediately after extracting `resetProgress` into the search request params, set `els.form.elements.resetProgress.checked = false`.
+2. **Prevent Session Leakage:** In `saveSearchFormState()`, execute `delete values.resetProgress;` so the one-shot reset flag is never saved into `sessionStorage`.
+3. **Cache Versioning:** Bump `app.js` version tag in `docs/index.html`.
+
+---
+
+## 5. Implementation Phasing & Checklist
 
 | Phase | Component | Key Deliverables | Safety & Verification |
 | :--- | :--- | :--- | :--- |
@@ -145,6 +161,7 @@ When `POST /auth/exclude-keywords` is invoked:
 | **Phase 2** | **Worker Keyword Auditing** | Update `setExcludeKeywords` in `worker/src/lib/auth.js` to compute diffs & log events | Unit tests in `worker/test/auth.test.js` validating event generation on add/remove. |
 | **Phase 3** | **Admin Exemption Reporting** | Route `GET /admin/keyword-exemptions` and Admin panel view | Verification in admin dashboard with mock/test user profiles. |
 | **Phase 4** | **Call Mode Disconnected Unification** | Refactor `docs/callmode.js` to single "Disconnected" click with alternative-number prompt | Rep tested in call drawer; ensures no premature lead deletion when secondary lines exist. |
+| **Phase 5** | **Reset Progress Auto-Toggle** | Auto-uncheck `resetProgress` on submit in `docs/app.js` and delete from `sessionStorage` | Rep tested in browser: search starts from beginning once, then automatically unchecks. |
 
 ---
 
