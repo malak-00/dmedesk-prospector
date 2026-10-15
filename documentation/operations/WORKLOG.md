@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-15 — sql/044 function created and dry run (no deletion)
+
+**Objective.** Create the removal function and confirm what it would delete.
+
+**Actions Completed.** At the user's request Claude created `remove_excluded_providers()` on the dmedesk-prospector project and called it as a dry run. The user chose to go without a backup.
+
+**Database / System Result.** Dry run: 120,935 removable, 1,778 kept (lead, call, ownership, claim request or shared identity group); all deleted_* counts 0. No rows were deleted; only the function was added.
+
+**Safety Status.** The delete itself still needs a separate go-ahead and the confirm phrase. Irreversible and unbacked-up once run.
+
 ## 2026-10-15 — sql/044 removal function and default keyword filter in the monthly ingest
 
 **Objective.** Permanently remove flagged providers, and make sure the monthly refresh cannot bring them back.
