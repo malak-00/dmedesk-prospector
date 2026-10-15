@@ -43,6 +43,7 @@ Required manual sequence:
 040_search_page_index.sql       (one index so a search page reads only its own rows instead of the whole state)
 041_single_value_equality.sql  (one state / specialty as plain equality so the page index stops early)
 042_exclusion_flag.sql            (hide keyword-excluded providers via a flag column; dry-run-first apply function)
+043_territory_excludes_flagged.sql  (Territory map ignores keyword-excluded providers; needs 042)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -111,6 +112,7 @@ in `003`); save their output with the run.
 | `040_search_page_index.sql` | Creates `idx_npi_records_active_state_taxonomy` (state, specialty, NPI; active organisations) and refreshes statistics on `npi_records`. No table or data changed; rerun-safe; takes about a second and briefly blocks writes to `npi_records` | **Not yet run. Searches work as before, just reading far more per page** |
 | `041_single_value_equality.sql` | Replaces only `provider_filter_sql()`: a single state or specialty is `= 'FL'` instead of `= any('{FL}')`, so sql/040's index returns rows in NPI order and a page stops after its own rows. Same rows; two or more values unchanged. No table, index or data touched; rerun-safe | **Not yet run. Searches work as before (a page reads ~6,000 rows and sorts them)** |
 | `042_exclusion_flag.sql` | Adds nullable `npi_records.excluded_reason`; replaces `provider_filter_sql()` (041 plus one line) so flagged providers are hidden from search; adds `apply_exclusion_keywords()` (dry run by default, skips rep-held providers, never touches status/deactivation_date). Column add is catalog-only; the apply step updates ~120k rows in batches | **Not yet run. Searches work as before until it is; run the dry run before applying** |
+| `043_territory_excludes_flagged.sql` | Replaces only `refresh_territory_code()` and `search_territory()` (025's versions plus `excluded_reason is null`) so the Territory map ignores keyword-excluded providers; marks the small `territory_totals` cache stale so it recounts. Needs 042. Rerun after the 042 apply finishes. No provider data touched | **Not yet run. The map keeps counting excluded providers until it is** |
 
 ## Notes on individual files
 

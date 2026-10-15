@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-15 — sql/043: Territory map ignores excluded providers
+
+**Objective.** Close the gap left by sql/042: the Territory map read a cache that still counted flagged providers.
+
+**Actions Completed.** Added `sql/043_territory_excludes_flagged.sql`: `refresh_territory_code()` and `search_territory()` (025's versions plus `r.excluded_reason is null`) and a statement marking `territory_totals` stale. Checked that search, quick counts and insights already go through `provider_filter_sql()`, so they need nothing more.
+
+**Database / System Result.** None; not run. Needs 042 first, and should be run again after the 042 apply finishes.
+
+**Safety Status.** Replaces two functions and touches only the derived territory cache; no provider or lead data.
+
 ## 2026-10-15 — Exclusion flag (sql/042) and tightened keyword list
 
 **Objective.** Hide the team's excluded providers from search without changing NPPES-owned fields, and remove the keywords that caused false matches.
