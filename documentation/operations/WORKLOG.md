@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-15 — Monthly refresh helper: exclusion flagging in the CLI and a one-command script
+
+**Objective.** Make the monthly refresh complete and easy, and bundle the post-refresh exclusion step.
+
+**Actions Completed.** `scripts/nppes_ingest/exclusions.py` drives `apply_exclusion_keywords` (sql/042) and `remove_excluded_providers` (sql/044) in batches. CLI: `--apply-exclusions` (with `--dry-run`), `--remove-excluded` (preview) and `--yes-delete`, `--skip-exclusions`, `--exclusion-batch-size`; `--apply` / `--apply-run` now end by flagging renamed providers (a failure there is a warning, since the refresh already succeeded). New `scripts/monthly_refresh.ps1`: dry run, YES prompt, apply, optional deactivation file, deletion preview; never deletes. README has a short monthly section with the safety table. 6 new tests (88 pass).
+
+**Database / System Result.** None; no SQL run and nothing changed in Supabase.
+
+**Safety Status.** Deletion still needs an explicit `--remove-excluded --yes-delete`. The wrapper script was parse-checked only; it has not been run against a real release.
+
 ## 2026-10-15 — Exclude keywords box: scrolls, count badge, Clear all (plan phase 1a); monthly refresh safety review
 
 **Objective.** Stop a 45+ keyword list from stretching the Prospect search form, and confirm the monthly refresh cannot replace leads or remove groups.

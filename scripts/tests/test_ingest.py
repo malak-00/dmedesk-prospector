@@ -19,7 +19,7 @@ TEST_TMP = Path(os.environ.get('NPPES_TEST_TMP', r'C:\\tmp\\dmedesk-nppes-tests'
 TEST_TMP.mkdir(parents=True, exist_ok=True)
 tempfile.tempdir = str(TEST_TMP)
 
-from nppes_ingest import normalize, validate  # noqa: E402
+from nppes_ingest import exclusions, normalize, validate  # noqa: E402
 from nppes_ingest.ingest import (  # noqa: E402
     RUN_TYPE_DEACTIVATION,
     RUN_TYPE_MONTHLY_FULL,
@@ -864,6 +864,85 @@ class CliApplyTests(unittest.TestCase):
                 mock.patch("builtins.print"):
             code = cli.main([str(SAMPLE), "--run-type", RUN_TYPE_MONTHLY_FULL, "--taxonomy-codes", "332B00000X", "--dry-run", "--apply"])
         self.assertEqual(code, 2)
+
+
+class ExclusionHelperTests(unittest.TestCase):
+    class Client:
+        """Stands in for sql/042 and sql/044: counts down as batches are applied."""
+
+        def __init__(self, to_exclude=12, removable=7, installed=True):
+            self.to_exclude, self.removable, self.installed = to_exclude, removable, installed
+            self.calls = []
+
+        def rpc(self, function, params=None):
+            self.calls.append((function, dict(params or {})))
+            if not self.installed:
+                raise RuntimeError("PGRST202 Could not find the function")
+            params = params or {}
+            if function == "apply_exclusion_keywords":
+                done = 0
+                if not params["p_dry_run"]:
+                    done = min(params["p_batch"], self.to_exclude)
+                    self.to_exclude -= done
+                return {"to_exclude": self.to_exclude + done, "skipped_rep_held": 2, "to_release": 0,
+                        "excluded_this_call": done, "released_this_call": 0, "remaining_to_exclude": self.to_exclude}
+            deleted = 0
+            if not params["p_dry_run"]:
+                assert params["p_confirm"] == "delete excluded providers"
+                deleted = min(params["p_batch"], self.removable)
+                self.removable -= deleted
+            return {"removable_now": self.removable + deleted, "kept_because_of_leads_or_groups": 3,
+                    "deleted_npi_records": deleted, "remaining": self.removable}
+
+    def test_apply_exclusions_batches_until_nothing_remains(self) -> None:
+        client = self.Client(to_exclude=12)
+        result = exclusions.run_apply_exclusions(client, ("a", "b"), batch_size=5, log=quiet)
+        self.assertEqual(result["remaining_to_exclude"], 0)
+        real = [c for c in client.calls if not c[1]["p_dry_run"]]
+        self.assertEqual(len(real), 3)  # 5 + 5 + 2
+
+    def test_apply_exclusions_dry_run_changes_nothing(self) -> None:
+        client = self.Client()
+        exclusions.run_apply_exclusions(client, ("a",), dry_run=True, log=quiet)
+        self.assertTrue(all(c[1]["p_dry_run"] for c in client.calls))
+
+    def test_missing_sql_is_reported_not_raised(self) -> None:
+        self.assertIsNone(exclusions.run_apply_exclusions(self.Client(installed=False), ("a",), log=quiet))
+        self.assertIsNone(exclusions.run_remove_excluded(self.Client(installed=False), log=quiet))
+
+    def test_remove_excluded_is_a_preview_unless_confirmed(self) -> None:
+        client = self.Client(removable=7)
+        exclusions.run_remove_excluded(client, log=quiet)
+        self.assertTrue(all(c[1]["p_dry_run"] for c in client.calls))
+        exclusions.run_remove_excluded(client, confirmed=True, batch_size=3, log=quiet)
+        self.assertEqual(client.removable, 0)
+
+    def test_cli_modes(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        client = self.Client()
+        with mock.patch.object(cli, "load_supabase_config", return_value=object()),                 mock.patch.object(cli, "SupabaseClient", return_value=client), mock.patch("builtins.print"):
+            self.assertEqual(cli.main(["--apply-exclusions", "--dry-run"]), 0)
+            self.assertTrue(all(c[1]["p_dry_run"] for c in client.calls))
+            client.calls.clear()
+            self.assertEqual(cli.main(["--remove-excluded"]), 0)  # preview only
+            self.assertTrue(all(c[1]["p_dry_run"] for c in client.calls))
+            self.assertEqual(cli.main(["--apply-exclusions", "--remove-excluded"]), 2)
+            self.assertEqual(cli.main(["--apply-exclusions", "--yes-delete"]), 2)
+            self.assertEqual(cli.main(["--apply-exclusions", str(SAMPLE)]), 2)
+
+    def test_apply_run_flags_renames_unless_skipped(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        for extra, expect_flagging in (([], True), (["--skip-exclusions"], False), (["--no-exclude-keywords"], False)):
+            client = self.Client()
+            with mock.patch.object(cli, "load_supabase_config", return_value=object()),                     mock.patch.object(cli, "SupabaseClient", return_value=client),                     mock.patch.object(cli, "run_apply"), mock.patch.object(cli, "run_registry_match"),                     mock.patch("builtins.print"):
+                self.assertEqual(cli.main(["--apply-run", "run-9", *extra]), 0)
+            self.assertEqual(any(c[0] == "apply_exclusion_keywords" for c in client.calls), expect_flagging, extra)
 
 
 if __name__ == "__main__":

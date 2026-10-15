@@ -59,6 +59,49 @@ Before the first real run, install `sql/004_nppes_refresh_staging.sql` and
 then `sql/007_nppes_refresh_lifecycle.sql` (manual, in the Supabase SQL
 Editor), and take a database backup.
 
+## Monthly refresh (the short version)
+
+From PowerShell, in the `scripts/` folder. One command does the whole month and
+stops for a YES before anything is written:
+
+```powershell
+.\monthly_refresh.ps1 -Source "\\GGO-FILESERVER\FileServer\BD\npidata_pfile_20050523-20260809.csv" `
+  -ReleaseDate 2026-08-09 -ExpectRows 9726865
+# add -DeactivationFile "<path>\NPPES_Deactivated_NPI_Report.csv" to load that file too
+# add -Python "C:\full\path\python.exe" if python is not on PATH
+```
+
+What it does, in order: dry run (writes nothing) -> you type `YES` -> stage and
+apply to `npi_records` -> sync claimed leads and raise change alerts -> rebuild
+registry matches -> flag providers renamed into the exclusion keyword list ->
+preview what could now be deleted. Nothing is ever deleted by the refresh.
+
+| Safe because | Detail |
+|---|---|
+| Leads are not replaced | Only the provider snapshot fields of existing, non-disconnected leads (company name, phone, address, specialty, NPPES last-updated, NPPES-sourced contact) are refreshed. No lead is created or deleted. |
+| Groups are not touched | `lead_groups` / `lead_group_members` are never written by a refresh; groups change only through the reviewed approval flow. |
+| Nothing is deleted | The apply step only updates changed values and inserts new NPIs. A provider missing from a file is left alone. |
+| Excluded providers stay out | `exclude_keywords.txt` is applied to every non-deactivation run by default; `--no-exclude-keywords` turns it off. |
+| Re-runnable | A killed run continues with `--apply-run <id>`; the same file can't be applied twice. |
+
+The separate steps, if you want them one at a time:
+
+```powershell
+python -m nppes_ingest --apply-exclusions --dry-run    # count providers to flag (changes nothing)
+python -m nppes_ingest --apply-exclusions              # flag them (reversible; skips providers a rep holds)
+python -m nppes_ingest --remove-excluded               # preview what could be deleted
+python -m nppes_ingest --remove-excluded --yes-delete  # delete them for good (no undo, no archive)
+```
+
+Deletion keeps any flagged provider that has a lead, call, ownership event,
+claim request, or shares an identity group with a lead. Needs `sql/042` (flag) and
+`sql/044` (delete) installed; the CLI says so if they are missing. After a delete,
+run `vacuum analyze` on `npi_records` in the SQL editor.
+
+The exclusion list is `scripts/nppes_ingest/exclude_keywords.txt` (one term per line).
+Edit it, then run `--apply-exclusions`: terms you remove are released, terms you
+add are flagged.
+
 ## Usage
 
 Run from the `scripts/` directory (or add `scripts/` to `PYTHONPATH`).
@@ -86,8 +129,8 @@ name contains a term in `scripts/nppes_ingest/exclude_keywords.txt` (the same li
 `sql/audit_exclusions.sql`); skipped rows show as `keyword_excluded` in the manifest and
 rejects file. This is on by default, so the monthly command needs no extra flag. Use
 `--exclude-keywords-file <path>` for a different list, or `--no-exclude-keywords` to turn it
-off (excluded providers are then re-imported). Deactivation files are never filtered. After a
-refresh, re-run `apply_exclusion_keywords` (sql/042) to catch providers renamed since.
+off (excluded providers are then re-imported). Deactivation files are never filtered. `--apply` and
+`--apply-run` end by flagging providers renamed since the last run (`--skip-exclusions` to skip).
 
 Use single backslashes in UNC paths; PowerShell doesn't treat `\` as an
 escape character.

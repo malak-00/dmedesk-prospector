@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .apply import DEFAULT_APPLY_BATCH_SIZE, run_apply, run_lead_sync
 from .config import ConfigError, load_supabase_config
+from .exclusions import DEFAULT_EXCLUSION_BATCH_SIZE, run_apply_exclusions, run_remove_excluded
 from .registry_match import DEFAULT_MAX_BUCKET, run_registry_match
 from .ingest import (
     DEFAULT_BATCH_SIZE,
@@ -156,6 +157,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
     guards.add_argument("--limit", type=int, help="Stop after N accepted rows (for a smoke test)")
 
+    after = parser.add_argument_group("after a refresh")
+    after.add_argument(
+        "--apply-exclusions",
+        action="store_true",
+        help="On its own: flag providers matching the exclusion keywords (catches renames since the last run); "
+        "add --dry-run to only count. Runs automatically at the end of --apply / --apply-run",
+    )
+    after.add_argument(
+        "--remove-excluded",
+        action="store_true",
+        help="On its own: preview the flagged providers that can be permanently deleted",
+    )
+    after.add_argument(
+        "--yes-delete",
+        action="store_true",
+        help="With --remove-excluded: actually delete them. Irreversible; there is no archive",
+    )
+    after.add_argument(
+        "--skip-exclusions",
+        action="store_true",
+        help="Don't flag excluded providers at the end of --apply / --apply-run",
+    )
+    after.add_argument(
+        "--exclusion-batch-size",
+        type=int,
+        default=DEFAULT_EXCLUSION_BATCH_SIZE,
+        help="Providers per flagging / deleting call",
+    )
+
     plumbing = parser.add_argument_group("plumbing")
     plumbing.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="Rows per staging insert")
     plumbing.add_argument("--env-file", type=Path, help="dotenv file with SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY")
@@ -211,6 +241,31 @@ def load_exclude_keywords(inline: str | None, path: Path | None) -> tuple[str, .
     return cleaned or None
 
 
+def resolve_exclude_keywords(args: argparse.Namespace, run_type: str | None):
+    """The terms to use, and the file they came from (the default file unless opted out)."""
+    keywords_file = args.exclude_keywords_file
+    if keywords_file is None and not args.no_exclude_keywords and run_type != RUN_TYPE_DEACTIVATION:
+        keywords_file = DEFAULT_EXCLUDE_KEYWORDS_FILE
+    return load_exclude_keywords(args.exclude_keywords, keywords_file), keywords_file
+
+
+def flag_excluded_after_apply(client: SupabaseClient, args: argparse.Namespace, run_type: str | None) -> None:
+    """Last step of --apply / --apply-run: flag providers renamed into the keyword list."""
+    if args.skip_exclusions or args.no_exclude_keywords or run_type == RUN_TYPE_DEACTIVATION:
+        return
+    terms, _ = resolve_exclude_keywords(args, run_type)
+    if not terms:
+        return
+    # The refresh itself already succeeded; a failure here must not look like it didn't.
+    try:
+        run_apply_exclusions(client, terms, batch_size=args.exclusion_batch_size)
+    except Exception as err:
+        print(f"warning: the refresh is applied, but flagging excluded providers failed ({err}). "
+              "Re-run with `python -m nppes_ingest --apply-exclusions`.", flush=True)
+        return
+    print("Next: `python -m nppes_ingest --remove-excluded` previews what can now be deleted.", flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -226,6 +281,31 @@ def main(argv: list[str] | None = None) -> int:
             client = SupabaseClient(load_supabase_config(args.env_file))
             return 1 if run_registry_match(client, max_bucket=args.match_max_bucket) is None else 0
         except (ConfigError, RuntimeError, ValueError) as err:
+            print(f"error: {err}", flush=True)
+            return 1
+
+    if args.apply_exclusions or args.remove_excluded:
+        if args.apply_exclusions and args.remove_excluded:
+            print("error: choose --apply-exclusions or --remove-excluded, not both", flush=True)
+            return 2
+        if args.sync_run or args.apply_run or args.recover_run or args.abort_run or args.source is not None:
+            print("error: --apply-exclusions / --remove-excluded are used on their own", flush=True)
+            return 2
+        if args.yes_delete and not args.remove_excluded:
+            print("error: --yes-delete is only used with --remove-excluded", flush=True)
+            return 2
+        try:
+            client = SupabaseClient(load_supabase_config(args.env_file))
+            if args.remove_excluded:
+                run_remove_excluded(client, confirmed=args.yes_delete, batch_size=args.exclusion_batch_size)
+                return 0
+            terms, _ = resolve_exclude_keywords(args, None)
+            if not terms:
+                print("error: no exclusion keywords found (see --exclude-keywords / --exclude-keywords-file)", flush=True)
+                return 2
+            result = run_apply_exclusions(client, terms, dry_run=args.dry_run, batch_size=args.exclusion_batch_size)
+            return 1 if result is None else 0
+        except (ConfigError, RuntimeError, ValueError, OSError) as err:
             print(f"error: {err}", flush=True)
             return 1
 
@@ -251,6 +331,7 @@ def main(argv: list[str] | None = None) -> int:
             run_apply(client, args.apply_run, batch_size=args.apply_batch_size, sync_leads=not args.skip_lead_sync)
             if not args.skip_registry_match:
                 run_registry_match(client, max_bucket=args.match_max_bucket)
+            flag_excluded_after_apply(client, args, None)
             return 0
         except (ConfigError, RuntimeError, ValueError) as err:
             print(f"error: {err}", flush=True)
@@ -301,11 +382,8 @@ def main(argv: list[str] | None = None) -> int:
     # The team's exclusion list is on by default, so a monthly refresh can't
     # quietly re-import providers that were removed. A missing default file is an
     # error rather than a silent unfiltered run.
-    keywords_file = args.exclude_keywords_file
-    if keywords_file is None and not args.no_exclude_keywords and args.run_type != RUN_TYPE_DEACTIVATION:
-        keywords_file = DEFAULT_EXCLUDE_KEYWORDS_FILE
     try:
-        exclude_keywords = load_exclude_keywords(args.exclude_keywords, keywords_file)
+        exclude_keywords, keywords_file = resolve_exclude_keywords(args, args.run_type)
     except OSError as err:
         print(f"error: can't read the exclusion keywords ({err}). Pass --exclude-keywords-file, or --no-exclude-keywords to skip.", flush=True)
         return 2
@@ -343,6 +421,7 @@ def main(argv: list[str] | None = None) -> int:
                       sync_leads=not args.skip_lead_sync)
             if not args.skip_registry_match:
                 run_registry_match(client, max_bucket=args.match_max_bucket)
+            flag_excluded_after_apply(client, args, args.run_type)
     except PermissionError as err:
         print(
             f"error: permission denied reading {err.filename or args.source} -- this Windows account can't open "
