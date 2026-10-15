@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-15 — sql/044 removal function and default keyword filter in the monthly ingest
+
+**Objective.** Permanently remove flagged providers, and make sure the monthly refresh cannot bring them back.
+
+**Actions Completed.** Added `sql/044_remove_excluded_providers.sql` (function only, not run). `scripts/nppes_ingest/cli.py`: the exclusion keyword file is now applied by default to every non-deactivation run (`--no-exclude-keywords` to opt out; an unreadable default file is an error, not a silent unfiltered run); README and a test updated. No archive step, per the user.
+
+**Database / System Result.** Read-only checks only; nothing deleted and 044 NOT created in Supabase yet. Expected on a dry run: 120,935 removable, 1,778 flagged providers kept (lead, call, ownership, claim request or shared identity group); would delete about 20,940 `npi_cms_enrichment` and 120,933 `npi_identity_keys` rows. `provider_field_history` (append-only) is left untouched.
+
+**Safety Status.** The delete needs `p_dry_run = false` and the confirm phrase and re-checks `excluded_reason is not null` inside the delete. Irreversible once run; the user must run it. Take a Supabase backup first.
+
 ## 2026-10-15 — sql/042 applied and sql/043 run on production
 
 **Objective.** Hide keyword-excluded providers and make the Territory map agree.

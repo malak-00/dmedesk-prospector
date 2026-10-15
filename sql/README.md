@@ -44,6 +44,7 @@ Required manual sequence:
 041_single_value_equality.sql  (one state / specialty as plain equality so the page index stops early)
 042_exclusion_flag.sql            (hide keyword-excluded providers via a flag column; dry-run-first apply function)
 043_territory_excludes_flagged.sql  (Territory map ignores keyword-excluded providers; needs 042)
+044_remove_excluded_providers.sql   (batched permanent removal of flagged providers; dry run first, confirm phrase required)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -113,6 +114,7 @@ in `003`); save their output with the run.
 | `041_single_value_equality.sql` | Replaces only `provider_filter_sql()`: a single state or specialty is `= 'FL'` instead of `= any('{FL}')`, so sql/040's index returns rows in NPI order and a page stops after its own rows. Same rows; two or more values unchanged. No table, index or data touched; rerun-safe | **Not yet run. Searches work as before (a page reads ~6,000 rows and sorts them)** |
 | `042_exclusion_flag.sql` | Adds nullable `npi_records.excluded_reason`; replaces `provider_filter_sql()` (041 plus one line) so flagged providers are hidden from search; adds `apply_exclusion_keywords()` (dry run by default, skips rep-held providers, never touches status/deactivation_date). Column add is catalog-only; the apply step updates ~120k rows in batches | **Not yet run. Searches work as before until it is; run the dry run before applying** |
 | `043_territory_excludes_flagged.sql` | Replaces only `refresh_territory_code()` and `search_territory()` (025's versions plus `excluded_reason is null`) so the Territory map ignores keyword-excluded providers; marks the small `territory_totals` cache stale so it recounts. Needs 042. Rerun after the 042 apply finishes. No provider data touched | **Not yet run. The map keeps counting excluded providers until it is** |
+| `044_remove_excluded_providers.sql` | Creates `remove_excluded_providers(dry_run, batch, confirm)`: permanently deletes keyword-flagged `npi_records` (plus their `npi_cms_enrichment`, `npi_identity_keys`, `lead_group_members` rows) in batches. Keeps any flagged provider with a lead, call, ownership event, claim request, or a shared identity group with a lead. No archive, no undo. Creating the function deletes nothing | **Not yet run. Nothing is removed until it is called with dry_run = false and the confirm phrase** |
 
 ## Notes on individual files
 

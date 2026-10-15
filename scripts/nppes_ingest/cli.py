@@ -25,6 +25,8 @@ from .supabase_rest import SupabaseClient
 from .taxonomies import TaxonomyError, fetch_enabled_taxonomy_codes, parse_taxonomy_codes
 
 DEFAULT_OUTPUT_DIR = Path("scripts/out")
+# Applied to every non-deactivation run unless --no-exclude-keywords is passed.
+DEFAULT_EXCLUDE_KEYWORDS_FILE = Path(__file__).resolve().parent / "exclude_keywords.txt"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -135,7 +137,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--exclude-keywords-file",
         type=Path,
         default=None,
-        help="Text file with one exclusion term per line (# comments allowed); combined with --exclude-keywords",
+        help="Text file with one exclusion term per line (# comments allowed); combined with --exclude-keywords. "
+        "Default: scripts/nppes_ingest/exclude_keywords.txt",
+    )
+    filters.add_argument(
+        "--no-exclude-keywords",
+        action="store_true",
+        help="Do NOT apply the default exclusion keyword file (excluded providers will be re-imported)",
     )
 
     guards = parser.add_argument_group("safety guards")
@@ -290,11 +298,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {err}", flush=True)
         return 2
 
+    # The team's exclusion list is on by default, so a monthly refresh can't
+    # quietly re-import providers that were removed. A missing default file is an
+    # error rather than a silent unfiltered run.
+    keywords_file = args.exclude_keywords_file
+    if keywords_file is None and not args.no_exclude_keywords and args.run_type != RUN_TYPE_DEACTIVATION:
+        keywords_file = DEFAULT_EXCLUDE_KEYWORDS_FILE
     try:
-        exclude_keywords = load_exclude_keywords(args.exclude_keywords, args.exclude_keywords_file)
+        exclude_keywords = load_exclude_keywords(args.exclude_keywords, keywords_file)
     except OSError as err:
-        print(f"error: {err}", flush=True)
+        print(f"error: can't read the exclusion keywords ({err}). Pass --exclude-keywords-file, or --no-exclude-keywords to skip.", flush=True)
         return 2
+    if exclude_keywords and args.run_type != RUN_TYPE_DEACTIVATION:
+        print(f"Excluding providers whose name contains any of {len(exclude_keywords)} keywords"
+              f"{f' (from {keywords_file})' if keywords_file else ''}.", flush=True)
 
     options = IngestOptions(
         source_path=args.source,

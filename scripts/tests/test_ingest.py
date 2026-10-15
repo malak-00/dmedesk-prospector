@@ -386,6 +386,26 @@ class StreamingIngestTests(unittest.TestCase):
             self.assertEqual(load_exclude_keywords("Clinic, hospital", path), ("clinic", "hospital", "lin care inc"))
             self.assertIsNone(load_exclude_keywords(None, None))
 
+    def test_cli_applies_the_default_keyword_file_unless_disabled(self) -> None:
+        from unittest import mock
+
+        from nppes_ingest import cli
+
+        captured = {}
+
+        def fake_run_ingest(options, client):
+            captured["options"] = options
+            raise RuntimeError("stop")
+
+        base = [str(SAMPLE), "--run-type", RUN_TYPE_MONTHLY_FULL, "--taxonomy-codes", "332B00000X", "--dry-run"]
+        with mock.patch.object(cli, "run_ingest", side_effect=fake_run_ingest), mock.patch("builtins.print"):
+            cli.main(base)
+            self.assertIn("hospital", captured["options"].exclude_keywords)
+            cli.main(base + ["--no-exclude-keywords"])
+            self.assertIsNone(captured["options"].exclude_keywords)
+            cli.main([str(DEACTIVATION_SAMPLE), "--run-type", RUN_TYPE_DEACTIVATION, "--dry-run"])
+            self.assertIsNone(captured["options"].exclude_keywords)
+
     def test_cli_defaults_to_organizations_only(self) -> None:
         from unittest import mock
 

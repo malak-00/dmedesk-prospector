@@ -81,6 +81,14 @@ python -m nppes_ingest "<path>\NPPES_Deactivated_NPI_Report.csv" `
   --run-type deactivation --release-date 2026-09-08 --apply
 ```
 
+**Exclusion keywords.** Every `monthly-full` / `weekly-incremental` run skips providers whose
+name contains a term in `scripts/nppes_ingest/exclude_keywords.txt` (the same list as
+`sql/audit_exclusions.sql`); skipped rows show as `keyword_excluded` in the manifest and
+rejects file. This is on by default, so the monthly command needs no extra flag. Use
+`--exclude-keywords-file <path>` for a different list, or `--no-exclude-keywords` to turn it
+off (excluded providers are then re-imported). Deactivation files are never filtered. After a
+refresh, re-run `apply_exclusion_keywords` (sql/042) to catch providers renamed since.
+
 Use single backslashes in UNC paths; PowerShell doesn't treat `\` as an
 escape character.
 
