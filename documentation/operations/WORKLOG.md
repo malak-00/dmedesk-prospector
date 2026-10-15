@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-15 — sql/042 applied and sql/043 run on production
+
+**Objective.** Hide keyword-excluded providers and make the Territory map agree.
+
+**Actions Completed.** User ran sql/042 and the batched apply (122,713 providers flagged, equal to the dry-run estimate; 0 are held by a rep; 276 have an unclaimed lead). Claude then ran sql/043 on the dmedesk-prospector project at the user's request: replaced `refresh_territory_code()` and `search_territory()` and marked `territory_totals` stale (999 rows, recounted by the Worker on next map load).
+
+**Database / System Result.** Verified after: both functions contain `excluded_reason`; every `territory_totals` row is stale (0 fresh). No provider, lead or other data changed by 043. No rows deleted.
+
+**Safety Status.** Flagging is reversible (`select public.apply_exclusion_keywords('{}', false);`). Removal of flagged rows is NOT done and awaits a decision: `npi_cms_enrichment` has a no-action FK to `npi_records`, and 13 other tables carry an npi column.
+
 ## 2026-10-15 — sql/043: Territory map ignores excluded providers
 
 **Objective.** Close the gap left by sql/042: the Territory map read a cache that still counted flagged providers.
