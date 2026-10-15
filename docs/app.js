@@ -385,6 +385,8 @@ const els = {
   excludeKeywordsChipList: document.getElementById("excludeKeywordsChipList"),
   excludeKeywordsEntry: document.getElementById("excludeKeywordsEntry"),
   saveExcludeKeywordsBtn: document.getElementById("saveExcludeKeywordsBtn"),
+  excludeKeywordsCount: document.getElementById("excludeKeywordsCount"),
+  clearExcludeKeywordsBtn: document.getElementById("clearExcludeKeywordsBtn"),
   nameContainsInput: document.getElementById("nameContainsInput"),
   nameContainsChipList: document.getElementById("nameContainsChipList"),
   nameContainsEntry: document.getElementById("nameContainsEntry"),
@@ -461,7 +463,7 @@ function applyExcludeKeywordsDefaultIfBlank() {
 // Two independent instances use this: "Exclude keywords" (persisted
 // server-side per user, via onChange below) and "Company name (contains)"
 // (session-scoped only, like the rest of the search form -- no onChange).
-function createChipInput({ chipListEl, entryEl, hiddenInputEl, onChange }) {
+function createChipInput({ chipListEl, entryEl, hiddenInputEl, onChange, countEl, clearBtnEl }) {
   let chips = [];
 
   function asString() {
@@ -476,6 +478,12 @@ function createChipInput({ chipListEl, entryEl, hiddenInputEl, onChange }) {
       btn.addEventListener("click", () => remove(btn.dataset.value));
     });
     hiddenInputEl.value = asString();
+    // Optional "N keywords" badge and "Clear all" link, shown only when there are chips.
+    if (countEl) {
+      countEl.hidden = chips.length === 0;
+      countEl.textContent = `${chips.length} keyword${chips.length === 1 ? "" : "s"}`;
+    }
+    if (clearBtnEl) clearBtnEl.hidden = chips.length === 0;
   }
 
   // Case-insensitive dedupe, so "Wheelchair" and "wheelchair" are treated as
@@ -494,6 +502,21 @@ function createChipInput({ chipListEl, entryEl, hiddenInputEl, onChange }) {
     chips = chips.filter((kw) => kw !== value);
     render();
     if (onChange) onChange();
+  }
+
+  // Removes every chip -- a user edit, so it fires onChange (and the saved
+  // default follows), unlike setAll.
+  function clear() {
+    if (!chips.length) return;
+    chips = [];
+    render();
+    if (onChange) onChange();
+  }
+
+  if (clearBtnEl) {
+    clearBtnEl.addEventListener("click", () => {
+      if (window.confirm(`Remove all ${chips.length} keywords? This also clears your saved default.`)) clear();
+    });
   }
 
   // Replaces the whole chip set at once (restoring from sessionStorage or
@@ -546,6 +569,7 @@ function createChipInput({ chipListEl, entryEl, hiddenInputEl, onChange }) {
   return {
     add,
     remove,
+    clear,
     setAll,
     asString,
     flushPendingEntry,
@@ -558,6 +582,8 @@ const excludeKeywordsChipInput = createChipInput({
   entryEl: els.excludeKeywordsEntry,
   hiddenInputEl: els.excludeKeywordsInput,
   onChange: () => persistExcludeKeywords(),
+  countEl: els.excludeKeywordsCount,
+  clearBtnEl: els.clearExcludeKeywordsBtn,
 });
 
 // Session-scoped only (no onChange/server persistence) -- matches every

@@ -25,7 +25,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Plus+Jakarta+Sans:wght@600..800&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/bd-icon-light.png" media="(prefers-color-scheme: light)">
 <link rel="icon" type="image/png" href="icons/bd-icon-dark.png" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="style.css?v=86">
+<link rel="stylesheet" href="style.css?v=87">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -230,7 +230,11 @@
               <input type="number" name="minMedicareClaims" min="0" placeholder="Any">
             </label>
             <div class="field field-wide" title="Excludes any company whose name contains one of these (case-insensitive). Press Enter after each one. Saved as your personal default across sessions/devices once you click Save.">
-              <label for="excludeKeywordsEntry">Exclude keywords</label>
+              <div class="field-label-row">
+                <label for="excludeKeywordsEntry">Exclude keywords</label>
+                <span class="chip-count" id="excludeKeywordsCount" hidden></span>
+                <button type="button" class="link-btn chip-clear" id="clearExcludeKeywordsBtn" hidden>Clear all</button>
+              </div>
               <div class="field-with-action">
                 <div class="chip-input" id="excludeKeywordsChipInput">
                   <span id="excludeKeywordsChipList"></span>
@@ -799,7 +803,7 @@
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
   <script src="uiicons.js?v=1"></script>
-  <script src="app.js?v=71"></script>
+  <script src="app.js?v=72"></script>
   <script src="localtime.js?v=2"></script>
   <script src="callmode.js?v=8"></script>
   <script src="today.js?v=13"></script>

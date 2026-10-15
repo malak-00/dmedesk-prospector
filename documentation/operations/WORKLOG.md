@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-15 — Exclude keywords box: scrolls, count badge, Clear all (plan phase 1a); monthly refresh safety review
+
+**Objective.** Stop a 45+ keyword list from stretching the Prospect search form, and confirm the monthly refresh cannot replace leads or remove groups.
+
+**Actions Completed.** `docs/style.css`: `.chip-input` capped at 92px with a thin scrollbar, slimmer chips. `docs/index.html` / `docs/app.js`: an `N keywords` badge and a `Clear all` link (asks to confirm, then clears and, like every chip edit, updates the saved default). Versions bumped (style v=87, app v=72). Reviewed `sql/007` (apply), `sql/015` (lead sync) and `sql/030` (registry matching): apply only updates differing columns of existing `npi_records` and inserts new NPIs, never deletes, and cannot touch `excluded_reason` (not a staging column); lead sync only rewrites the provider snapshot columns (company_name, phone, address, specialty, NPPES last-updated, NPPES-sourced contact) of non-disconnected leads and adds change alerts; it never inserts or deletes leads and never touches `lead_groups` / `lead_group_members`; registry matching only rebuilds derived `npi_identity_keys` and candidate rows, and groups change only through the reviewed-approval functions.
+
+**Database / System Result.** None. Frontend and docs only. 232 worker tests pass.
+
+**Safety Status.** Needs a manual browser check of the Exclude keywords box (many chips scroll inside the box; badge and Clear all appear and hide). A refresh still overwrites a claimed lead's company name/phone/address from NPPES by design.
+
 ## 2026-10-15 — Excluded providers removed from production
 
 **Objective.** Permanently remove the keyword-flagged providers from `npi_records`.
