@@ -2213,3 +2213,31 @@ reviewed and pasted by hand.
 ### Safety Status
 
 No destructive command, secret change or production mutation.
+
+## 2026-10-15 — Quick picks: one count per call
+
+### Objective
+
+`search_quick_counts` still failed about 20% of the time (17 of 85 calls on
+2026-10-15, 12:00-16:30 UTC) after sql/039-041: the three picks were counted in
+one call that shares one 8-second database limit, so one slow count lost all three.
+
+### Actions Completed
+
+- `worker/src/services/searchInsights.js` getQuickPicks: each pick is its own
+  `search_quick_counts` call, one after another; a failed pick is left uncounted,
+  and after a timeout the remaining picks are skipped (less work for a busy
+  database). A full set of answers is remembered for 60 seconds per location; a
+  partial set is not. The fallback to `search_insights` before sql/022 is unchanged.
+- Tests updated/added in `worker/test/searchFilters.test.js` (234 worker tests pass).
+- Observed in the logs, not changed: error bursts at 15:00 and 15:45 UTC lined up
+  with four `remove_excluded_providers(false, 20000, ...)` calls (10-34 s each, via
+  the MCP connection) and dashboard table-count queries on the same database.
+
+### Database / System Result
+
+No Supabase change; no SQL needed. Worker change is NOT deployed yet.
+
+### Safety Status
+
+No destructive command, secret change or production mutation.

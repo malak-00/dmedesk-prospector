@@ -226,8 +226,10 @@ test('quick picks use the one-call count when sql/022 is installed', async () =>
     }),
   }, calls);
   const picks = await getQuickPicks(supabase, { states: ['FL'], hasPhone: true });
-  assert.deepEqual(picks.map((p) => [p.id, p.unclaimed, p.capped]), [['medicare', 100, false], ['reachable', 200, false], ['fresh', 300, true]]);
-  assert.equal(calls.length, 1, 'one database call for all the picks');
+  // each pick is counted in its own call, so one slow count cannot fail the others
+  assert.deepEqual(picks.map((p) => [p.id, p.unclaimed, p.capped]), [['medicare', 100, false], ['reachable', 100, false], ['fresh', 100, false]]);
+  assert.equal(calls.length, 3, 'one database call per pick');
+  assert.ok(calls.every((c) => c.args.p_picks.length === 1));
   assert.equal(calls[0].args.p_picks[0].criteria.activeMedicare, true);
   assert.equal('hasPhone' in calls[0].args.p_picks[0].criteria, false);
 });
@@ -289,4 +291,31 @@ test('insights: a count that times out says so plainly (503)', async () => {
     search_insights: async () => ({ data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } }),
   });
   await assert.rejects(() => getInsights(supabase, 'user-timeout', { states: ['NV'] }), (err) => err.status === 503 && /too long/i.test(err.message));
+});
+
+test('quick picks: one slow count leaves only that pick uncounted, and the rest are not tried', async () => {
+  const calls = [];
+  const supabase = fakeSupabase({
+    search_quick_counts: async ({ p_picks }) => (p_picks[0].id === 'reachable'
+      ? { data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } }
+      : { data: [{ id: p_picks[0].id, unclaimed: 7, capped: false }], error: null }),
+  }, calls);
+  const picks = await getQuickPicks(supabase, { states: ['WA'], hasPhone: true });
+  assert.deepEqual(picks.map((p) => p.unclaimed), [7, null, null], 'the first was counted; the timed-out one and the one after it are left alone');
+  assert.equal(calls.length, 2, 'nothing is counted after a timeout');
+});
+
+test('quick picks: a full set of answers is reused for a minute, a partial one is not', async () => {
+  const calls = [];
+  const good = fakeSupabase({
+    search_quick_counts: async ({ p_picks }) => ({ data: [{ id: p_picks[0].id, unclaimed: 3, capped: false }], error: null }),
+  }, calls);
+  await getQuickPicks(good, { states: ['MT'] });
+  await getQuickPicks(good, { states: ['MT'] });
+  assert.equal(calls.length, 3, 'the second ask is answered from memory');
+
+  const bad = fakeSupabase({ search_quick_counts: async () => ({ data: null, error: { code: '57014', message: 'statement timeout' } }) }, calls);
+  await getQuickPicks(bad, { states: ['ID'] });
+  await getQuickPicks(bad, { states: ['ID'] });
+  assert.equal(calls.length, 5, 'a failed count is tried again on the next ask');
 });
