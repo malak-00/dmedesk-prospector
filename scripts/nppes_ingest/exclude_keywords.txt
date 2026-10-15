@@ -15,21 +15,22 @@ eye care
 dentist
 dds
 therapy
-wig
+wigs
+medical wig
 optometry
 oxygen
 mayo clinic
 lincare inc
 eye center
 eyewear
-eye
 medical center
 bioelectronics
 dental
 optum
 pulmonary
 diagnostic
-lab
+laborator
+labs
 medical group
 foundation
 hair

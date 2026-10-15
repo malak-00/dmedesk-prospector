@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-15 — Exclusion flag (sql/042) and tightened keyword list
+
+**Objective.** Hide the team's excluded providers from search without changing NPPES-owned fields, and remove the keywords that caused false matches.
+
+**Actions Completed.** Keyword list (`exclude_keywords.txt`, `sql/audit_exclusions.sql`): dropped `eye` (matched Meyer etc.); `wig` -> `wigs`, `medical wig` (matched Piggly Wiggly); `lab` -> `laborator`, `labs`. `oxygen`, `sleep`, `therapy` stay by decision. Added `sql/042_exclusion_flag.sql`: nullable `npi_records.excluded_reason`; `provider_filter_sql()` (041's version plus one line) hides flagged rows unless includeInactive; `apply_exclusion_keywords(terms, dry_run default true, batch)` sets/clears the flag, never flags a provider a rep holds (`leads.claimed_by`), and touches no other column or table.
+
+**Database / System Result.** Read-only SELECTs only. With the tightened 46-term list: 123,246 of 394,755 `npi_records` match; 533 are held by a rep and would be skipped, so 122,713 would be flagged. `sql/042` is NOT run; nothing in Supabase changed. Follow-up not in 042: the territory totals cache (sql/025) and the 021 insight counts do not yet exclude flagged rows, so those totals will still count them.
+
+**Safety Status.** No destructive command. Run 042 by hand, then the dry run, then the batched apply (repeat until `remaining_to_exclude` is 0). Undo: `select public.apply_exclusion_keywords('{}', false);`.
+
 ## 2026-10-14 — Real exclusion list added to the ingest file and the audit
 
 **Objective.** Use the team's 45-term exclusion list instead of placeholders.

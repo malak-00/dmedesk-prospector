@@ -13,12 +13,12 @@
 with terms(term) as (
   values ('sleep'), ('hospital'), ('university'), ('regents of'), ('pharmacy'), ('drug'),
          ('apothecary'), ('ostomy'), ('government'), ('optical'), ('eye care'), ('dentist'),
-         ('dds'), ('therapy'), ('wig'), ('optometry'), ('oxygen'), ('mayo clinic'),
-         ('lincare inc'), ('eye center'), ('eyewear'), ('eye'), ('medical center'), ('bioelectronics'),
-         ('dental'), ('optum'), ('pulmonary'), ('diagnostic'), ('lab'), ('medical group'),
-         ('foundation'), ('hair'), ('foot clinic'), ('walgreen co'), ('clinic'), ('foot & ankle center pc'),
-         ('foot & ankle center'), ('oorthopedic surgery & sports medicine'), ('community health center'), ('health center'), ('supply and salon'), ('salon'),
-         ('cancer'), ('hearing aid'), ('d.d.s')
+         ('dds'), ('therapy'), ('wigs'), ('medical wig'), ('optometry'), ('oxygen'),
+         ('mayo clinic'), ('lincare inc'), ('eye center'), ('eyewear'), ('medical center'), ('bioelectronics'),
+         ('dental'), ('optum'), ('pulmonary'), ('diagnostic'), ('laborator'), ('labs'),
+         ('medical group'), ('foundation'), ('hair'), ('foot clinic'), ('walgreen co'), ('clinic'),
+         ('foot & ankle center pc'), ('foot & ankle center'), ('oorthopedic surgery & sports medicine'), ('community health center'), ('health center'), ('supply and salon'),
+         ('salon'), ('cancer'), ('hearing aid'), ('d.d.s')
 ), hits as (
   select t.term, r.npi, r.status, r.deactivation_date
     from terms t
@@ -41,12 +41,12 @@ select h.term,
 with terms(term) as (
   values ('sleep'), ('hospital'), ('university'), ('regents of'), ('pharmacy'), ('drug'),
          ('apothecary'), ('ostomy'), ('government'), ('optical'), ('eye care'), ('dentist'),
-         ('dds'), ('therapy'), ('wig'), ('optometry'), ('oxygen'), ('mayo clinic'),
-         ('lincare inc'), ('eye center'), ('eyewear'), ('eye'), ('medical center'), ('bioelectronics'),
-         ('dental'), ('optum'), ('pulmonary'), ('diagnostic'), ('lab'), ('medical group'),
-         ('foundation'), ('hair'), ('foot clinic'), ('walgreen co'), ('clinic'), ('foot & ankle center pc'),
-         ('foot & ankle center'), ('oorthopedic surgery & sports medicine'), ('community health center'), ('health center'), ('supply and salon'), ('salon'),
-         ('cancer'), ('hearing aid'), ('d.d.s')
+         ('dds'), ('therapy'), ('wigs'), ('medical wig'), ('optometry'), ('oxygen'),
+         ('mayo clinic'), ('lincare inc'), ('eye center'), ('eyewear'), ('medical center'), ('bioelectronics'),
+         ('dental'), ('optum'), ('pulmonary'), ('diagnostic'), ('laborator'), ('labs'),
+         ('medical group'), ('foundation'), ('hair'), ('foot clinic'), ('walgreen co'), ('clinic'),
+         ('foot & ankle center pc'), ('foot & ankle center'), ('oorthopedic surgery & sports medicine'), ('community health center'), ('health center'), ('supply and salon'),
+         ('salon'), ('cancer'), ('hearing aid'), ('d.d.s')
 )
 select count(*) as distinct_providers_matched,
        (select count(*) from public.npi_records) as total_npi_records
@@ -65,12 +65,12 @@ select r.npi, r.name, r.address_state, r.status
 with terms(term) as (
   values ('sleep'), ('hospital'), ('university'), ('regents of'), ('pharmacy'), ('drug'),
          ('apothecary'), ('ostomy'), ('government'), ('optical'), ('eye care'), ('dentist'),
-         ('dds'), ('therapy'), ('wig'), ('optometry'), ('oxygen'), ('mayo clinic'),
-         ('lincare inc'), ('eye center'), ('eyewear'), ('eye'), ('medical center'), ('bioelectronics'),
-         ('dental'), ('optum'), ('pulmonary'), ('diagnostic'), ('lab'), ('medical group'),
-         ('foundation'), ('hair'), ('foot clinic'), ('walgreen co'), ('clinic'), ('foot & ankle center pc'),
-         ('foot & ankle center'), ('oorthopedic surgery & sports medicine'), ('community health center'), ('health center'), ('supply and salon'), ('salon'),
-         ('cancer'), ('hearing aid'), ('d.d.s')
+         ('dds'), ('therapy'), ('wigs'), ('medical wig'), ('optometry'), ('oxygen'),
+         ('mayo clinic'), ('lincare inc'), ('eye center'), ('eyewear'), ('medical center'), ('bioelectronics'),
+         ('dental'), ('optum'), ('pulmonary'), ('diagnostic'), ('laborator'), ('labs'),
+         ('medical group'), ('foundation'), ('hair'), ('foot clinic'), ('walgreen co'), ('clinic'),
+         ('foot & ankle center pc'), ('foot & ankle center'), ('oorthopedic surgery & sports medicine'), ('community health center'), ('health center'), ('supply and salon'),
+         ('salon'), ('cancer'), ('hearing aid'), ('d.d.s')
 )
 select l.npi, l.company_name, l.claimed_by, l.claimed_at
   from public.leads l
