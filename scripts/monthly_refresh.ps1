@@ -61,7 +61,7 @@ if ($Source) {
   Invoke-Ingest ($full + @("--dry-run"))
 
   $answer = Read-Host "`nLoad this release into the database for real? Type YES to continue"
-  if ($answer -cne "YES") { Write-Host "Stopped. Nothing was written."; return }
+  if ($answer -ne "YES") { Write-Host "Stopped. Nothing was written."; return }
 
   Write-Host "`nStep 2/3: stage, apply, sync claimed leads, rebuild matches, flag excluded providers" -ForegroundColor Yellow
   Invoke-Ingest ($full + @("--apply"))

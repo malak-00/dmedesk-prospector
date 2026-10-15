@@ -304,6 +304,7 @@ def run_ingest(
         fast_org_check = options.organizations_only and options.run_type != RUN_TYPE_DEACTIVATION
         entity_col: str | None = None
         npi_col: str | None = None
+        taxonomy_cols: list[str] = []
         for source_row_number, row, index in read_source_rows(options.source_path):
             source_rows += 1
             now = time.time()
@@ -315,13 +316,24 @@ def run_ingest(
                 if entity_col is None:
                     entity_col = index.resolve("entity_type_code")
                     npi_col = index.resolve("npi")
+                    taxonomy_cols = index.taxonomy_columns()
                 if entity_col is not None:
                     raw_entity = (row.get(entity_col) or "").strip()
                     if raw_entity != "2":
-                        rejection_counts[REASON_NOT_ORGANIZATION] = rejection_counts.get(REASON_NOT_ORGANIZATION, 0) + 1
-                        raw_npi = (row.get(npi_col) or "").strip() if npi_col else ""
-                        rejects.write(Rejection(source_row_number, raw_npi, REASON_NOT_ORGANIZATION, f"NPI-{raw_entity}" if raw_entity else ""))
-                        continue
+                        # Keep NPI-1s that hold a DME taxonomy (prefix 332B) —
+                        # sole-proprietor DME owners bill as individuals but are
+                        # valid prospecting targets just like NPI-2 orgs.
+                        has_dme_taxonomy = any(
+                            (row.get(col) or "").strip().upper().startswith("332B")
+                            for col in taxonomy_cols
+                        )
+                        if has_dme_taxonomy:
+                            pass  # fall through to normal mapping
+                        else:
+                            rejection_counts[REASON_NOT_ORGANIZATION] = rejection_counts.get(REASON_NOT_ORGANIZATION, 0) + 1
+                            raw_npi = (row.get(npi_col) or "").strip() if npi_col else ""
+                            rejects.write(Rejection(source_row_number, raw_npi, REASON_NOT_ORGANIZATION, f"NPI-{raw_entity}" if raw_entity else ""))
+                            continue
 
             provider = mapper(index, row, source_row_number)
             rejection = validator.check(provider)
