@@ -83,6 +83,7 @@ function shapeInsights(raw) {
 
 const INSIGHTS_CACHE_MS = 30_000;
 const INSIGHTS_CACHE_MAX = 200;
+const QUICK_PICKS_CACHE_MS = 60_000;
 
 export async function getInsights(supabase, userId, criteria) {
   // Memory of what this rep has already been shown for exactly these filters.
@@ -147,20 +148,43 @@ export async function getQuickPicks(supabase, criteria) {
     return definitions.map((pick) => ({ id: pick.id, label: pick.label, patch: pick.patch, unclaimed: null, capped: false }));
   }
 
-  // sql/022 counts all the picks in one call. Before it is installed, fall
-  // back to one call per pick, which gives the same numbers more slowly.
-  const { data, error } = await supabase.rpc("search_quick_counts", {
-    p_picks: definitions.map((pick) => ({ id: pick.id, criteria: toFilterPayload({ ...base, ...pick.criteria }, { collapsed: true }) })),
-  });
-  if (!error && Array.isArray(data)) {
-    const byId = new Map(data.map((row) => [row.id, row]));
-    return definitions.map((pick) => {
-      const row = byId.get(pick.id);
-      return { id: pick.id, label: pick.label, patch: pick.patch, unclaimed: row ? count(row.unclaimed) : null, capped: Boolean(row && row.capped) };
+  // The same answer for every rep looking at the same location, so a rep
+  // changing a filter back and forth (or a second rep) doesn't count it again.
+  const cacheKey = "picks|" + JSON.stringify(definitions.map((pick) => toFilterPayload({ ...base, ...pick.criteria }, { collapsed: true })));
+  const hit = cache.get(cacheKey);
+  if (hit && Date.now() - hit.at < QUICK_PICKS_CACHE_MS) return hit.value;
+
+  // sql/022's search_quick_counts takes a list of picks, but all of them in one
+  // call share one 8-second database limit, and one slow count failed the lot
+  // (about 1 call in 5). One pick per call: each gets its own limit and a
+  // failed one is just left uncounted. They run one after another, and after a
+  // timeout the rest are skipped, since a busy database should get less to do,
+  // not more. Before sql/022 is installed, search_insights counts them instead.
+  const picks = [];
+  let missing = false;
+  let timedOut = false;
+  for (const pick of definitions) {
+    const uncounted = { id: pick.id, label: pick.label, patch: pick.patch, unclaimed: null, capped: false };
+    if (timedOut) { picks.push(uncounted); continue; }
+    const { data, error } = await supabase.rpc("search_quick_counts", {
+      p_picks: [{ id: pick.id, criteria: toFilterPayload({ ...base, ...pick.criteria }, { collapsed: true }) }],
     });
+    if (error && isMissingFunction(error)) { missing = true; break; }
+    if (error) {
+      if (isTimeout(error)) timedOut = true;
+      picks.push(uncounted);
+      continue;
+    }
+    const row = Array.isArray(data) ? data.find((r) => r.id === pick.id) : null;
+    picks.push(row ? { ...uncounted, unclaimed: count(row.unclaimed), capped: Boolean(row.capped) } : uncounted);
   }
-  if (error && !isMissingFunction(error)) {
-    return definitions.map((pick) => ({ id: pick.id, label: pick.label, patch: pick.patch, unclaimed: null, capped: false }));
+  if (!missing) {
+    // Only a full set of answers is kept; a partial one is retried on the next ask.
+    if (picks.every((pick) => pick.unclaimed !== null)) {
+      if (cache.size >= INSIGHTS_CACHE_MAX) cache.delete(cache.keys().next().value);
+      cache.set(cacheKey, { at: Date.now(), value: picks });
+    }
+    return picks;
   }
 
   return Promise.all(definitions.map(async (pick) => {
