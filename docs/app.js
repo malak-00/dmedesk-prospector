@@ -1741,6 +1741,7 @@ function saveSearchFormState() {
     values[el.name] = el.type === "checkbox" ? el.checked : formData.get(el.name) || "";
   }
   for (const key of MULTI_VALUE_FIELDS) values[key] = formData.getAll(key);
+  delete values.resetProgress;
   sessionStorage.setItem(SEARCH_FILTERS_KEY, JSON.stringify(values));
 }
 
@@ -2005,6 +2006,9 @@ async function runSearch(evt) {
   evt.preventDefault();
   const formData = new FormData(els.form);
   const params = buildSearchParams(formData);
+  if (els.form.elements.resetProgress && els.form.elements.resetProgress.checked) {
+    els.form.elements.resetProgress.checked = false;
+  }
   saveSearchFormState();
 
   // Resets this browser tab's OWN "Search more" bookkeeping -- a brand-new
