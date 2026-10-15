@@ -28,6 +28,8 @@ While [`architecture/`](../architecture/) documents the system as it currently r
   Five confirmed features ported from the DME Dialer: unified call mode with one-tap prospect claim on disposition click, lead local time display, shuffle queue toggle, admin default taxonomy (`sql/028`), and "9am States" calling-window indicator.
 - **[`CALL_MODE_DISPOSITION_LATENCY_FIX_PLAN.md`](CALL_MODE_DISPOSITION_LATENCY_FIX_PLAN.md)** `[📋 Approved / Ready to Implement]`  
   Plan to eliminate disposition click latency when dialing via optimistic queue advance, single-call prospect claim enrichment, and a unified `POST /leads/disposition` endpoint.
+- **[`UNIFIED_DISCONNECTED_AND_KEYWORD_EXEMPTION_TRACKING_PLAN.md`](UNIFIED_DISCONNECTED_AND_KEYWORD_EXEMPTION_TRACKING_PLAN.md)** `[📋 Ready for Review / Malak]`  
+  Unified "One-Button" Call-Mode Disconnected flow (intelligent alternative-number dial-next prompt) and hybrid Keyword Exemption tracking/diff system.
 
 ### 3. 🏢 Lead Identity Grouping & Ownership
 - **[`MASTER_PLAN.md`](MASTER_PLAN.md)** `[🟡 In Progress Roadmap]`  
@@ -72,4 +74,5 @@ While [`architecture/`](../architecture/) documents the system as it currently r
 | [`PHONE_DELETION_AND_DISCONNECTED_GROUP_HANDLING.md`](PHONE_DELETION_AND_DISCONNECTED_GROUP_HANDLING.md) | Deleted phone preservation and group disconnect sync | **📝 Draft / RFC** |
 | [`NAME_CHANGE_OWNERSHIP_PLAN_DRAFT.md`](NAME_CHANGE_OWNERSHIP_PLAN_DRAFT.md) | Name change handling and successor entity links | **📝 Draft / RFC** |
 | [`MASTER_PLAN_NAME_HISTORY_ADDENDUM.md`](MASTER_PLAN_NAME_HISTORY_ADDENDUM.md) | Addendum to Master Plan for aliases and name history | **📝 Draft / RFC** |
+| [`UNIFIED_DISCONNECTED_AND_KEYWORD_EXEMPTION_TRACKING_PLAN.md`](UNIFIED_DISCONNECTED_AND_KEYWORD_EXEMPTION_TRACKING_PLAN.md) | Unified call-mode disconnected flow & keyword exemption tracking | **📋 Ready for Review** |
 | [`UNCONFIRMED_SUGGESTIONS.md`](UNCONFIRMED_SUGGESTIONS.md) | Backlog of feature ideas and 2-way sheets sync concepts | **💡 Backlog** |

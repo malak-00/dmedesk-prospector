@@ -4,12 +4,12 @@
 
 You have identified four distinct but tightly coupled problems when managing exclusion keywords (e.g., `hospital`, `clinic`, `pharmacy`, `oxygen`, `dentist`, `salon`, etc.):
 
-| Problem Area | Current Limitation | Impact |
-| :--- | :--- | :--- |
-| **1. UI Sizing** | `.chip-input` uses unrestricted `flex-wrap: wrap` with no max-height or scroll container. | 40+ chips wrap into 8–10 lines of elements, visually dominating and bloating the Prospect search form. |
-| **2. Character Cap** | Hardcoded `MAX_EXCLUDE_KEYWORDS_LENGTH = 500` in backend (`worker/src/lib/auth.js`). | 44 keywords with commas total ~550 characters, triggering HTTP 400 validation errors upon save. |
-| **3. Database Contamination** | 387k+ existing rows in `public.npi_records` (and rows in `public.leads`) already contain these terms. | Unwanted leads appear in search queries, requiring repetitive filtering on every search. |
-| **4. Ingestion Pipeline Leak** | `scripts/nppes_ingest` CLI only filters by State, Taxonomy, and Organization type (no keyword filter). | Every monthly CMS refresh re-ingests excluded providers back into `npi_records`. |
+| Problem Area                   | Current Limitation                                                                                     | Impact                                                                                                 |
+| :----------------------------- | :----------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------- |
+| **1. UI Sizing**               | `.chip-input` uses unrestricted `flex-wrap: wrap` with no max-height or scroll container.              | 40+ chips wrap into 8–10 lines of elements, visually dominating and bloating the Prospect search form. |
+| **2. Character Cap**           | Hardcoded `MAX_EXCLUDE_KEYWORDS_LENGTH = 500` in backend (`worker/src/lib/auth.js`).                   | 44 keywords with commas total ~550 characters, triggering HTTP 400 validation errors upon save.        |
+| **3. Database Contamination**  | 387k+ existing rows in `public.npi_records` (and rows in `public.leads`) already contain these terms.  | Unwanted leads appear in search queries, requiring repetitive filtering on every search.               |
+| **4. Ingestion Pipeline Leak** | `scripts/nppes_ingest` CLI only filters by State, Taxonomy, and Organization type (no keyword filter). | Every monthly CMS refresh re-ingests excluded providers back into `npi_records`.                       |
 
 ---
 
@@ -19,11 +19,12 @@ Before applying deletions or ingestion blocks, review these specific keywords fr
 
 > [!WARNING]
 > **DME Domain Conflicts:**
-> - **`oxygen`**: In the DME (Durable Medical Equipment) industry, Oxygen Concentrators, Portable Oxygen, and Liquid Oxygen are primary DME product lines. An exclusion on `oxygen` will drop legitimate DME oxygen suppliers (e.g., *"Precision Medical Oxygen & Mobility"*).
-> - **`sleep`**: CPAP, BiPAP, and sleep apnea equipment are core DME categories. Excluding `sleep` will exclude home medical CPAP suppliers (e.g., *"Apex Sleep & Respiratory Services"*).
+>
+> - **`oxygen`**: In the DME (Durable Medical Equipment) industry, Oxygen Concentrators, Portable Oxygen, and Liquid Oxygen are primary DME product lines. An exclusion on `oxygen` will drop legitimate DME oxygen suppliers (e.g., _"Precision Medical Oxygen & Mobility"_).
+> - **`sleep`**: CPAP, BiPAP, and sleep apnea equipment are core DME categories. Excluding `sleep` will exclude home medical CPAP suppliers (e.g., _"Apex Sleep & Respiratory Services"_).
 > - **`therapy`**: Many respiratory DME suppliers use "Respiratory Therapy Services" in their business name.
 > - **`optum` / `lin care inc` / `walgreen co`**: These are large corporate entities; excluding them by exact phrase is safe and targeted.
-> 
+>
 > **Recommendation:** We will structure the audit tool to report match counts for **each keyword independently** before any database removal, so you can review match samples for potentially sensitive terms like `oxygen` and `sleep`.
 
 ---
@@ -62,6 +63,7 @@ flowchart TD
 ## 4. Phase 1: Frontend & Backend Limit Fixes
 
 ### 1.1 UI Box Visual Size Fix (`docs/style.css` & `docs/app.js`)
+
 - **Container Sizing**:
   - Constrain `.chip-input` with `max-height: 92px` (approx. 2.5 rows of chips) and `overflow-y: auto`.
   - Add a styled slim scrollbar (`scrollbar-width: thin; scrollbar-color: var(--hairline-hover) transparent;`).
@@ -69,9 +71,10 @@ flowchart TD
   - Tighten chip padding (`2px 7px` vs current bloated tags) and font size (`12px`).
   - Add an inline counter badge and a "Clear all" link when chips > 0.
 - **Collapsible Summary Mode (Optional Enhancement)**:
-  - When the field loses focus, optionally collapse to a clean summary row: *"44 keywords active (click to view/edit)"* to keep the search form compact and distraction-free.
+  - When the field loses focus, optionally collapse to a clean summary row: _"44 keywords active (click to view/edit)"_ to keep the search form compact and distraction-free.
 
 ### 1.2 Character Limit Expansion (`worker/src/lib/auth.js` & `appscript/services/AuthService.js`)
+
 - **Backend Change**:
   - In `worker/src/lib/auth.js`, raise:
     ```javascript
@@ -92,6 +95,7 @@ flowchart TD
 To prevent excluded providers from re-entering the database on every monthly NPPES refresh, filtering must occur during raw CSV parsing before rows reach staging.
 
 ### 2.1 Code Changes
+
 1. **`scripts/nppes_ingest/validate.py`**:
    - Add rejection constant:
      ```python
@@ -123,7 +127,9 @@ To prevent excluded providers from re-entering the database on every monthly NPP
 Because `npi_records` contains 387k+ rows and links with `public.leads`, `npi_cms_enrichment`, and identity grouping tables, removal must be deliberate and safe.
 
 ### 3.1 Step 1: Audit Script (`scripts/audit_exclusions.py` / SQL)
+
 Create an audit utility that inspects the live database in read-only mode and outputs:
+
 1. **Keyword-by-Keyword Hit Counts**:
    ```
    [AUDIT BREAKDOWN]
@@ -146,6 +152,7 @@ Create an audit utility that inspects the live database in read-only mode and ou
 We have two options for the cleanup mechanism:
 
 #### Option A: Status Soft-Deactivation (Recommended & Safest)
+
 - Instead of hard-deleting rows (which could disrupt foreign keys or audit logs in `provider_field_history` / `identity_match_candidates`), we:
   - Set `status = 'X'` (or set `deactivation_date = CURRENT_DATE`) in `public.npi_records`.
   - `search_providers()` in SQL already excludes deactivated providers (`where r.deactivation_date is null and r.status = 'A'`), instantly hiding them from all prospecting and search results.
@@ -153,6 +160,7 @@ We have two options for the cleanup mechanism:
   - Claimed leads remain protected unless explicitly reviewed by an admin.
 
 #### Option B: Batched Hard Purge
+
 - Run a transactional batched deletion script:
   - Deletes from `npi_cms_enrichment` where NPI matches.
   - Deletes from `npi_records` where NPI matches **AND** NPI is not currently claimed in `public.leads`.

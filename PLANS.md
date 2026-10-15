@@ -17,6 +17,8 @@ All architectural specifications live in [`documentation/plans/`](documentation/
 ### 1. 📞 Call Mode & Dialer Performance
 * **[`documentation/plans/CALL_MODE_DISPOSITION_LATENCY_FIX_PLAN.md`](documentation/plans/CALL_MODE_DISPOSITION_LATENCY_FIX_PLAN.md)**  
   Fix for disposition click latency during dialing. Explains the 4-request network waterfall and defines the plan for optimistic UI navigation (<50ms perceived latency), single-request claim enrichment, and the unified `POST /leads/disposition` route.
+* **[`documentation/plans/UNIFIED_DISCONNECTED_AND_KEYWORD_EXEMPTION_TRACKING_PLAN.md`](documentation/plans/UNIFIED_DISCONNECTED_AND_KEYWORD_EXEMPTION_TRACKING_PLAN.md)**  
+  Architecture for a single-button "Disconnected" flow with automatic alternative-number dial-next prompt, combined with a hybrid keyword exemption event log and admin diff dashboard.
 * **[`documentation/plans/FEATURE_PLAN.md`](documentation/plans/FEATURE_PLAN.md)**  
   Confirmed dialer capabilities ported from DME Dialer: unified call mode with one-tap prospect claim on disposition click, lead local time display, shuffle queue toggle, and "9am States" calling-window indicator.
 * **[`documentation/plans/MEETINGS_PLAN.md`](documentation/plans/MEETINGS_PLAN.md)**  
