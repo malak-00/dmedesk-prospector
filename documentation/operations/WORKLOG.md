@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-15 — Excluded providers removed from production
+
+**Objective.** Permanently remove the keyword-flagged providers from `npi_records`.
+
+**Actions Completed.** At the user's explicit go-ahead (no backup, no archive), Claude called `remove_excluded_providers(false, ..., 'delete excluded providers')` in 7 batches (5,000 then 20,000 each) on the dmedesk-prospector project, then ran `vacuum analyze` on npi_records, npi_identity_keys, npi_cms_enrichment and lead_group_members.
+
+**Database / System Result.** Deleted 120,935 `npi_records`, 120,933 `npi_identity_keys`, 29,304 `lead_group_members` and 20,940 `npi_cms_enrichment` rows. `npi_records` went 394,755 -> 273,820. 1,778 flagged providers were kept (lead, call, ownership, claim request or shared identity group) and stay hidden. Checks after: no orphan `npi_cms_enrichment`; no lead lost. 130 leads have no `npi_records` row (not caused by this run: leads' NPIs were all on the keep list).
+
+**Safety Status.** Irreversible, no backup. `provider_field_history` untouched. The monthly ingest now applies `exclude_keywords.txt` by default; re-run `apply_exclusion_keywords` after each refresh to catch renames.
+
 ## 2026-10-15 — sql/044 function created and dry run (no deletion)
 
 **Objective.** Create the removal function and confirm what it would delete.
