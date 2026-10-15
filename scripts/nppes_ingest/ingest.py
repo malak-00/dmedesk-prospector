@@ -23,7 +23,7 @@ from typing import Callable, Iterator, Sequence
 from .manifest import RunManifest, file_checksum_and_lines
 from .mapping import HeaderIndex, StagedProvider, map_deactivation_row, map_provider_row
 from .supabase_rest import SupabaseClient
-from .validate import Rejection, RowValidator, check_expected_row_count
+from .validate import REASON_NOT_ORGANIZATION, Rejection, RowValidator, check_expected_row_count
 
 REFRESH_RUNS_TABLE = "refresh_runs"
 STAGING_TABLE = "nppes_refresh_staging"
@@ -301,12 +301,28 @@ def run_ingest(
         start_time = time.time()
         last_progress_time = 0.0
         _print_progress(0, total_rows, 0, start_time)
+        fast_org_check = options.organizations_only and options.run_type != RUN_TYPE_DEACTIVATION
+        entity_col: str | None = None
+        npi_col: str | None = None
         for source_row_number, row, index in read_source_rows(options.source_path):
             source_rows += 1
             now = time.time()
             if source_rows % 5_000 == 0 or (now - last_progress_time >= 0.5):
                 _print_progress(source_rows, total_rows, accepted_rows, start_time)
                 last_progress_time = now
+
+            if fast_org_check:
+                if entity_col is None:
+                    entity_col = index.resolve("entity_type_code")
+                    npi_col = index.resolve("npi")
+                if entity_col is not None:
+                    raw_entity = (row.get(entity_col) or "").strip()
+                    if raw_entity != "2":
+                        rejection_counts[REASON_NOT_ORGANIZATION] = rejection_counts.get(REASON_NOT_ORGANIZATION, 0) + 1
+                        raw_npi = (row.get(npi_col) or "").strip() if npi_col else ""
+                        rejects.write(Rejection(source_row_number, raw_npi, REASON_NOT_ORGANIZATION, f"NPI-{raw_entity}" if raw_entity else ""))
+                        continue
+
             provider = mapper(index, row, source_row_number)
             rejection = validator.check(provider)
             if rejection is not None:

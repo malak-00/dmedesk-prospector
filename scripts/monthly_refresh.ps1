@@ -43,7 +43,7 @@ if ($Source -and -not (Test-Path -LiteralPath $Source)) { throw "Source file not
 if ($DeactivationFile -and -not (Test-Path -LiteralPath $DeactivationFile)) { throw "Deactivation file not found: $DeactivationFile" }
 if (-not $Label) { $Label = "$ReleaseDate-full" }
 
-$common = @()
+$common = @("--skip-checksum")
 if ($EnvFile) { $common += @("--env-file", $EnvFile) }
 
 function Invoke-Ingest([string[]]$Arguments) {
