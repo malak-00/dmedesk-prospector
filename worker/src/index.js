@@ -562,6 +562,26 @@ app.post("/admin/users/update", async (c) => {
   return c.json(ok(await userAdminRepo.updateUser(supabaseFor(c), session, body)));
 });
 
+// The App insights dashboard: usage, funnel, friction and system health. Super admin only
+// (sql/045), so ordinary admins who also prospect keep their normal Today screen.
+function requireSuperAdmin(session) {
+  if (!session.isSuperAdmin) {
+    const err = new Error("Super admins only");
+    err.status = 403;
+    throw err;
+  }
+}
+
+// What the signed-in browser needs to know about itself that the sign-in token doesn't carry.
+app.get("/auth/flags", (c) => c.json(ok({ isSuperAdmin: Boolean(c.get("session").isSuperAdmin) })));
+
+app.get("/admin/insights", async (c) => {
+  requireSuperAdmin(c.get("session"));
+  const supabase = supabaseFor(c);
+  const system = await SystemInfo.getSystemInfo(c.get("config"), supabase).catch(() => null);
+  return c.json(ok(await adminRepo.getInsights(supabase, system, { days: c.req.query("days") })));
+});
+
 app.get("/admin/system", async (c) => {
   requireAdmin(c.get("session"));
   return c.json(ok(await SystemInfo.getSystemInfo(c.get("config"), supabaseFor(c))));

@@ -3111,3 +3111,40 @@ html.game-open .buddy { display: none; }
 @keyframes hd-sway { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
 @media (max-width: 1100px) { .holiday-strip { display: none; } }
 @media (prefers-reduced-motion: reduce) { .hd-glyph { animation: none; } }
+
+/* ---------- App insights (super admin, replaces Today) ---------- */
+.ins-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.ins-title { margin: 0; font-size: 20px; }
+.ins-sub { margin: 4px 0 0; font-size: 12px; color: var(--muted); max-width: 640px; }
+.ins-tools { display: flex; align-items: center; gap: 10px; }
+.ins-kpis { margin: 14px 0; }
+.ins-card { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); padding: 14px 18px; margin-bottom: 14px; min-width: 0; }
+.ins-card h3 { margin: 0 0 10px; font-size: 14px; }
+.ins-card h3 small { font-weight: 400; color: var(--muted); margin-left: 6px; }
+.ins-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 14px; }
+.ins-grid .ins-card { margin-bottom: 0; }
+.ins-grid { margin-bottom: 14px; }
+.ins-chart { width: 100%; height: auto; display: block; }
+.ins-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-top: 6px; }
+.ins-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+.ins-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ins-list li { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; }
+.ins-list small { display: block; font-size: 11px; color: var(--muted); }
+.ins-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; background: var(--muted-2); }
+.ins-good .ins-dot, .ins-ok .ins-dot { background: var(--score-high); }
+.ins-warn .ins-dot { background: var(--score-mid); }
+.ins-bad .ins-dot { background: var(--score-low); }
+.ins-info .ins-dot { background: var(--accent); }
+.ins-table .ins-dim { color: var(--score-mid); }
+.ins-empty, .ins-note { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+.ins-funnel { display: flex; flex-direction: column; gap: 8px; }
+.ins-funnel-row { display: grid; grid-template-columns: 110px 1fr 90px; align-items: center; gap: 10px; font-size: 12px; }
+.ins-funnel-track { background: var(--surface-2); border-radius: 4px; height: 10px; overflow: hidden; }
+.ins-funnel-fill { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.ins-funnel-num { font-family: var(--font-mono); text-align: right; }
+.ins-funnel-num small { color: var(--muted); }
+.ins-quotes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ins-quotes li { border-left: 3px solid var(--accent); padding-left: 10px; }
+.ins-quotes p { margin: 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ins-quotes small { color: var(--muted); font-size: 11px; }
+@media (max-width: 600px) { .ins-funnel-row { grid-template-columns: 80px 1fr 80px; } }

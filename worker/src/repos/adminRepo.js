@@ -4,6 +4,7 @@
 // listClaimedLeadsForUser.
 import { buildTeamActivity, isDay } from "../lib/teamActivity.js";
 import { buildFunnel } from "../lib/funnel.js";
+import { buildInsights } from "../lib/insights.js";
 import { cleanStatus, isJunkStatus, normalizeStatus, statusCleanupRows, CANONICAL_STATUSES } from "../lib/statuses.js";
 import { toLeadDTO } from "./leadsRepo.js";
 
@@ -996,4 +997,52 @@ export async function applyStatusMerges(supabase, merges) {
     affected.forEach((r) => { if (changed.length < MAX_UNDO_ROWS) changed.push({ npi: String(r.npi), from, to }); });
   }
   return { summary, changed, leadsChanged: summary.reduce((n, s) => n + s.leads, 0) };
+}
+
+// ---- App insights (super admin) ---------------------------------------------------------
+// Everything the dashboard shows, from what the app already records. Each source is best
+// effort: one that is missing or slow leaves its part empty instead of failing the page.
+async function tryRows(factory, context, byId = true) {
+  try { return await fetchAllRows(factory, context, byId); } catch (err) {
+    console.log(`[adminRepo] insights: ${context} unavailable: ${err.message}`);
+    return [];
+  }
+}
+
+async function tryCount(factory) {
+  try {
+    const { count, error } = await factory();
+    return error ? null : count || 0;
+  } catch { return null; }
+}
+
+export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
+  const span = Math.min(Math.max(Math.round(Number(days)) || 28, 7), 90);
+  const since = new Date(Date.now() - (span + 1) * 86_400_000).toISOString();
+
+  let users = [];
+  for (const columns of ["id, username, display_name, is_admin, is_super_admin, disabled_at", "id, username, display_name, is_admin, disabled_at", "id, username, display_name, is_admin"]) {
+    const res = await supabase.from("app_users").select(columns);
+    if (!res.error) { users = res.data || []; break; }
+  }
+  if (!users.length) throw httpError(500, "Failed to load users for the insights");
+  const nameById = new Map(users.map((u) => [u.id, u.display_name || u.username]));
+
+  const [claimEvents, taps, leads, suggestionRows, badNumbers, searches, matchReviews, providerChanges] = await Promise.all([
+    tryRows(() => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at").eq("event_type", "claimed").gte("created_at", since), "claim history"),
+    tryRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at").gte("tapped_at", since), "phone taps"),
+    tryRows(() => supabase.from("leads").select("npi, claimed_by, claimed_at, is_disconnected, notes, reminder_at, meeting_at, status, specialty, state").not("claimed_by", "is", null), "leads"),
+    tryRows(() => supabase.from("suggestions").select("id, text, submitted_by, created_at").order("created_at", { ascending: false }), "suggestions"),
+    tryRows(() => supabase.from("bad_numbers").select("reason, flagged_at, cleared_at"), "bad numbers"),
+    tryRows(() => supabase.from("search_progress").select("user_id, updated_at"), "search activity", false),
+    tryCount(() => supabase.from("identity_review_queue").select("*", { count: "exact", head: true })),
+    tryCount(() => supabase.from("provider_change_queue").select("*", { count: "exact", head: true })),
+  ]);
+
+  return buildInsights({
+    users, claimEvents, taps, leads, badNumbers, searches,
+    suggestions: suggestionRows.map((s) => ({ ...s, submitted_by_name: nameById.get(s.submitted_by) || "" })),
+    queues: { matchReviews, providerChanges },
+    system: systemInfo, days: span,
+  });
 }

@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Super admin role and App insights dashboard (replaces Today for Caroline only)
+
+**Objective.** Give the review/testing account a page that shows what is happening in the app (usage, funnel, friction, system health) instead of an empty Today screen, without changing Today for Ben or any other admin or rep.
+
+**Actions Completed.** Added `sql/045_super_admin.sql` (one column, `app_users.is_super_admin`, default false; the grant for Caroline is a separate, commented statement). `worker/src/lib/userGate.js` now carries `isSuperAdmin` (a super admin also counts as admin; falls back cleanly before sql/045). New `worker/src/lib/insights.js` (pure builder, excludes super admins from team numbers), `adminRepo.getInsights`, and routes `GET /admin/insights` (super admin only) and `GET /auth/flags`. New frontend `docs/insights.js` plus `.ins-*` styles; it takes over the Today tab only when the Worker says the signed-in user is a super admin and renames the tab "Insights". Added `worker/test/insights.test.js`.
+
+**Database / System Result.** None applied. sql/045 is written but NOT run; nothing deployed. Until it is run and Caroline is granted, everyone sees the normal Today screen. Insights read only existing tables (no new logging; searches are the `search_progress` proxy, as in the Admin summary).
+
+**Safety Status.** Read-only queries; no production mutation. Worker tests pass locally (insights, teamActivity, auth, userAdmin). Not browser-tested; needs manual check after sql/045 and Worker + frontend deploy.
+
 ## 2026-10-15 — Monthly refresh helper: exclusion flagging in the CLI and a one-command script
 
 **Objective.** Make the monthly refresh complete and easy, and bundle the post-refresh exclusion step.

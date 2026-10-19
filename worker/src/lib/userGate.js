@@ -20,7 +20,7 @@ export async function loadUserFlags(supabase, now = Date.now, { fresh = false } 
   // Newest column set first: before sql/027 / sql/026 the columns don't exist and the
   // older set is used (everyone counts as active, nobody must change a password).
   let res = null;
-  for (const columns of ["id, is_admin, disabled_at, must_change_password", "id, is_admin, disabled_at", "id, is_admin"]) {
+  for (const columns of ["id, is_admin, is_super_admin, disabled_at, must_change_password", "id, is_admin, disabled_at, must_change_password", "id, is_admin, disabled_at", "id, is_admin"]) {
     res = await supabase.from("app_users").select(columns);
     if (!res.error) break;
   }
@@ -28,7 +28,8 @@ export async function loadUserFlags(supabase, now = Date.now, { fresh = false } 
 
   const flags = new Map();
   for (const user of res.data || []) {
-    flags.set(user.id, { isAdmin: Boolean(user.is_admin), disabled: Boolean(user.disabled_at), mustChange: Boolean(user.must_change_password) });
+    // A super admin (sql/045) is always an admin too.
+    flags.set(user.id, { isAdmin: Boolean(user.is_admin || user.is_super_admin), isSuperAdmin: Boolean(user.is_super_admin), disabled: Boolean(user.disabled_at), mustChange: Boolean(user.must_change_password) });
   }
   cache = { at: now(), flags };
   return flags;
@@ -41,5 +42,5 @@ export function applyUserFlags(session, flags) {
   const entry = flags.get(session.id);
   if (!entry) return { ok: false, reason: "This account no longer exists" };
   if (entry.disabled) return { ok: false, reason: "This account has been removed" };
-  return { ok: true, session: { ...session, isAdmin: entry.isAdmin, mustChangePassword: entry.mustChange } };
+  return { ok: true, session: { ...session, isAdmin: entry.isAdmin, isSuperAdmin: entry.isSuperAdmin, mustChangePassword: entry.mustChange } };
 }
