@@ -45,6 +45,7 @@ Required manual sequence:
 042_exclusion_flag.sql            (hide keyword-excluded providers via a flag column; dry-run-first apply function)
 043_territory_excludes_flagged.sql  (Territory map ignores keyword-excluded providers; needs 042)
 044_remove_excluded_providers.sql   (batched permanent removal of flagged providers; dry run first, confirm phrase required)
+049_identity_keys_one_row.sql     (planner hint: identity_candidate_keys() returns one row, so the ownership check uses index lookups)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -115,6 +116,7 @@ in `003`); save their output with the run.
 | `042_exclusion_flag.sql` | Adds nullable `npi_records.excluded_reason`; replaces `provider_filter_sql()` (041 plus one line) so flagged providers are hidden from search; adds `apply_exclusion_keywords()` (dry run by default, skips rep-held providers, never touches status/deactivation_date). Column add is catalog-only; the apply step updates ~120k rows in batches | **Not yet run. Searches work as before until it is; run the dry run before applying** |
 | `043_territory_excludes_flagged.sql` | Replaces only `refresh_territory_code()` and `search_territory()` (025's versions plus `excluded_reason is null`) so the Territory map ignores keyword-excluded providers; marks the small `territory_totals` cache stale so it recounts. Needs 042. Rerun after the 042 apply finishes. No provider data touched | **Not yet run. The map keeps counting excluded providers until it is** |
 | `044_remove_excluded_providers.sql` | Creates `remove_excluded_providers(dry_run, batch, confirm)`: permanently deletes keyword-flagged `npi_records` (plus their `npi_cms_enrichment`, `npi_identity_keys`, `lead_group_members` rows) in batches. Keeps any flagged provider with a lead, call, ownership event, claim request, or a shared identity group with a lead. No archive, no undo. Creating the function deletes nothing | **Not yet run. Nothing is removed until it is called with dry_run = false and the confirm phrase** |
+| `049_identity_keys_one_row.sql` | `ALTER FUNCTION identity_candidate_keys(jsonb) ROWS 1`: a planner estimate only. Function body, results, tables and data untouched; rerun-safe | **Not yet run. Everything works as before, just with a poor plan in `owned_group_npis`, `claim_leads` and the match-review view** |
 
 ## Notes on individual files
 

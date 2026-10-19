@@ -2351,3 +2351,45 @@ No Supabase change; no SQL needed. Worker change is NOT deployed yet.
 ### Safety Status
 
 No destructive command, secret change or production mutation.
+
+## 2026-10-19 — owned_group_npis plan fix; claim timeout check
+
+### Objective
+
+`owned_group_npis` was the worst remaining search-path call (11 of 99 failed
+today, ~0.8 s average). Also check that today's two `claim_leads` timeouts
+(13:53:50 and 18:17:54 UTC) left nothing half-done.
+
+### Actions Completed
+
+- Found the cause (read-only EXPLAIN ANALYZE on 200 real candidates): Postgres
+  assumes the set-returning `identity_candidate_keys()` returns 1,000 rows per call
+  (it returns one), so 200 candidates were planned as 100,000 rows and joined
+  by hashing all of `lead_groups` (~92k) and `lead_group_members` (~66k) with
+  temp-file spills, instead of 200 index lookups.
+- Tested the fix on a session-local temporary copy of the function with
+  `ROWS 1`: the plan switches to index lookups with no temp files, and buffer
+  reads for that part fall from ~8,500 to ~2,150. Wall time on this throttled
+  database is noisy (5.0 s vs 3.5 s on the test harness).
+- Added `sql/049_identity_keys_one_row.sql` (`ALTER FUNCTION ... ROWS 1`). Not run.
+  The same wrong estimate also inflates `claim_leads` and
+  `identity_review_candidates` (planned at ~71 billion rows); expected to help,
+  not measured.
+- Claim check: `claim_leads` is one database function (lead row, group
+  membership and 'claimed' ownership event are written together), so a timeout
+  rolls it back whole; the Worker does nothing after it. Verified in the data:
+  leads claimed on 2026-10-19 with no group: 0; active leads not in their group: 0;
+  groups with two active owners: 0; claimed-today leads without a 'claimed' event
+  that are not "disconnected": 0 (the 23 without one are all "Send to
+  Disconnected" rows, a separate path that records no claim event). The failed
+  claim's NPI is not in the logs, so it could not be named; three leads were
+  claimed by one user at 18:19:09, about a minute after the 18:17:54 failure.
+
+### Database / System Result
+
+Nothing changed in Supabase by the agent: read-only queries and one
+session-local temporary function. sql/049 must be reviewed and pasted by hand.
+
+### Safety Status
+
+No destructive command, secret change or production mutation.
