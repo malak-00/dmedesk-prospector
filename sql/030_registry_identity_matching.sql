@@ -150,6 +150,7 @@ create table if not exists public.registry_match_candidates (
 
 create index if not exists idx_registry_match_candidates_right on public.registry_match_candidates (right_npi);
 create index if not exists idx_registry_match_candidates_last_build on public.registry_match_candidates (last_build_id);
+create index if not exists idx_registry_match_candidates_tier_left_right on public.registry_match_candidates (tier, left_npi, right_npi);
 
 create table if not exists public.registry_match_big_buckets (
   build_id uuid not null references public.registry_match_builds(id),
@@ -301,6 +302,9 @@ begin
   delete from public.registry_match_candidates where last_build_id <> p_build;
   get diagnostics v_removed = row_count;
   delete from public.registry_match_big_buckets where build_id <> p_build;
+
+  create index if not exists idx_registry_match_candidates_tier_left_right
+    on public.registry_match_candidates (tier, left_npi, right_npi);
 
   select count(*), count(*) filter (where first_build_id = p_build) into v_pairs, v_new
     from public.registry_match_candidates;

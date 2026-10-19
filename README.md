@@ -1,288 +1,134 @@
-# dmedesk-prospector
+# DME Desk Prospector
 
-AI-powered lead intelligence platform for DME Desk. The live application is
-the Cloudflare Worker API in `worker/` plus the deployed static frontend in
-`docs/`, backed by Supabase. It searches NPPES provider data, applies DME
-taxonomy filters, enriches results with Medicare data, scores leads, and
-supports claimed-lead workflows, notes, reminders, and exports.
+AI-powered lead intelligence and search platform for DME Desk.
 
-`appscript/` and `backend/` are retained as historical/reference
-implementations. They are not the live path and should not be used as the
-source of current behavior.
+The live application is hosted on **GitHub Pages** (`docs/`), powered by a **Cloudflare Worker** API (`worker/`), and backed by **Supabase PostgreSQL** (`sql/`). It indexes and queries NPPES provider records, applies DME taxonomy classifications, deduplicates and verifies provider identities, and provides claimed-lead management workflows, team notes, reminders, and CRM sync.
 
-## Project status
+---
 
-**The live app runs on [`worker/`](./worker) (a Cloudflare Worker) + Supabase
-(Postgres).** `docs/` (the GitHub Pages
-frontend) now talks to `worker/`'s API instead of the old Apps Script Web
-App -- see [`worker/README.md`](./worker/README.md) for deployment.
-`appscript/` is kept around as reference for anyone still running the old
-deployment, and `backend/` (Node/Express, described below) is an earlier,
-frozen implementation that predates sign-in/claimed-leads/taxonomies/
-search-resume entirely -- neither is being kept in sync going forward. If
-you're picking this repo up, read the **[documentation index](./documentation/README.md)**,
-then **[`ARCHITECTURE.md`](./documentation/architecture/ARCHITECTURE.md)**
-for how the app works end to end today (and how the Apps Script era still
-shows through), **[`MASTER_PLAN.md`](./documentation/plans/MASTER_PLAN.md)** for the current
-roadmap, and
-**[`MIGRATION_TO_VERCEL_SUPABASE.md`](./documentation/reference/MIGRATION_TO_VERCEL_SUPABASE.md)**
-for the original migration plan this Worker implements (written against
-Vercel; the actual implementation moved to Cloudflare instead, same
-Supabase schema).
+## Architecture & Implementation Status
 
-## Requirements
+Only one implementation in this repository is active:
 
-- Node.js 18+
-- A Google Sheet to use as the shared lead log (optional, but needed for
-  Sheets export and cross-team dedup)
-- API keys for Foursquare and Gemini (both free tier, optional — the app
-  runs fine without them, just with less enrichment)
+| Component | Path | Technology | Status |
+|---|---|---|---|
+| **Frontend** | [`docs/`](./docs) | Vanilla HTML / JS / CSS (GitHub Pages) | **Live Frontend** |
+| **Backend API** | [`worker/`](./worker) | Cloudflare Workers + Hono | **Live API** |
+| **Database** | [`sql/`](./sql) | Supabase (PostgreSQL) | **Live Database** |
+| **Data Ingestion** | [`scripts/`](./scripts) | Python 3.11+ CLI (NPPES ingest & refresh) | **Active Pipeline** |
+| **Documentation** | [`documentation/`](./documentation) | Markdown documentation tree | **Canonical Docs** |
+| *Apps Script* | [`appscript/`](./appscript) | Google Apps Script Web App | *Archived / Predecessor* |
+| *Node Backend* | [`backend/`](./backend) | Node.js + Express | *Archived / Historical* |
 
-## Local setup
+> [!IMPORTANT]
+> `appscript/` and `backend/` are preserved for historical reference and should not be used for new feature development or deployment.
+>
+> `docs/` is the deployed production web client; all project documentation must be written under [`documentation/`](./documentation).
+
+---
+
+## Repository Structure
+
+```
+dmedesk-prospector/
+├── docs/                 # Live frontend deployed via GitHub Pages (index.html, app.js, config.js)
+├── worker/               # Live API server running on Cloudflare Workers (Hono framework)
+│   ├── src/index.js      # API entrypoint, routes, and auth middleware
+│   ├── src/services/     # NPPES, CMS, Gemini brief, and company search orchestration
+│   ├── src/repos/        # Supabase repositories (leads, users, taxonomies, progress)
+│   └── scripts/          # Worker CLI scripts (e.g., seed-user.mjs)
+├── sql/                  # Supabase schema definitions and versioned migrations (000–044+)
+├── scripts/              # Data ingestion and operations tooling
+│   ├── nppes_ingest/     # Python CLI for staging and applying monthly NPPES data
+│   └── monthly_refresh.ps1 # Operational script for monthly data refresh cycles
+├── documentation/        # Canonical repository documentation
+│   ├── architecture/     # Live architecture specifications and system diagrams
+│   ├── operations/       # Operational worklog (WORKLOG.md) and deployment records
+│   ├── plans/            # Master roadmap (MASTER_PLAN.md) and technical feature specs
+│   └── reference/        # Background references and migration records
+└── [legacy]              # appscript/ and backend/ (historical reference only)
+```
+
+---
+
+## Local Development Setup
+
+### 1. Cloudflare Worker API (`worker/`)
+
+The API requires **Node.js 18+** and Cloudflare's **Wrangler CLI**.
 
 ```bash
-cd backend
+cd worker
 npm install
-cp .env.example .env
+
+# Configure local development environment variables
+cp .dev.vars.example .dev.vars
 ```
 
-Fill in `.env`:
+Fill in `.dev.vars` with your Supabase credentials and JWT secret:
+- `SUPABASE_URL`: Your Supabase project URL (`https://<project-ref>.supabase.co`)
+- `SUPABASE_SERVICE_ROLE_KEY`: Service role secret key (bypasses RLS on trusted server)
+- `JWT_SECRET`: Random secure string for signing user session tokens
+- `GEMINI_API_KEY` (optional): For AI lead brief generation
 
-| Variable | Required? | Where to get it |
-|---|---|---|
-| `PORT` | no (defaults to 3000) | — |
-| `FOURSQUARE_SERVICE_API_KEY` | optional | [Foursquare developer console](https://location.foursquare.com/developer/) — Places API (new, not legacy V3) |
-| `GEMINI_API_KEY` | optional | [Google AI Studio](https://aistudio.google.com/) — free tier, no card needed |
-| `GEMINI_MODEL` | no (defaults to `gemini-2.5-flash`) | — |
-| `GOOGLE_SERVICE_ACCOUNT_KEY_PATH` or `GOOGLE_SERVICE_ACCOUNT_KEY_JSON` | optional | see below |
-| `GOOGLE_SHEET_ID` | optional | the ID in your sheet's URL: `docs.google.com/spreadsheets/d/<THIS_PART>/edit` |
-| `GOOGLE_SHEET_TAB_NAME` | no (defaults to `Leads`) | — |
-| `BASIC_AUTH_USER` / `BASIC_AUTH_PASS` | optional | pick your own — see below |
-
-Any integration left unconfigured degrades gracefully — a warning is logged
-once and the app keeps working with less data, it never crashes the request.
-
-Run it:
+Start the Worker locally:
 
 ```bash
-npm start        # or: npm run dev  (auto-restart on change)
+npm run dev
 ```
 
-Then open `http://localhost:3000` — the dashboard is served from the same
-Express app, no separate frontend build/deploy needed.
+The API will run locally at `http://localhost:8787`.
 
-### Setting up Google Sheets export + dedup
+To create or update a user account locally:
+```bash
+npm run seed-user
+```
 
-1. Create a Google Cloud service account, generate a JSON key for it.
-2. Create (or reuse) a Google Sheet, add a tab (default name `Leads`), and
-   share the sheet with the service account's email address (found inside
-   the JSON key) as an Editor.
-3. Point `GOOGLE_SERVICE_ACCOUNT_KEY_PATH` at the downloaded JSON file
-   locally, **or** set `GOOGLE_SERVICE_ACCOUNT_KEY_JSON` to the file's
-   contents (or its base64 encoding) — use the JSON-in-env-var form for any
-   host where you can only set environment variables, not upload files.
-4. Never commit the key file or its contents — `service-account-key.json`
-   is already gitignored.
+### 2. Frontend Dashboard (`docs/`)
 
-### Locking it down with Basic Auth
+The frontend is static and requires no compilation.
 
-Set both `BASIC_AUTH_USER` and `BASIC_AUTH_PASS` to put the whole app
-(dashboard + every `/api` route except `/api/health`, so hosting platform
-health checks still pass) behind an HTTP Basic Auth prompt. Leave both
-unset for open access — that's the default for local dev. Share the
-username/password with your team out of band (Slack DM, password
-manager), not in the repo.
+1. **Local API Connection**: If testing against your local worker, adjust `API_BASE_URL` in [`docs/config.js`](./docs/config.js):
+   ```javascript
+   const API_BASE_URL = "http://localhost:8787";
+   ```
+   *(Ensure production deployments point back to the live Cloudflare Worker URL).*
 
-This is a single shared credential, not per-user accounts — good enough to
-keep the tool off the open internet until real login is built, not a
-substitute for one.
+2. **Serve the Directory**: Use any static web server:
+   ```bash
+   npx serve docs
+   # or Python: python -m http.server --directory docs 8000
+   ```
+   Open `http://localhost:3000` (or `http://localhost:8000`) in your browser.
 
-## API
+---
 
-All endpoints are mounted under `/api`:
+## NPPES Data Ingestion & Refresh (`scripts/`)
 
-- `GET /api/search/nppes` — raw NPPES search
-- `GET /api/search/companies` — full pipeline: NPPES → dedup → enrich
-  (Foursquare, then OpenStreetMap as a website fallback) → optionally scrape
-  → score → sort. Query params:
-  `npi, organizationName, city, state, postalCode, taxonomyDescription,
-  lastUpdatedYear, limit, enrich, scrape` (passing `npi` does an exact
-  lookup and ignores every other filter)
-- `GET /api/scrape/website?url=` — standalone scraper
-- `POST /api/brief/generate` — body `{ company: {...} }`
-- `POST /api/export/csv` — body `{ companies: [...] }`
-- `POST /api/export/sheets` — body `{ companies: [...] }`
-- `GET /api/health` — status check
+The platform's provider directory is powered by official CMS NPPES data stored in Supabase. Monthly and weekly data releases are ingested via the zero-dependency Python CLI in [`scripts/nppes_ingest/`](./scripts/nppes_ingest/):
 
-## Deploying so your team can use it
+1. **Stage**: Streams and validates the CMS release into `nppes_refresh_staging` with cryptographic verification.
+2. **Apply**: Copies staged records into `npi_records` via [`sql/007_nppes_refresh_lifecycle.sql`](./sql/007_nppes_refresh_lifecycle.sql), logging non-noop field changes to `provider_field_history`.
 
-The frontend and backend are one Node process (Express serves the static
-dashboard and the API from the same origin), so any host that can run
-`npm install && npm start` works — no separate frontend deploy, no CORS
-config needed cross-origin.
+For complete ingestion commands and options, refer to [`scripts/README.md`](./scripts/README.md) and [`NPPES_INGEST_HANDOFF.md`](./NPPES_INGEST_HANDOFF.md).
 
-1. Push this repo to GitHub (already done) and connect it to a host such as
-   Render, Railway, or Fly.io.
-2. Set the root/start directory to `backend`, build command `npm install`,
-   start command `npm start`.
-3. Set the same env vars from `.env` in the host's dashboard — use
-   `GOOGLE_SERVICE_ACCOUNT_KEY_JSON` there since you can't upload the key
-   file.
-4. Share the resulting URL with your team.
+---
 
-**Before sharing the URL widely:** set `BASIC_AUTH_USER`/`BASIC_AUTH_PASS`
-in the host's env vars (see above). Without them, anyone with the link can
-search, generate AI briefs (spending your Gemini/Foursquare quota), and
-export to your shared sheet.
+## Database Migrations (`sql/`)
 
-## Free, no-card deployment: GitHub Pages + Google Apps Script
+Database schema migrations live in [`sql/`](./sql/) in numbered sequential order (`000_*.sql` through `044_*.sql`).
 
-If you don't have a card, a domain, or a machine you can leave running,
-there's a second way to deploy this that needs none of those: a static
-frontend on GitHub Pages talking to a backend that runs on Google Apps
-Script (free with just a Google account) instead of Node. The code for it
-lives in `appscript/` (backend) and `docs/` (frontend) at the repo root —
-`backend/` is untouched and still works if you ever want to switch to
-Node hosting later.
+- Migrations are applied in order to Supabase.
+- Always check [`documentation/operations/WORKLOG.md`](./documentation/operations/WORKLOG.md) before making assumptions about deployed schema state.
+- For detailed SQL architecture and table descriptions, see [`sql/README.md`](./sql/README.md).
 
-**What's different from the Node version, worth knowing up front:**
-- The website scraper has no equivalent of `cheerio` available in Apps
-  Script, so it's reimplemented with regex/line-based heuristics instead of
-  real DOM traversal. It's noticeably less accurate on messy real-world
-  HTML. Since scraping was always an optional supplement to NPPES data
-  (never the primary source), this is a "works, but finds fewer names"
-  situation, not a broken one.
-- Apps Script caps a single request at 6 minutes and has no true
-  concurrency, so a large `limit` with scraping enabled on many companies
-  at once is slower here than on Node.
-- Every response is HTTP 200 (Apps Script Web Apps can't set custom status
-  codes) — the frontend checks a `success` field in the JSON body instead.
-- Auth is a single shared access code entered once per browser (stored in
-  `localStorage`), not the Basic Auth browser prompt, since Apps Script
-  Web Apps don't support custom request headers without triggering CORS
-  preflight issues they don't handle well.
-- **Your GitHub repo needs to be public for free GitHub Pages hosting.**
-  The `backend/` Node source and `appscript/`/`docs/` code become
-  world-readable (already-scrubbed of secrets), but nothing sensitive lives
-  in git either way — real API keys and the access code are set directly in
-  Apps Script's Script Properties, never committed.
+---
 
-### 1. Make the repo public
+## Documentation & Collaboration Guidelines
 
-GitHub → your repo → **Settings → Danger Zone → Change visibility → Make
-public**. One-time, done in the browser.
+Before starting major features or reviewing architecture, consult the documentation tree:
 
-### 2. Turn on GitHub Pages
-
-GitHub → **Settings → Pages** → under "Build and deployment", set
-**Source: Deploy from a branch**, **Branch: `main`**, folder **`/docs`** →
-**Save**. GitHub gives you a URL like
-`https://<your-username>.github.io/dmedesk-prospector/` after a minute or
-two.
-
-### 3. Create the Apps Script backend
-
-1. Go to [script.google.com](https://script.google.com) → **New project**.
-   Rename it (e.g. "DME Desk Prospector Backend").
-2. For each file in `appscript/`, create a matching script file in the
-   editor (the **+** next to "Files") and paste in its contents:
-   `Code`, `Config`, `CompanyModel` (put this under a `models` naming or
-   just flat — Apps Script doesn't have real folders, flat names are fine),
-   `NppesService`, `FoursquareService`, `AiBriefService`, `ScraperService`,
-   `UrlUtils`, `RoleClassifier`, `ScoringService`, `CsvExport`,
-   `SheetsStore`, `CompanyService`, `CmsService`, `AuthService`. The exact
-   file names don't matter to Apps Script (everything shares one global
-   scope) — just get every file's content in.
-3. Click **Project Settings** (gear icon) → check **"Show `appsscript.json`
-   manifest file in editor"** → open it → replace its contents with
-   `appscript/appsscript.json` from this repo.
-
-### 4. Set Script Properties (this is where your secrets actually live)
-
-**Project Settings → Script Properties → Add script property**, one at a
-time:
-
-| Property | Required? | Value |
-|---|---|---|
-| `GOOGLE_SHEET_ID` | **required** (sign-in, export, dedup, tracking all use the sheet) | the ID from your sheet's URL |
-| `FOURSQUARE_SERVICE_API_KEY` | optional | from the Foursquare developer console |
-| `GEMINI_API_KEY` | optional | from Google AI Studio |
-| `GEMINI_MODEL` | optional | defaults to `gemini-2.5-flash` |
-| `GOOGLE_SHEET_TAB_NAME` | optional | defaults to `Leads` |
-| `NPPES_VERSION` | optional | defaults to `2.1` |
-
-No service account or key file needed — since this runs as your own Apps
-Script, it already has native access to any Sheet you own. The CMS
-Medicare enrichment needs no key at all.
-
-### 4b. Create the Users sheet (sign-in accounts)
-
-Sign-in accounts live in a tab named exactly **`Users`** with this layout:
-
-| Username | Password | Display Name |
-|---|---|---|
-| caroline | some-password | Caroline R |
-| ahmed | another-password | Ahmed K |
-
-One row per teammate. Usernames are case-insensitive; Display Name is what
-appears in the app and in the sheet's "Claimed By" column. Add/remove rows
-any time — changes take effect on the next sign-in, no redeploy needed.
-Passwords are plain text, so keep them app-specific (not reused personal
-passwords), and **6-hour** sessions mean users sign in about once a day.
-
-**Where to put the Users tab — this matters if teammates open the leads
-sheet directly:**
-
-- **Recommended (private):** create a *separate* Google Sheet that only you
-  can open, put the `Users` tab in it, and set its ID as the
-  **`AUTH_SHEET_ID`** Script Property. The app runs as you, so it can still
-  read it — but teammates never have access to that file, so they can't see
-  anyone's password. Use this if your team opens the leads sheet.
-- **Fallback (same sheet):** if `AUTH_SHEET_ID` is unset, the app looks for
-  a `Users` tab in the main leads sheet. Only safe if that sheet is private
-  to you — anyone who can open it would see the passwords. Hiding the tab
-  does **not** protect it (edit-access users can unhide).
-
-### 5. Deploy as a Web App
-
-**Deploy → New deployment** → gear icon → **Web app** → Execute as:
-**Me** → Who has access: **Anyone** → **Deploy**. Google will prompt you
-to authorize it — since this is your own personal script (not a published,
-verified app), you'll see an "unverified app" warning; click **Advanced →
-Go to (project name) (unsafe) → Allow**. That's expected and safe: it's
-your script accessing your own Google account's Sheets and making outbound
-requests, nobody else's.
-
-Copy the Web app URL (ends in `/exec`).
-
-### 6. Point the frontend at it
-
-Edit `docs/config.js` in this repo (directly on GitHub — click the pencil
-icon on the file, since the repo is public you can do this from a
-browser, no local clone needed) and paste your `/exec` URL into
-`APPS_SCRIPT_URL`. Commit directly to `main`.
-
-### 7. Test it
-
-Visit your Pages URL. Sign in with a username/password from the Users tab,
-run a real search, generate a brief, export to CSV, export to Sheets (the
-rows land with your name in "Claimed By"), then open the **Claimed leads**
-tab and set a status on one — confirm it appears in the sheet's Status
-column.
-
-### Updating the Apps Script code later
-
-Editing files in the Apps Script editor and saving does **not** update the
-live Web App by itself — you need **Deploy → Manage deployments** → edit
-(pencil icon) the existing deployment → **New version** → **Deploy**. The
-`/exec` URL stays the same either way.
-
-## What's not built yet
-
-- A database (Google Sheets is the only persistent store; sign-in accounts
-  live in a Users tab, sessions in Apps Script's cache)
-- Any CRM integration beyond Google Sheets
-- Sign-in / claimed-by / outcome tracking on the Node deployment path —
-  those are Apps Script-only for now (the Node path still uses Basic Auth
-  and plain Sheets export); the shared pipeline (CMS Medicare data,
-  scoring, briefs) is on both
+- **[Documentation Index](./documentation/README.md)**: Entry point for engineering and AI agents.
+- **[System Architecture](./documentation/architecture/ARCHITECTURE.md)**: Detailed request flow, auth model, and service layer overview.
+- **[Master Plan](./documentation/plans/MASTER_PLAN.md)**: Roadmap, feature specs, and current project phases.
+- **[Operations Worklog](./documentation/operations/WORKLOG.md)**: Chronological log of deployed schema updates, production milestones, and migrations.

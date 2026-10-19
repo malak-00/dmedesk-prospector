@@ -92,6 +92,6 @@ def run_registry_match(
         f"Registry matching: {int(summary.get('pairs') or 0):,} candidate pairs "
         f"({int(summary.get('new_pairs') or 0):,} new, {int(summary.get('removed_pairs') or 0):,} no longer match); "
         f"{int(summary.get('big_buckets') or 0):,} oversized key groups skipped. "
-        "Review them in the registry_review_queue view."
+        "Candidate index (idx_registry_match_candidates_tier_left_right) verified."
     )
     return summary

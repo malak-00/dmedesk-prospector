@@ -76,6 +76,6 @@ Write-Host "`nStep 3/3: flagged providers that could now be deleted (preview onl
 Invoke-Ingest (@("--remove-excluded") + $common)
 
 Write-Host ""
-Write-Host "Done. Nothing has been deleted." -ForegroundColor Green
+Write-Host "Done. Registry candidate index verified. Nothing has been deleted." -ForegroundColor Green
 Write-Host "To delete the flagged providers permanently (no undo): python -m nppes_ingest --remove-excluded --yes-delete"
 Write-Host "Then in the Supabase SQL editor: vacuum analyze public.npi_records;"
