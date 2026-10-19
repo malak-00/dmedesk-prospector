@@ -2393,3 +2393,30 @@ session-local temporary function. sql/049 must be reviewed and pasted by hand.
 ### Safety Status
 
 No destructive command, secret change or production mutation.
+
+## 2026-10-19 — sql/049 applied
+
+### Objective
+
+Apply `sql/049_identity_keys_one_row.sql` to production at the user's explicit request.
+
+### Actions Completed
+
+- Verified the target first: project dmedesk-prospector (pcvyrkisvvtiteoiuplg),
+  `public.identity_candidate_keys(jsonb)`, owner postgres, `prorows` = 1000.
+- Ran `alter function public.identity_candidate_keys(jsonb) rows 1` (the file's
+  only statement) through the Supabase connection.
+- Checked afterwards: `prorows` = 1; still set-returning, stable, not security definer.
+- Re-ran the same read-only test on 200 real candidates: `owned_group_npis` went
+  from 12.0 s with a temp-file spill (966 blocks) to 4.1 s with no temp files, and
+  ~16,900 to ~10,900 buffer reads (~7,800 of those belong to the test's own
+  candidate query, not the function).
+
+### Database / System Result
+
+One planner estimate changed on one function. No function body, table or data
+changed. To undo: `alter function public.identity_candidate_keys(jsonb) rows 1000;`
+
+### Safety Status
+
+No destructive command, secret change or other production mutation.
