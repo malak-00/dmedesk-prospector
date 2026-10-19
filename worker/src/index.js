@@ -40,6 +40,7 @@ import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
 import { parseListParams } from "./lib/leadView.js";
 import { applySourceTrial, SOURCE_HEADER } from "./lib/sourceTrial.js";
+import { buildEvent, isSearchRoute } from "./lib/events.js";
 
 const app = new Hono();
 
@@ -87,6 +88,34 @@ app.use("*", async (c, next) => {
   c.set("config", trial.config);
   c.set("sourceTrial", trial.trial);
   return next();
+});
+
+// Records searches, feature use and failures for the App insights dashboard (sql/046). Runs after the
+// response is made and is handed to waitUntil, so it never slows a request or changes its answer; if the
+// table isn't there yet, or the write fails, nothing happens.
+app.use("*", async (c, next) => {
+  const started = Date.now();
+  await next();
+  try {
+    const session = c.get("session");
+    if (!session) return;
+    const url = new URL(c.req.url);
+    const status = c.res.status;
+    let resultCount = null;
+    let errorMessage = "";
+    if (status === 200 && isSearchRoute(c.req.method, url.pathname)) {
+      const body = await c.res.clone().json().catch(() => null);
+      const d = body && body.data;
+      if (d) resultCount = Number.isFinite(d.count) ? d.count : Array.isArray(d.companies) ? d.companies.length : Array.isArray(d.results) ? d.results.length : null;
+    } else if (status >= 400) {
+      const body = await c.res.clone().json().catch(() => null);
+      errorMessage = (body && body.error) || "";
+    }
+    const row = buildEvent({ method: c.req.method, path: url.pathname, status, ms: Date.now() - started, userId: session.id, query: url.searchParams, resultCount, errorMessage });
+    if (!row) return;
+    const write = getSupabase(c.get("config")).from("app_events").insert(row).then(() => {}, () => {});
+    try { c.executionCtx.waitUntil(write); } catch { /* no execution context (tests): the write simply runs on its own */ }
+  } catch { /* logging must never break a request */ }
 });
 
 // Central error handler -- mirrors Code.js's catch block, including the

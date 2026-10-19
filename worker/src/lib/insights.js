@@ -6,6 +6,7 @@
 // Super admins are left out of every team number: that account reviews and tests the app,
 // so counting it would make adoption look better than it is.
 import { buildFunnel } from "./funnel.js";
+import { FEATURES } from "./events.js";
 import { allCallEvents, noteKind, parseNoteLines, tapsToLines } from "./teamActivity.js";
 
 const DAY_MS = 86_400_000;
@@ -16,7 +17,7 @@ const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
 export function buildInsights({
   users = [], claimEvents = [], taps = [], leads = [], suggestions = [], badNumbers = [], searches = [],
-  queues = {}, system = null, days = 28, now = new Date(),
+  queues = {}, system = null, days = 28, now = new Date(), events = null,
 } = {}) {
   const span = Math.min(Math.max(Math.round(Number(days)) || 28, 7), 90);
   const nowMs = now.getTime();
@@ -156,6 +157,9 @@ export function buildInsights({
     neverContacted, overdueCallbacks: overdue, leadsWithoutNotes: noteless,
   };
 
+  // ---- searches, features and errors from the event log (sql/046); null until it is installed ----
+  const usage = buildUsage(events, { superIds, team, sinceMs, weekAgo, nameOf, span });
+
   // ---- what to look at next, in plain words --------------------------------
   const signals = [];
   const add = (level, text) => signals.push({ level, text });
@@ -210,6 +214,15 @@ export function buildInsights({
     }
   }
 
+  if (usage && usage.searches.total >= 10 && usage.searches.zeroShare >= 25) {
+    add("warn", `${usage.searches.zeroShare}% of searches (${usage.searches.zero} of ${usage.searches.total}) found nothing. See which filters below: the defaults or the filter wording may need work.`);
+  }
+  if (usage && usage.errors.last7) add("bad", `${plural(usage.errors.last7, "request")} failed in the last 7 days, affecting ${plural(usage.errors.people, "person", "people")}. Details below.`);
+  if (usage && team.length >= 3) {
+    const unused = usage.features.filter((f) => !f.uses).map((f) => f.label.toLowerCase());
+    if (unused.length) add("info", `Nobody used these in ${span} days: ${unused.slice(0, 5).join(", ")}${unused.length > 5 ? "…" : ""}. Either they're hard to find or nobody needs them.`);
+  }
+
   if (!signals.length) add("good", "Nothing stands out. Usage, follow-through and data health all look normal.");
 
   return {
@@ -222,9 +235,70 @@ export function buildInsights({
     },
     pipeline: { funnel, statuses, firstCall, stuck: stuck.slice(0, 12), neverContacted, overdueCallbacks: overdue, openLeads: worked.length, staleDays: STALE_DAYS },
     friction,
+    usage,
     nudges,
     callAt,
     system,
     signals,
+  };
+}
+
+const percentile = (sorted, q) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] : null);
+const SLOW_MS = 5000;
+
+// events: rows of public.app_events, or null when the table isn't installed.
+function buildUsage(events, { superIds, team, sinceMs, weekAgo, nameOf, span }) {
+  if (!Array.isArray(events)) return null;
+  const mine = events.filter((e) => !superIds.has(e.user_id) && Date.parse(e.created_at) >= sinceMs);
+
+  const searches = mine.filter((e) => e.kind === "search");
+  const counted = searches.filter((e) => e.result_count !== null && e.result_count !== undefined);
+  const zero = counted.filter((e) => e.result_count === 0);
+  const times = searches.map((e) => e.ms).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  const zeroBy = new Map();
+  for (const e of zero) {
+    const d = e.detail || {};
+    const key = JSON.stringify([ (d.specialties || []).join(" + "), (d.states || []).join(", "), (d.filters || []).join(", ") ]);
+    zeroBy.set(key, (zeroBy.get(key) || 0) + 1);
+  }
+  const zeroTop = [...zeroBy.entries()].map(([key, count]) => {
+    const [specialty, states, filters] = JSON.parse(key);
+    return { specialty: specialty || "Any specialty", states: states || "Any state", filters, count };
+  }).sort((a, b) => b.count - a.count).slice(0, 8);
+
+  const features = FEATURES.map((f) => {
+    const rows = mine.filter((e) => e.kind === "feature" && e.name === f.name);
+    return { name: f.name, label: f.label, uses: rows.length, people: new Set(rows.map((e) => e.user_id)).size };
+  }).sort((a, b) => b.uses - a.uses || a.label.localeCompare(b.label));
+
+  const errs = mine.filter((e) => e.kind === "error");
+  const errBy = new Map();
+  for (const e of errs) {
+    const key = `${e.name}|${e.status}`;
+    const cur = errBy.get(key) || { name: e.name, status: e.status, count: 0, last: 0, message: "", people: new Set() };
+    cur.count += 1;
+    cur.people.add(e.user_id);
+    const at = Date.parse(e.created_at);
+    if (at > cur.last) { cur.last = at; cur.message = (e.detail && e.detail.message) || ""; }
+    errBy.set(key, cur);
+  }
+  const errList = [...errBy.values()].sort((a, b) => b.count - a.count).slice(0, 10)
+    .map((e) => ({ name: e.name, status: e.status, count: e.count, people: e.people.size, last: new Date(e.last).toISOString(), message: e.message }));
+  const recent = errs.filter((e) => Date.parse(e.created_at) >= weekAgo);
+
+  return {
+    total: mine.length,
+    searches: {
+      total: searches.length,
+      zero: zero.length,
+      zeroShare: counted.length ? Math.round((zero.length / counted.length) * 100) : 0,
+      slow: times.filter((n) => n >= SLOW_MS).length,
+      medianMs: percentile(times, 0.5),
+      p95Ms: percentile(times, 0.95),
+      zeroTop,
+    },
+    features,
+    errors: { total: errs.length, last7: recent.length, people: new Set(recent.map((e) => e.user_id)).size, top: errList },
+    span,
   };
 }

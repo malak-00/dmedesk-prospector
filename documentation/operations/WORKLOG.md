@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Event log (sql/046) for searches, feature use and errors
+
+**Objective.** Let the App insights page show searches that return nothing, search speed, which features are used, and which requests fail.
+
+**Actions Completed.** Added `sql/046_app_events.sql` (`public.app_events`, service-role only) and ran it. New `worker/src/lib/events.js` decides what is recorded; a Worker middleware in `worker/src/index.js` writes one row after the response is sent (via `waitUntil`, errors swallowed, so it cannot slow or break a request). Recorded: searches (result count, duration, states, specialty, and the names of filters used), a list of feature calls, and failed requests (5xx, plus 4xx on searches and tracked features). Never stored: request bodies, typed text, phone numbers, NPIs, notes, tokens. Insights gain "Search quality", "Which features get used" and "Errors", with new signals for high empty-search share, recent failures and unused features. Tests in `worker/test/events.test.js`.
+
+**Database / System Result.** One new table and two indexes created in the dmedesk-prospector Supabase project. No existing table changed. The table starts empty and fills as people use the app; super admin traffic is excluded from the dashboard numbers. Optional manual cleanup of rows older than 120 days is in the SQL file.
+
+**Safety Status.** Additive only. Worker smoke-tested locally (health and an unauthenticated search behave as before); not browser-tested. Needs a Worker deploy and a frontend rebuild to take effect.
+
 ## 2026-10-19 — App insights additions, notes to reps, and avatar note delivery fix
 
 **Objective.** Make the insights page more useful, let the super admin send a friendly note to a rep when something needs fixing, and make sure avatar notes arrive on time and display correctly.

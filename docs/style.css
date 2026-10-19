@@ -3161,3 +3161,8 @@ html.game-open .buddy { display: none; }
 .ins-nudges textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--hairline); background: var(--surface-2); color: var(--ink); resize: vertical; }
 .ins-nudge-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
 .ins-nudge-status { font-size: 12px; color: var(--muted); }
+
+.ins-feature-row { grid-template-columns: 190px 1fr 120px; }
+.ins-feature-row .ins-funnel-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ins-funnel-fill.is-none { background: transparent; }
+@media (max-width: 600px) { .ins-feature-row { grid-template-columns: 120px 1fr 90px; } }

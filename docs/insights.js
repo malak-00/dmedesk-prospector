@@ -152,6 +152,37 @@
         <div class="ins-nudge-actions"><button type="button" class="btn btn-primary btn-small" data-ins="nudge" data-i="${i}">Send as avatar note</button><span class="ins-nudge-status" aria-live="polite"></span></div></li>`).join("")}</ul>`;
   }
 
+  const NOT_COLLECTING = `<p class="ins-empty">Not collecting yet. Run sql/046_app_events.sql in Supabase, then this fills in as people use the app.</p>`;
+
+  function searchQuality(u) {
+    if (!u) return NOT_COLLECTING;
+    const s = u.searches;
+    if (!s.total) return `<p class="ins-empty">No searches recorded in this period yet.</p>`;
+    const sec = (ms) => (ms === null ? "n/a" : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
+    return `<ul class="ins-list">
+        <li class="${s.zeroShare >= 25 ? "ins-warn" : ""}"><span class="ins-dot"></span><span>Searches that found nothing<small>${num(s.zero)} of ${num(s.total)} (${s.zeroShare}%)</small></span></li>
+        <li><span class="ins-dot"></span><span>Typical speed<small>median ${sec(s.medianMs)}, slowest 1 in 20 over ${sec(s.p95Ms)}; ${num(s.slow)} took 5 s or more</small></span></li></ul>
+      ${s.zeroTop.length ? `<div class="table-wrap"><table class="results-table ins-table"><thead><tr><th>Empty searches by</th><th>Where</th><th>Filters on</th><th>Times</th></tr></thead><tbody>${s.zeroTop.map((r) => `
+        <tr><td>${esc(r.specialty)}</td><td>${esc(r.states)}</td><td>${esc(r.filters || "none")}</td><td>${num(r.count)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+  }
+
+  function featureUsage(u) {
+    if (!u) return NOT_COLLECTING;
+    const max = Math.max(1, ...u.features.map((f) => f.uses));
+    return `<div class="ins-funnel">${u.features.map((f) => `
+      <div class="ins-funnel-row ins-feature-row"><span class="ins-funnel-label" title="${esc(f.label)}">${esc(f.label)}</span>
+        <span class="ins-funnel-track"><span class="ins-funnel-fill${f.uses ? "" : " is-none"}" style="width:${f.uses ? Math.max(2, Math.round((f.uses / max) * 100)) : 0}%"></span></span>
+        <span class="ins-funnel-num">${num(f.uses)} <small>${num(f.people)} ${f.people === 1 ? "person" : "people"}</small></span></div>`).join("")}</div>`;
+  }
+
+  function errorList(u) {
+    if (!u) return NOT_COLLECTING;
+    if (!u.errors.total) return `<p class="ins-empty">No failed requests in this period.</p>`;
+    return `<p class="ins-note">${num(u.errors.total)} failed, ${num(u.errors.last7)} in the last 7 days.</p>
+      <div class="table-wrap"><table class="results-table ins-table"><thead><tr><th>Request</th><th>Status</th><th>Times</th><th>People</th><th>Last seen</th><th>Message</th></tr></thead><tbody>${u.errors.top.map((e) => `
+        <tr><td>${esc(e.name)}</td><td>${esc(e.status)}</td><td>${num(e.count)}</td><td>${num(e.people)}</td><td>${esc(ago(e.last))}</td><td>${esc(e.message)}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+
   function system(sys) {
     if (!sys) return `<p class="ins-empty">System details unavailable.</p>`;
     const row = (ok, label, note) => `<li class="${ok ? "ins-ok" : "ins-bad"}"><span class="ins-dot"></span><span>${esc(label)}<small>${esc(note || "")}</small></span></li>`;
@@ -229,6 +260,13 @@
       </div>
 
       <section class="ins-card"><h3>Claimed but never called <small>oldest first</small></h3>${stuckList(p.stuck || [])}</section>
+
+      <div class="ins-grid">
+        <section class="ins-card"><h3>Search quality</h3>${searchQuality(d.usage)}</section>
+        <section class="ins-card"><h3>Which features get used</h3>${featureUsage(d.usage)}</section>
+      </div>
+
+      <section class="ins-card"><h3>Errors</h3>${errorList(d.usage)}</section>
 
       <div class="ins-grid">
         <section class="ins-card"><h3>Friction</h3>
