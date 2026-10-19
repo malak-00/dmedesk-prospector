@@ -20,6 +20,16 @@
 
 **Safety Status.** Read-only queries only; no production mutation. Index stats may have been reset, so recheck `idx_scan` before running.
 
+**Follow-up (same day).** Rechecked: index stats were last reset 2026-07-15 (before the project existed), so 0 scans is lifetime. `provider_field_history` is 432k rows, all from 2026-09-16 to 2026-10-15 (nothing is "old"). 405,843 rows from the 2026-09-17 refresh run are first-fill rows (`old_value` null) of `address_line1`, `enumeration_date`, `address_line2`, about 47 MB of data, which are candidates to delete. A plain DELETE does not shrink the database; it needs `VACUUM FULL` (or `REINDEX`) afterwards. Not run.
+
+**Applied (same day, at the user's request).** `sql/047` run on dmedesk-prospector: the three indexes are gone; database size 643 MB -> 612 MB (measured). `sql/048` was attempted and BLOCKED: `provider_field_history` has an append-only trigger (`provider_field_history_append_only` -> `reject_audit_mutation()`), so the first delete batch was rejected and nothing was deleted. The trigger was not touched. 048 stays unapplied pending a decision on that audit rule.
+
+**sql/048 APPLIED (same day, after the user explicitly asked to disable the audit trigger).** Each delete batch ran as one transaction: `disable trigger provider_field_history_append_only` -> delete -> `enable trigger`; verified `tgenabled = 'O'` after every batch and at the end. 405,843 first-fill rows deleted (action `old_value` null, run 45cff87f, fields address_line1/enumeration_date/address_line2); 25,094 rows remain, including every row with a real change. `VACUUM FULL` run; `provider_field_history` 82 MB -> 7.6 MB. Database 612 MB -> 537 MB (still about 37 MB over the 500 MB free limit). The audit trail lost these first-fill rows permanently; no backup was taken (they held no change history). Audit trigger left enabled.
+
+**Read-only investigation of npi_records / npi_identity_keys (same day).** No dead weight to delete: of 276,893 `npi_records` rows only 383 are deactivated and 1,767 excluded (about 1 MB); no column is wasteful (largest are `taxonomy_codes` 12 MB, `name` 7 MB; `taxonomy_description`/`taxonomy_license` are empty). The real saving is bloat from refresh updates: `npi_records` heap is 119 MB but live row data is about 65 MB (+ about 7 MB row headers), so roughly 40 MB is reclaimable; `npi_identity_keys` about 13 MB, `lead_group_members` about 9 MB. `VACUUM FULL` on those three (also rebuilds their indexes) should land the database near 475-480 MB, under 500 MB. Not run: it takes an exclusive lock, and `npi_records` is read by live search.
+
+**Follow-up 2 (same day).** Drafted `sql/048_prune_provider_history_first_fill.sql` (batched delete of those 405,843 rows, then a manual `VACUUM FULL`; NOT applied). Confirmed the three fields are not in `nppes_escalating_fields()`. Reviewed `npi_records` indexes: `name_trgm` (38 MB), the three partial `active_*` indexes (65 MB) and the pkey are all heavily scanned, so little is safe to drop there. Possible but untested: `idx_npi_records_active_state` (20 MB), since `active_state_taxonomy` leads with the same expression; check with EXPLAIN on a state-only search first.
+
 ## 2026-10-19 — App insights layout: tabs instead of one long page
 
 **Objective.** The insights page was one very long scroll. Make it quicker to read.
