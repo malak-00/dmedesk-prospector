@@ -22,8 +22,6 @@ NPI_SOURCE = "dmedesk"
 #   JWT_SECRET
 #   NPPES_VERSION                (optional, defaults to 2.1)
 #   FOURSQUARE_SERVICE_API_KEY   (optional)
-#   GEMINI_API_KEY               (optional)
-#   GEMINI_MODEL                 (optional, defaults to gemini-2.5-flash)
 #   GOOGLE_OAUTH_CLIENT_ID       (optional -- enables the "Export to Sheet" button)
 #   GOOGLE_OAUTH_CLIENT_SECRET   (optional -- same)
 #   GOOGLE_OAUTH_REFRESH_TOKEN   (optional -- same)

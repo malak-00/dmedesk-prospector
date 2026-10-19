@@ -23,7 +23,6 @@ export async function getSystemInfo(config, supabase) {
       { key: "signin", label: "Sign-in", configured: Boolean(config.jwtSecret()), note: "Signed sessions last 6 hours" },
       { key: "sheets", label: "Google Sheet export", configured: googleAuth && Boolean(config.googleSheetId()), note: "The Export to Sheet button" },
       { key: "calendar", label: "Google Calendar", configured: googleAuth && Boolean(config.googleCalendarId()), note: "Booked meetings" },
-      { key: "ai", label: "AI call briefs", configured: Boolean(config.geminiApiKey()), note: "Generate brief" },
       { key: "places", label: "Business details (Foursquare)", configured: Boolean(config.foursquareApiKey()), note: "Website, ratings and hours on results" },
     ],
     installed: [

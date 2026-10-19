@@ -12,7 +12,6 @@ export const FEATURES = [
   { name: "callback", label: "Set a callback reminder", match: ["POST /leads/reminder"] },
   { name: "book_meeting", label: "Booked a meeting", match: ["POST /leads/book-meeting", "POST /leads/meeting"] },
   { name: "bad_number", label: "Flagged a bad number", match: ["POST /leads/bad-number"] },
-  { name: "brief", label: "Generated an AI call brief", match: ["POST /brief/generate"] },
   { name: "website_scrape", label: "Looked up a website", match: ["GET /scrape/website"] },
   { name: "quick_picks", label: "Used quick picks", match: ["GET /search/quickpicks"] },
   { name: "territory", label: "Opened the territory view", match: ["GET /search/territory"] },

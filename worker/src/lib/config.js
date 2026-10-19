@@ -20,8 +20,6 @@ export function makeConfig(env) {
     // deploy.
     npiSource: () => get("NPI_SOURCE", "mirror"),
     foursquareApiKey: () => get("FOURSQUARE_SERVICE_API_KEY"),
-    geminiApiKey: () => get("GEMINI_API_KEY"),
-    geminiModel: () => get("GEMINI_MODEL", "gemini-2.5-flash"),
     jwtSecret: () => get("JWT_SECRET"),
     supabaseUrl: () => get("SUPABASE_URL"),
     supabaseServiceRoleKey: () => get("SUPABASE_SERVICE_ROLE_KEY"),

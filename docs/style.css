@@ -3306,3 +3306,17 @@ html.game-open .buddy { display: none; }
 .cm-call .btn-ghost { padding-left: 16px; padding-right: 16px; }
 .cm-foot .cm-save, .cm-foot .cm-claim { flex: 1; justify-content: center; color: var(--ink); border-color: var(--hairline-hover); font-weight: 600; }
 .cm-foot .cm-save:hover, .cm-foot .cm-claim:hover { border-color: var(--accent); color: var(--accent-ink); }
+
+/* ---- Call brief (built from the lead's data) ---- */
+.brief-output.rich { white-space: normal; }
+.brief-group + .brief-group { margin-top: 14px; }
+.brief-group h5 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+.brief-facts { margin: 0; }
+.brief-facts > div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; padding: 4px 0; font-size: 13px; }
+.brief-facts dt { color: var(--muted); }
+.brief-facts dd { margin: 0; overflow-wrap: anywhere; }
+.brief-plan { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; counter-reset: bp; }
+.brief-plan li { display: grid; gap: 1px; font-size: 13px; counter-increment: bp; }
+.brief-plan li strong { font-size: 12px; font-weight: 600; color: var(--accent-ink); }
+.brief-plan li strong::before { content: counter(bp) ". "; }
+.brief-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }

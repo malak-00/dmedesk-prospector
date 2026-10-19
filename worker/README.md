@@ -17,7 +17,7 @@ src/
   index.js           Hono app: routes, CORS, auth middleware, error handling
   lib/                config, Supabase client, JWT auth, enrichment cache,
                        and pure-logic ports (scoring, csvExport, roleClassifier, companyModel)
-  services/            NPPES, CMS, Foursquare, OSM, scraper, Gemini brief,
+  services/            NPPES, CMS, Foursquare, OSM, scraper,
                        and companyService (the search/enrich/score orchestrator)
   repos/                Supabase-backed replacements for SheetsStore /
                        TaxonomyService / SearchProgressService / suggestions
@@ -50,8 +50,6 @@ scripts/
 
    # optional, feature degrades gracefully if unset:
    npx wrangler secret put FOURSQUARE_SERVICE_API_KEY
-   npx wrangler secret put GEMINI_API_KEY
-   npx wrangler secret put GEMINI_MODEL                # defaults to gemini-2.5-flash
    npx wrangler secret put NPPES_VERSION                # defaults to 2.1
 
    # optional -- only needed for the "Export to Sheet" button (see below):

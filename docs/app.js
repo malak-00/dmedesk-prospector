@@ -2247,7 +2247,7 @@ function detailRowHtml(company, index) {
                 ["Website", company.website ? websiteLink(company.website) : '<span class="muted-note">No website found</span>'],
                 ["Data sources", escapeHtml(sourcesList || "NPPES only")],
               ])}
-              <div class="brief-link-row"><button type="button" class="text-action" data-brief-index="${index}">${SPARK_ICON}Prep a call brief</button></div>
+              <div class="brief-link-row"><button type="button" class="text-action" data-brief-index="${index}">${BRIEF_ICON}Prep a call brief</button></div>
             </div>
             <div class="detail-block">
               <h4>Who to call</h4>
@@ -2344,7 +2344,7 @@ document.addEventListener("click", (e) => {
 
 /* ---------- Call-log (work mode) ---------- */
 
-const SPARK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l1.3 3.7L13 6.5l-3.7 1.3L8 11.5 6.7 7.8 3 6.5l3.7-1.3ZM12.5 10l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6Z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>';
+const BRIEF_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.8h5.2L12.5 5v9.2H4Z M9 1.8V5.2h3.5 M6 8h4.5 M6 10.5h4.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/></svg>';
 
 // Quick-remind chips: N days from now at 9:00 local time.
 function remindDateIso(days) {
@@ -2638,17 +2638,17 @@ function toggleRowDetail(idx) {
   });
 }
 
+// The call brief is built from the lead's own data (see callbrief.js): no AI and no outside service.
 async function generateBrief(index) {
   const company = state.companies[index];
   const output = document.getElementById(`brief-${index}`);
-  output.className = "brief-output visible";
-  output.textContent = "Generating brief…";
+  output.className = "brief-output visible rich";
+  output.textContent = "Putting the brief together…";
 
   try {
-    const data = await apiPost("brief/generate", { company });
-    output.textContent = data.brief;
+    output.innerHTML = await window.dmeHooks.briefHtml(company, null);
   } catch (err) {
-    output.textContent = `Could not generate brief: ${err.message}`;
+    output.textContent = `Could not build the brief: ${err.message}`;
   }
 }
 
@@ -3751,9 +3751,9 @@ function wireNotesHistoryHandlers(idx) {
 }
 
 // Reconstructs a CompanyModel-shaped object from the flat fields stored in
-// the sheet, so the same brief/generate endpoint used in the Prospect view
-// works here too -- useful for the exact case this view is meant for
-// (dialing straight from claimed leads without the Sheet open).
+// the sheet, so the same call brief used in the Prospect view works here too --
+// useful for the exact case this view is meant for (dialing straight from
+// claimed leads without the Sheet open).
 function companyLikeFromClaimedLead(lead) {
   const activeSources = (lead.sources || "").split(";").map((s) => s.trim().toLowerCase()).filter(Boolean);
   const hasMedicare = lead.medicareClaims !== "" && lead.medicareClaims != null;
@@ -3764,6 +3764,7 @@ function companyLikeFromClaimedLead(lead) {
     taxonomy: { description: lead.taxonomy },
     website: lead.website || null,
     phone: lead.companyPhone || null,
+    lastUpdated: lead.nppesLastUpdated || null,
     decisionMakers: lead.contactName
       ? [{ name: lead.contactName, title: lead.contactTitle, roleCategory: lead.contactRole || "staff", phone: lead.contactPhone || null }]
       : [],
@@ -3862,7 +3863,7 @@ function claimedDetailRowHtml(lead, index) {
               <div class="sep-line"></div>
               <div class="who-sub">${escapeHtml(fullAddress)}</div>
               ${fullAddress ? `<a class="text-action" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}" target="_blank" rel="noopener">Open in Maps</a>` : ""}
-              <div class="brief-link-row"><button type="button" class="text-action" data-claimed-brief-index="${index}">${SPARK_ICON}Prep a call brief</button></div>
+              <div class="brief-link-row"><button type="button" class="text-action" data-claimed-brief-index="${index}">${BRIEF_ICON}Prep a call brief</button></div>
             </div>
           </div>
           <details class="more-details more-details-card">
@@ -4198,14 +4199,13 @@ async function generateClaimedBrief(index) {
   const lead = state.claimedLeads[index];
   const company = companyLikeFromClaimedLead(lead);
   const output = document.getElementById(`claimed-brief-${index}`);
-  output.className = "brief-output visible";
-  output.textContent = "Generating brief…";
+  output.className = "brief-output visible rich";
+  output.textContent = "Putting the brief together…";
 
   try {
-    const data = await apiPost("brief/generate", { company });
-    output.textContent = data.brief;
+    output.innerHTML = await window.dmeHooks.briefHtml(company, { status: lead.status, notes: lead.notes });
   } catch (err) {
-    output.textContent = `Could not generate brief: ${err.message}`;
+    output.textContent = `Could not build the brief: ${err.message}`;
   }
 }
 

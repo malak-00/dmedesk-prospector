@@ -21,7 +21,6 @@ import * as ProviderSource from "./services/providerSource.js";
 import * as Cms from "./services/cms.js";
 import * as Foursquare from "./services/foursquare.js";
 import * as Scraper from "./services/scraper.js";
-import * as AiBrief from "./services/aiBrief.js";
 import * as CompanyService from "./services/companyService.js";
 import * as CsvExport from "./lib/csvExport.js";
 import * as GoogleSheets from "./services/googleSheets.js";
@@ -124,7 +123,7 @@ app.use("*", async (c, next) => {
 // Central error handler -- mirrors Code.js's catch block, including the
 // "*NotConfiguredError" -> 503 special case.
 app.onError((err, c) => {
-  if (["FoursquareNotConfiguredError", "GeminiNotConfiguredError", "SheetsNotConfiguredError", "AuthNotConfiguredError", "GoogleSheetsNotConfiguredError", "GoogleCalendarNotConfiguredError"].includes(err.name)) {
+  if (["FoursquareNotConfiguredError", "SheetsNotConfiguredError", "AuthNotConfiguredError", "GoogleSheetsNotConfiguredError", "GoogleCalendarNotConfiguredError"].includes(err.name)) {
     return c.json({ success: false, status: 503, error: err.message }, 503);
   }
   console.log(`[worker] Error on ${c.req.method} ${c.req.path}: ${err.message}`);
@@ -332,13 +331,6 @@ app.get("/search/territory", async (c) => {
 app.get("/scrape/website", async (c) => {
   const data = await Scraper.scrapeCompanyWebsite(c.req.query("url"));
   return c.json(ok(data));
-});
-
-app.post("/brief/generate", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  if (!body.company) return c.json({ success: false, status: 400, error: 'Request body must include a "company" object' }, 400);
-  const brief = await AiBrief.generateCallBrief(c.get("config"), body.company);
-  return c.json(ok({ brief }));
 });
 
 // ---- export / leads -------------------------------------------------------

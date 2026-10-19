@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Call brief built from the lead's own data (AI removed)
+
+**Objective.** Replace the Gemini-written "Prep a call brief" with a brief built only from what the app already knows about the lead.
+
+**Actions Completed.** New `docs/callbrief.js` (pure `buildCallBrief`, tested in `worker/test/callbrief.test.js`). The brief has two parts. "What we know": who to ask for and their numbers, local timing, Medicare money, trend, what they sell and whether it is in the team's verticals, rental share and urban/rural, company type, locations and same-address providers, registry age, earlier calls and pickup, team tags and comments, and a claimed lead's status and call log. "Call plan": opening line, likely pain point, talking point, discovery question and likely objection, each chosen by fixed rules from the strongest signal (growing, high volume, rental-heavy, several locations, individual, no website, shrinking), so the same lead always gives the same brief. It fetches the cached product mix, same-address and team-notes answers when the button is pressed, has a Copy brief button, and is used by both the Prospect and Claimed cards (`docs/app.js`). Removed: `worker/src/services/aiBrief.js`, the `POST /brief/generate` route, the Gemini config and "AI call briefs" system-health entry, the "brief" feature counter, and the Gemini lines in `worker/wrangler.toml` and `worker/README.md`. The legacy `backend/` and `appscript/` code and the root `README.md` (which describe them) were not touched.
+
+**Database / System Result.** None. No schema change, no new endpoint, no outside service.
+
+**Safety Status.** Worker tests pass (288/288); not browser-tested. Needs a Worker deploy (to remove the endpoint) and a frontend publish. The `GEMINI_API_KEY` and `GEMINI_MODEL` secrets in Cloudflare are now unused and can be deleted from the dashboard; I did not touch them.
+
 ## 2026-10-19 — Call panel redesign: Prospect card look, big Call button, team-note logging with a separate Claim
 
 **Objective.** Make the call panel look like the Prospect card, keep the big Call button, and stop "log this call" from claiming a lead automatically.
