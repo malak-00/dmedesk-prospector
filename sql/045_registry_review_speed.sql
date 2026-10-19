@@ -206,4 +206,44 @@ $$;
 revoke all on function public.registry_review_page(integer, text, text, integer) from public, anon, authenticated;
 grant execute on function public.registry_review_page(integer, text, text, integer) to service_role;
 
+-- 5. Auto-ensure the index exists at the end of every future monthly refresh
+create or replace function public.finish_registry_match_build(p_build uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_removed integer;
+  v_pairs integer;
+  v_new integer;
+  v_big integer;
+begin
+  if not exists (select 1 from public.registry_match_builds where id = p_build and finished_at is null) then
+    raise exception 'build % is unknown or already finished', p_build;
+  end if;
+
+  delete from public.registry_match_candidates where last_build_id <> p_build;
+  get diagnostics v_removed = row_count;
+  delete from public.registry_match_big_buckets where build_id <> p_build;
+
+  -- Ensure review queue index exists so match reviews never time out
+  create index if not exists idx_registry_match_candidates_tier_left_right
+    on public.registry_match_candidates (tier, left_npi, right_npi);
+
+  select count(*), count(*) filter (where first_build_id = p_build) into v_pairs, v_new
+    from public.registry_match_candidates;
+  select count(*) into v_big from public.registry_match_big_buckets where build_id = p_build;
+
+  update public.registry_match_builds
+     set finished_at = now(), pairs = v_pairs, new_pairs = v_new, removed_pairs = v_removed, big_buckets = v_big
+   where id = p_build;
+
+  return jsonb_build_object('pairs', v_pairs, 'new_pairs', v_new, 'removed_pairs', v_removed, 'big_buckets', v_big);
+end;
+$$;
+
+revoke all on function public.finish_registry_match_build(uuid) from public, anon, authenticated;
+grant execute on function public.finish_registry_match_build(uuid) to service_role;
+
 commit;

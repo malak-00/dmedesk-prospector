@@ -482,7 +482,11 @@ function Cmd-Reviews-Batch {
         if ($leadsData.available -and $leadsData.reviews) { $leadsReviews = @($leadsData.reviews) }
         cGray "  leads scope: $($leadsReviews.Count) pair(s)"; nl
     } catch {
-        cYellow "  leads scope timed out (identity_review_queue is slow at scale) — skipping."; nl
+        if ("$_" -like "*401*" -or "$_" -like "*Not signed in*" -or "$_" -like "*session expired*") {
+            cRed "Session expired (401). Please run: .\prospector-admin.ps1 login"; nl
+            exit 1
+        }
+        cYellow "  leads scope timed out or failed — skipping."; nl
     }
 
     # ── registry scope (registry_review_page RPC, paginated) ─────────────────
@@ -505,6 +509,10 @@ function Cmd-Reviews-Batch {
             }
             $after = if ($regData.hasMore -and $regData.next) { $regData.next } else { $null }
         } catch {
+            if ("$_" -like "*401*" -or "$_" -like "*Not signed in*" -or "$_" -like "*session expired*") {
+                cRed "Session expired (401). Please run: .\prospector-admin.ps1 login"; nl
+                exit 1
+            }
             cYellow "  registry page $($regPage+1) error: $_"; nl
             if ("$_" -like "*statement timeout*") {
                 cYellow "  Hint: Registry scan timed out in Supabase. Run sql/045_registry_review_speed.sql in Supabase SQL editor."; nl
