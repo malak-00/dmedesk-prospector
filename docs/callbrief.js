@@ -1,4 +1,5 @@
-/* Call brief: a short, rule-based briefing for the call, built only from what the app already knows about the
+/* Call brief: a short, rule-based briefing for a business-development call (signing the supplier with the
+   outsourcing company), built only from what the app already knows about the
    lead (registry and Medicare data, the product mix and trend from CMS, who else is at the address, team
    notes and tags, and earlier calls). No AI and no outside service: the same lead always gives the same brief.
    buildCallBrief() is pure (tested in worker/test/callbrief.test.js); the rest gathers the extra facts and shows
@@ -139,42 +140,45 @@
     return facts;
   }
 
-  // The script: each part is chosen by the strongest signal for that lead, in a fixed order.
+  // The script: a business-development call to get the supplier to sign with the outsourcing company, which
+  // runs a supplier's full back office (intake and verification, prior authorizations, billing and denials, patient
+  // calls and resupply). Each part is chosen by the strongest signal for that lead, in a fixed order.
+  const COMPANY = "[company name]";
+
   function scriptOf(input, sig) {
     const c = input.company || {};
     const who = firstName(sig.contact && sig.contact.name);
     const place = [c.address && c.address.city, c.address && c.address.state].filter(Boolean).join(", ");
     const sells = sig.verticals.length ? sig.verticals.join(" and ") : sig.topCategory ? lower(sig.topCategory) : lower(c.taxonomy && c.taxonomy.description) || "DME";
 
-    const opening = `Hi${who ? ` ${who}` : ""}, this is [your name] with DME Desk. I'm calling suppliers in ${place || "your area"} that handle ${sells}, and ${c.name || "your company"} came up. Do you have two minutes?`;
+    const opening = `Hi${who ? ` ${who}` : ""}, this is [your name] with ${COMPANY}. We run the back office for DME suppliers: intake and verification, prior authorizations, billing and patient calls. ${c.name || "Your company"}${place ? ` in ${place}` : ""} came up because you supply ${sells}. Do you have two minutes?`;
 
     let pain;
-    if (sig.growing) pain = "Their Medicare billing is climbing, so more patients are calling and the phones are likely stretched.";
-    else if (sig.volume === "high") pain = `At ${sig.pay != null ? `about ${money(sig.pay)} in Medicare payments` : `${num(sig.claims)} claims`}, every missed or slow-answered call costs real money.`;
-    else if (sig.rental) pain = "Mostly rental billing means steady resupply and follow-up calls from patients, which pull staff away from other work.";
-    else if (sig.branches > 1 || sig.sameBuilding) pain = "More than one office or team at the address means calls get routed inconsistently and some go unanswered.";
-    else if (sig.individual) pain = "An owner-operator answers their own phone and misses calls while with patients or out on deliveries.";
-    else if (sig.noWebsite) pain = "With no website, the phone is the only way a patient reaches them, so a missed call is a lost patient.";
-    else if (sig.shrinking) pain = "Medicare billing has dropped, so they can't afford to lose the calls that remain.";
-    else pain = "Small supplier teams miss calls when everyone is busy with deliveries, intake and paperwork.";
+    if (sig.growing) pain = "Their Medicare billing is climbing, and back-office work (verifications, prior auths, claims, denials) grows faster than the team that does it.";
+    else if (sig.volume === "high") pain = `At ${sig.pay != null ? `about ${money(sig.pay)} in Medicare payments` : `${num(sig.claims)} claims`}, slow claims follow-up and unworked denials leave real money uncollected.`;
+    else if (sig.rental) pain = "Mostly rental billing means recurring monthly claims, resupply follow-up and compliance paperwork that never stops.";
+    else if (sig.branches > 1 || sig.sameBuilding) pain = "More than one office or team at the address means back-office work is split and duplicated, and things fall between people.";
+    else if (sig.individual) pain = "An owner-operator does billing, intake and paperwork personally, on top of patients and deliveries.";
+    else if (sig.shrinking) pain = "Medicare billing has dropped, so every dollar of in-house overhead matters more.";
+    else if (sig.volume === "low" || sig.volume === "none") pain = "A small team covers intake, verification and billing with the same few people, so something always waits.";
+    else pain = "Supplier teams lose hours every week to verifications, prior authorizations and billing follow-up instead of growing.";
 
-    let talking;
-    if (sig.verticals.length) talking = `DME Desk answers every call like a front desk, takes the ${sig.verticals.join(" or ")} patient's details, and sends the team a clean summary, so nothing is lost.`;
-    else talking = "DME Desk answers every call like a front desk, takes the caller's details, and sends the team a clean summary, so nothing is lost.";
+    const scope = sig.verticals.length ? `the ${sig.verticals.join(" and ")} paperwork, ` : "";
+    let talking = `${COMPANY} works as an extension of your team: we take on ${scope}intake and benefits verification, prior authorizations, billing and denials follow-up, and patient and resupply calls, so your staff stay on patients and deliveries.`;
     if (sig.neverPickedUp) talking += " Earlier calls here went unanswered: mention that you tried and offer a time they choose.";
 
     let question;
-    if (sig.rental) question = "How do you handle resupply and rental follow-up calls today, and who takes them?";
-    else if (sig.growing) question = "Billing has grown a lot recently. Who is answering the phones now, and is it keeping up?";
-    else if (sig.branches > 1 || sig.sameBuilding) question = "When a call comes in, how does it get to the right person across your locations?";
-    else if (sig.individual) question = "When you're with a patient or out on a delivery, what happens to the calls that come in?";
-    else question = "Who answers your phones when the team is out on deliveries or at lunch?";
+    if (sig.rental) question = "Who handles the monthly rental billing and resupply follow-up today, and how much slips through?";
+    else if (sig.growing) question = "Billing has grown a lot recently. Is your back office keeping up, or is work backing up?";
+    else if (sig.branches > 1 || sig.sameBuilding) question = "How is the back-office work split across your locations today?";
+    else if (sig.individual) question = "How many hours a week do you personally spend on billing and paperwork?";
+    else question = "Who handles verifications, prior authorizations and billing follow-up today, and where does it get stuck?";
 
     let objection;
-    if (sig.individual) objection = "“I handle my calls myself.” Response: “That's exactly who this is for: it covers the calls you can't pick up while you're with patients.”";
-    else if (sig.neverPickedUp) objection = "“Now's not a good time.” Response: “Understood. When is better? Two minutes at a time you choose.”";
-    else if (sig.volume === "low" || sig.volume === "none") objection = "“We're too small for this.” Response: “Small teams miss the most calls because everyone does three jobs.”";
-    else objection = "“We already have a receptionist.” Response: “DME Desk backs them up when they're on another line, at lunch, or after hours.”";
+    if (sig.neverPickedUp) objection = "\u201CNow's not a good time.\u201D Response: \u201CUnderstood. When is better? Two minutes at a time you choose.\u201D";
+    else if (sig.individual) objection = "\u201CI do it all myself.\u201D Response: acknowledge it, then ask what that time costs and offer a quote sized to their claim volume.";
+    else if (sig.volume === "low" || sig.volume === "none") objection = "\u201CWe're too small.\u201D Response: smaller teams feel the paperwork most; ask what volume they handle and offer a quote sized to it.";
+    else objection = "\u201CWe do it in-house.\u201D Response: \u201CWe work alongside your staff: we can take the overflow or the hardest work, like denials and prior auths, so they can focus.\u201D";
 
     return [
       { label: "Opening line", text: opening },

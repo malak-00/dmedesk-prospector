@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Call brief reframed for business development (signing suppliers with the outsourcing company)
+
+**Objective.** The call brief's "Call plan" pitched DME Desk's voice receptionist. It is now a business-development call to get a DME supplier to sign with the outsourcing company.
+
+**Actions Completed.** `docs/callbrief.js`: the five plan parts (opening line, likely pain point, talking point, discovery question, likely objection) now describe the company running a supplier's full back office: intake and benefits verification, prior authorizations, billing and denials follow-up, and patient and resupply calls. The pain point is still chosen by the strongest signal (growing, high Medicare volume, rental-heavy, several locations, owner-operator, shrinking, small team); the talking point names the lead's vertical paperwork when it sells orthotics and prosthetics, CGM or lymphedema; objections are acknowledge-then-offer-a-quote guidance with no invented figures or results. The opening line uses the placeholder `[company name]` (and `[your name]`) for each rep to fill in. The "What we know" facts are unchanged. Tests in `worker/test/callbrief.test.js` updated, including a check that no DME Desk or receptionist wording remains.
+
+**Database / System Result.** None. Front-end only.
+
+**Safety Status.** Worker tests pass (289/289); not browser-tested. Needs only a frontend publish. The company name is a placeholder until it is confirmed, and the service list should be checked by someone on the team.
+
 ## 2026-10-19 — Insights tables reworked so they no longer overflow
 
 **Objective.** The tables on the App insights page ran off their cards.
