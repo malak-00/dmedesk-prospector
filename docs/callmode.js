@@ -31,6 +31,7 @@
     order: null, // each lead's place in the list as it was handed over, to undo a shuffle
     undo: null,  // { npi, name, pos }: the claim that can still be taken back
     open: { more: false, notes: false }, // which folds are open; kept across redraws
+    briefOpen: false, // the call brief panel beside the call panel
   };
   const SHUFFLE_KEY = "dmeProspectorCallShuffle";
   const UNDO_MS = 10000;
@@ -42,6 +43,9 @@
 
   let backdrop = null;
   let drawer = null;
+  let briefPanel = null; // the call brief, a second panel to the left of the call panel
+  let briefShownFor = ""; // NPI of the lead the brief panel currently shows
+  let briefToken = 0; // guards against an older answer arriving after a newer one
 
   const isOpen = () => Boolean(drawer) && !drawer.hidden;
 
@@ -57,7 +61,17 @@
     drawer.tabIndex = -1;
     drawer.setAttribute("role", "dialog");
     drawer.setAttribute("aria-label", "Call mode");
-    document.body.append(backdrop, drawer);
+    briefPanel = document.createElement("aside");
+    briefPanel.className = "call-brief-panel";
+    briefPanel.id = "callBriefPanel";
+    briefPanel.hidden = true;
+    briefPanel.setAttribute("role", "complementary");
+    briefPanel.setAttribute("aria-label", "Call brief");
+    briefPanel.innerHTML = `<div class="cbp-head"><div><div class="cm-kicker">Call brief</div><div class="cbp-name"></div></div>
+        <button type="button" class="btn btn-ghost btn-small" data-cbp="close">Close</button></div>
+      <div class="cbp-body"></div>`;
+    briefPanel.addEventListener("click", (e) => { if (e.target.closest('[data-cbp="close"]')) setBrief(false); });
+    document.body.append(backdrop, drawer, briefPanel);
 
     backdrop.addEventListener("click", close);
     drawer.addEventListener("click", onClick);
@@ -390,6 +404,7 @@
             <div class="cm-name">${escapeHtml(info.name)}</div>
             <div class="cm-sub cm-muted">${escapeHtml([info.specialty, info.place].filter(Boolean).join(" \u00b7 "))}</div>
           </div>
+          ${window.dmeHooks.briefHtml ? `<button type="button" class="btn btn-ghost btn-small cm-brief-btn${run.briefOpen ? " is-on" : ""}" data-cm="brief" aria-pressed="${run.briefOpen}" title="Open the call brief next to this panel">${BRIEF_ICON}<span>Call brief</span></button>` : ""}
         </div>
         <div class="cm-hero-meta">${npi ? `<span class="cm-npi">NPI <span class="mono">${escapeHtml(npi)}</span><button type="button" class="copy-inline" data-copy-text="${escapeHtml(npi)}" data-copy-label="NPI" title="Copy NPI" aria-label="Copy NPI">${SIGNAL_ICONS.copy}</button></span>` : ""}${window.dmeHooks.localTime?.(info.stateCode) || ""}</div>
         ${contactRow}
@@ -463,12 +478,50 @@
       <div class="cm-foot">${foot}</div>
       <div class="cm-keys">\u2190 back \u00b7 \u2192 skip \u00b7 Ctrl+Enter save &amp; next \u00b7 Esc close</div>`;
     loadLeadInfo(info.company);
+    renderBriefPanel();
     // Warm the next lead while this one is being called, so its details are ready when it is shown.
     const next = run.queue[run.pos + 1];
     if (next && richInfo) {
       const nextCompany = describe(next).company;
       hooks.whyCallOpened?.(nextCompany);
       hooks.annotationsOpened?.(nextCompany.npi, false);
+    }
+  }
+
+  // Opens or closes the call brief panel. While it is open it follows the lead on screen.
+  function setBrief(open) {
+    run.briefOpen = open;
+    renderBriefPanel();
+    drawer?.querySelectorAll(".cm-brief-btn").forEach((b) => { b.classList.toggle("is-on", open); b.setAttribute("aria-pressed", String(open)); });
+  }
+
+  async function renderBriefPanel() {
+    if (!briefPanel) return;
+    const lead = isOpen() && run.pos < run.queue.length ? run.queue[run.pos] : null;
+    if (!run.briefOpen || !lead || !window.dmeHooks.briefHtml) {
+      briefPanel.hidden = true;
+      briefShownFor = "";
+      document.documentElement.classList.remove("brief-open");
+      return;
+    }
+    const claimed = run.mode === "claimed";
+    const company = claimed ? companyLikeFromClaimedLead(lead) : lead;
+    const key = `${run.mode}:${String(lead.npi || lead.name)}`;
+    briefPanel.hidden = false;
+    document.documentElement.classList.add("brief-open");
+    briefPanel.querySelector(".cbp-name").textContent = lead.name || "";
+    if (briefShownFor === key) return; // a redraw of the same lead: keep what is shown
+    const body = briefPanel.querySelector(".cbp-body");
+    const token = ++briefToken;
+    body.textContent = "Putting the brief together\u2026";
+    try {
+      const html = await window.dmeHooks.briefHtml(company, claimed ? { status: lead.status, notes: lead.notes } : null);
+      if (token !== briefToken) return;
+      body.innerHTML = html;
+      body.scrollTop = 0;
+      briefShownFor = key;
+    } catch (err) {
+      if (token === briefToken) body.textContent = `Could not build the brief: ${err.message}`;
     }
   }
 
@@ -485,6 +538,8 @@
   }
 
   function renderDone() {
+    run.briefOpen = false;
+    renderBriefPanel();
     const c = counts();
     let breakdown = "";
     if (run.mode === "claimed") {
@@ -689,6 +744,7 @@
       else if (act === "back") back();
       else if (act === "primary") primary();
       else if (act === "claim") claimLead();
+      else if (act === "brief") setBrief(!run.briefOpen);
       else if (act === "undo") undoClaim();
       else if (act === "shuffle") toggleShuffle();
       else if (act === "meeting") bookMeeting();
@@ -743,9 +799,10 @@
     try { shuffle = localStorage.getItem(SHUFFLE_KEY) === "1"; } catch { /* not remembered */ }
     clearTimeout(undoTimer);
     lastInfoNpi = "";
+    briefShownFor = "";
     Object.assign(run, {
       mode, queue: list, outcome: list.map(() => null), pos: -1, busy: false, status: "", remind: "", note: "", startedAt: Date.now(),
-      shuffle, order: new Map(list.map((item, i) => [item, i])), undo: null, bad: new Map(), badUndo: null,
+      shuffle, order: new Map(list.map((item, i) => [item, i])), undo: null, bad: new Map(), badUndo: null, briefOpen: false,
     });
     if (shuffle) reorderRest(); // pos -1: every lead is still to call
     run.pos = 0;
@@ -761,6 +818,8 @@
     if (!isOpen()) return;
     drawer.hidden = true;
     backdrop.hidden = true;
+    run.briefOpen = false;
+    renderBriefPanel();
     clearTimeout(undoTimer);
     run.undo = null;
     document.documentElement.classList.remove("call-open");

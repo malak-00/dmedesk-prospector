@@ -2409,7 +2409,7 @@ body { animation: pageIn 0.35s ease both; }
 .call-backdrop { position: fixed; inset: 0; z-index: 54; background: rgba(0, 0, 0, 0.38); }
 .call-backdrop[hidden], .call-drawer[hidden] { display: none; }
 .call-drawer {
-  position: fixed; z-index: 55; top: 0; right: 0; bottom: 0; width: min(520px, 100%);
+  position: fixed; z-index: 55; top: 0; right: 0; bottom: 0; width: var(--call-drawer-w);
   display: flex; flex-direction: column; background: var(--surface); color: var(--ink);
   border-left: 1px solid var(--hairline); box-shadow: -18px 0 40px -24px rgba(0, 0, 0, 0.5);
   animation: cm-in 0.18s ease-out;
@@ -2851,7 +2851,7 @@ html.call-open .buddy { display: none; }
 .buddy-reply input { flex: 1; min-width: 0; font: inherit; font-size: 12.5px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--input-line, var(--hairline)); border-radius: 8px; padding: 5px 8px; }
 .buddy-launch img { transition: opacity 0.2s ease; }
 .buddy-call {
-  position: fixed; z-index: 56; bottom: 16px; right: calc(min(440px, 100%) + 14px);
+  position: fixed; z-index: 56; bottom: 16px; right: calc(var(--call-drawer-w) + 14px);
   display: flex; flex-direction: column; align-items: center; gap: 4px; width: 190px; pointer-events: none;
 }
 .buddy-call > * { pointer-events: auto; }
@@ -3358,3 +3358,30 @@ html.game-open .buddy { display: none; }
 .ins-seg-label b { font-size: 13px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
 .ins-seg-bar { display: block; height: 6px; margin-top: 4px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .ins-seg-bar u { display: block; height: 100%; background: var(--accent); border-radius: 999px; text-decoration: none; }
+
+/* ---- Call brief panel: opens beside the call panel; the call-mode avatar moves to the outer edge ---- */
+:root {
+  --call-drawer-w: min(520px, 100vw);
+  --brief-w: min(460px, calc(100vw - var(--call-drawer-w) - 16px));
+}
+.call-brief-panel {
+  position: fixed; z-index: 55; top: 0; bottom: 0; right: var(--call-drawer-w); width: var(--brief-w);
+  display: flex; flex-direction: column; background: var(--bg); color: var(--ink);
+  border-left: 1px solid var(--hairline); border-right: 1px solid var(--hairline);
+  box-shadow: -18px 0 40px -24px rgba(0, 0, 0, 0.5); animation: cm-in 0.18s ease-out;
+}
+.call-brief-panel[hidden] { display: none; }
+.cbp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px 12px; border-bottom: 1px solid var(--hairline); background: var(--surface); }
+.cbp-name { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; overflow-wrap: anywhere; }
+.cbp-body { flex: 1; overflow-y: auto; padding: 16px 20px 24px; font-size: 13px; }
+.cbp-body .brief-facts > div { grid-template-columns: 110px minmax(0, 1fr); }
+.cm-brief-btn { margin-left: auto; flex: none; }
+.cm-brief-btn svg { width: 14px; height: 14px; }
+.cm-brief-btn.is-on { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
+html.brief-open .buddy-call { right: calc(var(--call-drawer-w) + var(--brief-w) + 14px); }
+@media (max-width: 1100px) {
+  /* No room side by side: the brief opens over the call panel instead. */
+  .call-brief-panel { right: 0; width: var(--call-drawer-w); z-index: 57; }
+  html.brief-open .buddy-call { right: calc(var(--call-drawer-w) + 14px); }
+}
+@media (max-width: 1320px) { html.brief-open .buddy-call { display: none; } }

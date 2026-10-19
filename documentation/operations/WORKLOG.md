@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Call brief as a side panel next to the call panel; the call-mode avatar moves to the outer edge
+
+**Objective.** Offer the call brief from inside the call panel, opening beside it, and keep the call-mode avatar from being covered by the panels.
+
+**Actions Completed.** `docs/callmode.js`: a "Call brief" button in the lead card (prospect and claimed modes) opens a second panel immediately to the left of the call panel (`#callBriefPanel`). It shows the same brief as the cards (`dmeHooks.briefHtml`, with the Copy brief button), follows the lead on screen as you move to the next one (refetching only when the lead changes), and closes with its own Close button, when the call panel closes, or on the done screen. On screens narrower than 1100px there is no room side by side, so it opens over the call panel instead. `docs/style.css`: the panel widths are now variables (`--call-drawer-w`, `--brief-w`). The call-mode avatar ("call helper", `.buddy-call`) had still been positioned for the old 440px panel, so after the panel was widened to 520px it sat partly under it; it now sits at the outer edge of whatever is open (the call panel alone, or the call panel plus the brief), and is hidden only when the brief is open and the window is 1320px wide or less, where there is no room for it.
+
+**Database / System Result.** None. Front-end only.
+
+**Safety Status.** Not browser-tested. Needs only a frontend publish.
+
 ## 2026-10-19 — Call plan rewritten from cold-call research; conversion tables made readable
 
 **Objective.** Make the brief's call plan follow what cold-call research agrees on, with no free-audit offer, and make the "Which specialties convert" and "Which states convert" tables easy to read.
