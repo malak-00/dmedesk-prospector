@@ -13,7 +13,6 @@ government
 optical
 eye care
 dentist
-dds
 therapy
 wigs
 medical wig
@@ -33,7 +32,9 @@ laborator
 labs
 medical group
 foundation
-hair
+hair salon
+hair studio
+hair replacement
 foot clinic
 walgreen co
 clinic
@@ -46,4 +47,12 @@ supply and salon
 salon
 cancer
 hearing aid
+dds pc
+dds llc
+dds pllc
+dds inc
+dds,
+dds ps
+dds pa
+dds sc
 d.d.s

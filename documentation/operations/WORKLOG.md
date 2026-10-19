@@ -1,5 +1,25 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Keyword fixes: `hair` and `dds` collisions; wheelchair suppliers unflagged
+
+**Objective.** Act on the 2026-10-19 audit report: stop `hair` matching `wheelchair` and `dds` matching `Dodds`.
+
+**Actions Completed.** `exclude_keywords.txt` (and the term list in `sql/audit_exclusions.sql`): `hair` -> `hair salon`, `hair studio`, `hair replacement`; `dds` -> `dds pc`, `dds llc`, `dds pllc`, `dds inc`, `dds,`, `dds ps`, `dds pa`, `dds sc` (plus `d.d.s`), so dentists named `X DDS PC` stay excluded while `Dodds` names are not matched. List is now 55 terms. `oxygen`, `sleep`, `therapy` unchanged (user decision). Ran `apply_exclusion_keywords` on production with the new list: released 18, re-flagged 7 dentists.
+
+**Database / System Result.** Flagged providers 1,778 -> 1,767. No wheelchair provider is flagged any more (13 are visible in search). Deleted providers are NOT restored by this: wheelchair and similar suppliers that matched `hair` were among the 120,935 deleted on 2026-10-15 and come back only through an NPPES load with the corrected list. The 130 leads without an `npi_records` row are not from that cleanup: none has any provider history, all were created before it (July 22 - Oct 8), and `remove_excluded_providers` keeps every NPI that has a lead.
+
+**Safety Status.** Reversible flag change only; no deletes. Residual risk: a business named e.g. `... DODDS PC` would match `dds pc`; two hair businesses (`... HAIR LLC`) are no longer excluded.
+
+## 2026-10-19 — Supabase free-plan size: unused-index migration drafted
+
+**Objective.** Supabase reports the database at 0.689 GB against the 0.5 GB free limit. Find safe reductions.
+
+**Actions Completed.** Read-only size and index-usage queries on dmedesk-prospector. Largest tables: `npi_records` 260 MB (141 MB of it indexes), `npi_identity_keys` 102 MB, `provider_field_history` 82 MB, `lead_group_members` 52 MB, `registry_match_candidates` 40 MB, `identity_match_decisions` 37 MB, `lead_groups` 31 MB. Drafted `sql/047_drop_unused_indexes.sql` (drops `idx_npi_identity_keys_name`, `idx_npi_identity_keys_official`, `idx_npi_records_state_taxonomy`, about 32 MB). `idx_npi_records_city` is kept because the same-address lookup uses it. This alone will not get under 0.5 GB; the rest needs pruning old `provider_field_history` rows, slimming `npi_records`, or the Pro plan.
+
+**Database / System Result.** None. The migration is NOT applied.
+
+**Safety Status.** Read-only queries only; no production mutation. Index stats may have been reset, so recheck `idx_scan` before running.
+
 ## 2026-10-19 — App insights layout: tabs instead of one long page
 
 **Objective.** The insights page was one very long scroll. Make it quicker to read.
