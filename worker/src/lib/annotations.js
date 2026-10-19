@@ -1,3 +1,5 @@
+import { classifyResult } from "./bestTimes.js";
+
 // Comments and tags on a lead that is not claimed (sql/049). Pure helpers, so the rules are tested
 // without a database.
 
@@ -42,15 +44,21 @@ export function shapeAnnotations(commentRows, tagRows, users = new Map()) {
   };
 }
 
-// Many leads at once (a page of search results): npi -> { tags: [..], comments: n }.
+// Many leads at once (a page of search results): npi -> { tags: [..], comments: n, calls: { answered, total } }.
+// A comment that starts with a call result ("Voicemail — left a message") counts as a logged call.
 export function summarize(commentRows, tagRows) {
   const out = new Map();
   const slot = (npi) => {
     const key = String(npi);
-    if (!out.has(key)) out.set(key, { tags: [], comments: 0 });
+    if (!out.has(key)) out.set(key, { tags: [], comments: 0, calls: { answered: 0, total: 0 } });
     return out.get(key);
   };
   (tagRows || []).forEach((r) => slot(r.npi).tags.push(r.tag));
-  (commentRows || []).forEach((r) => { slot(r.npi).comments += 1; });
+  (commentRows || []).forEach((r) => {
+    const entry = slot(r.npi);
+    entry.comments += 1;
+    const verdict = classifyResult(r.body);
+    if (verdict) { entry.calls.total += 1; if (verdict === "answered") entry.calls.answered += 1; }
+  });
   return out;
 }

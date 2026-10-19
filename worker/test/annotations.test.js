@@ -31,10 +31,11 @@ test('rows are shaped for the card and summarised for a page of results', () => 
   assert.deepEqual(shaped.comments[0], { id: 1, by: 'Ana', byId: 'u1', at: 't', text: 'hi' });
   assert.equal(shaped.tags[0].by, 'A teammate');
 
-  const sum = summarize([{ npi: '1' }, { npi: '1' }, { npi: '2' }], [{ npi: '1', tag: 'chain' }, { npi: '3', tag: 'closed' }]);
-  assert.deepEqual(sum.get('1'), { tags: ['chain'], comments: 2 });
-  assert.deepEqual(sum.get('2'), { tags: [], comments: 1 });
-  assert.deepEqual(sum.get('3'), { tags: ['closed'], comments: 0 });
+  const sum = summarize([{ npi: '1', body: 'Closed Fridays' }, { npi: '1', body: 'x' }, { npi: '2', body: 'y' }], [{ npi: '1', tag: 'chain' }, { npi: '3', tag: 'closed' }]);
+  const none = { answered: 0, total: 0 };
+  assert.deepEqual(sum.get('1'), { tags: ['chain'], comments: 2, calls: none });
+  assert.deepEqual(sum.get('2'), { tags: [], comments: 1, calls: none });
+  assert.deepEqual(sum.get('3'), { tags: ['closed'], comments: 0, calls: none });
 });
 
 // ---- the repo, against a tiny in-memory stand-in for the tables ----
@@ -123,4 +124,16 @@ test('reading returns comments and tags with author names', async () => {
   assert.equal(read.tags[0].by, 'Ana');
   assert.equal(read.comments[0].by, 'Ben');
   assert.ok(read.suggested.includes('good fit'));
+});
+
+test('comments that start with a call result count as logged calls', () => {
+  const sum = summarize([
+    { npi: '1', body: 'Voicemail — left a message' },
+    { npi: '1', body: 'Interested — wants pricing' },
+    { npi: '1', body: 'No answer' },
+    { npi: '1', body: 'Owner is out until Monday' }, // free text: says nothing about a pick-up
+    { npi: '1', body: 'Gatekeeper' },
+  ], []);
+  assert.deepEqual(sum.get('1').calls, { answered: 2, total: 4 });
+  assert.equal(sum.get('1').comments, 5);
 });

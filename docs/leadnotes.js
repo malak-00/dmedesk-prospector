@@ -37,7 +37,7 @@
   const draftOf = (npi) => drafts.get(npi) || { comment: "", tag: "" };
   function setDraft(npi, patch) { drafts.set(npi, { ...draftOf(npi), ...patch }); }
 
-  function bodyHtml(npi) {
+  function bodyHtml(npi, noForm) {
     const d = data.get(npi);
     if (!d) return '<span class="muted-note">Loading…</span>';
     if (!d.installed) return '<span class="muted-note">Comments and tags are not set up yet. An admin needs to run sql/049_lead_comments_tags.sql in Supabase.</span>';
@@ -55,8 +55,8 @@
     return `<div class="ann-tags">${tags}<input type="text" class="ann-tag-input" maxlength="24" placeholder="Add a tag" aria-label="Add a tag" value="${esc(draft.tag)}"></div>
       ${suggestions ? `<div class="ann-suggestions">${suggestions}</div>` : ""}
       ${comments}
-      <div class="ann-form"><input type="text" class="ann-comment-input" maxlength="500" placeholder="Leave a comment for the team (no need to claim)" aria-label="Comment" value="${esc(draft.comment)}">
-        <button type="button" class="btn btn-ghost btn-small" data-ann-comment-send>Add</button></div>`;
+      ${noForm ? "" : `<div class="ann-form"><input type="text" class="ann-comment-input" maxlength="500" placeholder="Leave a comment for the team (no need to claim)" aria-label="Comment" value="${esc(draft.comment)}">
+        <button type="button" class="btn btn-ghost btn-small" data-ann-comment-send>Add</button></div>`}`;
   }
 
   // The read-only tag chips and the fold's label in the call panel.
@@ -82,7 +82,7 @@
       // Do not rebuild a box the person is typing in, unless something they did just changed it.
       if (typing && !force) return;
       const refocus = typing ? (active.matches(".ann-tag-input") ? ".ann-tag-input" : ".ann-comment-input") : "";
-      box.innerHTML = bodyHtml(npi);
+      box.innerHTML = bodyHtml(npi, Boolean(box.closest(".ann") && box.closest(".ann").dataset.annNoform));
       if (refocus) { const el = box.querySelector(refocus); if (el) el.focus(); }
     });
   }
@@ -102,7 +102,15 @@
   hooks.annotationsBlock = (npi, opts) => {
     if (!npi) return "";
     const compact = Boolean(opts && opts.compact);
-    return `<div class="ann${compact ? " ann-compact" : ""}" data-ann-npi="${esc(npi)}">${compact ? "" : '<h4>Team notes <small>seen by everyone, no claim needed</small></h4>'}<div class="ann-body">${bodyHtml(String(npi))}</div></div>`;
+    const noForm = Boolean(opts && opts.noForm);
+    return `<div class="ann${compact ? " ann-compact" : ""}" data-ann-npi="${esc(npi)}"${noForm ? ' data-ann-noform="1"' : ""}>${compact ? "" : '<h4>Team notes <small>seen by everyone, no claim needed</small></h4>'}<div class="ann-body">${bodyHtml(String(npi), noForm)}</div></div>`;
+  };
+
+  // Saves a comment from somewhere else (the call panel's note box) and refreshes every box showing this lead.
+  hooks.annotationsPost = async (npi, text) => {
+    await apiPost("leads/annotations/comment", { npi, text });
+    data.set(npi, await apiGet("leads/annotations", { npi }));
+    paint(npi, true);
   };
 
   // For the call panel's collapsed row: read-only tag chips, and the label of the "Team notes" fold.

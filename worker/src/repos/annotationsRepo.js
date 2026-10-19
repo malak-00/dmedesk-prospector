@@ -84,7 +84,7 @@ export async function summaryAmong(supabase, npis) {
   const list = [...new Set((npis || []).map(String).filter(Boolean))];
   if (!list.length) return new Map();
   const [comments, tags] = await Promise.all([
-    supabase.from("lead_comments").select("npi").in("npi", list),
+    supabase.from("lead_comments").select("npi, body").in("npi", list),
     supabase.from("lead_tags").select("npi, tag").in("npi", list),
   ]);
   if (comments.error || tags.error) throw failed(comments.error || tags.error, "read comments and tags");

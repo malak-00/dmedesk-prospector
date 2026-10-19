@@ -192,6 +192,10 @@
       return {
         name: item.name,
         contact: dm ? [dm.name, dm.title].filter(Boolean).join(" — ") : "",
+        contactName: dm ? dm.name || "" : "",
+        contactTitle: dm ? dm.title || "" : "",
+        contactRole: dm ? dm.roleCategory || "" : "",
+        address: [addr.line1, [addr.city, addr.state].filter(Boolean).join(", "), addr.postalCode].filter(Boolean).join(", "),
         place: [addr.city, addr.state].filter(Boolean).join(", "),
         stateCode: addr.state || "",
         specialty: item.taxonomy && item.taxonomy.description,
@@ -209,6 +213,10 @@
     return {
       name: item.name,
       contact: [item.contactName, item.contactTitle].filter(Boolean).join(" — "),
+      contactName: item.contactName || "",
+      contactTitle: item.contactTitle || "",
+      contactRole: item.contactRole || "",
+      address: [item.addressLine1, [item.city, item.state].filter(Boolean).join(", "), item.postalCode].filter(Boolean).join(", "),
       place: [item.city, item.state].filter(Boolean).join(", "),
       stateCode: item.state || "",
       specialty: item.taxonomy,
@@ -360,37 +368,78 @@
 
     const hooks = window.dmeHooks;
     const richInfo = Boolean(hooks.whyCallBlock);
-    let facts = "";
-    // The Why call block below carries the Medicare figures when it is available.
-    if (!richInfo && info.claims != null) facts += `<span class="cm-fact">${info.claims.toLocaleString()} Medicare claims</span>`;
-    if (info.website) facts += `<a class="cm-fact cm-fact-link" href="${escapeHtml(info.website)}" target="_blank" rel="noopener">Website</a>`;
-    if (info.meeting) facts += `<span class="cm-fact is-meeting">${uiIcon("calendar")} ${escapeHtml(info.meeting)}</span>`;
+    const npi = info.company.npi;
 
     let context = "";
     if (info.prior && !richInfo) context += priorContactBannerHtml(info.prior);
     if (info.opener) context += `<div class="opener-notes"><div class="opener-label">Your opener</div><div class="opener-text">${escapeHtml(info.opener)}</div></div>`;
     if (info.lastNote) context += `<div class="cm-lastnote"><span>Last note</span>${escapeHtml(info.lastNote)}</div>`;
 
+    // The lead's own card: who it is, who to call (big Call button), and where it is.
+    const factRows = [];
+    if (info.address) factRows.push(["Address", `${escapeHtml(info.address)}<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(info.address)}" target="_blank" rel="noopener">Open in Maps</a>`]);
+    if (info.website) factRows.push(["Website", `<a href="${escapeHtml(info.website)}" target="_blank" rel="noopener">${escapeHtml(info.website)}</a>`]);
+    if (info.meeting) factRows.push(["Meeting", `${uiIcon("calendar")} ${escapeHtml(info.meeting)}`]);
+    const contactRow = info.contactName ? `<div class="who-row cm-who">
+        <div class="lead-avatar lead-avatar-sm" aria-hidden="true">${escapeHtml(leadInitials(info.contactName))}</div>
+        <div class="who-main"><div class="who-name">${escapeHtml(info.contactName)}${info.contactRole ? `<span class="contact-role">${escapeHtml(info.contactRole)}</span>` : ""}</div>${info.contactTitle ? `<div class="who-sub">${escapeHtml(info.contactTitle)}</div>` : ""}</div>
+      </div>` : "";
+    const hero = `<div class="detail-block cm-hero">
+        <div class="cm-hero-head">
+          <div class="lead-avatar" aria-hidden="true">${escapeHtml(leadInitials(info.name))}</div>
+          <div class="cm-hero-title">
+            <div class="cm-name">${escapeHtml(info.name)}</div>
+            <div class="cm-sub cm-muted">${escapeHtml([info.specialty, info.place].filter(Boolean).join(" \u00b7 "))}</div>
+          </div>
+        </div>
+        <div class="cm-hero-meta">${npi ? `<span class="cm-npi">NPI <span class="mono">${escapeHtml(npi)}</span><button type="button" class="copy-inline" data-copy-text="${escapeHtml(npi)}" data-copy-label="NPI" title="Copy NPI" aria-label="Copy NPI">${SIGNAL_ICONS.copy}</button></span>` : ""}${window.dmeHooks.localTime?.(info.stateCode) || ""}</div>
+        ${contactRow}
+        ${callBlockHtml(phoneOptions(item))}
+        ${factRows.length ? factsHtml(factRows) : ""}
+      </div>`;
+
+    const why = richInfo ? `<div class="detail-block cm-card">
+        <h4>Why call</h4>
+        ${hooks.whyCallSnapshot(info.company, { extraHtml: hooks.annotationsChips?.(npi) || "" })}
+        <details class="cm-fold" data-fold="more"${run.open.more ? " open" : ""}>
+          <summary>More about this lead</summary>
+          ${hooks.whyCallBlock(info.company, { compact: true, noTitle: true, ...(info.prior ? { priorLine: priorContactSummary(info.prior), priorNote: info.prior.note } : {}) })}
+        </details>
+      </div>` : "";
+
     let work;
-    let primaryLabel;
+    let foot;
     if (run.mode === "claimed") {
-      primaryLabel = "Save & next";
-      work = `
-        <div class="cm-label">How did it go?</div>
+      work = `<div class="detail-block cm-card">
+        <h4>Log this call</h4>
         <div class="cm-chips">${chipsHtml(callResultStatuses(), "cm-status", run.status)}</div>
         <textarea class="cm-note" rows="3" maxlength="500" placeholder="Add a note (optional)">${escapeHtml(run.note)}</textarea>
         <div class="cm-label">Call back</div>
         <div class="cm-chips">
           ${CALLBACK_CHOICES.map((o) => `<button type="button" class="choice-chip cm-remind${String(o.days) === run.remind ? " active" : ""}" data-value="${o.days}">${o.label}</button>`).join("")}
         </div>
-        <div class="cm-more"><button type="button" class="text-action" data-cm="meeting">${uiIcon("calendar")} ${item.meetingAt && !meetingIsPast(item) ? "Edit meeting" : "Book a meeting"}</button></div>`;
+        <div class="cm-more"><button type="button" class="text-action" data-cm="meeting">${uiIcon("calendar")} ${item.meetingAt && !meetingIsPast(item) ? "Edit meeting" : "Book a meeting"}</button></div>
+      </div>
+      ${hooks.annotationsBlock ? `<div class="detail-block cm-card"><details class="cm-fold cm-fold-bare" data-fold="notes"${run.open.notes ? " open" : ""}>
+          <summary>${hooks.annotationsLabel?.(npi) || "Team notes"}</summary>
+          ${hooks.annotationsBlock(npi, { compact: true })}
+        </details></div>` : ""}`;
+      foot = `<button type="button" class="btn btn-ghost" data-cm="back" ${run.pos === 0 ? "disabled" : ""} title="Previous lead (\u2190)">Back</button>
+        <button type="button" class="btn btn-ghost" data-cm="skip" title="Skip this lead (\u2192)">Skip</button>
+        <button type="button" class="btn btn-primary cm-save" data-cm="primary" title="Ctrl+Enter">Save &amp; next</button>`;
     } else {
-      primaryLabel = "";
-      work = `
-        <div class="cm-label">How did it go? <span class="cm-hint-inline">Tap a result to claim this lead and move on</span></div>
-        <div class="cm-chips">${PROSPECT_RESULTS.map(([value, label]) => `<button type="button" class="choice-chip cm-status${value === "disconnected" ? " is-danger" : ""}" data-value="${value}">${label}</button>`).join("")}</div>
-        <textarea class="cm-note" rows="3" maxlength="500" placeholder="Add a note first (optional)">${escapeHtml(run.note)}</textarea>
-        <button type="button" class="btn btn-primary cm-claim-note" data-cm="primary" title="Ctrl+Enter">Enter note &amp; claim</button>`;
+      // A result and note on a lead that is not claimed are kept as a team note: no claim, the whole team sees it.
+      work = `<div class="detail-block cm-card">
+        <h4>Team notes <small>seen by everyone \u00b7 doesn't claim</small></h4>
+        <div class="cm-label">How did it go?</div>
+        <div class="cm-chips">${PROSPECT_RESULTS.map(([value, label]) => `<button type="button" class="choice-chip cm-status${value === "disconnected" ? " is-danger" : ""}${value === run.status ? " active" : ""}" data-value="${value}">${label}</button>`).join("")}</div>
+        <textarea class="cm-note" rows="3" maxlength="480" placeholder="Add a note for the team (optional)">${escapeHtml(run.note)}</textarea>
+        ${hooks.annotationsBlock ? hooks.annotationsBlock(npi, { compact: true, noForm: true }) : ""}
+      </div>`;
+      foot = `<button type="button" class="btn btn-ghost" data-cm="back" ${run.pos === 0 ? "disabled" : ""} title="Previous lead (\u2190)">Back</button>
+        <button type="button" class="btn btn-ghost" data-cm="skip" title="Skip this lead (\u2192)">Skip</button>
+        <button type="button" class="btn btn-ghost cm-claim" data-cm="claim" title="Claim this lead for yourself">Claim lead</button>
+        <button type="button" class="btn btn-primary cm-save" data-cm="primary" title="Ctrl+Enter">Save &amp; next</button>`;
     }
 
     drawer.innerHTML = `
@@ -399,38 +448,21 @@
           <div class="cm-kicker">${run.mode === "claimed" ? "Calling your leads" : "Calling prospects"}</div>
           <div class="cm-count">${run.pos + 1} of ${total}</div>
         </div>
-        <div class="cm-head-meta"><span>${c.saved} ${run.mode === "claimed" ? "logged" : "claimed"}</span><span>${c.skipped} skipped</span><span>${c.left} left</span></div>
+        <div class="cm-head-meta"><span>${c.saved} logged</span><span>${c.skipped} skipped</span><span>${c.left} left</span></div>
         ${total > 1 ? `<button type="button" class="btn btn-ghost btn-small cm-shuffle${run.shuffle ? " is-on" : ""}" data-cm="shuffle" aria-pressed="${run.shuffle}" title="Take the leads still to call in a random order">Shuffle</button>` : ""}
         <button type="button" class="btn btn-ghost btn-small" data-cm="close">Close</button>
       </div>
       <div class="cm-progress" aria-hidden="true"><span style="width:${pct}%"></span></div>
       <div class="cm-body">
         ${undoHtml()}${badUndoHtml()}
-        <div class="cm-name">${escapeHtml(info.name)}</div>
-        ${info.contact ? `<div class="cm-sub">${escapeHtml(info.contact)}</div>` : ""}
-        <div class="cm-sub cm-muted">${escapeHtml([info.place, info.specialty].filter(Boolean).join(" \u00b7 "))} ${window.dmeHooks.localTime?.(info.stateCode) || ""}</div>
-        ${info.company.npi ? `<div class="cm-sub cm-muted cm-npi">NPI <span class="mono">${escapeHtml(info.company.npi)}</span><button type="button" class="copy-inline" data-copy-text="${escapeHtml(info.company.npi)}" data-copy-label="NPI" title="Copy NPI" aria-label="Copy NPI">${SIGNAL_ICONS.copy}</button></div>` : ""}
-        ${facts ? `<div class="cm-facts">${facts}</div>` : ""}
-        ${callBlockHtml(phoneOptions(item))}
-        ${richInfo ? hooks.whyCallSnapshot(info.company, { extraHtml: hooks.annotationsChips?.(info.company.npi) || "" }) : ""}
-        ${richInfo ? `<details class="cm-fold" data-fold="more"${run.open.more ? " open" : ""}>
-          <summary>More about this lead</summary>
-          ${hooks.whyCallBlock(info.company, { compact: true, noTitle: true, ...(info.prior ? { priorLine: priorContactSummary(info.prior), priorNote: info.prior.note } : {}) })}
-        </details>` : ""}
-        ${hooks.annotationsBlock ? `<details class="cm-fold" data-fold="notes"${run.open.notes ? " open" : ""}>
-          <summary>${hooks.annotationsLabel?.(info.company.npi) || "Team notes"}</summary>
-          ${hooks.annotationsBlock(info.company.npi, { compact: true })}
-        </details>` : ""}
+        ${hero}
+        ${why}
         ${context}
         ${work}
         ${upNextHtml()}
       </div>
-      <div class="cm-foot">
-        <button type="button" class="btn btn-ghost" data-cm="back" ${run.pos === 0 ? "disabled" : ""} title="Previous lead (←)">Back</button>
-        <button type="button" class="btn btn-ghost" data-cm="skip" title="Skip this lead (→)">Skip</button>
-        ${primaryLabel ? `<button type="button" class="btn btn-primary" data-cm="primary" title="Ctrl+Enter">${primaryLabel}</button>` : ""}
-      </div>
-      <div class="cm-keys">← back · → skip · ${run.mode === "claimed" ? "Ctrl+Enter save · " : "Ctrl+Enter enter note & claim · "}Esc close</div>`;
+      <div class="cm-foot">${foot}</div>
+      <div class="cm-keys">\u2190 back \u00b7 \u2192 skip \u00b7 Ctrl+Enter save &amp; next \u00b7 Esc close</div>`;
     loadLeadInfo(info.company);
     // Warm the next lead while this one is being called, so its details are ready when it is shown.
     const next = run.queue[run.pos + 1];
@@ -472,7 +504,7 @@
       <div class="cm-body cm-done">
         ${undoHtml()}
         <div class="cm-done-num">${c.saved}</div>
-        <div class="cm-sub">${c.saved === 1 ? "lead" : "leads"} ${run.mode === "claimed" ? "logged" : "claimed"}${skippedAny ? `, ${c.skipped} skipped` : ""}.</div>
+        <div class="cm-sub">${c.saved === 1 ? "lead" : "leads"} logged${skippedAny ? `, ${c.skipped} skipped` : ""}.</div>
         ${breakdown ? `<div class="cm-facts cm-facts-center">${breakdown}</div>` : ""}
       </div>
       <div class="cm-foot">
@@ -546,35 +578,51 @@
     }
   }
 
-  // A tap on a result chip in prospect mode: claim, record the result, move on.
-  async function prospectResult(status) {
-    if (run.busy) return;
-    const item = run.queue[run.pos];
+  const resultLabel = (value) => (PROSPECT_RESULTS.find(([v]) => v === value) || ["", ""])[1];
+
+  // Not a claim: the lead goes to the shared Disconnected list, which can't be undone.
+  async function sendProspectToDisconnected(item) {
+    if (!confirm(`Send ${item.name} to Disconnected? It leaves Prospect for everyone and can't be undone.`)) return null;
+    await apiPost("export/disconnected", { companies: [item] });
+    removeCompaniesFromProspect([item]);
+    return "disconnected";
+  }
+
+  // A result and note on a lead nobody has claimed are kept as a team note ("Voicemail \u2014 left a message"):
+  // everyone sees them, and the lead stays in Prospect.
+  async function logProspect(item) {
     const note = run.note.trim();
+    const status = run.status;
+    if (!status && !note) { showToast("Pick a result or add a note, or press Skip", true); return null; }
+    if (status === "disconnected") return sendProspectToDisconnected(item);
+    if (!window.dmeHooks.annotationsPost) { showToast("Team notes aren't available right now", true); return null; }
+    const text = [resultLabel(status), note].filter(Boolean).join(" \u2014 ").slice(0, 500);
+    await window.dmeHooks.annotationsPost(String(item.npi), text);
+    showToast("Saved for the team");
+    return status || "note added";
+  }
+
+  // The separate, deliberate step: make this lead yours. Any result or note already typed goes on the claimed lead.
+  async function claimLead() {
+    if (run.busy || run.mode !== "prospect") return;
+    const item = run.queue[run.pos];
+    const status = run.status;
+    const note = run.note.trim();
+    if (status === "disconnected") { showToast("Pick another result to claim this lead, or Save & next to send it to Disconnected", true); return; }
     run.busy = true;
-    drawer.querySelectorAll(".cm-status").forEach((b) => { b.disabled = true; });
+    drawer.querySelectorAll('[data-cm="claim"], [data-cm="primary"]').forEach((b) => { b.disabled = true; });
     try {
-      if (status === "disconnected") {
-        // Not a claim: the lead goes to the shared Disconnected list, which can't be undone.
-        if (!confirm(`Send ${item.name} to Disconnected? It leaves Prospect for everyone and can't be undone.`)) return;
-        await apiPost("export/disconnected", { companies: [item] });
-        removeCompaniesFromProspect([item]);
-        run.outcome[run.pos] = { kind: "saved", label: "disconnected" };
-        run.undo = null;
-        goTo(nextOpen(run.pos + 1));
-        return;
-      }
       const label = await claimProspect(item);
       if (!label) return;
-      await recordOnClaimed(String(item.npi), status, note);
-      run.outcome[run.pos] = { kind: "saved", label: status };
+      if (status || note) await recordOnClaimed(String(item.npi), status, note);
+      run.outcome[run.pos] = { kind: "saved", label: status || "claimed" };
       if (label === "claimed") offerUndo(item, status); else run.undo = null; // a lead that was already yours isn't undone
       goTo(nextOpen(run.pos + 1));
     } catch (err) {
       showToast(err.message, true);
     } finally {
       run.busy = false;
-      drawer.querySelectorAll(".cm-status").forEach((b) => { b.disabled = false; });
+      drawer.querySelectorAll('[data-cm="claim"], [data-cm="primary"]').forEach((b) => { b.disabled = false; });
     }
   }
 
@@ -588,9 +636,8 @@
       if (run.mode === "claimed") {
         label = await saveClaimed(item);
       } else {
-        label = await claimProspect(item); // a claim with no result
-        if (label && run.note.trim()) await recordOnClaimed(String(item.npi), "", run.note.trim());
-        if (label === "claimed") offerUndo(item, ""); else run.undo = null;
+        label = await logProspect(item);
+        run.undo = null;
       }
       if (label) {
         run.outcome[run.pos] = { kind: "saved", label };
@@ -642,6 +689,7 @@
       else if (act === "skip") skip();
       else if (act === "back") back();
       else if (act === "primary") primary();
+      else if (act === "claim") claimLead();
       else if (act === "undo") undoClaim();
       else if (act === "shuffle") toggleShuffle();
       else if (act === "meeting") bookMeeting();
@@ -653,7 +701,6 @@
     }
     const chip = e.target.closest(".cm-status, .cm-remind");
     if (!chip) return;
-    if (run.mode === "prospect" && chip.classList.contains("cm-status")) { prospectResult(chip.dataset.value); return; }
     const isStatus = chip.classList.contains("cm-status");
     const was = chip.classList.contains("active");
     drawer.querySelectorAll(isStatus ? ".cm-status" : ".cm-remind").forEach((c) => c.classList.remove("active"));
@@ -662,7 +709,7 @@
     if (isStatus) {
       run.status = value;
       // "Call back" style results get a callback suggested, as the call log does.
-      if (value && isCallbackStatus(value) && !run.remind) {
+      if (run.mode === "claimed" && value && isCallbackStatus(value) && !run.remind) {
         run.remind = "1";
         drawer.querySelectorAll(".cm-remind").forEach((c) => c.classList.toggle("active", c.dataset.value === "1"));
       }

@@ -230,9 +230,14 @@ async function attachAnnotationsSafe(supabase, companies) {
     return companies.map((company) => {
       const mine = [company.npi, ...((company.locations || []).map((l) => l.npi))].map((n) => found.get(String(n))).filter(Boolean);
       if (!mine.length) return company;
+      // Call results logged as team comments add to the pickup history (answered / logged calls).
+      const base = company.pickup || { answered: 0, total: 0 };
+      const answered = base.answered + mine.reduce((sum, m) => sum + m.calls.answered, 0);
+      const total = base.total + mine.reduce((sum, m) => sum + m.calls.total, 0);
       return Object.assign({}, company, {
         tags: [...new Set(mine.flatMap((m) => m.tags))],
         commentCount: mine.reduce((sum, m) => sum + m.comments, 0),
+        pickup: total > 0 ? { answered, total } : company.pickup || null,
       });
     });
   } catch (err) {

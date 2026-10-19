@@ -3276,3 +3276,26 @@ html.game-open .buddy { display: none; }
 .cm-fold[open] > summary { color: var(--ink); }
 .cm-fold[open] > summary::before { transform: rotate(90deg); }
 .call-drawer .cm-fold .why-call, .call-drawer .cm-fold .ann { margin: 0 0 12px; padding: 0; border: 0; background: transparent; }
+
+/* ---- Call panel: the Prospect card's look (hero card, section cards, big Call button) ---- */
+.call-drawer .cm-body { background: var(--bg); padding: 12px; gap: 10px; }
+.cm-hero, .cm-card { margin: 0; }
+.cm-hero-head { display: flex; gap: 12px; align-items: center; }
+.cm-hero-title { min-width: 0; }
+.cm-hero .cm-name { font-size: 18px; }
+.cm-hero-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
+.cm-hero-meta .cm-npi { display: inline-flex; align-items: center; gap: 2px; }
+.cm-hero-meta .mono { font-size: 12.5px; color: var(--ink); }
+.cm-who { margin-top: 12px; padding: 12px 0 0; border-top: 1px dashed var(--hairline); border-bottom: 0; flex-wrap: nowrap; }
+.cm-hero .cm-call { margin-top: 10px; }
+.call-drawer .cm-call-btn { min-height: 56px; padding: 14px 18px; font-size: 18px; font-weight: 650; border-radius: var(--radius-md); letter-spacing: -0.01em; }
+.cm-hero .facts { margin-top: 12px; padding-top: 4px; border-top: 1px dashed var(--hairline); }
+.cm-card h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; color: var(--muted-2); }
+.cm-card .cm-chips { margin-bottom: 10px; }
+.cm-card .cm-label { margin-top: 0; }
+.cm-card .why-call, .cm-card .ann { margin: 12px 0 0; padding: 0; border: 0; background: transparent; }
+.cm-card .cm-snap { margin-top: 0; }
+.cm-fold-bare { border-top: 0; margin-top: 0; }
+.cm-fold-bare > summary { padding-top: 0; }
+.cm-foot .cm-save { flex: 1; justify-content: center; }
+.cm-foot .cm-claim { color: var(--accent-ink); border-color: var(--selection-chip-border); }

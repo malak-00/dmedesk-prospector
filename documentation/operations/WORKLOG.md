@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Call panel redesign: Prospect card look, big Call button, team-note logging with a separate Claim
+
+**Objective.** Make the call panel look like the Prospect card, keep the big Call button, and stop "log this call" from claiming a lead automatically.
+
+**Actions Completed.** `docs/callmode.js` and `docs/style.css`: the panel now uses the Prospect card's pieces. A hero card (avatar, name, specialty and place, NPI with copy, local time, the contact with role badge, a much larger Call button, address and website rows), a "Why call" card (snapshot chips plus a "More about this lead" fold), and one work card. For prospects the work card is "Team notes": tap a result, add a note, and Save & next stores it as a team comment such as "Voicemail — left a message" (`POST /leads/annotations/comment`) without claiming; tags and earlier comments show in the same card. Claiming is its own footer button, "Claim lead", which claims the lead and moves any pending result or note onto the claimed lead (the old behavior, now optional and with Undo). The "Disconnected" result is unchanged (still confirms and sends the lead to the shared Disconnected list). Claimed leads keep "Log this call" (result, note, call back, meeting) with Team notes below. `docs/leadnotes.js`: `annotationsPost` hook and a no-form mode. Worker: comments that begin with a call result now count toward the pickup history chip (`summarize` in `lib/annotations.js`, merged in `companyService`).
+
+**Database / System Result.** None. No schema change; results are stored in the existing `lead_comments` table (sql/049, already applied). Results logged this way do not appear in team call counts or Today, which read claimed leads' call logs and phone taps.
+
+**Safety Status.** Additive except that a result tap on a prospect no longer claims it. Worker tests pass (281/281); not browser-tested. Needs a Worker deploy (pickup merge) and a frontend publish.
+
 ## 2026-10-19 — Call panel: auto-disconnect on dead lines, NPI shown, calmer layout
 
 **Objective.** Stop reps spending time on leads whose every number is dead, show the NPI in the call panel, and make the panel less cluttered.
