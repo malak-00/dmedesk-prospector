@@ -2130,7 +2130,7 @@ function leadRowHtml(company, index) {
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}" tabindex="0" aria-expanded="false" style="--i:${Math.min(index, 12)}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
-        <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}${priorContactBadgeHtml(company.priorContact)}${window.dmeHooks.relatedChip?.("prospect", index) || ""}</div>
+        <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}${priorContactBadgeHtml(company.priorContact)}${window.dmeHooks.rowTags?.(company) || ""}${window.dmeHooks.relatedChip?.("prospect", index) || ""}</div>
         ${sourceBadges(company.sources)}
         ${leadSignalsHtml({
           phone: primaryContact?.phone || company.phone,
@@ -2256,6 +2256,7 @@ function detailRowHtml(company, index) {
             </div>
           </div>
           ${window.dmeHooks.whyCallBlock?.(company, company.priorContact ? { priorLine: priorContactSummary(company.priorContact), priorNote: company.priorContact.note } : {}) || priorContactBannerHtml(company.priorContact)}
+          ${window.dmeHooks.annotationsBlock?.(company.npi) || ""}
           ${branchLocationsHtml(company.locations) ? `<div class="detail-grid">${branchLocationsHtml(company.locations)}</div>` : ""}
           <div class="brief-box">
             <div class="brief-output" id="brief-${index}"></div>
@@ -2630,6 +2631,7 @@ function toggleRowDetail(idx) {
   row.insertAdjacentHTML("afterend", detailRowHtml(state.companies[idx], idx));
   openCardInPlace(row);
   window.dmeHooks.whyCallOpened?.(state.companies[idx]);
+  window.dmeHooks.annotationsOpened?.(state.companies[idx].npi);
   document.querySelector(`[data-brief-index="${idx}"]`)?.addEventListener("click", (e) => {
     e.stopPropagation();
     generateBrief(idx);

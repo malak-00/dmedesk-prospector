@@ -50,9 +50,11 @@ export function buildProductMix(rows) {
   const byVertical = new Map();
   const byProduct = new Map();
   let total = 0;
+  let rentalPay = 0;
   for (const row of list) {
     const pay = num(row.Tot_Suplr_Srvcs) * num(row.Avg_Suplr_Mdcr_Pymt_Amt);
     total += pay;
+    if (String(row.Suplr_Rentl_Ind || "").toUpperCase() === "Y") rentalPay += pay;
     const cat = categoryName(row.RBCS_Desc);
     byCategory.set(cat, (byCategory.get(cat) || 0) + pay);
     const v = verticalOf(row.HCPCS_Cd);
@@ -83,5 +85,35 @@ export function buildProductMix(rows) {
     .slice(0, MAX_PRODUCTS)
     .map((p) => ({ code: p.code, name: p.name, payment: Math.round(p.payment) }));
 
-  return { year: MIX_YEAR, total: Math.round(total), codes: list.length, categories: top, verticals, products };
+  // Urban or rural, as CMS classes the supplier's location (RUCA); the same on every row of one supplier.
+  const first = list[0] || {};
+  const area = first.Suplr_Prvdr_RUCA_Cat ? { category: String(first.Suplr_Prvdr_RUCA_Cat), detail: String(first.Suplr_Prvdr_RUCA_Desc || "") } : null;
+
+  return {
+    year: MIX_YEAR, total: Math.round(total), codes: list.length, categories: top, verticals, products,
+    rentalShare: share(rentalPay), area,
+  };
+}
+
+// Medicare payments by year, from the by-supplier files. yearRows: [{ year, payment, patients }] in any order;
+// a year with no row (the supplier was not billing Medicare) is simply absent.
+export const NEW_BELOW = 5000; // an earlier year under this is "just starting", not a base to measure growth from
+
+export function buildTrend(yearRows, newestYear = MIX_YEAR) {
+  const points = (yearRows || [])
+    .filter((r) => r && Number.isFinite(Number(r.year)) && Number(r.payment) > 0)
+    .map((r) => ({ year: Number(r.year), payment: Math.round(Number(r.payment)), patients: Number.isFinite(Number(r.patients)) ? Number(r.patients) : null }))
+    .sort((a, b) => a.year - b.year);
+  if (points.length === 0) return null;
+  const latest = points[points.length - 1];
+  // Billed before but not in the newest file: stopped (or fell below CMS's reporting threshold).
+  if (latest.year < newestYear) return { points, direction: "stopped", change: null, latestYear: latest.year };
+  if (points.length === 1) return { points, direction: "single", change: null, latestYear: latest.year };
+  const prev = points[points.length - 2];
+  const change = (latest.payment - prev.payment) / prev.payment;
+  let direction = "flat";
+  if (prev.payment < NEW_BELOW && latest.payment >= prev.payment * 2) direction = "new";
+  else if (change >= 0.1) direction = "up";
+  else if (change <= -0.2) direction = "down";
+  return { points, direction, change, latestYear: latest.year, previousYear: prev.year };
 }

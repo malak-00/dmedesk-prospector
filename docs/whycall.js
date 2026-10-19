@@ -88,7 +88,38 @@
     return { fit, lead, bars, products: mix.products || [], year: mix.year };
   }
 
-  const api = { buildWhyCall, describeMix, money };
+  // Medicare payments by year (from /companies/product-mix, "trend"): one line and a tone.
+  function describeTrend(trend) {
+    if (!trend || !Array.isArray(trend.points) || trend.points.length === 0) return null;
+    const pts = trend.points;
+    const last = pts[pts.length - 1];
+    const prev = pts.length > 1 ? pts[pts.length - 2] : null;
+    const years = pts.map((p) => `${p.year} ${money(p.payment)}`).join(" → ");
+    const pct = trend.change == null ? "" : `${trend.change >= 0 ? "+" : "−"}${Math.round(Math.abs(trend.change) * 100).toLocaleString()}%`;
+    switch (trend.direction) {
+      case "new": return { tone: "high", label: "Trend", text: `New or ramping up fast: ${years}`, title: `Medicare payments grew from ${money(prev.payment)} to ${money(last.payment)}. A fast-growing supplier is often looking for vendors.` };
+      case "up": return { tone: "high", label: "Trend", text: `Growing ${pct}: ${years}`, title: "Medicare payments are up on the year before" };
+      case "down": return { tone: "low", label: "Trend", text: `Shrinking ${pct}: ${years}`, title: "Medicare payments are down on the year before: a reason to ask what changed" };
+      case "stopped": return { tone: "low", label: "Trend", text: `No Medicare billing in the latest file (last seen ${trend.latestYear})`, title: "They billed Medicare earlier but are missing from the newest CMS file. They may have stopped, or fallen below CMS's reporting threshold." };
+      case "single": return { tone: "mid", label: "Trend", text: `First year on file: ${years}`, title: "Only one year of Medicare billing on record" };
+      default: return { tone: "mid", label: "Trend", text: `Steady: ${years}`, title: "Medicare payments are about the same as the year before" };
+    }
+  }
+
+  // Rental share and urban/rural, from the same CMS rows as the mix.
+  function describeTraits(mix) {
+    const out = [];
+    if (mix && typeof mix.rentalShare === "number" && mix.total > 0) {
+      const r = Math.round(mix.rentalShare * 100);
+      out.push({ label: "Billing", text: r >= 50 ? `${r}% rentals (recurring revenue)` : r >= 10 ? `${r}% rentals` : "Mostly one-time sales", title: "Share of Medicare payments that come from rented equipment" });
+    }
+    if (mix && mix.area && mix.area.category) {
+      out.push({ label: "Area", text: mix.area.category, title: mix.area.detail || "How CMS classes the supplier's location (urban or rural)" });
+    }
+    return out;
+  }
+
+  const api = { buildWhyCall, describeMix, describeTrend, describeTraits, money };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
   root.dmeWhyCall = api;
 
@@ -97,13 +128,15 @@
 
   const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 
+  // opts.compact: the narrow call panel (no category list, no top items).
   root.dmeHooks.whyCallBlock = (company, opts) => {
     const { items, prior } = buildWhyCall(company, opts);
-    return `<div class="why-call" role="group" aria-label="Why call this lead">
+    const compact = Boolean(opts && opts.compact);
+    return `<div class="why-call${compact ? " why-compact" : ""}" role="group" aria-label="Why call this lead">
       <h4>Why call</h4>
       <div class="why-chips">${items.map((it) =>
         `<span class="why-chip why-${it.tone}" title="${esc(it.title)}"><span class="why-label">${esc(it.label)}</span>${esc(it.text)}</span>`).join("")}</div>
-      <div class="why-mix" data-mix-npi="${esc(company && company.npi)}" hidden></div>
+      <div class="why-mix" data-mix-npi="${esc(company && company.npi)}"${compact ? ' data-compact="1"' : ""} hidden></div>
       <div class="why-same" data-same-npi="${esc(company && company.npi)}" hidden></div>
       ${prior ? `<div class="why-prior"><strong>Contacted before.</strong> ${esc(prior.text)}${prior.note ? `<span class="why-prior-note">${esc(prior.note)}</span>` : ""}</div>` : ""}
     </div>`;
@@ -112,49 +145,67 @@
   /* Other providers registered at the same building (chains, shared offices). Asked for when the card
      opens, one small request, and remembered for the session. Silent if it fails or finds nothing. */
   const sameCache = new Map();
+  const mixCache = new Map();
 
-  function sameHtml(data) {
+  function sameHtml(data, box) {
     if (!data || !data.matches || !data.matches.length) return "";
-    const more = data.total > data.matches.length ? ` <span class="why-more">+${data.total - data.matches.length} more</span>` : "";
+    const compact = box && box.dataset.compact;
+    const shown = compact ? data.matches.slice(0, 3) : data.matches;
+    const more = data.total > shown.length ? ` <span class="why-more">+${data.total - shown.length} more</span>` : "";
     return `<div class="why-same-head"><strong>Also at this address</strong> <span>${data.total} other provider${data.total === 1 ? "" : "s"} in the same building${more}</span></div>
-      <ul class="why-same-list">${data.matches.map((m) => `<li>
+      <ul class="why-same-list">${shown.map((m) => `<li>
         <span class="why-same-name">${esc(m.name)}</span>
         <span class="why-same-meta">${esc([m.suite, m.specialty, m.phone].filter(Boolean).join(" · "))}</span>
         ${m.claimedBy ? `<span class="why-same-tag why-same-held" title="${esc(m.status ? "Status: " + m.status : "Already claimed")}">Claimed by ${esc(m.claimedBy)}</span>` : '<span class="why-same-tag">Not claimed</span>'}
       </li>`).join("")}</ul>`;
   }
 
-  const mixCache = new Map();
-
-  function mixHtml(mix) {
+  function mixHtml(data, box) {
+    const mix = data && data.mix;
     const d = describeMix(mix);
-    if (!d) return "";
-    const segments = d.bars.filter((b) => b.pct >= 1).map((b, i) => `<span class="why-seg why-seg-${Math.min(i, 5)}" style="flex:${b.pct}" title="${esc(`${b.name}: ${b.pct}%`)}"></span>`).join("");
-    const items = d.products.length ? `<div class="why-mix-top">Top items: ${d.products.map((p) => esc(`${p.code} ${p.name}`)).join("; ")}</div>` : "";
-    return `<div class="why-mix-head"><strong>What they bill Medicare for</strong> <span>${esc(d.year)} data, estimated from CMS</span></div>
-      <div class="why-chip ${d.fit ? "why-high" : "why-none"}">${esc(d.lead)}</div>
-      <div class="why-mix-bar" role="img" aria-label="Share of Medicare payments by product category">${segments}</div>
-      <ul class="why-mix-list">${d.bars.map((b, i) => `<li><span class="why-seg-dot why-seg-${Math.min(i, 5)}"></span><span class="why-mix-name">${esc(b.name)}</span><span class="why-mix-pct">${b.pct < 1 ? "<1" : b.pct}%</span><span class="why-mix-pay">${esc(money(b.payment))}</span></li>`).join("")}</ul>
-      ${items}`;
+    const trend = describeTrend(data && data.trend);
+    if (!d && !trend) return "";
+    const compact = box && box.dataset.compact;
+    const chips = [];
+    if (d) chips.push({ tone: d.fit ? "high" : "none", label: "Fit", text: d.lead, title: "Based on what they bill Medicare for" });
+    if (trend) chips.push(trend);
+    describeTraits(mix).forEach((t) => chips.push({ tone: "none", ...t }));
+    const chipHtml = chips.map((c) => `<span class="why-chip why-${c.tone}" title="${esc(c.title || "")}"><span class="why-label">${esc(c.label)}</span>${esc(c.text)}</span>`).join("");
+    let body = "";
+    if (d) {
+      const segments = d.bars.filter((b) => b.pct >= 1).map((b, i) => `<span class="why-seg why-seg-${Math.min(i, 5)}" style="flex:${b.pct}" title="${esc(`${b.name}: ${b.pct}%`)}"></span>`).join("");
+      body += `<div class="why-mix-bar" role="img" aria-label="Share of Medicare payments by product category">${segments}</div>`;
+      if (!compact) {
+        body += `<ul class="why-mix-list">${d.bars.map((b, i) => `<li><span class="why-seg-dot why-seg-${Math.min(i, 5)}"></span><span class="why-mix-name">${esc(b.name)}</span><span class="why-mix-pct">${b.pct < 1 ? "<1" : b.pct}%</span><span class="why-mix-pay">${esc(money(b.payment))}</span></li>`).join("")}</ul>`;
+        if (d.products.length) body += `<div class="why-mix-top">Top items: ${d.products.map((p) => esc(`${p.code} ${p.name}`)).join("; ")}</div>`;
+      } else {
+        body += `<div class="why-mix-top">Mostly ${esc(d.bars.slice(0, 2).map((b) => `${b.name.toLowerCase()} ${b.pct}%`).join(", "))}</div>`;
+      }
+    }
+    return `<div class="why-mix-head"><strong>What they bill Medicare for</strong> <span>${esc((d && d.year) || "")} data, estimated from CMS</span></div>
+      <div class="why-chips why-mix-chips">${chipHtml}</div>${body}`;
   }
 
   async function loadInto(cache, path, npi, params, kind, toHtml, pick) {
     try {
       if (!cache.has(npi)) cache.set(npi, apiGet(path, params));
-      const html = toHtml(pick(await cache.get(npi)));
-      const box = document.querySelector(`.why-${kind}[data-${kind}-npi="${npi}"]`);
-      if (box && html) { box.innerHTML = html; box.hidden = false; }
+      const data = pick(await cache.get(npi));
+      document.querySelectorAll(`.why-${kind}[data-${kind}-npi="${npi}"]`).forEach((box) => {
+        const html = toHtml(data, box);
+        if (html) { box.innerHTML = html; box.hidden = false; }
+      });
     } catch (err) {
       cache.delete(npi);
       console.log(`[whycall] ${path}: ${err.message}`);
     }
   }
 
+  // Called when a card opens, and again by the call panel after each redraw (answers come from the cache).
   root.dmeHooks.whyCallOpened = (company) => {
     if (!company || !company.npi || typeof apiGet !== "function") return;
     const npi = String(company.npi);
     const exclude = (company.locations || []).map((l) => l && l.npi).filter((n) => n && String(n) !== npi).join(",");
-    loadInto(mixCache, "companies/product-mix", npi, { npi }, "mix", mixHtml, (d) => d && d.mix);
+    loadInto(mixCache, "companies/product-mix", npi, { npi }, "mix", mixHtml, (d) => d);
     loadInto(sameCache, "companies/same-address", npi, { npi, exclude }, "same", sameHtml, (d) => d);
   };
 })(typeof window !== "undefined" ? window : globalThis);

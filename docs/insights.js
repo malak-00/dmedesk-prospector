@@ -147,6 +147,49 @@
       ${grid.map((row, i) => `<span class="ins-heat-h">${days[i]}</span>${row.map((n, j) => `<span class="ins-heat-cell" style="--a:${(n / max).toFixed(2)}" title="${days[i]} ${hours[j]}: ${n} calls"></span>`).join("")}`).join("")}</div>`;
   }
 
+  // Territory map: one tile per state in a rough map layout, shaded by the chosen measure.
+  const TILES = {
+    AK: [0, 0], ME: [0, 10], VT: [1, 9], NH: [1, 10],
+    WA: [2, 0], ID: [2, 1], MT: [2, 2], ND: [2, 3], MN: [2, 4], IL: [2, 5], WI: [2, 6], MI: [2, 7], NY: [2, 8], RI: [2, 9], MA: [2, 10],
+    OR: [3, 0], NV: [3, 1], WY: [3, 2], SD: [3, 3], IA: [3, 4], IN: [3, 5], OH: [3, 6], PA: [3, 7], NJ: [3, 8], CT: [3, 9],
+    CA: [4, 0], UT: [4, 1], CO: [4, 2], NE: [4, 3], MO: [4, 4], KY: [4, 5], WV: [4, 6], VA: [4, 7], MD: [4, 8], DE: [4, 9],
+    AZ: [5, 1], NM: [5, 2], KS: [5, 3], AR: [5, 4], TN: [5, 5], NC: [5, 6], SC: [5, 7], DC: [5, 8],
+    OK: [6, 3], LA: [6, 4], MS: [6, 5], AL: [6, 6], GA: [6, 7],
+    HI: [7, 0], TX: [7, 3], FL: [7, 7],
+  };
+  const TERRITORY_MEASURES = [
+    { key: "claimed", label: "Leads claimed", value: (r) => r.claimed, show: (v) => num(v) },
+    { key: "pickup", label: "Pickup rate", value: (r) => r.pickup, show: (v) => pct(v) },
+    { key: "meeting", label: "Meetings booked", value: (r) => r.meeting, show: (v) => pct(v) },
+    { key: "win", label: "Onboarded", value: (r) => r.win, show: (v) => pct(v) },
+  ];
+  let territoryMeasure = "claimed";
+
+  function territoryMap(t) {
+    if (!t || !t.states || !t.states.length) return `<p class="ins-empty">No claimed leads with a state yet.</p>`;
+    const measure = TERRITORY_MEASURES.find((m) => m.key === territoryMeasure) || TERRITORY_MEASURES[0];
+    const byState = new Map(t.states.map((r) => [r.state, r]));
+    const values = t.states.map(measure.value).filter((v) => v != null);
+    const max = Math.max(...values, 0.0001);
+    const tiles = Object.entries(TILES).map(([st, [row, col]]) => {
+      const r = byState.get(st);
+      const v = r ? measure.value(r) : null;
+      const tip = r
+        ? `${st}: ${num(r.claimed)} claimed, ${r.calls} logged calls (${r.pickup == null ? "pickup rate needs " + 5 + "+ calls" : pct(r.pickup) + " picked up"}), ${num(r.booked)} meetings booked, ${num(r.won)} onboarded`
+        : `${st}: nothing claimed`;
+      const a = v == null ? 0 : Math.max(0.12, v / max);
+      return `<span class="ins-tile${r ? "" : " is-empty"}${r && v == null ? " is-na" : ""}${a > 0.55 ? " is-hot" : ""}" style="grid-row:${row + 1};grid-column:${col + 1};--a:${a.toFixed(2)}" title="${esc(tip)}"><b>${st}</b><small>${v == null ? "" : measure.show(v)}</small></span>`;
+    }).join("");
+    const known = new Set(Object.keys(TILES));
+    const other = t.states.filter((r) => !known.has(r.state));
+    return `<div class="ins-terr-toggle" role="group" aria-label="Measure">${TERRITORY_MEASURES.map((m) =>
+      `<button type="button" class="choice-chip${m.key === territoryMeasure ? " active" : ""}" data-ins="territory" data-measure="${m.key}">${esc(m.label)}</button>`).join("")}</div>
+      <div class="ins-tiles" role="img" aria-label="Map of states shaded by ${esc(measure.label)}">${tiles}</div>
+      <p class="ins-note">Last ${num(t.days)} days. Darker means more. A state shows a pickup rate only after 5 logged calls there.${other.length ? ` Also: ${esc(other.map((r) => `${r.state} (${num(r.claimed)})`).join(", "))}.` : ""}</p>
+      <div class="table-wrap"><table class="results-table ins-table"><thead><tr><th>State</th><th>Claimed</th><th>Calls</th><th>Pickup</th><th>Meetings booked</th><th>Onboarded</th></tr></thead><tbody>${t.states.slice(0, 15).map((r) => `
+        <tr><td>${esc(r.state)}</td><td>${num(r.claimed)}</td><td>${num(r.calls)}</td><td>${r.pickup == null ? "—" : pct(r.pickup)}</td><td>${pct(r.meeting)}</td><td>${pct(r.win)}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+
   function nudgeList(list) {
     if (!list.length) return `<p class="ins-empty">Nobody needs a nudge right now.</p>`;
     return `<ul class="ins-nudges">${list.map((n, i) => `
@@ -274,6 +317,7 @@
           ${sec("Which specialties convert", segments("Specialty", p.funnel.specialties), dataIssues ? `<p class="ins-note">${num(dataIssues.claimed)} claimed leads have no specialty recorded, so they can't be broken down.</p>` : "")}
           ${sec("Which states convert", segments("State", p.funnel.states))}
         </div>
+        ${sec("Territory map", territoryMap(d.territory))}
         ${sec('Claimed but never called <small>oldest first</small>', stuckList(p.stuck || []))}`)}
 
       ${pane("quality", `
@@ -319,6 +363,8 @@
     }
     const send = e.target.closest('[data-ins="nudge"]');
     if (send) sendNudge(send);
+    const measure = e.target.closest('[data-ins="territory"]');
+    if (measure) { territoryMeasure = measure.dataset.measure; render(); }
   });
 
   async function sendNudge(btn) {

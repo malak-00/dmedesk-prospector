@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Team notes without claiming, CMS trend/rental/area, richer call panel, territory map
+
+**Objective.** Let any rep leave comments and tags on a lead without claiming it, show more of what CMS knows about a supplier, give the call panel the same information as the card, and show where the team is winning by state.
+
+**Actions Completed.** (1) Team notes: new `sql/049_lead_comments_tags.sql` (`lead_comments` append-only, `lead_tags` one row per NPI+tag, both service-role only), `worker/src/lib/annotations.js`, `worker/src/repos/annotationsRepo.js` and routes `GET /leads/annotations`, `POST /leads/annotations/comment`, `/tag`, `/tag/remove`. A tag can be removed by the person who added it or an admin; up to 12 tags per lead, 500 characters per comment. Search results now carry `tags` and `commentCount` (`attachAnnotationsSafe`, best-effort). Frontend `docs/leadnotes.js` shows a "Team notes" block on the opened Prospect card and in the call panel, and small tag chips in table rows. Without the SQL the card says comments are not set up and writes return a clear 503. (2) CMS: `/companies/product-mix` now also returns `trend` (Medicare payments for 2022-2024 from the by-supplier files; new, growing, shrinking, steady, single year, or stopped), plus rental share and urban/rural on the mix. New cache namespace `cmsprofile`. Top referring doctors was NOT built: CMS's referring-provider file has no link to the supplier, so it cannot say which doctors send a given supplier business. (3) Call panel (`docs/callmode.js`): now shows the same compact "Why call" block (Medicare, type, freshness, pickup, product fit, trend, same-address, earlier contact) and the Team notes block for both prospects and claimed leads, and warms the next lead's details while the current one is being called. (4) Territory map: `worker/src/lib/stateHeat.js` feeds `territory` in the insights payload; `docs/insights.js` adds a tile map and table under Pipeline, switchable between leads claimed, pickup rate, meetings booked and onboarded (a pickup rate needs 5+ logged calls in the state). Tests: `annotations.test.js`, `stateHeat.test.js`, additions to `productMix.test.js`.
+
+**Database / System Result.** One new migration, `sql/049_lead_comments_tags.sql`, written but NOT run: it must be reviewed and run manually in Supabase. Until then everything else works and the notes block shows "not set up yet". No other schema change; CMS reads are public and cached in `enrichment_cache`.
+
+**Safety Status.** Additive. Comments are append-only. Worker tests pass (280/280); not browser-tested. Needs a Worker deploy, a frontend publish and, for team notes, running sql/049.
+
 ## 2026-10-19 — Prospect card: product mix from CMS ("What they bill Medicare for")
 
 **Objective.** Show reps what a supplier actually bills Medicare for, so they know in seconds whether it is in the team's verticals (orthotics and prosthetics, CGM, lymphedema) and can open with a product.

@@ -3220,3 +3220,45 @@ html.game-open .buddy { display: none; }
 .why-seg-dot { width: 8px; height: 8px; border-radius: 50%; display: block; }
 .why-mix-pct, .why-mix-pay { font-family: var(--font-mono); font-size: 12px; color: var(--muted); text-align: right; min-width: 42px; }
 .why-mix-top { margin-top: 8px; color: var(--muted); font-size: 12.5px; }
+
+/* ---- Team notes (comments and tags without claiming) ---- */
+.ann { margin: 16px 0 0; padding: 14px 18px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--hairline); }
+.ann h4 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+.ann h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; color: var(--muted-2); }
+.ann-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ann-tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 999px; font-size: 12.5px; background: var(--accent-soft); color: var(--accent-ink); border: 1px solid var(--selection-chip-border); }
+.ann-x { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 5px; border-radius: 50%; }
+.ann-x:hover { background: var(--hairline); }
+.ann-tag-input, .ann-comment-input { font: inherit; font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--hairline); border-radius: var(--radius-sm); padding: 5px 9px; }
+.ann-tag-input { width: 120px; }
+.ann-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ann-suggest { font: inherit; font-size: 12px; color: var(--muted); background: transparent; border: 1px dashed var(--hairline); border-radius: 999px; padding: 2px 9px; cursor: pointer; }
+.ann-suggest:hover { color: var(--accent-ink); border-color: var(--accent); }
+.ann-comments { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.ann-comments li { display: grid; gap: 1px; font-size: 13px; }
+.ann-meta { color: var(--muted); font-size: 12px; }
+.ann-text { color: var(--ink); overflow-wrap: anywhere; }
+.ann-none { margin-top: 10px; }
+.ann-form { display: flex; gap: 8px; margin-top: 12px; }
+.ann-comment-input { flex: 1 1 auto; min-width: 0; }
+.row-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; vertical-align: middle; margin-left: 4px; }
+.row-tag { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); border: 1px solid var(--selection-chip-border); white-space: nowrap; }
+.row-comments { background: transparent; color: var(--muted); border-color: var(--hairline); }
+
+/* ---- Call panel: compact info blocks ---- */
+.call-drawer .why-call, .call-drawer .ann { margin: 12px 0 0; padding: 10px 12px; }
+.call-drawer .why-chip { font-size: 12px; padding: 3px 9px; }
+.call-drawer .why-same-list { gap: 4px; }
+.why-compact .why-mix-top { margin-top: 6px; }
+.why-mix-chips { margin-top: 8px; }
+
+/* ---- Insights: territory map ---- */
+.ins-terr-toggle { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.ins-tiles { display: grid; grid-template-columns: repeat(11, minmax(34px, 1fr)); grid-auto-rows: minmax(40px, auto); gap: 4px; max-width: 640px; margin-bottom: 8px; }
+.ins-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 6px; font-size: 11px; line-height: 1.15; padding: 3px 0;
+  color: var(--ink); background: color-mix(in srgb, var(--accent) calc(var(--a, 0) * 100%), var(--surface-2)); border: 1px solid var(--hairline); }
+.ins-tile b { font-weight: 700; }
+.ins-tile small { font-size: 10px; opacity: 0.85; }
+.ins-tile.is-empty { background: transparent; color: var(--muted-2); border-style: dashed; }
+.ins-tile.is-na { color: var(--muted); }
+.ins-tile.is-hot { color: var(--on-accent); }

@@ -6,6 +6,7 @@
 // Super admins are left out of every team number: that account reviews and tests the app,
 // so counting it would make adoption look better than it is.
 import { buildFunnel } from "./funnel.js";
+import { buildStateHeat } from "./stateHeat.js";
 import { FEATURES } from "./events.js";
 import { allCallEvents, noteKind, parseNoteLines, tapsToLines } from "./teamActivity.js";
 
@@ -240,6 +241,7 @@ export function buildInsights({
     usage,
     nudges,
     callAt,
+    territory: buildStateHeat({ leads: teamLeads, days: span, now }),
     system,
     signals,
   };

@@ -24,6 +24,7 @@ import * as Nppes from "./nppes.js";
 import * as Scraper from "./scraper.js";
 import { classifyRole } from "../lib/roleClassifier.js";
 import { createCompany } from "../lib/companyModel.js";
+import * as annotationsRepo from "../repos/annotationsRepo.js";
 import * as leadsRepo from "../repos/leadsRepo.js";
 import * as searchProgressRepo from "../repos/searchProgressRepo.js";
 import * as ProviderSource from "./providerSource.js";
@@ -215,6 +216,27 @@ async function attachPriorContactSafe(supabase, companies) {
     });
   } catch (err) {
     console.log("[companyService] Prior-contact lookup failed: " + err.message);
+    return companies;
+  }
+}
+
+// Team tags and the number of comments on each result (sql/049), so a rep sees "wheelchair only" before
+// opening the lead. Best-effort: if the tables are not installed the results are left as they are.
+async function attachAnnotationsSafe(supabase, companies) {
+  try {
+    const npis = companies.flatMap((c) => [c.npi, ...((c.locations || []).map((l) => l.npi))]).filter(Boolean);
+    const found = await annotationsRepo.summaryAmong(supabase, npis);
+    if (found.size === 0) return companies;
+    return companies.map((company) => {
+      const mine = [company.npi, ...((company.locations || []).map((l) => l.npi))].map((n) => found.get(String(n))).filter(Boolean);
+      if (!mine.length) return company;
+      return Object.assign({}, company, {
+        tags: [...new Set(mine.flatMap((m) => m.tags))],
+        commentCount: mine.reduce((sum, m) => sum + m.comments, 0),
+      });
+    });
+  } catch (err) {
+    console.log("[companyService] Tags and comments lookup skipped: " + err.message);
     return companies;
   }
 }
@@ -517,6 +539,7 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
 
   companies = await attachTaxonomyDescriptionsSafe(supabase, companies);
   companies = await attachPriorContactSafe(supabase, companies);
+  companies = await attachAnnotationsSafe(supabase, companies);
 
   if (trackProgress && !resetProgress) {
     await saveSearchProgressSafe(supabase, options.userId, criteria, fetchResult.variantSkips, fetchResult.allSeenNpis);

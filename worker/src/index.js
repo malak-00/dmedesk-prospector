@@ -37,6 +37,7 @@ import * as insightsRepo from "./repos/insightsRepo.js";
 import * as relatedClaimsRepo from "./repos/relatedClaimsRepo.js";
 import * as sameAddressRepo from "./repos/sameAddressRepo.js";
 import * as ProductMix from "./services/productMix.js";
+import * as annotationsRepo from "./repos/annotationsRepo.js";
 import { prettyNumber } from "./lib/badNumbers.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
@@ -480,6 +481,21 @@ app.post("/leads/bad-number/clear", async (c) => {
 app.post("/leads/related-check", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return c.json(ok(await relatedClaimsRepo.checkRelated(supabaseFor(c), c.get("session"), body.companies)));
+});
+
+// Comments and tags on any lead, claimed or not (sql/049).
+app.get("/leads/annotations", async (c) => c.json(ok(await annotationsRepo.getAnnotations(supabaseFor(c), c.req.query("npi")))));
+app.post("/leads/annotations/comment", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await annotationsRepo.addComment(supabaseFor(c), body.npi, body.text, c.get("session"))));
+});
+app.post("/leads/annotations/tag", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await annotationsRepo.addTag(supabaseFor(c), body.npi, body.tag, c.get("session"))));
+});
+app.post("/leads/annotations/tag/remove", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await annotationsRepo.removeTag(supabaseFor(c), body.npi, body.tag, c.get("session"))));
 });
 
 // What a supplier bills Medicare for (product categories and our verticals), from CMS's public file.

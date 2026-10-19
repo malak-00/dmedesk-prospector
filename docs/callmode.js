@@ -167,6 +167,7 @@
         website: item.website || "",
         claims,
         prior: item.priorContact || null,
+        company: item,
         opener: "",
         lastNote: "",
         meeting: "",
@@ -183,6 +184,18 @@
       website: item.website || "",
       claims,
       prior: null,
+      // A claimed lead in the same shape as a prospect, so the same info blocks can read it.
+      company: {
+        npi: item.npi,
+        medicare: claims != null ? {
+          totalClaims: claims,
+          totalBeneficiaries: item.medicareBeneficiaries !== "" && item.medicareBeneficiaries != null ? Number(item.medicareBeneficiaries) : null,
+          medicarePayment: item.medicarePayment !== "" && item.medicarePayment != null ? Number(item.medicarePayment) : null,
+        } : null,
+        lastUpdated: item.nppesLastUpdated || null,
+        isOrganization: null,
+        locations: [],
+      },
       opener: item.meetingAt && !meetingIsPast(item) ? (item.meetingOpenerNotes || "") : "",
       lastNote: lines[0] || "",
       meeting: item.meetingAt ? formatMeeting(item.meetingAt) : "",
@@ -314,13 +327,16 @@
     const c = counts();
     const pct = Math.round(((c.saved + c.skipped) / total) * 100);
 
+    const hooks = window.dmeHooks;
+    const richInfo = Boolean(hooks.whyCallBlock);
     let facts = "";
-    if (info.claims != null) facts += `<span class="cm-fact">${info.claims.toLocaleString()} Medicare claims</span>`;
+    // The Why call block below carries the Medicare figures when it is available.
+    if (!richInfo && info.claims != null) facts += `<span class="cm-fact">${info.claims.toLocaleString()} Medicare claims</span>`;
     if (info.website) facts += `<a class="cm-fact cm-fact-link" href="${escapeHtml(info.website)}" target="_blank" rel="noopener">Website</a>`;
     if (info.meeting) facts += `<span class="cm-fact is-meeting">${uiIcon("calendar")} ${escapeHtml(info.meeting)}</span>`;
 
     let context = "";
-    if (info.prior) context += priorContactBannerHtml(info.prior);
+    if (info.prior && !richInfo) context += priorContactBannerHtml(info.prior);
     if (info.opener) context += `<div class="opener-notes"><div class="opener-label">Your opener</div><div class="opener-text">${escapeHtml(info.opener)}</div></div>`;
     if (info.lastNote) context += `<div class="cm-lastnote"><span>Last note</span>${escapeHtml(info.lastNote)}</div>`;
 
@@ -364,7 +380,9 @@
         <div class="cm-sub cm-muted">${escapeHtml([info.place, info.specialty].filter(Boolean).join(" · "))} ${window.dmeHooks.localTime?.(info.stateCode) || ""}</div>
         ${facts ? `<div class="cm-facts">${facts}</div>` : ""}
         ${callBlockHtml(phoneOptions(item))}
+        ${richInfo ? hooks.whyCallBlock(info.company, info.prior ? { compact: true, priorLine: priorContactSummary(info.prior), priorNote: info.prior.note } : { compact: true }) : ""}
         ${context}
+        ${hooks.annotationsBlock?.(info.company.npi) || ""}
         ${work}
         ${upNextHtml()}
       </div>
@@ -374,6 +392,26 @@
         ${primaryLabel ? `<button type="button" class="btn btn-primary" data-cm="primary" title="Ctrl+Enter">${primaryLabel}</button>` : ""}
       </div>
       <div class="cm-keys">← back · → skip · ${run.mode === "claimed" ? "Ctrl+Enter save · " : "Ctrl+Enter enter note & claim · "}Esc close</div>`;
+    loadLeadInfo(info.company);
+    // Warm the next lead while this one is being called, so its details are ready when it is shown.
+    const next = run.queue[run.pos + 1];
+    if (next && richInfo) {
+      const nextCompany = describe(next).company;
+      hooks.whyCallOpened?.(nextCompany);
+      hooks.annotationsOpened?.(nextCompany.npi, false);
+    }
+  }
+
+  // Fills the Why call and Team notes blocks for the lead on screen. The server is asked again for the notes
+  // only when the lead changes; a redraw of the same lead reuses what is held.
+  let lastInfoNpi = "";
+  function loadLeadInfo(company) {
+    if (!company || !company.npi) return;
+    const npi = String(company.npi);
+    const changed = npi !== lastInfoNpi;
+    lastInfoNpi = npi;
+    window.dmeHooks.whyCallOpened?.(company);
+    window.dmeHooks.annotationsOpened?.(npi, changed);
   }
 
   function renderDone() {
@@ -619,6 +657,7 @@
     let shuffle = false;
     try { shuffle = localStorage.getItem(SHUFFLE_KEY) === "1"; } catch { /* not remembered */ }
     clearTimeout(undoTimer);
+    lastInfoNpi = "";
     Object.assign(run, {
       mode, queue: list, outcome: list.map(() => null), pos: -1, busy: false, status: "", remind: "", note: "", startedAt: Date.now(),
       shuffle, order: new Map(list.map((item, i) => [item, i])), undo: null, bad: new Map(), badUndo: null,
