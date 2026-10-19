@@ -91,16 +91,25 @@
     return `<span class="${cls}">${diff > 0 ? "\u25B2" : diff < 0 ? "\u25BC" : "\u2013"} ${num(p.weekNow)} <small>(was ${num(p.weekPrev)})</small></span>`;
   }
 
+  // One table for every list on this page. With room it is a plain compact table; in a narrow card each row
+  // becomes a small stacked block (see .ins-table in style.css), so nothing runs off the card.
+  // cols: [{ label, num? }]; rows: arrays of ready-made (already escaped) cell html.
+  function table(cols, rows) {
+    return `<div class="ins-table-wrap"><table class="ins-table"><thead><tr>${cols.map((c) => `<th${c.num ? ' class="num"' : ""}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows.map((cells) => `<tr>${cells.map((html, i) => `<td data-label="${esc(cols[i].label)}"${cols[i].num ? ' class="num"' : ""}>${html}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  }
+
   function people(list) {
     if (!list.length) return `<p class="ins-empty">No reps yet.</p>`;
-    return `<div class="table-wrap"><table class="results-table ins-table"><thead><tr>
-        <th>Person</th><th>Last active</th><th>Vs last week</th><th>Claims</th><th>Taps</th><th>Calls</th><th>Searches</th><th>Open leads</th><th>Never called</th><th>Overdue</th></tr></thead><tbody>${list.map((p) => `
-        <tr><td>${esc(p.name)}${p.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}</td>
-        <td class="${p.lastActive && Date.now() - Date.parse(p.lastActive) < 7 * 86_400_000 ? "" : "ins-dim"}">${esc(ago(p.lastActive))}</td>
-        <td>${trend(p)}</td>
-        <td>${num(p.claims)}</td><td>${num(p.dials)}</td><td>${num(p.calls)}</td><td>${num(p.searches)}</td><td>${num(p.openLeads)}</td>
-        <td>${num(p.neverContacted)}</td><td>${num(p.overdue)}</td></tr>`).join("")}
-      </tbody></table></div>`;
+    const recent = (p) => p.lastActive && Date.now() - Date.parse(p.lastActive) < 7 * 86_400_000;
+    return table(
+      [{ label: "Person" }, { label: "Last active" }, { label: "Vs last week" }, { label: "Claims", num: 1 }, { label: "Taps", num: 1 }, { label: "Calls", num: 1 }, { label: "Searches", num: 1 }, { label: "Open leads", num: 1 }, { label: "Never called", num: 1 }, { label: "Overdue", num: 1 }],
+      list.map((p) => [
+        `${esc(p.name)}${p.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}`,
+        recent(p) ? esc(ago(p.lastActive)) : `<span class="ins-dim">${esc(ago(p.lastActive))}</span>`,
+        trend(p),
+        num(p.claims), num(p.dials), num(p.calls), num(p.searches), num(p.openLeads), num(p.neverContacted), num(p.overdue),
+      ]),
+    );
   }
 
   function funnel(f) {
@@ -125,14 +134,18 @@
 
   function segments(title, rows) {
     if (!rows.length) return `<p class="ins-empty">Not enough claimed leads yet.</p>`;
-    return `<div class="table-wrap"><table class="results-table ins-table"><thead><tr><th>${esc(title)}</th><th>Claimed</th><th>Called</th><th>Meetings held</th><th>Onboarded</th></tr></thead><tbody>${rows.map((r) => `
-      <tr><td>${esc(r.label)}</td><td>${num(r.claimed)}</td><td>${pct(r.contacted / r.claimed)}</td><td>${pct(r.held / r.claimed)}</td><td>${pct(r.won / r.claimed)}</td></tr>`).join("")}</tbody></table></div>`;
+    return table(
+      [{ label: title }, { label: "Claimed", num: 1 }, { label: "Called", num: 1 }, { label: "Meetings held", num: 1 }, { label: "Onboarded", num: 1 }],
+      rows.map((r) => [esc(r.label), num(r.claimed), pct(r.contacted / r.claimed), pct(r.held / r.claimed), pct(r.won / r.claimed)]),
+    );
   }
 
   function stuckList(list) {
     if (!list.length) return `<p class="ins-empty">Nothing stuck. Every claimed lead has been called or updated.</p>`;
-    return `<div class="table-wrap"><table class="results-table ins-table"><thead><tr><th>Lead</th><th>Claimed by</th><th>Waiting</th></tr></thead><tbody>${list.map((l) => `
-      <tr><td>${esc(l.company)}</td><td>${esc(l.rep)}</td><td>${num(l.days)} days</td></tr>`).join("")}</tbody></table></div>`;
+    return table(
+      [{ label: "Lead" }, { label: "Claimed by" }, { label: "Waiting", num: 1 }],
+      list.map((l) => [esc(l.company), esc(l.rep), `${num(l.days)} days`]),
+    );
   }
 
   // When the team calls, in this browser's own time: weekday rows, three-hour columns.
@@ -186,8 +199,10 @@
       `<button type="button" class="choice-chip${m.key === territoryMeasure ? " active" : ""}" data-ins="territory" data-measure="${m.key}">${esc(m.label)}</button>`).join("")}</div>
       <div class="ins-tiles" role="img" aria-label="Map of states shaded by ${esc(measure.label)}">${tiles}</div>
       <p class="ins-note">Last ${num(t.days)} days. Darker means more. A state shows a pickup rate only after 5 logged calls there.${other.length ? ` Also: ${esc(other.map((r) => `${r.state} (${num(r.claimed)})`).join(", "))}.` : ""}</p>
-      <div class="table-wrap"><table class="results-table ins-table"><thead><tr><th>State</th><th>Claimed</th><th>Calls</th><th>Pickup</th><th>Meetings booked</th><th>Onboarded</th></tr></thead><tbody>${t.states.slice(0, 15).map((r) => `
-        <tr><td>${esc(r.state)}</td><td>${num(r.claimed)}</td><td>${num(r.calls)}</td><td>${r.pickup == null ? "—" : pct(r.pickup)}</td><td>${pct(r.meeting)}</td><td>${pct(r.win)}</td></tr>`).join("")}</tbody></table></div>`;
+      ${table(
+        [{ label: "State" }, { label: "Claimed", num: 1 }, { label: "Calls", num: 1 }, { label: "Pickup", num: 1 }, { label: "Meetings booked", num: 1 }, { label: "Onboarded", num: 1 }],
+        t.states.slice(0, 15).map((r) => [esc(r.state), num(r.claimed), num(r.calls), r.pickup == null ? "\u2014" : pct(r.pickup), pct(r.meeting), pct(r.win)]),
+      )}`;
   }
 
   function nudgeList(list) {
@@ -209,8 +224,10 @@
     return `<ul class="ins-list">
         <li class="${s.zeroShare >= 25 ? "ins-warn" : ""}"><span class="ins-dot"></span><span>Searches that found nothing<small>${num(s.zero)} of ${num(s.total)} (${s.zeroShare}%)</small></span></li>
         <li><span class="ins-dot"></span><span>Typical speed<small>median ${sec(s.medianMs)}, slowest 1 in 20 over ${sec(s.p95Ms)}; ${num(s.slow)} took 5 s or more</small></span></li></ul>
-      ${s.zeroTop.length ? `<div class="table-wrap"><table class="results-table ins-table"><thead><tr><th>Empty searches by</th><th>Where</th><th>Filters on</th><th>Times</th></tr></thead><tbody>${s.zeroTop.map((r) => `
-        <tr><td>${esc(r.specialty)}</td><td>${esc(r.states)}</td><td>${esc(r.filters || "none")}</td><td>${num(r.count)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+      ${s.zeroTop.length ? table(
+        [{ label: "Empty searches by" }, { label: "Where" }, { label: "Filters on" }, { label: "Times", num: 1 }],
+        s.zeroTop.map((r) => [esc(r.specialty), esc(r.states), esc(r.filters || "none"), num(r.count)]),
+      ) : ""}`;
   }
 
   function featureUsage(u) {
@@ -229,8 +246,10 @@
     if (!u) return NOT_COLLECTING;
     if (!u.errors.total) return `<p class="ins-note ins-allgood">No failed requests in this period.</p>`;
     return `<p class="ins-note">${num(u.errors.total)} failed, ${num(u.errors.last7)} in the last 7 days.</p>
-      <div class="table-wrap"><table class="results-table ins-table"><thead><tr><th>Request</th><th>Status</th><th>Times</th><th>People</th><th>Last seen</th><th>Message</th></tr></thead><tbody>${u.errors.top.map((e) => `
-        <tr><td>${esc(e.name)}</td><td>${esc(e.status)}</td><td>${num(e.count)}</td><td>${num(e.people)}</td><td>${esc(ago(e.last))}</td><td>${esc(e.message)}</td></tr>`).join("")}</tbody></table></div>`;
+      ${table(
+        [{ label: "Request" }, { label: "Status" }, { label: "Times", num: 1 }, { label: "People", num: 1 }, { label: "Last seen" }, { label: "Message" }],
+        u.errors.top.map((e) => [esc(e.name), esc(e.status), num(e.count), num(e.people), esc(ago(e.last)), esc(e.message)]),
+      )}`;
   }
 
   function system(sys) {

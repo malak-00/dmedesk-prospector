@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Insights tables reworked so they no longer overflow
+
+**Objective.** The tables on the App insights page ran off their cards.
+
+**Actions Completed.** Cause: every table reused the Prospect results table styles (a 760px minimum width, a sticky header, wide padding) and forced no-wrap on every cell, so a table inside a narrow half-width card was wider than the card. `docs/insights.js` now builds all six tables (People, Which specialties and states convert, Claimed but never called, Territory, Empty searches, Errors) through one `table()` helper with labelled cells; `docs/style.css` gives them compact padding, wrapping text, right-aligned tabular numbers, and, when the card is narrower than 560px (a container query on `.ins-card`), turns each row into a small stacked block with the column names beside the values. A plain horizontal scroll inside the card remains as a last resort.
+
+**Database / System Result.** None. Front-end only.
+
+**Safety Status.** Not browser-tested; the generated table markup was checked in Node. Needs only a frontend publish.
+
 ## 2026-10-19 — Call brief built from the lead's own data (AI removed)
 
 **Objective.** Replace the Gemini-written "Prep a call brief" with a brief built only from what the app already knows about the lead.
