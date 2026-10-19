@@ -65,13 +65,16 @@ From PowerShell, in the `scripts/` folder. One command does the whole month and
 stops for a YES before anything is written:
 
 ```powershell
-.\monthly_refresh.ps1 -Source "\\GGO-FILESERVER\FileServer\BD\npidata_pfile_20050523-20260809.csv" `
-  -ReleaseDate 2026-08-09 -ExpectRows 9726865
+.\monthly_refresh.ps1 -Zip "$HOME\Downloads\NPPES_Data_Dissemination_October_2026_V2.zip"
+# or, if you already extracted npidata_pfile_*.csv:  -Source "<path>\npidata_pfile_20050523-20261011.csv"
+# the release date is read from the file name (override with -ReleaseDate 2026-10-11)
+# add -ExpectRows <last release's row count> to refuse a truncated file
 # add -DeactivationFile "<path>\NPPES_Deactivated_NPI_Report.csv" to load that file too
+# add -DeleteExtracted to remove the extracted ~11 GB CSV at the end
 # add -Python "C:\full\path\python.exe" if python is not on PATH
 ```
 
-What it does, in order: dry run (writes nothing) -> you type `YES` -> stage and
+What it does, in order: extracts only the provider CSV from the zip into a new empty folder -> dry run (writes nothing) -> you type `YES` -> stage and
 apply to `npi_records` -> sync claimed leads and raise change alerts -> rebuild
 registry matches -> flag providers renamed into the exclusion keyword list ->
 preview what could now be deleted. Nothing is ever deleted by the refresh.

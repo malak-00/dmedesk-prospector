@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — October 2026 NPPES dry run; monthly script fixed (load deferred)
+
+**Objective.** Validate the October release and make `scripts/monthly_refresh.ps1` ready for the next one. The user chose NOT to load October now.
+
+**Actions Completed.** Extracted `npidata_pfile_20050523-20261011.csv` (11 GB) from the downloaded zip into `C:\Users\Caroline.Richards\nppes_extract_2026-10` and ran `monthly-full --dry-run` with the 55-keyword list: 9,852,180 source rows (+1.3% vs August), 268,447 would be staged; rejected: individual_provider 7,870,019, taxonomy_not_enabled 1,266,368, keyword_excluded 447,315, missing_name 31. Script changes: accepts `-Zip` (extracts only the npidata CSV into a new empty folder), reads the release date from the file name, `-DeleteExtracted`; the SHA-256 checksum is skipped only on the dry run and kept on the real run (a global `--skip-checksum` had disabled the same-file-applied-twice guard). Tested with a fake zip and a stub for python; the real ingest was not run through the script.
+
+**Database / System Result.** None. Nothing was staged or applied; the dry run wrote only `scripts/out/2026-10-full.*`.
+
+**Safety Status.** Wheelchair suppliers and dentists deleted on 2026-10-15 still return only through a future monthly load with the corrected keyword list. The 11 GB extracted CSV is still on disk.
+
 ## 2026-10-19 — Keyword fixes: `hair` and `dds` collisions; wheelchair suppliers unflagged
 
 **Objective.** Act on the 2026-10-19 audit report: stop `hair` matching `wheelchair` and `dds` matching `Dodds`.
