@@ -255,7 +255,7 @@
     ).join("");
   }
 
-  function callBlockHtml(phones) {
+  function callBlockHtml(phones, contactName) {
     if (!phones.length) return '<div class="cm-hint cm-nophone">No phone number on file for this lead.</div>';
     const href = (n) => `tel:${escapeHtml(n.replace(/[^\d+*#]/g, ""))}`;
     const flag = (p, reason, label) => `<button type="button" class="link-btn" data-cm="badnum" data-reason="${reason}" data-number="${escapeHtml(digits(p.number))}">${label}</button>`;
@@ -275,7 +275,7 @@
         <a class="btn btn-primary cm-call-btn" href="${href(first.number)}" data-cm="called">${SIGNAL_ICONS.phone}<span>Call ${escapeHtml(first.number)}</span></a>
         <button type="button" class="btn btn-ghost" data-copy-phone="${escapeHtml(first.number)}">${SIGNAL_ICONS.copy}<span>Copy</span></button>
       </div>
-      <div class="cm-hint">${escapeHtml(first.label)}</div>
+      ${contactName && String(first.label).includes(contactName) ? "" : `<div class="cm-hint">${escapeHtml(first.label)}</div>`}
       <div class="cm-flag">${flag(first, "wrong", "Wrong number")}${flag(first, "disconnected", "Not in service")}</div>
       ${others.length || badRows ? `<div class="cm-others">${others.map((p) => `
         <div class="cm-other">
@@ -394,7 +394,7 @@
         </div>
         <div class="cm-hero-meta">${npi ? `<span class="cm-npi">NPI <span class="mono">${escapeHtml(npi)}</span><button type="button" class="copy-inline" data-copy-text="${escapeHtml(npi)}" data-copy-label="NPI" title="Copy NPI" aria-label="Copy NPI">${SIGNAL_ICONS.copy}</button></span>` : ""}${window.dmeHooks.localTime?.(info.stateCode) || ""}</div>
         ${contactRow}
-        ${callBlockHtml(phoneOptions(item))}
+        ${callBlockHtml(phoneOptions(item), info.contactName)}
         ${factRows.length ? factsHtml(factRows) : ""}
       </div>`;
 
@@ -438,8 +438,8 @@
       </div>`;
       foot = `<button type="button" class="btn btn-ghost" data-cm="back" ${run.pos === 0 ? "disabled" : ""} title="Previous lead (\u2190)">Back</button>
         <button type="button" class="btn btn-ghost" data-cm="skip" title="Skip this lead (\u2192)">Skip</button>
-        <button type="button" class="btn btn-ghost cm-claim" data-cm="claim" title="Claim this lead for yourself">Claim lead</button>
-        <button type="button" class="btn btn-primary cm-save" data-cm="primary" title="Ctrl+Enter">Save &amp; next</button>`;
+        <button type="button" class="btn btn-ghost cm-save" data-cm="primary" title="Save the result and note for the team, keep the lead in Prospect, and go to the next lead (Ctrl+Enter)">Save note &amp; next</button>
+        <button type="button" class="btn btn-ghost cm-claim" data-cm="claim" title="Make this lead yours: it moves to your Claimed list">Claim lead</button>`;
     }
 
     drawer.innerHTML = `

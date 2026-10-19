@@ -3299,3 +3299,10 @@ html.game-open .buddy { display: none; }
 .cm-fold-bare > summary { padding-top: 0; }
 .cm-foot .cm-save { flex: 1; justify-content: center; }
 .cm-foot .cm-claim { color: var(--accent-ink); border-color: var(--selection-chip-border); }
+
+/* ---- Call panel fixes: Call button layout, equal footer actions ---- */
+.call-drawer .cm-call-btn { display: flex; align-items: center; justify-content: center; gap: 10px; white-space: nowrap; }
+.call-drawer .cm-call-btn svg { width: 22px; height: 22px; flex: none; }
+.cm-call .btn-ghost { padding-left: 16px; padding-right: 16px; }
+.cm-foot .cm-save, .cm-foot .cm-claim { flex: 1; justify-content: center; color: var(--ink); border-color: var(--hairline-hover); font-weight: 600; }
+.cm-foot .cm-save:hover, .cm-foot .cm-claim:hover { border-color: var(--accent); color: var(--accent-ink); }

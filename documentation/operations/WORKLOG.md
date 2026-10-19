@@ -8,7 +8,7 @@
 
 **Database / System Result.** None. No schema change; results are stored in the existing `lead_comments` table (sql/049, already applied). Results logged this way do not appear in team call counts or Today, which read claimed leads' call logs and phone taps.
 
-**Safety Status.** Additive except that a result tap on a prospect no longer claims it. Worker tests pass (281/281); not browser-tested. Needs a Worker deploy (pickup merge) and a frontend publish.
+**Safety Status.** Additive except that a result tap on a prospect no longer claims it. Worker tests pass (281/281); not browser-tested. Needs a Worker deploy (pickup merge) and a frontend publish. Follow-up fixes after first look: the Call button icon is now sized (it had stretched), the contact line above it is not repeated under it, and on prospects "Save note & next" and "Claim lead" are two equal neutral buttons so neither looks like the main action (the teal is kept for Call).
 
 ## 2026-10-19 — Call panel: auto-disconnect on dead lines, NPI shown, calmer layout
 
