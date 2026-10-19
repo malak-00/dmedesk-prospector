@@ -140,9 +140,12 @@
     return facts;
   }
 
-  // The script: a business-development call to get the supplier to sign with the outsourcing company, which
+  // The call plan: a business-development call to get the supplier to sign with the outsourcing company, which
   // runs a supplier's full back office (intake and verification, prior authorizations, billing and denials, patient
-  // calls and resupply). Each part is chosen by the strongest signal for that lead, in a fixed order.
+  // calls and resupply). Shaped by what cold-call research agrees on: say who you are, why you are calling and how long
+  // it will take; do not pitch the front desk; ask a few questions before pitching; answer a pushback by agreeing with
+  // it, asking a question, and offering a small next step (never criticising what they use today); close on two
+  // specific times. Each part is chosen by the strongest signal for that lead, in a fixed order.
   const COMPANY = "[company name]";
 
   function scriptOf(input, sig) {
@@ -150,8 +153,13 @@
     const who = firstName(sig.contact && sig.contact.name);
     const place = [c.address && c.address.city, c.address && c.address.state].filter(Boolean).join(", ");
     const sells = sig.verticals.length ? sig.verticals.join(" and ") : sig.topCategory ? lower(sig.topCategory) : lower(c.taxonomy && c.taxonomy.description) || "DME";
+    const name = c.name || "your company";
 
-    const opening = `Hi${who ? ` ${who}` : ""}, this is [your name] with ${COMPANY}. We run the back office for DME suppliers: intake and verification, prior authorizations, billing and patient calls. ${c.name || "Your company"}${place ? ` in ${place}` : ""} came up because you supply ${sells}. Do you have two minutes?`;
+    const opening = `Hi${who ? ` ${who}` : ""}, this is [your name] with ${COMPANY}. I'll be quick: about 30 seconds on why I called, and then you tell me if it's worth going on. We take billing, prior authorizations and patient calls off DME suppliers' plates, and ${name}${place ? ` in ${place}` : ""} came up because you supply ${sells}.`;
+
+    const frontDesk = who
+      ? `\u201CIt's a business matter for ${who} about billing and back-office support. Is ${who} available, or when is a better time to reach them?\u201D Do not pitch the front desk.`
+      : "\u201CCould you tell me who looks after billing and the back office? It's a business matter, and I'd like to ask for them by name.\u201D Do not pitch the front desk.";
 
     let pain;
     if (sig.growing) pain = "Their Medicare billing is climbing, and back-office work (verifications, prior auths, claims, denials) grows faster than the team that does it.";
@@ -167,25 +175,42 @@
     let talking = `${COMPANY} works as an extension of your team: we take on ${scope}intake and benefits verification, prior authorizations, billing and denials follow-up, and patient and resupply calls, so your staff stay on patients and deliveries.`;
     if (sig.neverPickedUp) talking += " Earlier calls here went unanswered: mention that you tried and offer a time they choose.";
 
-    let question;
-    if (sig.rental) question = "Who handles the monthly rental billing and resupply follow-up today, and how much slips through?";
-    else if (sig.growing) question = "Billing has grown a lot recently. Is your back office keeping up, or is work backing up?";
-    else if (sig.branches > 1 || sig.sameBuilding) question = "How is the back-office work split across your locations today?";
-    else if (sig.individual) question = "How many hours a week do you personally spend on billing and paperwork?";
-    else question = "Who handles verifications, prior authorizations and billing follow-up today, and where does it get stuck?";
+    // Ask before you pitch: one question picked for this lead, then three that suit any supplier.
+    const base = [
+      "Who handles verifications, prior authorizations and billing follow-up today?",
+      "Roughly how many hours a week goes to chasing denials or missing documentation?",
+      "Where does the work get stuck most: intake, authorizations, claims, or collections?",
+    ];
+    let first;
+    if (sig.rental) first = "How do you keep track of monthly rental billing and resupply today?";
+    else if (sig.growing) first = "Billing has grown a lot recently. Is your back office keeping up?";
+    else if (sig.branches > 1 || sig.sameBuilding) first = "How is the back-office work split across your locations?";
+    else if (sig.individual) first = "How many hours a week do you personally spend on billing and paperwork?";
+    const questions = [first, ...base].filter(Boolean).slice(0, 4);
 
-    let objection;
-    if (sig.neverPickedUp) objection = "\u201CNow's not a good time.\u201D Response: \u201CUnderstood. When is better? Two minutes at a time you choose.\u201D";
-    else if (sig.individual) objection = "\u201CI do it all myself.\u201D Response: acknowledge it, then ask what that time costs and offer a quote sized to their claim volume.";
-    else if (sig.volume === "low" || sig.volume === "none") objection = "\u201CWe're too small.\u201D Response: smaller teams feel the paperwork most; ask what volume they handle and offer a quote sized to it.";
-    else objection = "\u201CWe do it in-house.\u201D Response: \u201CWe work alongside your staff: we can take the overflow or the hardest work, like denials and prior auths, so they can focus.\u201D";
+    // Every pushback: agree, ask, then a small next step. Nothing here criticises what they use today.
+    const objections = [
+      "\u201CNot interested.\u201D Agree: \u201CFair enough, I called out of the blue.\u201D Ask: \u201CIs the back office under control, or is it just not a priority right now?\u201D Next step: if it's priority, offer to send a one-page overview and call back in two weeks.",
+      "\u201CWe do it in-house\u201D or \u201CWe already have a biller.\u201D Agree: \u201CThat works for a lot of suppliers.\u201D Ask: \u201CWhat takes the most time, or what do you wish got done faster?\u201D Next step: we work alongside your people and can take just the overflow or the hardest part, like denials or prior authorizations. Offer a 15-minute call about that one part.",
+      sig.neverPickedUp
+        ? "\u201CNot a good time.\u201D Agree: \u201CUnderstood.\u201D Ask: \u201CWhen is better, later this week?\u201D Next step: offer two times and say you'll email a short summary. Earlier calls here went unanswered, so confirm the best time of day."
+        : "\u201CNot a good time\u201D or \u201CSend me an email.\u201D Agree: \u201CUnderstood.\u201D Ask: \u201CWhat would make it worth your time to look at?\u201D Next step: offer two times and say you'll email a short summary first.",
+    ];
+    if (sig.individual) objections.unshift("\u201CI do it all myself.\u201D Agree: \u201CMost owner-operators do.\u201D Ask: \u201CHow many hours a week does that take?\u201D Next step: a 15-minute call to look at which task to hand off first.");
+
+    const close = "Offer two specific times, not \u201Clet me know\u201D: \u201CWould [day] at [time] or [day] at [time] work for a 15-minute call? I'll send a short email with what we covered.\u201D";
+
+    const voicemail = `\u201CHi${who ? ` ${who}` : ""}, this is [your name] with ${COMPANY}. I'm calling about billing and back-office support for ${sells} suppliers like ${name}. I'll try you again on [day], or you can reach me at [number]. Again, [your name], ${COMPANY}, [number].\u201D Keep it under 25 seconds.`;
 
     return [
       { label: "Opening line", text: opening },
+      { label: "If the front desk asks", text: frontDesk },
       { label: "Likely pain point", text: pain },
       { label: "Talking point", text: talking },
-      { label: "Discovery question", text: question },
-      { label: "Likely objection", text: objection },
+      { label: "Questions to ask", items: questions },
+      { label: "If they push back", items: objections },
+      { label: "Close", text: close },
+      { label: "Voicemail", text: voicemail },
     ];
   }
 
@@ -199,7 +224,7 @@
   // Plain text for pasting into a note or message.
   function briefToText(brief) {
     const facts = brief.facts.map((f) => (f.label ? `${f.label}: ${f.text}` : `  ${f.text}`)).join("\n");
-    const script = brief.script.map((s, i) => `${i + 1}. ${s.label}: ${s.text}`).join("\n");
+    const script = brief.script.map((s, i) => (s.items ? `${i + 1}. ${s.label}:\n${s.items.map((t) => `   - ${t}`).join("\n")}` : `${i + 1}. ${s.label}: ${s.text}`)).join("\n");
     return `${brief.title}\n\nWhat we know\n${facts}\n\nCall plan\n${script}`;
   }
 
@@ -219,7 +244,7 @@
       <div class="brief-group"><h5>What we know</h5>
         <dl class="brief-facts">${brief.facts.map((f) => `<div><dt>${esc(f.label)}</dt><dd>${esc(f.text)}</dd></div>`).join("")}</dl></div>
       <div class="brief-group"><h5>Call plan</h5>
-        <ol class="brief-plan">${brief.script.map((s) => `<li><strong>${esc(s.label)}</strong><span>${esc(s.text)}</span></li>`).join("")}</ol></div>
+        <ol class="brief-plan">${brief.script.map((s) => `<li><strong>${esc(s.label)}</strong>${s.items ? `<ul class="brief-sub">${s.items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : `<span>${esc(s.text)}</span>`}</li>`).join("")}</ol></div>
       <div class="brief-actions"><button type="button" class="text-action" data-brief-copy="${esc(key)}">Copy brief</button>
         <span class="muted-note">Built from this lead's own data. No AI.</span></div>
     </div>`;

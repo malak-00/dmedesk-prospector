@@ -132,12 +132,23 @@
         <li><span class="ins-dot"></span><span>Never called yet<small>${num(fc.claimed - fc.contacted)}</small></span></li></ul>`;
   }
 
+  // Which specialties / states convert: one block per segment, with a short bar for each step a lead can reach.
+  // A segment with fewer than SMALL_SAMPLE claimed leads is dimmed: too few to read much into.
+  const SMALL_SAMPLE = 5;
   function segments(title, rows) {
     if (!rows.length) return `<p class="ins-empty">Not enough claimed leads yet.</p>`;
-    return table(
-      [{ label: title }, { label: "Claimed", num: 1 }, { label: "Called", num: 1 }, { label: "Meetings held", num: 1 }, { label: "Onboarded", num: 1 }],
-      rows.map((r) => [esc(r.label), num(r.claimed), pct(r.contacted / r.claimed), pct(r.held / r.claimed), pct(r.won / r.claimed)]),
-    );
+    const step = (label, count, of) => {
+      const share = of ? count / of : 0;
+      return `<div class="ins-seg-step" title="${esc(`${num(count)} of ${num(of)} claimed leads`)}">
+        <span class="ins-seg-label">${esc(label)}<b>${pct(share)}</b></span>
+        <i class="ins-seg-bar"><u style="width:${Math.round(share * 100)}%"></u></i></div>`;
+    };
+    return `<ul class="ins-seg" aria-label="${esc(title)}">${rows.map((r) => `
+      <li class="${r.claimed < SMALL_SAMPLE ? "is-small" : ""}"${r.claimed < SMALL_SAMPLE ? ` title="Only ${num(r.claimed)} claimed: too few to read much into"` : ""}>
+        <div class="ins-seg-head"><span class="ins-seg-name">${esc(r.label)}</span><span class="ins-seg-n">${num(r.claimed)} claimed</span></div>
+        <div class="ins-seg-steps">${step("Called", r.contacted, r.claimed)}${step("Meeting held", r.held, r.claimed)}${step("Onboarded", r.won, r.claimed)}</div>
+      </li>`).join("")}</ul>
+      <p class="ins-note">Share of each ${esc(title.toLowerCase())}'s claimed leads that reached each step. Hover a bar for the counts. Faded rows have fewer than ${SMALL_SAMPLE} claimed leads.</p>`;
   }
 
   function stuckList(list) {

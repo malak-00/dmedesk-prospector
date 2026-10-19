@@ -20,6 +20,7 @@ const lead = (extra = {}) => ({
   ...extra,
 });
 const part = (brief, label) => (brief.script.find((s) => s.label === label) || {}).text || '';
+const items = (brief, label) => (brief.script.find((s) => s.label === label) || {}).items || [];
 const fact = (brief, label) => (brief.facts.find((f) => f.label === label) || {}).text || '';
 
 test('a full lead gets who to ask for, the money, and a five-part plan', () => {
@@ -28,9 +29,9 @@ test('a full lead gets who to ask for, the money, and a five-part plan', () => {
   assert.match(fact(brief, 'Ask for'), /Trisha Bailey, CEO \(direct 772-226-7700, main line 727-256-1305\)/);
   assert.match(fact(brief, 'Medicare'), /\$526k paid, 1,307 claims, 194 patients/);
   assert.match(fact(brief, 'Business'), /a company \(NPI-2\).*registry updated 2 years ago/);
-  assert.deepEqual(brief.script.map((s) => s.label), ['Opening line', 'Likely pain point', 'Talking point', 'Discovery question', 'Likely objection']);
+  assert.deepEqual(brief.script.map((s) => s.label), ['Opening line', 'If the front desk asks', 'Likely pain point', 'Talking point', 'Questions to ask', 'If they push back', 'Close', 'Voicemail']);
   assert.match(part(brief, 'Opening line'), /^Hi Trisha, this is \[your name\] with \[company name\]\./);
-  assert.match(part(brief, 'Opening line'), /back office/);
+  assert.match(part(brief, 'Opening line'), /30 seconds.*prior authorizations/);
   assert.match(part(brief, 'Opening line'), /Saint Petersburg, FL/);
 });
 
@@ -48,7 +49,7 @@ test('a lead with nothing on file still gets a usable brief', () => {
   const brief = buildCallBrief({ company: { name: 'Bare Supply' }, now: NOW });
   assert.match(fact(brief, 'Ask for'), /No decision maker on file/);
   assert.match(fact(brief, 'Medicare'), /No Medicare billing found/);
-  assert.equal(brief.script.length, 5);
+  assert.equal(brief.script.length, 8);
   assert.match(part(brief, 'Opening line'), /^Hi, this is/);
   assert.equal(buildCallBrief({ now: NOW }).title, 'Lead');
 });
@@ -86,7 +87,7 @@ test('product fit, trend, same address, team notes and earlier calls all show up
   assert.match(part(brief, 'Talking point'), /Orthotics & prosthetics paperwork/);
   assert.match(part(brief, 'Talking point'), /prior authorizations, billing and denials follow-up/);
   assert.match(part(brief, 'Talking point'), /Earlier calls here went unanswered/);
-  assert.match(part(brief, 'Likely objection'), /Now's not a good time/);
+  assert.match(items(brief, 'If they push back').join(' '), /Not a good time\.[^]*confirm the best time of day/);
 });
 
 test('a claimed lead brings its status and call log', () => {
@@ -106,4 +107,52 @@ test('the plan is a business-development pitch for the outsourcing company, not 
   assert.doesNotMatch(text, /DME Desk/);
   assert.doesNotMatch(text, /receptionist/i);
   assert.match(text, /\[company name\]/);
+});
+
+test('the opening says who, why and how long; the front desk is never pitched', () => {
+  const named = buildCallBrief({ company: lead(), now: NOW });
+  assert.match(part(named, 'If the front desk asks'), /business matter for Trisha about billing and back-office support/);
+  assert.match(part(named, 'If the front desk asks'), /Do not pitch the front desk/);
+  const unnamed = buildCallBrief({ company: lead({ decisionMakers: [] }), now: NOW });
+  assert.match(part(unnamed, 'If the front desk asks'), /who looks after billing/);
+});
+
+test('questions: one chosen for the lead, then three that suit any supplier', () => {
+  const q = items(buildCallBrief({ company: lead({ isOrganization: false }), now: NOW }), 'Questions to ask');
+  assert.equal(q.length, 4);
+  assert.match(q[0], /hours a week do you personally spend/);
+  const plain = items(buildCallBrief({ company: lead(), now: NOW }), 'Questions to ask');
+  assert.equal(plain.length, 3);
+  assert.match(plain[0], /Who handles verifications/);
+  const rental = items(buildCallBrief({ company: lead(), mix: { rentalShare: 0.8, total: 1, categories: [{ name: 'x', share: 1 }], verticals: [] }, now: NOW }), 'Questions to ask');
+  assert.match(rental[0], /monthly rental billing/);
+});
+
+test('every pushback agrees, asks, and offers a small next step', () => {
+  const list = items(buildCallBrief({ company: lead({ isOrganization: false }), now: NOW }), 'If they push back');
+  assert.equal(list.length, 4); // the owner-operator one comes first
+  assert.match(list[0], /do it all myself/);
+  list.forEach((t) => { assert.match(t, /Agree:/); assert.match(t, /Ask:/); assert.match(t, /Next step:/); });
+  assert.equal(items(buildCallBrief({ company: lead(), now: NOW }), 'If they push back').length, 3);
+});
+
+test('the close offers two times and the voicemail is short and carries the placeholders', () => {
+  const brief = buildCallBrief({ company: lead(), now: NOW });
+  assert.match(part(brief, 'Close'), /two specific times/);
+  assert.match(part(brief, 'Close'), /\[day\] at \[time\] or \[day\] at \[time\]/);
+  const vm = part(brief, 'Voicemail');
+  assert.match(vm, /^“Hi Trisha, this is \[your name\] with \[company name\]/);
+  assert.match(vm, /\[number\]/);
+  assert.match(vm, /under 25 seconds/);
+});
+
+test('no free audit is offered anywhere in the plan', () => {
+  const text = briefToText(buildCallBrief({ company: lead({ isOrganization: false }), now: NOW }));
+  assert.doesNotMatch(text, /audit|free|no cost|no-cost/i);
+});
+
+test('the plain-text brief lists the items under their section', () => {
+  const text = briefToText(buildCallBrief({ company: lead(), now: NOW }));
+  assert.match(text, /5\. Questions to ask:\n {3}- Who handles verifications/);
+  assert.match(text, /8\. Voicemail:/);
 });

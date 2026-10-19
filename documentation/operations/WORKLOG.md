@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Call plan rewritten from cold-call research; conversion tables made readable
+
+**Objective.** Make the brief's call plan follow what cold-call research agrees on, with no free-audit offer, and make the "Which specialties convert" and "Which states convert" tables easy to read.
+
+**Actions Completed.** (1) `docs/callbrief.js`: the call plan now has eight parts. Opening line (who you are, why you are calling and how long it will take, with the lead's own detail; no "is this a bad time"), "If the front desk asks" (a plain business-matter line that asks for the owner by first name and never pitches the front desk), likely pain point, talking point, "Questions to ask" (one chosen for this lead, then three that suit any supplier), "If they push back" (not interested; we do it in-house or already have a biller; not a good time; plus an owner-operator one when relevant), each as agree, ask, then a small next step, never criticising the current setup, "Close" (two specific times) and "Voicemail" (under 25 seconds, with name, company and callback placeholders). No free audit or other freebie is offered anywhere, and a test checks that. The list sections render as nested lists on screen and in the copied plain text. (2) `docs/insights.js`: the two conversion tables are replaced by one block per specialty or state: its name and claimed count, then a short bar and percentage for Called, Meeting held and Onboarded, with the counts on hover; rows with fewer than 5 claimed leads are faded. Styles in `docs/style.css`.
+
+**Database / System Result.** None. Front-end only.
+
+**Safety Status.** Worker tests pass (295/295); not browser-tested (the segment markup was checked in Node). Needs only a frontend publish. The script wording is a draft for the team to review.
+
 ## 2026-10-19 — Call brief reframed for business development (signing suppliers with the outsourcing company)
 
 **Objective.** The call brief's "Call plan" pitched DME Desk's voice receptionist. It is now a business-development call to get a DME supplier to sign with the outsourcing company.

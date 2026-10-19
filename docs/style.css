@@ -3342,3 +3342,19 @@ html.game-open .buddy { display: none; }
   .ins-table td:first-child::before { display: none; }
   .ins-table td.num { white-space: normal; }
 }
+.brief-plan .brief-sub { list-style: disc; margin: 3px 0 0; padding-left: 18px; display: grid; gap: 5px; }
+.brief-plan .brief-sub li { display: list-item; counter-increment: none; font-size: 13px; }
+
+/* ---- Insights: which specialties / states convert ---- */
+.ins-seg { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 0; }
+.ins-seg > li { padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+.ins-seg > li:last-child { border-bottom: 0; }
+.ins-seg > li.is-small { opacity: 0.6; }
+.ins-seg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+.ins-seg-name { font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
+.ins-seg-n { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ins-seg-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ins-seg-label { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.ins-seg-label b { font-size: 13px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.ins-seg-bar { display: block; height: 6px; margin-top: 4px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.ins-seg-bar u { display: block; height: 100%; background: var(--accent); border-radius: 999px; text-decoration: none; }
