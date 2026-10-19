@@ -3180,3 +3180,27 @@ html.game-open .buddy { display: none; }
 .why-prior { margin-top: 10px; font-size: 13px; color: var(--ink); }
 .why-prior strong { color: var(--score-mid); }
 .why-prior-note { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; }
+.why-same { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--hairline); font-size: 13px; }
+.why-same-head span { color: var(--muted); margin-left: 6px; }
+.why-same-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.why-same-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.why-same-name { font-weight: 600; }
+.why-same-meta { color: var(--muted); font-size: 12.5px; flex: 1 1 auto; }
+.why-same-tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); border: 1px solid var(--hairline); border-radius: 999px; padding: 1px 8px; }
+.why-same-held { color: var(--score-mid); border-color: var(--score-mid); }
+.copy-inline { display: inline-flex; vertical-align: middle; align-items: center; margin-left: 6px; padding: 2px 4px; border: 0; background: transparent; color: var(--muted); cursor: pointer; border-radius: 5px; }
+.copy-inline:hover { color: var(--accent-ink); background: var(--accent-soft); }
+.copy-inline svg { width: 14px; height: 14px; }
+
+.ins-wrap { max-width: 1180px; margin: 0 auto; }
+.ins-tabs { max-width: 100%; overflow-x: auto; }
+.ins-pill { display: inline-block; min-width: 16px; padding: 0 5px; margin-left: 4px; border-radius: 999px; background: var(--score-mid); color: #1a1205; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+.ins-pane[hidden] { display: none; }
+.ins-allgood { color: var(--score-high); }
+.ins-details { margin-top: 10px; font-size: 12px; color: var(--muted); }
+.ins-details summary { cursor: pointer; }
+.ins-details .ins-list { margin-top: 8px; }
+.ins-signals .ins-list li { line-height: 1.45; }
+.ins-table td, .ins-table th { white-space: nowrap; }
+.ins-table td:first-child { white-space: normal; }
+.ins-heat-cell { min-width: 18px; }

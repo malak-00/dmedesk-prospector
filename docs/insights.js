@@ -12,6 +12,10 @@
   const DAYS_KEY = "dmeInsightsDays";
   const RANGES = [14, 28, 60, 90];
 
+  const TABS = [["overview", "Overview"], ["people", "People"], ["pipeline", "Pipeline"], ["quality", "Search & errors"], ["system", "System"]];
+  const TAB_KEY = "dmeInsightsTab";
+  let tab = "overview";
+  try { const t = localStorage.getItem(TAB_KEY); if (TABS.some(([k]) => k === t)) tab = t; } catch { /* default */ }
   let isSuper = false;
   let data = null;
   let days = 28;
@@ -168,16 +172,19 @@
 
   function featureUsage(u) {
     if (!u) return NOT_COLLECTING;
-    const max = Math.max(1, ...u.features.map((f) => f.uses));
-    return `<div class="ins-funnel">${u.features.map((f) => `
+    const used = u.features.filter((f) => f.uses);
+    const unused = u.features.filter((f) => !f.uses);
+    const max = Math.max(1, ...used.map((f) => f.uses));
+    return `${used.length ? `<div class="ins-funnel">${used.map((f) => `
       <div class="ins-funnel-row ins-feature-row"><span class="ins-funnel-label" title="${esc(f.label)}">${esc(f.label)}</span>
-        <span class="ins-funnel-track"><span class="ins-funnel-fill${f.uses ? "" : " is-none"}" style="width:${f.uses ? Math.max(2, Math.round((f.uses / max) * 100)) : 0}%"></span></span>
-        <span class="ins-funnel-num">${num(f.uses)} <small>${num(f.people)} ${f.people === 1 ? "person" : "people"}</small></span></div>`).join("")}</div>`;
+        <span class="ins-funnel-track"><span class="ins-funnel-fill" style="width:${Math.max(2, Math.round((f.uses / max) * 100))}%"></span></span>
+        <span class="ins-funnel-num">${num(f.uses)} <small>${num(f.people)} ${f.people === 1 ? "person" : "people"}</small></span></div>`).join("")}</div>` : `<p class="ins-empty">No feature use recorded yet.</p>`}
+      ${unused.length ? `<p class="ins-note"><strong>Not used in ${u.span} days:</strong> ${esc(unused.map((f) => f.label.toLowerCase()).join(", "))}.</p>` : ""}`;
   }
 
   function errorList(u) {
     if (!u) return NOT_COLLECTING;
-    if (!u.errors.total) return `<p class="ins-empty">No failed requests in this period.</p>`;
+    if (!u.errors.total) return `<p class="ins-note ins-allgood">No failed requests in this period.</p>`;
     return `<p class="ins-note">${num(u.errors.total)} failed, ${num(u.errors.last7)} in the last 7 days.</p>
       <div class="table-wrap"><table class="results-table ins-table"><thead><tr><th>Request</th><th>Status</th><th>Times</th><th>People</th><th>Last seen</th><th>Message</th></tr></thead><tbody>${u.errors.top.map((e) => `
         <tr><td>${esc(e.name)}</td><td>${esc(e.status)}</td><td>${num(e.count)}</td><td>${num(e.people)}</td><td>${esc(ago(e.last))}</td><td>${esc(e.message)}</td></tr>`).join("")}</tbody></table></div>`;
@@ -185,11 +192,16 @@
 
   function system(sys) {
     if (!sys) return `<p class="ins-empty">System details unavailable.</p>`;
-    const row = (ok, label, note) => `<li class="${ok ? "ins-ok" : "ins-bad"}"><span class="ins-dot"></span><span>${esc(label)}<small>${esc(note || "")}</small></span></li>`;
-    return `<ul class="ins-list">
-      ${(sys.integrations || []).map((i) => row(i.configured, i.label, i.configured ? i.note : "Not connected")).join("")}
-      ${(sys.installed || []).map((i) => row(i.installed, i.label, i.installed ? "" : `Not installed (${i.note})`)).join("")}
-      <li class="ins-ok"><span class="ins-dot"></span><span>Search source<small>${esc(sys.searchSource || "unknown")}</small></span></li></ul>`;
+    const checks = [
+      ...(sys.integrations || []).map((i) => ({ ok: i.configured, label: i.label, note: i.configured ? i.note : "Not connected" })),
+      ...(sys.installed || []).map((i) => ({ ok: i.installed, label: i.label, note: i.installed ? "" : `Not installed (${i.note})` })),
+    ];
+    const row = (c) => `<li class="${c.ok ? "ins-ok" : "ins-bad"}"><span class="ins-dot"></span><span>${esc(c.label)}<small>${esc(c.note)}</small></span></li>`;
+    const bad = checks.filter((c) => !c.ok);
+    const good = checks.filter((c) => c.ok);
+    return `${bad.length ? `<ul class="ins-list">${bad.map(row).join("")}</ul>` : `<p class="ins-note ins-allgood">All ${checks.length} checks are fine.</p>`}
+      <details class="ins-details"><summary>${good.length} working</summary><ul class="ins-list">${good.map(row).join("")}
+        <li class="ins-ok"><span class="ins-dot"></span><span>Search source<small>${esc(sys.searchSource || "unknown")}</small></span></li></ul></details>`;
   }
 
   /* ---------- page ---------- */
@@ -214,74 +226,70 @@
     const queueText = [["matchReviews", "possible duplicates"], ["providerChanges", "provider changes"]]
       .filter(([k]) => typeof q[k] === "number").map(([k, l]) => `${num(q[k])} ${l}`).join(" · ");
 
+    const sec = (title, body, extra = "") => `<section class="ins-card"><h3>${title}</h3>${body}${extra}</section>`;
+    const pane = (key, html) => `<div class="ins-pane" data-ins-pane="${key}"${key === tab ? "" : " hidden"}>${html}</div>`;
+    const dataIssues = p.funnel.specialties.find((r) => r.label === "Unknown specialty");
+
     panel.innerHTML = `
+      <div class="ins-wrap">
       <div class="ins-head">
         <div><h2 class="ins-title">App insights</h2>
-          <p class="ins-sub">What's happening in the app. Team numbers leave out super admin accounts. Updated ${esc(ago(d.generatedAt))} ${esc(new Date(d.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}.</p></div>
+          <p class="ins-sub">What's happening in the app. Team numbers leave out super admin and integration accounts. Updated ${esc(new Date(d.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}.</p></div>
         <div class="ins-tools">
           <label class="inline-field">Last <select data-ins="days" aria-label="Time range">${RANGES.map((n) => `<option value="${n}"${n === days ? " selected" : ""}>${n} days</option>`).join("")}</select></label>
           <button type="button" class="btn btn-ghost btn-small" data-ins="reload"${loading ? " disabled" : ""}>${loading ? "Refreshing…" : "Refresh"}</button>
         </div>
       </div>
 
-      <section class="ins-card ins-signals" aria-label="What to look at">
-        <h3>Worth a look</h3>
-        <ul class="ins-list">${d.signals.map((s) => `<li class="ins-${esc(s.level)}"><span class="ins-dot"></span><span>${esc(s.text)}</span></li>`).join("")}</ul>
-      </section>
+      <div class="admin-seg ins-tabs" role="tablist" aria-label="Insight sections">${TABS.map(([k, label]) => `<button type="button" class="admin-seg-btn${k === tab ? " is-active" : ""}" role="tab" data-ins-tab="${k}" aria-selected="${k === tab}">${label}${k === "quality" && d.usage && d.usage.errors.last7 ? ` <span class="ins-pill">${d.usage.errors.last7}</span>` : ""}${k === "people" && (d.nudges || []).length ? ` <span class="ins-pill">${d.nudges.length}</span>` : ""}</button>`).join("")}</div>
 
-      <div class="kpi-strip ins-kpis">
-        ${kpi("Active this week", `${d.team.active7} of ${d.team.total}`, "people with any activity in 7 days")}
-        ${kpi("Claims", num(claims), `last ${d.days} days`)}
-        ${kpi("Calls", num(taps + calls), `${num(taps)} taps · ${num(calls)} logged`)}
-        ${kpi("Open leads", num(p.openLeads), `${num(p.overdueCallbacks)} overdue callbacks`)}
-        ${kpi("Meetings held", num(held ? held.count : 0), held ? `${pct(held.ofClaimed)} of claimed` : "")}
-      </div>
+      ${pane("overview", `
+        <section class="ins-card ins-signals" aria-label="What to look at"><h3>Worth a look</h3>
+          <ul class="ins-list">${d.signals.map((s) => `<li class="ins-${esc(s.level)}"><span class="ins-dot"></span><span>${esc(s.text)}</span></li>`).join("")}</ul></section>
+        <div class="kpi-strip ins-kpis">
+          ${kpi("Active this week", `${d.team.active7} of ${d.team.total}`, "people with any activity in 7 days")}
+          ${kpi("Claims", num(claims), `last ${d.days} days`)}
+          ${kpi("Calls", num(taps + calls), `${num(taps)} taps \u00b7 ${num(calls)} logged`)}
+          ${kpi("Open leads", num(p.openLeads), `${num(p.overdueCallbacks)} overdue callbacks`)}
+          ${kpi("Meetings held", num(held ? held.count : 0), held ? `${pct(held.ofClaimed)} of claimed` : "")}
+        </div>
+        ${sec("Activity per day", chart(d.adoption.daily))}
+        ${sec(`What the team is asking for <small>${num(fr.suggestions.total)} suggestions, ${num(fr.suggestions.last7)} this week</small>`,
+          fr.suggestions.recent.length ? `<ul class="ins-quotes">${fr.suggestions.recent.map((s) => `<li><p>${esc(s.text)}</p><small>${esc(s.by || "Someone")} \u00b7 ${esc(ago(s.at))}</small></li>`).join("")}</ul>` : `<p class="ins-empty">No suggestions yet.</p>`)}`)}
 
-      <section class="ins-card"><h3>Activity per day</h3>${chart(d.adoption.daily)}</section>
-      <section class="ins-card"><h3>People</h3>${people(d.adoption.people)}</section>
+      ${pane("people", `
+        ${sec("People", people(d.adoption.people))}
+        ${sec('Notes you could send <small>they appear through the avatar within a minute if the person is signed in</small>', nudgeList(d.nudges || []))}
+        <div class="ins-grid">
+          ${sec("Speed to first call", firstCall(p.firstCall))}
+          ${sec("When the team calls", heatmap(d.callAt))}
+        </div>`)}
 
-      <section class="ins-card"><h3>Notes you could send <small>they appear through the avatar, within a minute if the person is signed in</small></h3>${nudgeList(d.nudges || [])}</section>
+      ${pane("pipeline", `
+        <div class="ins-grid">
+          ${sec("How far claimed leads get", funnel(p.funnel), `<p class="ins-note">${num(p.neverContacted)} claimed ${p.neverContacted === 1 ? "lead was" : "leads were"} never contacted ${p.staleDays}+ days after claiming.</p>`)}
+          ${sec("Where leads sit", p.statuses.length ? `<ul class="ins-list">${p.statuses.map((s) => `<li><span class="ins-dot"></span><span>${esc(s.label)}<small>${num(s.count)}</small></span></li>`).join("")}</ul>` : `<p class="ins-empty">No leads yet.</p>`)}
+        </div>
+        <div class="ins-grid">
+          ${sec("Which specialties convert", segments("Specialty", p.funnel.specialties), dataIssues ? `<p class="ins-note">${num(dataIssues.claimed)} claimed leads have no specialty recorded, so they can't be broken down.</p>` : "")}
+          ${sec("Which states convert", segments("State", p.funnel.states))}
+        </div>
+        ${sec('Claimed but never called <small>oldest first</small>', stuckList(p.stuck || []))}`)}
 
-      <div class="ins-grid">
-        <section class="ins-card"><h3>How far claimed leads get</h3>${funnel(p.funnel)}
-          <p class="ins-note">${num(p.neverContacted)} claimed ${p.neverContacted === 1 ? "lead was" : "leads were"} never contacted ${p.staleDays}+ days after claiming.</p></section>
-        <section class="ins-card"><h3>Where leads sit</h3>
-          ${p.statuses.length ? `<ul class="ins-list">${p.statuses.map((s) => `<li><span class="ins-dot"></span><span>${esc(s.label)}<small>${num(s.count)}</small></span></li>`).join("")}</ul>` : `<p class="ins-empty">No leads yet.</p>`}</section>
-      </div>
-
-      <div class="ins-grid">
-        <section class="ins-card"><h3>Speed to first call</h3>${firstCall(p.firstCall)}</section>
-        <section class="ins-card"><h3>When the team calls</h3>${heatmap(d.callAt)}</section>
-      </div>
-
-      <div class="ins-grid">
-        <section class="ins-card"><h3>Which specialties convert</h3>${segments("Specialty", p.funnel.specialties)}</section>
-        <section class="ins-card"><h3>Which states convert</h3>${segments("State", p.funnel.states)}</section>
-      </div>
-
-      <section class="ins-card"><h3>Claimed but never called <small>oldest first</small></h3>${stuckList(p.stuck || [])}</section>
-
-      <div class="ins-grid">
-        <section class="ins-card"><h3>Search quality</h3>${searchQuality(d.usage)}</section>
-        <section class="ins-card"><h3>Which features get used</h3>${featureUsage(d.usage)}</section>
-      </div>
-
-      <section class="ins-card"><h3>Errors</h3>${errorList(d.usage)}</section>
-
-      <div class="ins-grid">
-        <section class="ins-card"><h3>Friction</h3>
-          <ul class="ins-list">
+      ${pane("quality", `
+        <div class="ins-grid">
+          ${sec("Search quality", searchQuality(d.usage))}
+          ${sec("Which features get used", featureUsage(d.usage))}
+        </div>
+        ${sec("Errors", errorList(d.usage))}
+        ${sec("Friction", `<ul class="ins-list">
             <li><span class="ins-dot"></span><span>Bad numbers flagged<small>${num(fr.badNumbers.open)} open (${num(fr.badNumbers.wrong)} wrong, ${num(fr.badNumbers.disconnected)} disconnected), ${num(fr.badNumbers.last7)} this week</small></span></li>
             <li><span class="ins-dot"></span><span>Leads sent to disconnected<small>${num(fr.disconnected.count)} (${fr.disconnected.share}% of claimed)</small></span></li>
             <li><span class="ins-dot"></span><span>Waiting on an admin<small>${esc(queueText || "unknown")}</small></span></li>
-            <li><span class="ins-dot"></span><span>Claimed with no call notes<small>${num(fr.leadsWithoutNotes)}</small></span></li>
-          </ul></section>
-        <section class="ins-card"><h3>System health</h3>${system(d.system)}</section>
-      </div>
+            <li><span class="ins-dot"></span><span>Claimed with no call notes<small>${num(fr.leadsWithoutNotes)}</small></span></li></ul>`)}`)}
 
-      <section class="ins-card"><h3>What the team is asking for <small>${num(fr.suggestions.total)} suggestions, ${num(fr.suggestions.last7)} this week</small></h3>
-        ${fr.suggestions.recent.length ? `<ul class="ins-quotes">${fr.suggestions.recent.map((s) => `<li><p>${esc(s.text)}</p><small>${esc(s.by || "Someone")} · ${esc(ago(s.at))}</small></li>`).join("")}</ul>` : `<p class="ins-empty">No suggestions yet.</p>`}
-      </section>`;
+      ${pane("system", sec("System health", system(d.system)))}
+      </div>`;
   }
 
   async function refresh({ showSpinner = false } = {}) {
@@ -302,6 +310,13 @@
   panel?.addEventListener("click", (e) => {
     if (!isSuper) return;
     if (e.target.closest('[data-ins="reload"]')) refresh({ showSpinner: true });
+    const tabBtn = e.target.closest("[data-ins-tab]");
+    if (tabBtn) {
+      tab = tabBtn.dataset.insTab;
+      try { localStorage.setItem(TAB_KEY, tab); } catch { /* not remembered */ }
+      panel.querySelectorAll("[data-ins-tab]").forEach((b) => { const on = b.dataset.insTab === tab; b.classList.toggle("is-active", on); b.setAttribute("aria-selected", String(on)); });
+      panel.querySelectorAll("[data-ins-pane]").forEach((x) => { x.hidden = x.dataset.insPane !== tab; });
+    }
     const send = e.target.closest('[data-ins="nudge"]');
     if (send) sendNudge(send);
   });

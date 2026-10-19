@@ -1,10 +1,30 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — App insights layout: tabs instead of one long page
+
+**Objective.** The insights page was one very long scroll. Make it quicker to read.
+
+**Actions Completed.** `docs/insights.js` now has five tabs (Overview, People, Pipeline, Search & errors, System), remembered per browser, with count pills for failed requests and suggested notes. Panes are hidden rather than re-rendered, so a half-written note survives switching tabs. Features nobody used are one line instead of empty bars, healthy system checks are folded away, empty error and friction cards are one line, and the page is capped at a readable width. `worker/src/lib/insights.js` leaves integration accounts (username ending `-bot` or display name containing "(integration)") out of the team numbers.
+
+**Database / System Result.** None.
+
+**Safety Status.** Display and read-only logic only. Not browser-tested.
+
+## 2026-10-19 — Prospect card: copy buttons, pickup history, same-address lookup
+
+**Objective.** Make the opened Prospect card faster to use and more useful for deciding who to call.
+
+**Actions Completed.** (1) Copy buttons beside the company name, Address and NPI (`data-copy-text` handler in `docs/app.js`). (2) Pickup history: `summarizePriorContact` now also returns `calls: {answered, total}`, counted from the lead's call-log lines using the same answered/missed rules as the best-times insight (`classifyResult`); `companyService` sums it across a company's branches into `company.pickup`, and the "Why call" strip shows "Answered 2 of 6 calls" (green at half or more, amber, red when none). It only exists for leads worked before and returned to Prospect, because that is where call logs live for unclaimed leads. (3) Same-address lookup: new `GET /companies/same-address?npi=&exclude=` (`worker/src/repos/sameAddressRepo.js`, pure matching in `worker/src/lib/sameAddress.js`). It reads `npi_records` by state, city and a street prefix (suite dropped), keeps providers with the same street and ZIP5, leaves out the lead, its branch NPIs and inactive providers, and marks ones a teammate has claimed. The card asks for it once when opened (`dmeHooks.whyCallOpened`) and shows "Also at this address" inside the strip. Tests: `worker/test/sameAddress.test.js`, additions to `whycall.test.js` and `teamActivity.test.js`.
+
+**Database / System Result.** No schema change and no SQL. Read-only queries on `npi_records`, `leads` and `app_users`; the address lookup uses the existing city index.
+
+**Safety Status.** Additive and read-only. Worker tests pass (258/258); not browser-tested. Needs a Worker deploy (pickup, same-address and company-type chip) and a frontend publish.
+
 ## 2026-10-19 — "Why call" strip on the Prospect lead card
 
 **Objective.** Give reps the few facts that say whether a lead is worth calling, right on the opened Prospect card, using data the lead already carries.
 
-**Actions Completed.** New `docs/whycall.js` (pure `buildWhyCall`, wired via `window.dmeHooks.whyCallBlock`) and `.why-*` styles. The opened Prospect card now shows "Who to call" and "Company" first, then a "Why call" strip: Medicare money chip (tiers: $100k+ major, $10k+ significant), company vs individual (NPI-2 / NPI-1), registry freshness (green under 1 year, amber 1-3 years, red beyond), and the earlier-contact line (replaces the standalone "Contacted before" banner on the card; the row badge is unchanged). Worker now passes `isOrganization` through `createCompany` / `fromNppesProvider`. Tests in `worker/test/whycall.test.js`. Claimed cards are unchanged. Follow-up: the Medicare and "NPPES updated" rows were removed from the Company block (the strip now owns them; the Medicare chip also shows patients). Per-lead pickup history ("answered 2 of 6") is deferred to a second pass.
+**Actions Completed.** New `docs/whycall.js` (pure `buildWhyCall`, wired via `window.dmeHooks.whyCallBlock`) and `.why-*` styles. The opened Prospect card now shows "Who to call" and "Company" first, then a "Why call" strip: Medicare money chip (tiers: $100k+ major, $10k+ significant), company vs individual (NPI-2 / NPI-1), registry freshness (green under 1 year, amber 1-3 years, red beyond), and the earlier-contact line (replaces the standalone "Contacted before" banner on the card; the row badge is unchanged). Worker now passes `isOrganization` through `createCompany` / `fromNppesProvider`. Tests in `worker/test/whycall.test.js`. Claimed cards are unchanged. Follow-up: the Medicare and "NPPES updated" rows were removed from the Company block (the strip now owns them; the Medicare chip also shows patients). The "More details" fold on the Prospect Company block was removed: Address, NPI, Main line, Website and Data sources are always visible. Per-lead pickup history ("answered 2 of 6") is deferred to a second pass.
 
 **Database / System Result.** None. No schema change, no SQL, no new request.
 

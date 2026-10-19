@@ -25,7 +25,9 @@ export function buildInsights({
   const weekAgo = nowMs - 7 * DAY_MS;
 
   const superIds = new Set(users.filter((u) => u.is_super_admin).map((u) => u.id));
-  const team = users.filter((u) => !u.is_super_admin && !u.disabled_at);
+  // Integration accounts (for example the meetings bot) are not reps.
+  const isBot = (u) => /-bot$/i.test(String(u.username || "")) || /\(integration\)/i.test(String(u.display_name || ""));
+  const team = users.filter((u) => !u.is_super_admin && !u.disabled_at && !isBot(u));
   const nameOf = (u) => u.display_name || u.username || "Unknown";
   const idByName = new Map(team.map((u) => [nameOf(u).trim().toLowerCase(), u.id]));
   const teamLeads = leads.filter((l) => l.claimed_by && !superIds.has(l.claimed_by));
