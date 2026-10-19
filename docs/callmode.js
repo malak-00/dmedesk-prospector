@@ -34,11 +34,10 @@
   };
   const SHUFFLE_KEY = "dmeProspectorCallShuffle";
   const UNDO_MS = 10000;
-  // What a rep can tap on a prospect: each claims the lead with that result and moves on.
-  const PROSPECT_RESULTS = [
-    ["voicemail", "Voicemail"], ["no answer", "No answer"], ["gatekeeper", "Gatekeeper"],
-    ["interested", "Interested"], ["not interested", "Not interested"], ["disconnected", "Disconnected"],
-  ];
+  // What a rep can pick as the result of a call on a prospect: the same list as a claimed lead's call log
+  // (including any statuses the team added), plus Disconnected, which moves the lead out instead of noting it.
+  const prospectResults = () => [...callResultStatuses().filter((v) => v !== "disconnected"), "disconnected"];
+  const capital = (value) => String(value || "").charAt(0).toUpperCase() + String(value || "").slice(1);
   let undoTimer = null;
 
   let backdrop = null;
@@ -432,7 +431,7 @@
       work = `<div class="detail-block cm-card">
         <h4>Team notes <small>seen by everyone \u00b7 doesn't claim</small></h4>
         <div class="cm-label">How did it go?</div>
-        <div class="cm-chips">${PROSPECT_RESULTS.map(([value, label]) => `<button type="button" class="choice-chip cm-status${value === "disconnected" ? " is-danger" : ""}${value === run.status ? " active" : ""}" data-value="${value}">${label}</button>`).join("")}</div>
+        <div class="cm-chips">${prospectResults().map((value) => `<button type="button" class="choice-chip cm-status${value === "disconnected" ? " is-danger" : ""}${value === run.status ? " active" : ""}" data-value="${escapeHtml(value)}">${escapeHtml(capital(value))}</button>`).join("")}</div>
         <textarea class="cm-note" rows="3" maxlength="480" placeholder="Add a note for the team (optional)">${escapeHtml(run.note)}</textarea>
         ${hooks.annotationsBlock ? hooks.annotationsBlock(npi, { compact: true, noForm: true }) : ""}
       </div>`;
@@ -578,7 +577,7 @@
     }
   }
 
-  const resultLabel = (value) => (PROSPECT_RESULTS.find(([v]) => v === value) || ["", ""])[1];
+  const resultLabel = (value) => capital(value);
 
   // Not a claim: the lead goes to the shared Disconnected list, which can't be undone.
   async function sendProspectToDisconnected(item) {
