@@ -125,7 +125,7 @@
   }
 
   function render() {
-    if (!panel) return;
+    if (!panel || window.dmeInsightsActive) return; // a super admin's panel shows App insights (insights.js)
     if (!view) {
       panel.innerHTML = loadFailed
         ? `<div class="today-empty"><div class="today-empty-title">Couldn't load your leads</div>

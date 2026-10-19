@@ -42,6 +42,7 @@
 
   function setFlag(on) {
     isSuper = on;
+    window.dmeInsightsActive = on; // today.js stops drawing into the shared panel
     try {
       if (on) localStorage.setItem(FLAG_KEY, getSession()?.username || "");
       else localStorage.removeItem(FLAG_KEY);
