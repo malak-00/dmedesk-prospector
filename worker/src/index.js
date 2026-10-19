@@ -582,6 +582,13 @@ app.get("/admin/insights", async (c) => {
   return c.json(ok(await adminRepo.getInsights(supabase, system, { days: c.req.query("days") })));
 });
 
+app.post("/admin/insights/nudge", async (c) => {
+  const session = c.get("session");
+  requireSuperAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await adminRepo.sendNudge(supabaseFor(c), session, body)));
+});
+
 app.get("/admin/system", async (c) => {
   requireAdmin(c.get("session"));
   return c.json(ok(await SystemInfo.getSystemInfo(c.get("config"), supabaseFor(c))));

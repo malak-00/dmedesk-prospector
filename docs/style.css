@@ -3148,3 +3148,16 @@ html.game-open .buddy { display: none; }
 .ins-quotes p { margin: 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ins-quotes small { color: var(--muted); font-size: 11px; }
 @media (max-width: 600px) { .ins-funnel-row { grid-template-columns: 80px 1fr 80px; } }
+
+.ins-big { font-family: var(--font-mono); font-size: 28px; font-weight: 600; }
+.ins-up { color: var(--score-high); }
+.ins-down { color: var(--score-low); }
+.ins-table small { color: var(--muted); }
+.ins-heat { display: grid; grid-template-columns: 34px repeat(8, 1fr); gap: 3px; align-items: center; }
+.ins-heat-h { font-size: 10px; color: var(--muted); text-align: center; }
+.ins-heat-cell { height: 22px; border-radius: 4px; background: color-mix(in srgb, var(--accent) calc(var(--a) * 100%), var(--surface-2)); }
+.ins-nudges { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.ins-nudge-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; font-size: 13px; }
+.ins-nudges textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--hairline); background: var(--surface-2); color: var(--ink); resize: vertical; }
+.ins-nudge-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+.ins-nudge-status { font-size: 12px; color: var(--muted); }

@@ -80,13 +80,22 @@
       <div class="ins-legend"><span><i style="background:var(--score-mid)"></i>Claims</span><span><i style="background:var(--accent)"></i>Phone taps</span><span><i style="background:var(--score-high)"></i>Logged calls</span></div>`;
   }
 
+  function trend(p) {
+    if (!p.weekNow && !p.weekPrev) return '<span class="ins-dim">no activity</span>';
+    const diff = p.weekNow - p.weekPrev;
+    const cls = diff > 0 ? "ins-up" : diff < 0 ? "ins-down" : "";
+    return `<span class="${cls}">${diff > 0 ? "\u25B2" : diff < 0 ? "\u25BC" : "\u2013"} ${num(p.weekNow)} <small>(was ${num(p.weekPrev)})</small></span>`;
+  }
+
   function people(list) {
     if (!list.length) return `<p class="ins-empty">No reps yet.</p>`;
     return `<div class="table-wrap"><table class="results-table ins-table"><thead><tr>
-        <th>Person</th><th>Last active</th><th>Claims</th><th>Taps</th><th>Calls</th><th>Searches</th><th>Open leads</th></tr></thead><tbody>${list.map((p) => `
+        <th>Person</th><th>Last active</th><th>Vs last week</th><th>Claims</th><th>Taps</th><th>Calls</th><th>Searches</th><th>Open leads</th><th>Never called</th><th>Overdue</th></tr></thead><tbody>${list.map((p) => `
         <tr><td>${esc(p.name)}${p.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}</td>
         <td class="${p.lastActive && Date.now() - Date.parse(p.lastActive) < 7 * 86_400_000 ? "" : "ins-dim"}">${esc(ago(p.lastActive))}</td>
-        <td>${num(p.claims)}</td><td>${num(p.dials)}</td><td>${num(p.calls)}</td><td>${num(p.searches)}</td><td>${num(p.openLeads)}</td></tr>`).join("")}
+        <td>${trend(p)}</td>
+        <td>${num(p.claims)}</td><td>${num(p.dials)}</td><td>${num(p.calls)}</td><td>${num(p.searches)}</td><td>${num(p.openLeads)}</td>
+        <td>${num(p.neverContacted)}</td><td>${num(p.overdue)}</td></tr>`).join("")}
       </tbody></table></div>`;
   }
 
@@ -96,6 +105,51 @@
       <div class="ins-funnel-row"><span class="ins-funnel-label">${esc(s.label)}</span>
         <span class="ins-funnel-track"><span class="ins-funnel-fill" style="width:${Math.max(2, Math.round(s.ofClaimed * 100))}%"></span></span>
         <span class="ins-funnel-num">${num(s.count)} <small>${pct(s.ofClaimed)}</small></span></div>`).join("")}</div>`;
+  }
+
+  function firstCall(fc) {
+    if (!fc.claimed) return `<p class="ins-empty">No leads were claimed in this period.</p>`;
+    if (!fc.contacted) return `<p class="ins-empty">${num(fc.claimed)} leads claimed, none called yet.</p>`;
+    const hours = fc.medianHours;
+    const med = hours < 1 ? "under an hour" : hours < 48 ? `${Math.round(hours)} hours` : `${Math.round(hours / 24)} days`;
+    return `<div class="ins-big">${esc(med)}</div><p class="ins-note">median time from claiming to the first call</p>
+      <ul class="ins-list">
+        <li><span class="ins-dot"></span><span>Called within a day<small>${num(fc.within1d)} of ${num(fc.claimed)} claimed (${Math.round((fc.within1d / fc.claimed) * 100)}%)</small></span></li>
+        <li><span class="ins-dot"></span><span>Called within 3 days<small>${num(fc.within3d)} of ${num(fc.claimed)} (${Math.round((fc.within3d / fc.claimed) * 100)}%)</small></span></li>
+        <li><span class="ins-dot"></span><span>Never called yet<small>${num(fc.claimed - fc.contacted)}</small></span></li></ul>`;
+  }
+
+  function segments(title, rows) {
+    if (!rows.length) return `<p class="ins-empty">Not enough claimed leads yet.</p>`;
+    return `<div class="table-wrap"><table class="results-table ins-table"><thead><tr><th>${esc(title)}</th><th>Claimed</th><th>Called</th><th>Meetings held</th><th>Onboarded</th></tr></thead><tbody>${rows.map((r) => `
+      <tr><td>${esc(r.label)}</td><td>${num(r.claimed)}</td><td>${pct(r.contacted / r.claimed)}</td><td>${pct(r.held / r.claimed)}</td><td>${pct(r.won / r.claimed)}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function stuckList(list) {
+    if (!list.length) return `<p class="ins-empty">Nothing stuck. Every claimed lead has been called or updated.</p>`;
+    return `<div class="table-wrap"><table class="results-table ins-table"><thead><tr><th>Lead</th><th>Claimed by</th><th>Waiting</th></tr></thead><tbody>${list.map((l) => `
+      <tr><td>${esc(l.company)}</td><td>${esc(l.rep)}</td><td>${num(l.days)} days</td></tr>`).join("")}</tbody></table></div>`;
+  }
+
+  // When the team calls, in this browser's own time: weekday rows, three-hour columns.
+  function heatmap(times) {
+    if (!times || !times.length) return `<p class="ins-empty">No calls in this period.</p>`;
+    const grid = Array.from({ length: 7 }, () => Array(8).fill(0));
+    times.forEach((t) => { const d = new Date(t); grid[(d.getDay() + 6) % 7][Math.floor(d.getHours() / 3)] += 1; });
+    const max = Math.max(1, ...grid.flat());
+    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const hours = ["12a", "3a", "6a", "9a", "12p", "3p", "6p", "9p"];
+    return `<div class="ins-heat"><span></span>${hours.map((h) => `<span class="ins-heat-h">${h}</span>`).join("")}
+      ${grid.map((row, i) => `<span class="ins-heat-h">${days[i]}</span>${row.map((n, j) => `<span class="ins-heat-cell" style="--a:${(n / max).toFixed(2)}" title="${days[i]} ${hours[j]}: ${n} calls"></span>`).join("")}`).join("")}</div>`;
+  }
+
+  function nudgeList(list) {
+    if (!list.length) return `<p class="ins-empty">Nobody needs a nudge right now.</p>`;
+    return `<ul class="ins-nudges">${list.map((n, i) => `
+      <li data-nudge="${i}"><div class="ins-nudge-head"><strong>${esc(n.name)}</strong><span class="reminder-badge reminder-upcoming">${esc(n.reason)}</span>
+        ${n.lastNoteAt ? `<small class="ins-dim">Note sent ${esc(ago(n.lastNoteAt))}</small>` : ""}</div>
+        <textarea rows="2" maxlength="500" aria-label="Note to ${esc(n.name)}">${esc(n.text)}</textarea>
+        <div class="ins-nudge-actions"><button type="button" class="btn btn-primary btn-small" data-ins="nudge" data-i="${i}">Send as avatar note</button><span class="ins-nudge-status" aria-live="polite"></span></div></li>`).join("")}</ul>`;
   }
 
   function system(sys) {
@@ -155,12 +209,26 @@
       <section class="ins-card"><h3>Activity per day</h3>${chart(d.adoption.daily)}</section>
       <section class="ins-card"><h3>People</h3>${people(d.adoption.people)}</section>
 
+      <section class="ins-card"><h3>Notes you could send <small>they appear through the avatar, within a minute if the person is signed in</small></h3>${nudgeList(d.nudges || [])}</section>
+
       <div class="ins-grid">
         <section class="ins-card"><h3>How far claimed leads get</h3>${funnel(p.funnel)}
           <p class="ins-note">${num(p.neverContacted)} claimed ${p.neverContacted === 1 ? "lead was" : "leads were"} never contacted ${p.staleDays}+ days after claiming.</p></section>
         <section class="ins-card"><h3>Where leads sit</h3>
           ${p.statuses.length ? `<ul class="ins-list">${p.statuses.map((s) => `<li><span class="ins-dot"></span><span>${esc(s.label)}<small>${num(s.count)}</small></span></li>`).join("")}</ul>` : `<p class="ins-empty">No leads yet.</p>`}</section>
       </div>
+
+      <div class="ins-grid">
+        <section class="ins-card"><h3>Speed to first call</h3>${firstCall(p.firstCall)}</section>
+        <section class="ins-card"><h3>When the team calls</h3>${heatmap(d.callAt)}</section>
+      </div>
+
+      <div class="ins-grid">
+        <section class="ins-card"><h3>Which specialties convert</h3>${segments("Specialty", p.funnel.specialties)}</section>
+        <section class="ins-card"><h3>Which states convert</h3>${segments("State", p.funnel.states)}</section>
+      </div>
+
+      <section class="ins-card"><h3>Claimed but never called <small>oldest first</small></h3>${stuckList(p.stuck || [])}</section>
 
       <div class="ins-grid">
         <section class="ins-card"><h3>Friction</h3>
@@ -196,7 +264,27 @@
   panel?.addEventListener("click", (e) => {
     if (!isSuper) return;
     if (e.target.closest('[data-ins="reload"]')) refresh({ showSpinner: true });
+    const send = e.target.closest('[data-ins="nudge"]');
+    if (send) sendNudge(send);
   });
+
+  async function sendNudge(btn) {
+    const nudge = data?.nudges?.[Number(btn.dataset.i)];
+    const row = btn.closest("[data-nudge]");
+    const status = row.querySelector(".ins-nudge-status");
+    const body = row.querySelector("textarea").value.trim();
+    if (!nudge || !body) { status.textContent = "Write the note first."; return; }
+    btn.disabled = true;
+    status.textContent = "Sending\u2026";
+    try {
+      await apiPost("admin/insights/nudge", { userId: nudge.userId, body });
+      status.textContent = "Sent. The avatar will show it within a minute.";
+      nudge.lastNoteAt = new Date().toISOString();
+    } catch (err) {
+      status.textContent = err.message;
+      btn.disabled = false;
+    }
+  }
   panel?.addEventListener("change", (e) => {
     if (!isSuper || !e.target.matches('[data-ins="days"]')) return;
     days = Number(e.target.value) || 28;

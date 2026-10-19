@@ -5,6 +5,7 @@
 import { buildTeamActivity, isDay } from "../lib/teamActivity.js";
 import { buildFunnel } from "../lib/funnel.js";
 import { buildInsights } from "../lib/insights.js";
+import { createNote } from "./buddyRepo.js";
 import { cleanStatus, isJunkStatus, normalizeStatus, statusCleanupRows, CANONICAL_STATUSES } from "../lib/statuses.js";
 import { toLeadDTO } from "./leadsRepo.js";
 
@@ -1028,21 +1029,42 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
   if (!users.length) throw httpError(500, "Failed to load users for the insights");
   const nameById = new Map(users.map((u) => [u.id, u.display_name || u.username]));
 
-  const [claimEvents, taps, leads, suggestionRows, badNumbers, searches, matchReviews, providerChanges] = await Promise.all([
+  const [claimEvents, taps, leads, suggestionRows, badNumbers, searches, matchReviews, providerChanges, sentNotes] = await Promise.all([
     tryRows(() => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at").eq("event_type", "claimed").gte("created_at", since), "claim history"),
     tryRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at").gte("tapped_at", since), "phone taps"),
-    tryRows(() => supabase.from("leads").select("npi, claimed_by, claimed_at, is_disconnected, notes, reminder_at, meeting_at, status, specialty, state").not("claimed_by", "is", null), "leads"),
+    tryRows(() => supabase.from("leads").select("npi, company_name, claimed_by, claimed_at, is_disconnected, notes, reminder_at, meeting_at, status, specialty, state").not("claimed_by", "is", null), "leads"),
     tryRows(() => supabase.from("suggestions").select("id, text, submitted_by, created_at").order("created_at", { ascending: false }), "suggestions"),
     tryRows(() => supabase.from("bad_numbers").select("reason, flagged_at, cleared_at"), "bad numbers"),
     tryRows(() => supabase.from("search_progress").select("user_id, updated_at"), "search activity", false),
     tryCount(() => supabase.from("identity_review_queue").select("*", { count: "exact", head: true })),
     tryCount(() => supabase.from("provider_change_queue").select("*", { count: "exact", head: true })),
+    tryRows(() => supabase.from("buddy_notes").select("to_user_id, body, created_at").not("to_user_id", "is", null).gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString()), "sent notes"),
   ]);
 
-  return buildInsights({
+  const out = buildInsights({
     users, claimEvents, taps, leads, badNumbers, searches,
     suggestions: suggestionRows.map((s) => ({ ...s, submitted_by_name: nameById.get(s.submitted_by) || "" })),
     queues: { matchReviews, providerChanges },
     system: systemInfo, days: span,
   });
+  // When each person last got a note, so the dashboard doesn't invite sending a second one on top.
+  const lastNote = new Map();
+  for (const n of sentNotes) {
+    const at = Date.parse(n.created_at);
+    if (at > (lastNote.get(n.to_user_id) || 0)) lastNote.set(n.to_user_id, at);
+  }
+  out.nudges = out.nudges.map((n) => ({ ...n, lastNoteAt: lastNote.has(n.userId) ? new Date(lastNote.get(n.userId)).toISOString() : null }));
+  return out;
+}
+
+// A note from the super admin to one person, shown by the avatar. Refuses to send the same words twice in
+// three days (a double click, or a second admin doing the same thing).
+export async function sendNudge(supabase, session, { userId, body }, now = new Date()) {
+  const text = String(body || "").trim();
+  if (!userId) throw httpError(400, "Choose who the note is for");
+  if (!text) throw httpError(400, "Write the note first");
+  const recent = await supabase.from("buddy_notes").select("id").eq("to_user_id", userId).eq("body", text)
+    .is("retired_at", null).gte("created_at", new Date(now.getTime() - 3 * 86_400_000).toISOString()).limit(1);
+  if (!recent.error && (recent.data || []).length) throw httpError(409, "That exact note was already sent in the last 3 days");
+  return createNote(supabase, session, { toUserId: userId, body: text, expiresDays: 3 }, now);
 }

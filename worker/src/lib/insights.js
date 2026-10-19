@@ -34,7 +34,10 @@ export function buildInsights({
   const people = new Map(team.map((u) => [u.id, {
     id: u.id, name: nameOf(u), isAdmin: Boolean(u.is_admin),
     claims: 0, dials: 0, calls: 0, searches: 0, openLeads: 0, lastActive: 0,
+    weekNow: 0, weekPrev: 0, neverContacted: 0, overdue: 0,
   }]));
+  const weekBucket = (person, at) => { if (at >= weekAgo) person.weekNow += 1; else if (at >= weekAgo - 7 * DAY_MS) person.weekPrev += 1; };
+  const callAt = [];
   const daily = new Map();
   for (let t = sinceMs; t <= nowMs; t += DAY_MS) daily.set(dayOf(t), { date: dayOf(t), claims: 0, dials: 0, calls: 0 });
   const touch = (person, at) => { if (person && at > person.lastActive) person.lastActive = at; };
@@ -44,6 +47,7 @@ export function buildInsights({
     const person = people.get(e.to_user_id);
     if (!person || !at) continue;
     touch(person, at);
+    weekBucket(person, at);
     if (at >= sinceMs) { person.claims += 1; const d = daily.get(dayOf(at)); if (d) d.claims += 1; }
   }
 
@@ -54,7 +58,9 @@ export function buildInsights({
     const person = people.get(idByName.get(String(ev.by || "").trim().toLowerCase()));
     if (!person || !ev.at) continue;
     touch(person, ev.at);
+    weekBucket(person, ev.at);
     if (ev.at < sinceMs) continue;
+    if (callAt.length < 5000) callAt.push(ev.at);
     const key = ev.kind === "dial" ? "dials" : "calls";
     person[key] += 1;
     const d = daily.get(dayOf(ev.at));
@@ -76,16 +82,52 @@ export function buildInsights({
   // ---- funnel & stuck leads -----------------------------------------------
   const funnel = buildFunnel({ leads: teamLeads, users, sinceMs: 0 });
   const stuckCutoff = nowMs - STALE_DAYS * DAY_MS;
+  const firstTap = new Map();
+  for (const t of taps) {
+    const at = Date.parse(t.tapped_at);
+    if (!t.npi || !at || superIds.has(t.user_id)) continue;
+    const key = String(t.npi);
+    if (!firstTap.has(key) || at < firstTap.get(key)) firstTap.set(key, at);
+  }
+  const companyOf = (l) => String(l.company_name || "").trim() || `NPI ${l.npi}`;
   let neverContacted = 0;
   let overdue = 0;
   let noteless = 0;
+  const stuck = [];
+  const firstCallHours = [];
   for (const l of worked) {
     const lines = parseNoteLines(l.notes);
-    const touched = lines.some((x) => { const k = noteKind(x.text); return k === "call" || k === "dial"; }) || (l.status && String(l.status).trim().toLowerCase() !== "new");
-    if (!touched && (Date.parse(l.claimed_at) || nowMs) < stuckCutoff) neverContacted += 1;
+    const contactAts = lines
+      .filter((x) => { const k = noteKind(x.text); return k === "call" || k === "dial"; })
+      .map((x) => Date.parse(`${x.date}T${x.time}:00Z`)).filter(Boolean);
+    if (firstTap.has(String(l.npi))) contactAts.push(firstTap.get(String(l.npi)));
+    const claimedAt = Date.parse(l.claimed_at) || 0;
+    const touched = contactAts.length > 0 || (l.status && String(l.status).trim().toLowerCase() !== "new");
+    const person = people.get(l.claimed_by);
+    if (!touched && claimedAt && claimedAt < stuckCutoff) {
+      neverContacted += 1;
+      if (person) person.neverContacted += 1;
+      stuck.push({ company: companyOf(l), rep: person ? person.name : "", days: Math.floor((nowMs - claimedAt) / DAY_MS) });
+    }
     if (!lines.length) noteless += 1;
-    if (l.reminder_at && Date.parse(l.reminder_at) < nowMs) overdue += 1;
+    if (l.reminder_at && Date.parse(l.reminder_at) < nowMs) { overdue += 1; if (person) person.overdue += 1; }
+    if (claimedAt >= sinceMs && contactAts.length) {
+      const first = Math.min(...contactAts);
+      if (first >= claimedAt) firstCallHours.push((first - claimedAt) / 3_600_000);
+    }
   }
+  stuck.sort((a, b) => b.days - a.days);
+  firstCallHours.sort((a, b) => a - b);
+  const claimedInSpan = worked.filter((l) => (Date.parse(l.claimed_at) || 0) >= sinceMs).length;
+  const medianOf = (xs) => (xs.length ? (xs.length % 2 ? xs[(xs.length - 1) / 2] : (xs[xs.length / 2 - 1] + xs[xs.length / 2]) / 2) : null);
+  const median = medianOf(firstCallHours);
+  const firstCall = {
+    claimed: claimedInSpan,
+    contacted: firstCallHours.length,
+    medianHours: median === null ? null : Math.round(median * 10) / 10,
+    within1d: firstCallHours.filter((h) => h <= 24).length,
+    within3d: firstCallHours.filter((h) => h <= 72).length,
+  };
   const statusCounts = new Map();
   for (const l of worked) {
     const s = String(l.status || "").trim() || "(none)";
@@ -126,6 +168,9 @@ export function buildInsights({
   if (funnel.total >= 10 && funnel.stages[1] && funnel.stages[1].ofPrevious < 0.5) {
     add("warn", `Only ${Math.round(funnel.stages[1].ofPrevious * 100)}% of claimed leads reach a first contact.`);
   }
+  if (firstCall.contacted >= 5 && firstCall.medianHours !== null && firstCall.medianHours > 48) {
+    add("warn", `The median time from claiming a lead to the first call is ${Math.round(firstCall.medianHours)} hours. Faster follow-up usually means more meetings.`);
+  }
   if (bad.length && pct(badRecent, bad.length) >= 25) {
     add("info", `${plural(badRecent, "bad number")} flagged this week. Phone data quality is a recurring pain point: check which sources they came from.`);
   }
@@ -143,6 +188,28 @@ export function buildInsights({
     const n = queues[key];
     if (typeof n === "number" && n >= 25) add("warn", `${n} ${label} are waiting on an admin.`);
   }
+  // ---- notes worth sending, written the way a friendly teammate would say it ----
+  const nudges = [];
+  const first = (p) => p.name.split(" ")[0];
+  for (const p of peopleList) {
+    const put = (reason, text) => nudges.push({ userId: p.id, name: p.name, reason, text });
+    if (p.lastActive < weekAgo && p.openLeads > 0) {
+      put("No activity in 7 days", `Hi ${first(p)}, we haven't seen you in the app this week. Anything getting in the way? Reply here and we'll help.`);
+    }
+    if (p.neverContacted >= 3) {
+      put(`${p.neverContacted} claimed leads never called`, `Hi ${first(p)}, ${p.neverContacted} of your claimed leads haven't had a first call yet. Call Mode on your oldest ones is the quickest way to work through them.`);
+    }
+    if (p.overdue >= 3) {
+      put(`${p.overdue} overdue callbacks`, `Hi ${first(p)}, you have ${p.overdue} callbacks past due. They're waiting on your Today page whenever you're ready.`);
+    }
+    if (p.weekPrev >= 10 && p.weekNow < p.weekPrev * 0.5) {
+      put("Activity dropped by half", `Hi ${first(p)}, things have been quieter than last week. If something in the app is slowing you down, tell us and we'll fix it.`);
+    }
+    if (p.claims >= 10 && p.dials + p.calls === 0) {
+      put("Claims but no calls", `Hi ${first(p)}, you've claimed ${p.claims} leads but we haven't seen any calls yet. Need a hand with the next step?`);
+    }
+  }
+
   if (!signals.length) add("good", "Nothing stands out. Usage, follow-through and data health all look normal.");
 
   return {
@@ -153,8 +220,10 @@ export function buildInsights({
       daily: [...daily.values()],
       people: peopleList.map((p) => ({ ...p, lastActive: p.lastActive ? new Date(p.lastActive).toISOString() : null })),
     },
-    pipeline: { funnel, statuses, neverContacted, overdueCallbacks: overdue, openLeads: worked.length, staleDays: STALE_DAYS },
+    pipeline: { funnel, statuses, firstCall, stuck: stuck.slice(0, 12), neverContacted, overdueCallbacks: overdue, openLeads: worked.length, staleDays: STALE_DAYS },
     friction,
+    nudges,
+    callAt,
     system,
     signals,
   };

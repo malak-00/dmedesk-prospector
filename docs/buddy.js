@@ -316,6 +316,8 @@
     setLaunchPose(restPose());
   }
 
+  const acked = new Set(); // notes this person has said "Got it" to in this visit (the server may not have heard yet)
+
   const isRecurring = (n) => n.repeatWeekday !== null && n.repeatWeekday !== undefined;
   const unseen = () => notes.filter((n) => !n.seen && !isRecurring(n) && n.kind !== "win");
 
@@ -331,7 +333,10 @@
     if (!getSession() || mode() === "off") return;
     if (mode() === "big" && (kind === "small" || kind === "line")) return;
     const s = shownToday();
-    if (key && s.keys.includes(key)) return;
+    // A note nobody has said "Got it" to comes back after a reload; everything else shows once a day.
+    const pending = kind === "note" && noteId && !acked.has(noteId);
+    if (key && s.keys.includes(key) && !pending) return;
+    if (key && showing && showing.key === key) return;
     if (kind === "line") {
       // A passing remark: rare, never queued behind something else, never while she is busy or you're on a call.
       if ((s.lines || 0) >= LINE_CAP || Date.now() - lastLineAt < LINE_GAP || showing || queue.length || isQuiet() || callOpen() || gameOpen()) return;
@@ -413,7 +418,7 @@
     showing = null;
     const bubble = $("buddyBubble");
     if (bubble) { bubble.hidden = true; bubble.innerHTML = ""; }
-    if (item && item.noteId) markSeen(item.noteId);
+    if (item && item.noteId) { acked.add(item.noteId); markSeen(item.noteId); }
     if (item && item.onSeen) item.onSeen();
     setTimeout(next, 600);
   }
@@ -862,9 +867,15 @@
     applyAccessory();
     setLaunchPose(restPose());
     renderPanel();
+    sayNotes();
+    occasionsToSay();
+  }
+
+  function sayNotes() {
     const weekday = new Date().getDay();
     // Newest unseen first; each note is shown once (a weekly note once each day it applies).
     notes.slice().reverse().forEach((n) => {
+      if (acked.has(n.id)) return;
       if (n.kind === "win") {
         if (!n.seen) say({ key: `note:${n.id}`, kind: "event", pose: "party", title: "Team win", text: n.body, noteId: n.id, confetti: true });
       } else if (isRecurring(n)) {
@@ -873,8 +884,29 @@
         say({ key: `note:${n.id}`, kind: "note", pose: "note", title: n.personal ? "A note for you" : "Message of the day", text: n.body, noteId: n.id, from: n.from, react: n.id });
       }
     });
-    occasionsToSay();
   }
+
+  // New notes arrive while someone is signed in: look again every minute, and the moment they come back to the tab.
+  let polling = false;
+  async function pollNotes() {
+    if (polling || !host || !getSession() || document.hidden) return;
+    polling = true;
+    try {
+      const data = await apiGet("buddy/notes", { day: today() });
+      notes = data.notes || [];
+      updateDot();
+      renderPanel();
+      sayNotes();
+    } catch (err) {
+      console.log("[buddy] " + err.message); // keep what is already shown; try again next minute
+    } finally {
+      polling = false;
+    }
+  }
+  const NOTE_POLL_MS = 60000;
+  setInterval(pollNotes, NOTE_POLL_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) pollNotes(); });
+  window.addEventListener("focus", pollNotes);
 
   /* ---------- sign in and out ---------- */
 

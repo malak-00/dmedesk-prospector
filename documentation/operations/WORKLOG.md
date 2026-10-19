@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — App insights additions, notes to reps, and avatar note delivery fix
+
+**Objective.** Make the insights page more useful, let the super admin send a friendly note to a rep when something needs fixing, and make sure avatar notes arrive on time and display correctly.
+
+**Actions Completed.** Insights now show per-person week-over-week trend, never-called and overdue counts, median time from claim to first call, conversion by specialty and state, a list of claimed-but-never-called leads, and a when-the-team-calls heatmap (bucketed in the viewer's local time). A "Notes you could send" section proposes editable, friendly drafts per rep and sends them as ordinary personal avatar notes via `POST /admin/insights/nudge` (super admin only, expires in 3 days, refuses the identical note twice in 3 days). Avatar delivery fixes in `docs/buddy.js`: notes were fetched only once at sign-in, so a note sent while someone was signed in did not appear until they reloaded; it now re-checks every 60 seconds and when the tab regains focus. A personal note nobody has said "Got it" to now pops again after a reload instead of waiting silently behind the dot, and a note already on screen is never queued twice. Tests added to `worker/test/insights.test.js`.
+
+**Database / System Result.** No schema change and no SQL run. Nudges reuse `buddy_notes` (sql/031). Reads only, plus one inserted `buddy_notes` row per note actually sent.
+
+**Safety Status.** Notes go only to the person chosen, only when the super admin clicks Send. Not browser-tested. People who set the avatar to Off still do not see notes (their own setting).
+
 ## 2026-10-19 — Super admin role and App insights dashboard (replaces Today for Caroline only)
 
 **Objective.** Give the review/testing account a page that shows what is happening in the app (usage, funnel, friction, system health) instead of an empty Today screen, without changing Today for Ben or any other admin or rep.
