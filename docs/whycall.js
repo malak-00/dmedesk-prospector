@@ -97,12 +97,12 @@
     const years = pts.map((p) => `${p.year} ${money(p.payment)}`).join(" → ");
     const pct = trend.change == null ? "" : `${trend.change >= 0 ? "+" : "−"}${Math.round(Math.abs(trend.change) * 100).toLocaleString()}%`;
     switch (trend.direction) {
-      case "new": return { tone: "high", label: "Trend", text: `New or ramping up fast: ${years}`, title: `Medicare payments grew from ${money(prev.payment)} to ${money(last.payment)}. A fast-growing supplier is often looking for vendors.` };
-      case "up": return { tone: "high", label: "Trend", text: `Growing ${pct}: ${years}`, title: "Medicare payments are up on the year before" };
-      case "down": return { tone: "low", label: "Trend", text: `Shrinking ${pct}: ${years}`, title: "Medicare payments are down on the year before: a reason to ask what changed" };
-      case "stopped": return { tone: "low", label: "Trend", text: `No Medicare billing in the latest file (last seen ${trend.latestYear})`, title: "They billed Medicare earlier but are missing from the newest CMS file. They may have stopped, or fallen below CMS's reporting threshold." };
-      case "single": return { tone: "mid", label: "Trend", text: `First year on file: ${years}`, title: "Only one year of Medicare billing on record" };
-      default: return { tone: "mid", label: "Trend", text: `Steady: ${years}`, title: "Medicare payments are about the same as the year before" };
+      case "new": return { tone: "high", short: "Ramping up fast", label: "Trend", text: `New or ramping up fast: ${years}`, title: `Medicare payments grew from ${money(prev.payment)} to ${money(last.payment)}. A fast-growing supplier is often looking for vendors.` };
+      case "up": return { tone: "high", short: `Growing ${pct}`, label: "Trend", text: `Growing ${pct}: ${years}`, title: "Medicare payments are up on the year before" };
+      case "down": return { tone: "low", short: `Shrinking ${pct}`, label: "Trend", text: `Shrinking ${pct}: ${years}`, title: "Medicare payments are down on the year before: a reason to ask what changed" };
+      case "stopped": return { tone: "low", short: "Stopped billing", label: "Trend", text: `No Medicare billing in the latest file (last seen ${trend.latestYear})`, title: "They billed Medicare earlier but are missing from the newest CMS file. They may have stopped, or fallen below CMS's reporting threshold." };
+      case "single": return { tone: "mid", short: "First year", label: "Trend", text: `First year on file: ${years}`, title: "Only one year of Medicare billing on record" };
+      default: return { tone: "mid", short: "Steady", label: "Trend", text: `Steady: ${years}`, title: "Medicare payments are about the same as the year before" };
     }
   }
 
@@ -133,7 +133,7 @@
     const { items, prior } = buildWhyCall(company, opts);
     const compact = Boolean(opts && opts.compact);
     return `<div class="why-call${compact ? " why-compact" : ""}" role="group" aria-label="Why call this lead">
-      <h4>Why call</h4>
+      ${opts && opts.noTitle ? "" : "<h4>Why call</h4>"}
       <div class="why-chips">${items.map((it) =>
         `<span class="why-chip why-${it.tone}" title="${esc(it.title)}"><span class="why-label">${esc(it.label)}</span>${esc(it.text)}</span>`).join("")}</div>
       <div class="why-mix" data-mix-npi="${esc(company && company.npi)}"${compact ? ' data-compact="1"' : ""} hidden></div>
@@ -141,6 +141,28 @@
       ${prior ? `<div class="why-prior"><strong>Contacted before.</strong> ${esc(prior.text)}${prior.note ? `<span class="why-prior-note">${esc(prior.note)}</span>` : ""}</div>` : ""}
     </div>`;
   };
+
+  // One tidy line for the call panel: Medicare money, pickup and earlier contact now; product fit and trend
+  // join it when the CMS answer arrives. Everything else lives under "More about this lead".
+  root.dmeHooks.whyCallSnapshot = (company, opts) => {
+    const { items, prior } = buildWhyCall(company, opts);
+    const chips = items.filter((i) => i.key === "medicare" || i.key === "pickup");
+    if (prior) chips.push({ tone: "mid", label: "Before", text: "Contacted before", title: prior.text });
+    return `<div class="cm-snap" aria-label="Lead snapshot">${chips.map((it) =>
+      `<span class="why-chip why-${it.tone}" title="${esc(it.title)}"><span class="why-label">${esc(it.label)}</span>${esc(it.text)}</span>`).join("")}<span class="why-snap" data-snap-npi="${esc(company && company.npi)}"></span>${(opts && opts.extraHtml) || ""}</div>`;
+  };
+
+  function snapHtml(data) {
+    const d = describeMix(data && data.mix);
+    const trend = describeTrend(data && data.trend);
+    const chips = [];
+    if (d) {
+      const labels = d.fit ? (data.mix.verticals || []).map((v) => v.label).join(", ") : "";
+      chips.push({ tone: d.fit ? "high" : "none", label: "Fit", text: d.fit ? labels : `Not in your verticals (${String(data.mix.categories[0].name).toLowerCase()})`, title: d.lead });
+    }
+    if (trend) chips.push({ tone: trend.tone, label: "Trend", text: trend.short, title: trend.title });
+    return chips.map((c) => `<span class="why-chip why-${c.tone}" title="${esc(c.title || "")}"><span class="why-label">${esc(c.label)}</span>${esc(c.text)}</span>`).join("");
+  }
 
   /* Other providers registered at the same building (chains, shared offices). Asked for when the card
      opens, one small request, and remembered for the session. Silent if it fails or finds nothing. */
@@ -206,6 +228,7 @@
     const npi = String(company.npi);
     const exclude = (company.locations || []).map((l) => l && l.npi).filter((n) => n && String(n) !== npi).join(",");
     loadInto(mixCache, "companies/product-mix", npi, { npi }, "mix", mixHtml, (d) => d);
+    loadInto(mixCache, "companies/product-mix", npi, { npi }, "snap", snapHtml, (d) => d);
     loadInto(sameCache, "companies/same-address", npi, { npi, exclude }, "same", sameHtml, (d) => d);
   };
 })(typeof window !== "undefined" ? window : globalThis);

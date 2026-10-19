@@ -30,6 +30,7 @@
     shuffle: false,
     order: null, // each lead's place in the list as it was handed over, to undo a shuffle
     undo: null,  // { npi, name, pos }: the claim that can still be taken back
+    open: { more: false, notes: false }, // which folds are open; kept across redraws
   };
   const SHUFFLE_KEY = "dmeProspectorCallShuffle";
   const UNDO_MS = 10000;
@@ -61,6 +62,10 @@
 
     backdrop.addEventListener("click", close);
     drawer.addEventListener("click", onClick);
+    drawer.addEventListener("toggle", (e) => {
+      const fold = e.target.closest && e.target.closest("[data-fold]");
+      if (fold && run.open) run.open[fold.dataset.fold] = fold.open;
+    }, true);
     drawer.addEventListener("input", (e) => {
       if (e.target.classList.contains("cm-note")) run.note = e.target.value;
     });
@@ -118,6 +123,10 @@
     try {
       await apiPost("leads/bad-number", { npi: item.npi, number, reason });
       setBad(item.npi, number, { reason, by: getSession()?.displayName || "" });
+      if (reason === "disconnected" && allNotInService(item)) {
+        await autoDisconnect(item);
+        return;
+      }
       run.badUndo = { npi: String(item.npi), number: digits(number), reason };
       render();
     } catch (err) {
@@ -125,6 +134,28 @@
     } finally {
       run.busy = false;
     }
+  }
+
+  // Two or more numbers on file and every one flagged "not in service": the line is dead, so the lead goes to
+  // Disconnected without asking. A "wrong number" flag does not count (the number may be right for someone else).
+  function allNotInService(item) {
+    const phones = phoneOptions(item);
+    return phones.length >= 2 && phones.every((p) => p.bad && p.bad.reason === "disconnected");
+  }
+
+  async function autoDisconnect(item) {
+    if (run.mode === "prospect") {
+      await apiPost("export/disconnected", { companies: [item] });
+      removeCompaniesFromProspect([item]);
+    } else {
+      await apiPost("leads/disconnect", { npis: [item.npi] });
+      state.claimedLoaded = false;
+    }
+    run.outcome[run.pos] = { kind: "saved", label: "disconnected" };
+    run.undo = null;
+    run.badUndo = null;
+    showToast(`${item.name}: every number is not in service, so it was moved to Disconnected`);
+    goTo(nextOpen(run.pos + 1));
   }
 
   async function unflagBad(number) {
@@ -377,12 +408,20 @@
         ${undoHtml()}${badUndoHtml()}
         <div class="cm-name">${escapeHtml(info.name)}</div>
         ${info.contact ? `<div class="cm-sub">${escapeHtml(info.contact)}</div>` : ""}
-        <div class="cm-sub cm-muted">${escapeHtml([info.place, info.specialty].filter(Boolean).join(" · "))} ${window.dmeHooks.localTime?.(info.stateCode) || ""}</div>
+        <div class="cm-sub cm-muted">${escapeHtml([info.place, info.specialty].filter(Boolean).join(" \u00b7 "))} ${window.dmeHooks.localTime?.(info.stateCode) || ""}</div>
+        ${info.company.npi ? `<div class="cm-sub cm-muted cm-npi">NPI <span class="mono">${escapeHtml(info.company.npi)}</span><button type="button" class="copy-inline" data-copy-text="${escapeHtml(info.company.npi)}" data-copy-label="NPI" title="Copy NPI" aria-label="Copy NPI">${SIGNAL_ICONS.copy}</button></div>` : ""}
         ${facts ? `<div class="cm-facts">${facts}</div>` : ""}
         ${callBlockHtml(phoneOptions(item))}
-        ${richInfo ? hooks.whyCallBlock(info.company, info.prior ? { compact: true, priorLine: priorContactSummary(info.prior), priorNote: info.prior.note } : { compact: true }) : ""}
+        ${richInfo ? hooks.whyCallSnapshot(info.company, { extraHtml: hooks.annotationsChips?.(info.company.npi) || "" }) : ""}
+        ${richInfo ? `<details class="cm-fold" data-fold="more"${run.open.more ? " open" : ""}>
+          <summary>More about this lead</summary>
+          ${hooks.whyCallBlock(info.company, { compact: true, noTitle: true, ...(info.prior ? { priorLine: priorContactSummary(info.prior), priorNote: info.prior.note } : {}) })}
+        </details>` : ""}
+        ${hooks.annotationsBlock ? `<details class="cm-fold" data-fold="notes"${run.open.notes ? " open" : ""}>
+          <summary>${hooks.annotationsLabel?.(info.company.npi) || "Team notes"}</summary>
+          ${hooks.annotationsBlock(info.company.npi, { compact: true })}
+        </details>` : ""}
         ${context}
-        ${hooks.annotationsBlock?.(info.company.npi) || ""}
         ${work}
         ${upNextHtml()}
       </div>

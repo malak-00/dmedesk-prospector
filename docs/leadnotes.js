@@ -45,7 +45,7 @@
     const have = new Set(d.tags.map((t) => t.tag));
     const canRemove = (t) => who.isAdmin || (who.name && t.by === who.name);
     const tags = d.tags.map((t) => `<span class="ann-tag" title="Added by ${esc(t.by)}">${esc(t.tag)}${canRemove(t) ? `<button type="button" class="ann-x" data-ann-tag-remove="${esc(t.tag)}" aria-label="Remove tag ${esc(t.tag)}">×</button>` : ""}</span>`).join("");
-    const suggestions = (d.suggested && d.suggested.length ? d.suggested : SUGGESTED).filter((t) => !have.has(t))
+    const suggestions = (d.suggested && d.suggested.length ? d.suggested : SUGGESTED).filter((t) => !have.has(t)).slice(0, 4)
       .map((t) => `<button type="button" class="ann-suggest" data-ann-tag-add="${esc(t)}">+ ${esc(t)}</button>`).join("");
     const shown = d.comments.slice(0, MAX_SHOWN_COMMENTS);
     const comments = shown.length
@@ -59,7 +59,23 @@
         <button type="button" class="btn btn-ghost btn-small" data-ann-comment-send>Add</button></div>`;
   }
 
+  // The read-only tag chips and the fold's label in the call panel.
+  function paintSummary(npi) {
+    const d = data.get(npi);
+    if (!d || !d.installed) return;
+    document.querySelectorAll(`[data-ann-chips-npi="${npi}"]`).forEach((el) => {
+      el.innerHTML = d.tags.map((t) => `<span class="ann-tag ann-tag-ro" title="Added by ${esc(t.by)}">${esc(t.tag)}</span>`).join("");
+    });
+    const bits = [];
+    if (d.tags.length) bits.push(`${d.tags.length} tag${d.tags.length === 1 ? "" : "s"}`);
+    if (d.comments.length) bits.push(`${d.comments.length} comment${d.comments.length === 1 ? "" : "s"}`);
+    document.querySelectorAll(`[data-ann-count-npi="${npi}"]`).forEach((el) => {
+      el.textContent = bits.length ? `Team notes \u00b7 ${bits.join(", ")}` : "Team notes \u00b7 add a tag or comment";
+    });
+  }
+
   function paint(npi, force) {
+    paintSummary(npi);
     document.querySelectorAll(`.ann[data-ann-npi="${npi}"] .ann-body`).forEach((box) => {
       const active = document.activeElement;
       const typing = box.contains(active) && active.tagName === "INPUT";
@@ -83,9 +99,15 @@
     paint(npi);
   }
 
-  hooks.annotationsBlock = (npi) => npi
-    ? `<div class="ann" data-ann-npi="${esc(npi)}"><h4>Team notes <small>seen by everyone, no claim needed</small></h4><div class="ann-body">${bodyHtml(String(npi))}</div></div>`
-    : "";
+  hooks.annotationsBlock = (npi, opts) => {
+    if (!npi) return "";
+    const compact = Boolean(opts && opts.compact);
+    return `<div class="ann${compact ? " ann-compact" : ""}" data-ann-npi="${esc(npi)}">${compact ? "" : '<h4>Team notes <small>seen by everyone, no claim needed</small></h4>'}<div class="ann-body">${bodyHtml(String(npi))}</div></div>`;
+  };
+
+  // For the call panel's collapsed row: read-only tag chips, and the label of the "Team notes" fold.
+  hooks.annotationsChips = (npi) => `<span class="ann-chips" data-ann-chips-npi="${esc(npi)}"></span>`;
+  hooks.annotationsLabel = (npi) => `<span data-ann-count-npi="${esc(npi)}">Team notes</span>`;
 
   // fresh: ask the server again (a card or the call panel just opened); otherwise a redraw reuses what is held.
   hooks.annotationsOpened = (npi, fresh = true) => { if (npi) load(String(npi), fresh); };

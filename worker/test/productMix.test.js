@@ -153,6 +153,7 @@ test('trend: new, growing, shrinking, steady, single, stopped and nothing', () =
 test('the card words the trend, rental share and area', () => {
   const up = describeTrend(buildTrend([{ year: 2023, payment: 100000 }, { year: 2024, payment: 150000 }]));
   assert.equal(up.tone, 'high');
+  assert.equal(up.short, 'Growing +50%');
   assert.match(up.text, /Growing \+50%/);
   assert.equal(describeTrend(buildTrend([{ year: 2023, payment: 100000 }, { year: 2024, payment: 50000 }])).tone, 'low');
   assert.equal(describeTrend(null), null);

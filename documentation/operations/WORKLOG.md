@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Call panel: auto-disconnect on dead lines, NPI shown, calmer layout
+
+**Objective.** Stop reps spending time on leads whose every number is dead, show the NPI in the call panel, and make the panel less cluttered.
+
+**Actions Completed.** (1) `docs/callmode.js`: when a rep flags a number "Not in service" and the lead has two or more numbers on file that are now all flagged not in service (including flags teammates made earlier), the lead is sent to Disconnected automatically with no confirmation: prospects through `POST /export/disconnected`, claimed leads through `POST /leads/disconnect`, then the call list moves on and a toast says why. A "Wrong number" flag does not count toward this, and a lead with only one number is never auto-disconnected. (2) The NPI is shown under the lead's place and specialty with a copy button. (3) Layout: the Why call, product mix, same-address and earlier-contact detail now sit under a collapsed "More about this lead" fold; Team notes sit under a second fold whose label shows the tag and comment counts; the always-visible part is a single snapshot line (Medicare money, pickup, earlier contact, product fit, trend, and the lead's tags). Which folds are open is kept while moving between leads. Suggested tags are limited to four. Files: `docs/callmode.js`, `docs/whycall.js`, `docs/leadnotes.js`, `docs/style.css`.
+
+**Database / System Result.** None. No schema change and no new endpoint; an automatic disconnect uses the same endpoints as the manual button, so it moves the lead out of Prospect or Claimed for the whole team and cannot be undone from the app.
+
+**Safety Status.** Front-end only. Worker tests pass; not browser-tested. Needs only a frontend publish (no Worker deploy).
+
 ## 2026-10-19 — Team notes without claiming, CMS trend/rental/area, richer call panel, territory map
 
 **Objective.** Let any rep leave comments and tags on a lead without claiming it, show more of what CMS knows about a supplier, give the call panel the same information as the card, and show where the team is winning by state.
