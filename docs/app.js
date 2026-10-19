@@ -2232,7 +2232,7 @@ function detailRowHtml(company, index) {
           <div class="lead-card-head">
             <div class="lead-avatar" aria-hidden="true">${escapeHtml(leadInitials(company.name))}</div>
             <div class="lead-card-title">
-              <div class="lead-card-name">${escapeHtml(company.name)}</div>
+              <div class="lead-card-name">${escapeHtml(company.name)}<button type="button" class="copy-inline" data-copy-text="${escapeHtml(company.name)}" data-copy-label="company name" title="Copy company name" aria-label="Copy company name">${SIGNAL_ICONS.copy}</button></div>
               <div class="lead-card-sub">${escapeHtml([company.taxonomy?.description, cityLine].filter(Boolean).join(" · "))}</div>
             </div>
           </div>
