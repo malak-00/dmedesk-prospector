@@ -260,16 +260,17 @@
     const key = window.dmeHolidays && window.dmeHolidays.active && window.dmeHolidays.active();
     return key && POSES[key] ? key : "";
   }
-  // Her usual look today: her birthday outfit on the person's own birthday, then the holiday, then Friday's sunglasses and Monday's coffee,
-  // then the pose this person picked in her gallery.
+  // Her look today: her birthday outfit on the person's own birthday, then the pose this person picked in her gallery, and only when they
+  // have picked none the holiday outfit, then Friday's sunglasses and Monday's coffee.
   const restPose = () => {
     if (occasions.some((o) => o.mine && o.kind === "birthday")) return "birthday";
+    const pref = read(PREF_KEY, "");
+    if (pref && POSES[pref] && seenPoses()[pref]) return pref;
     const season = seasonPose();
     if (season) return season;
     if (new Date().getDay() === 5) return "friday";
     if (new Date().getDay() === 1) return "monday";
-    const pref = read(PREF_KEY, "");
-    return pref && POSES[pref] && seenPoses()[pref] ? pref : "neutral";
+    return "neutral";
   };
 
   // A little extra on her corner for the one occasion she has no outfit for yet: a work anniversary.

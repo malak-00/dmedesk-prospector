@@ -498,6 +498,26 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-19 — Caro: the pose a person picks now sticks on Mondays, Fridays and holidays
+
+### Objective
+
+Caro stayed in her Monday look whatever pose was picked in her gallery.
+
+### Actions Completed
+
+- `docs/buddy.js` `restPose`: the order is now birthday outfit, then the pose the person picked, then (only if none is picked) the holiday outfit,
+  Friday's sunglasses or Monday's coffee. Clicking the picked pose again clears it, so the day's outfit returns.
+- `docs/index.html`: `buddy.js` version bumped.
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required.
+
 ## 2026-10-09 — Best times to call: hours shown in Cairo time
 
 ### Objective
