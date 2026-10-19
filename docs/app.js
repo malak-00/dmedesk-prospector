@@ -2244,13 +2244,11 @@ function detailRowHtml(company, index) {
                 ["Address", fullAddress ? `${escapeHtml(fullAddress)}<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}" target="_blank" rel="noopener">Open in Maps</a>` : "—"],
                 ["Main line", mainPhone ? `<a href="tel:${escapeHtml(mainPhone)}">${escapeHtml(mainPhone)}</a>` : "—"],
                 ["Website", company.website ? websiteLink(company.website) : '<span class="muted-note">No website found</span>'],
-                ["Medicare (CMS)", escapeHtml(medicareSummary(company.medicare))],
               ])}
               <details class="more-details">
                 <summary>More details</summary>
                 ${factsHtml([
                   ["NPI", `<span class="mono">${escapeHtml(company.npi || "—")}</span>`],
-                  ["NPPES updated", escapeHtml(company.lastUpdated || "—")],
                   ["Data sources", escapeHtml(sourcesList || "NPPES only")],
                 ])}
               </details>

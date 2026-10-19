@@ -27,7 +27,7 @@
     if (pay == null) return { key: "medicare", tone: "mid", label: "Medicare", text: `Bills Medicare · ${claims}`, title: claims };
     const tone = pay >= MAJOR_PAYMENT ? "high" : pay >= SIGNIFICANT_PAYMENT ? "mid" : "low";
     const tier = tone === "high" ? "Major account" : tone === "mid" ? "Significant" : "Small biller";
-    return { key: "medicare", tone, label: "Medicare", text: `${money(pay)} paid · ${claims}`, title: `${tier}: $${Math.round(pay).toLocaleString()} paid by Medicare` };
+    return { key: "medicare", tone, label: "Medicare", text: `${money(pay)} paid · ${claims}${medicare.totalBeneficiaries != null ? ` · ${Number(medicare.totalBeneficiaries).toLocaleString()} patients` : ""}`, title: `${tier}: $${Math.round(pay).toLocaleString()} paid by Medicare` };
   }
 
   function entityItem(isOrganization) {
