@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — Prospect card: product mix from CMS ("What they bill Medicare for")
+
+**Objective.** Show reps what a supplier actually bills Medicare for, so they know in seconds whether it is in the team's verticals (orthotics and prosthetics, CGM, lymphedema) and can open with a product.
+
+**Actions Completed.** New `GET /companies/product-mix?npi=` (`worker/src/services/productMix.js`, pure grouping in `worker/src/lib/productMix.js`). It reads CMS's public "DME, Devices & Supplies - by Supplier and Service" file (2024 data, dataset `1746a83e-bb65-4300-8e02-21edbab77c6b`, about 20 rows per supplier) for one NPI when a Prospect card is opened, estimates payment per product as services x average payment, groups it into categories, maps HCPCS codes to the three verticals (the code ranges in `lib/productMix.js` are a first mapping and should be confirmed by someone who sells the products), and caches the result in `enrichment_cache` (namespace `cmsmix`, existing 1 hour TTL; "no rows" is cached too, CMS failures are not). The card's "Why call" strip shows a fit line ("In your verticals: CGM ($12k)" or "Outside your verticals: mostly wheelchairs"), a share bar and the top categories and items. Tests: `worker/test/productMix.test.js`.
+
+**Database / System Result.** No schema change and no SQL. Reads one public CMS API, writes only cache rows in the existing `enrichment_cache` table.
+
+**Safety Status.** Additive and read-only; failures are silent on the card. Worker tests pass (267/267); not browser-tested. Needs a Worker deploy and a frontend publish. If CMS later publishes a newer year, update the dataset id and `MIX_YEAR`.
+
 ## 2026-10-19 — October 2026 NPPES dry run; monthly script fixed (load deferred)
 
 **Objective.** Validate the October release and make `scripts/monthly_refresh.ps1` ready for the next one. The user chose NOT to load October now.

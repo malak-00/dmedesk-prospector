@@ -3204,3 +3204,19 @@ html.game-open .buddy { display: none; }
 .ins-table td, .ins-table th { white-space: nowrap; }
 .ins-table td:first-child { white-space: normal; }
 .ins-heat-cell { min-width: 18px; }
+.why-mix { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--hairline); font-size: 13px; }
+.why-mix-head span { color: var(--muted); margin-left: 6px; }
+.why-mix .why-chip { margin-top: 8px; }
+.why-mix-bar { display: flex; height: 10px; margin-top: 10px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+.why-seg { display: block; min-width: 3px; }
+.why-seg-0 { background: var(--accent); }
+.why-seg-1 { background: color-mix(in srgb, var(--accent) 72%, var(--surface)); }
+.why-seg-2 { background: color-mix(in srgb, var(--accent) 52%, var(--surface)); }
+.why-seg-3 { background: color-mix(in srgb, var(--accent) 38%, var(--surface)); }
+.why-seg-4 { background: color-mix(in srgb, var(--accent) 26%, var(--surface)); }
+.why-seg-5 { background: var(--muted-2); }
+.why-mix-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.why-mix-list li { display: grid; grid-template-columns: 10px 1fr auto auto; align-items: center; gap: 10px; }
+.why-seg-dot { width: 8px; height: 8px; border-radius: 50%; display: block; }
+.why-mix-pct, .why-mix-pay { font-family: var(--font-mono); font-size: 12px; color: var(--muted); text-align: right; min-width: 42px; }
+.why-mix-top { margin-top: 8px; color: var(--muted); font-size: 12.5px; }

@@ -76,7 +76,19 @@
     return { items, prior };
   }
 
-  const api = { buildWhyCall, money };
+  // What the product mix (from /companies/product-mix) says about fit with the team's verticals.
+  function describeMix(mix) {
+    if (!mix || !Array.isArray(mix.categories) || mix.categories.length === 0) return null;
+    const verticals = mix.verticals || [];
+    const fit = verticals.length > 0;
+    const lead = fit
+      ? `In your verticals: ${verticals.map((v) => `${v.label} (${money(v.payment)})`).join(", ")}`
+      : `Outside your verticals: mostly ${String(mix.categories[0].name).toLowerCase()}`;
+    const bars = mix.categories.map((c) => ({ name: c.name, pct: Math.round(c.share * 100), payment: c.payment }));
+    return { fit, lead, bars, products: mix.products || [], year: mix.year };
+  }
+
+  const api = { buildWhyCall, describeMix, money };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
   root.dmeWhyCall = api;
 
@@ -91,6 +103,7 @@
       <h4>Why call</h4>
       <div class="why-chips">${items.map((it) =>
         `<span class="why-chip why-${it.tone}" title="${esc(it.title)}"><span class="why-label">${esc(it.label)}</span>${esc(it.text)}</span>`).join("")}</div>
+      <div class="why-mix" data-mix-npi="${esc(company && company.npi)}" hidden></div>
       <div class="why-same" data-same-npi="${esc(company && company.npi)}" hidden></div>
       ${prior ? `<div class="why-prior"><strong>Contacted before.</strong> ${esc(prior.text)}${prior.note ? `<span class="why-prior-note">${esc(prior.note)}</span>` : ""}</div>` : ""}
     </div>`;
@@ -111,18 +124,37 @@
       </li>`).join("")}</ul>`;
   }
 
-  root.dmeHooks.whyCallOpened = async (company) => {
+  const mixCache = new Map();
+
+  function mixHtml(mix) {
+    const d = describeMix(mix);
+    if (!d) return "";
+    const segments = d.bars.filter((b) => b.pct >= 1).map((b, i) => `<span class="why-seg why-seg-${Math.min(i, 5)}" style="flex:${b.pct}" title="${esc(`${b.name}: ${b.pct}%`)}"></span>`).join("");
+    const items = d.products.length ? `<div class="why-mix-top">Top items: ${d.products.map((p) => esc(`${p.code} ${p.name}`)).join("; ")}</div>` : "";
+    return `<div class="why-mix-head"><strong>What they bill Medicare for</strong> <span>${esc(d.year)} data, estimated from CMS</span></div>
+      <div class="why-chip ${d.fit ? "why-high" : "why-none"}">${esc(d.lead)}</div>
+      <div class="why-mix-bar" role="img" aria-label="Share of Medicare payments by product category">${segments}</div>
+      <ul class="why-mix-list">${d.bars.map((b, i) => `<li><span class="why-seg-dot why-seg-${Math.min(i, 5)}"></span><span class="why-mix-name">${esc(b.name)}</span><span class="why-mix-pct">${b.pct < 1 ? "<1" : b.pct}%</span><span class="why-mix-pay">${esc(money(b.payment))}</span></li>`).join("")}</ul>
+      ${items}`;
+  }
+
+  async function loadInto(cache, path, npi, params, kind, toHtml, pick) {
+    try {
+      if (!cache.has(npi)) cache.set(npi, apiGet(path, params));
+      const html = toHtml(pick(await cache.get(npi)));
+      const box = document.querySelector(`.why-${kind}[data-${kind}-npi="${npi}"]`);
+      if (box && html) { box.innerHTML = html; box.hidden = false; }
+    } catch (err) {
+      cache.delete(npi);
+      console.log(`[whycall] ${path}: ${err.message}`);
+    }
+  }
+
+  root.dmeHooks.whyCallOpened = (company) => {
     if (!company || !company.npi || typeof apiGet !== "function") return;
     const npi = String(company.npi);
     const exclude = (company.locations || []).map((l) => l && l.npi).filter((n) => n && String(n) !== npi).join(",");
-    try {
-      if (!sameCache.has(npi)) sameCache.set(npi, apiGet("companies/same-address", { npi, exclude }));
-      const html = sameHtml(await sameCache.get(npi));
-      const box = document.querySelector(`.why-same[data-same-npi="${npi}"]`);
-      if (box && html) { box.innerHTML = html; box.hidden = false; }
-    } catch (err) {
-      sameCache.delete(npi);
-      console.log("[whycall] same address: " + err.message);
-    }
+    loadInto(mixCache, "companies/product-mix", npi, { npi }, "mix", mixHtml, (d) => d && d.mix);
+    loadInto(sameCache, "companies/same-address", npi, { npi, exclude }, "same", sameHtml, (d) => d);
   };
 })(typeof window !== "undefined" ? window : globalThis);

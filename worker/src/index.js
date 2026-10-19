@@ -36,6 +36,7 @@ import * as badNumbers from "./repos/badNumbersRepo.js";
 import * as insightsRepo from "./repos/insightsRepo.js";
 import * as relatedClaimsRepo from "./repos/relatedClaimsRepo.js";
 import * as sameAddressRepo from "./repos/sameAddressRepo.js";
+import * as ProductMix from "./services/productMix.js";
 import { prettyNumber } from "./lib/badNumbers.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
@@ -480,6 +481,9 @@ app.post("/leads/related-check", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return c.json(ok(await relatedClaimsRepo.checkRelated(supabaseFor(c), c.get("session"), body.companies)));
 });
+
+// What a supplier bills Medicare for (product categories and our verticals), from CMS's public file.
+app.get("/companies/product-mix", async (c) => c.json(ok(await ProductMix.getProductMix(supabaseFor(c), c.req.query("npi")))));
 
 // Other providers registered at the same building as a lead (opened Prospect card).
 app.get("/companies/same-address", async (c) => {
