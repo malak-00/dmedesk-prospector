@@ -403,7 +403,7 @@
         ${hooks.whyCallSnapshot(info.company, { extraHtml: hooks.annotationsChips?.(npi) || "" })}
         <details class="cm-fold" data-fold="more"${run.open.more ? " open" : ""}>
           <summary>More about this lead</summary>
-          ${hooks.whyCallBlock(info.company, { compact: true, noTitle: true, ...(info.prior ? { priorLine: priorContactSummary(info.prior), priorNote: info.prior.note } : {}) })}
+          ${hooks.whyCallBlock(info.company, { compact: true, noTitle: true, skip: ["medicare", "pickup"], ...(info.prior ? { priorLine: priorContactSummary(info.prior), priorNote: info.prior.note } : {}) })}
         </details>
       </div>` : "";
 

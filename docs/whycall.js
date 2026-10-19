@@ -130,12 +130,16 @@
 
   // opts.compact: the narrow call panel (no category list, no top items).
   root.dmeHooks.whyCallBlock = (company, opts) => {
-    const { items, prior } = buildWhyCall(company, opts);
+    const built = buildWhyCall(company, opts);
+    const prior = built.prior;
+    // opts.skip: chips already shown elsewhere on the screen (the call panel's snapshot line), not repeated here.
+    const skip = (opts && opts.skip) || [];
+    const items = built.items.filter((it) => !skip.includes(it.key));
     const compact = Boolean(opts && opts.compact);
     return `<div class="why-call${compact ? " why-compact" : ""}" role="group" aria-label="Why call this lead">
       ${opts && opts.noTitle ? "" : "<h4>Why call</h4>"}
-      <div class="why-chips">${items.map((it) =>
-        `<span class="why-chip why-${it.tone}" title="${esc(it.title)}"><span class="why-label">${esc(it.label)}</span>${esc(it.text)}</span>`).join("")}</div>
+      ${items.length ? `<div class="why-chips">${items.map((it) =>
+        `<span class="why-chip why-${it.tone}" title="${esc(it.title)}"><span class="why-label">${esc(it.label)}</span>${esc(it.text)}</span>`).join("")}</div>` : ""}
       <div class="why-mix" data-mix-npi="${esc(company && company.npi)}"${compact ? ' data-compact="1"' : ""} hidden></div>
       <div class="why-same" data-same-npi="${esc(company && company.npi)}" hidden></div>
       ${prior ? `<div class="why-prior"><strong>Contacted before.</strong> ${esc(prior.text)}${prior.note ? `<span class="why-prior-note">${esc(prior.note)}</span>` : ""}</div>` : ""}
