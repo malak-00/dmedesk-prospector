@@ -1,5 +1,25 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-19 — App insights layout: tabs instead of one long page
+
+**Objective.** The insights page was one very long scroll. Make it quicker to read.
+
+**Actions Completed.** `docs/insights.js` now has five tabs (Overview, People, Pipeline, Search & errors, System), remembered per browser, with count pills for failed requests and suggested notes. Panes are hidden rather than re-rendered, so a half-written note survives switching tabs. Features nobody used are one line instead of empty bars, healthy system checks are folded away, empty error and friction cards are one line, and the page is capped at a readable width. `worker/src/lib/insights.js` leaves integration accounts (username ending `-bot` or display name containing "(integration)") out of the team numbers.
+
+**Database / System Result.** None.
+
+**Safety Status.** Display and read-only logic only. Not browser-tested.
+
+## 2026-10-19 — Prospect card: copy buttons, pickup history, same-address lookup
+
+**Objective.** Make the opened Prospect card faster to use and more useful for deciding who to call.
+
+**Actions Completed.** (1) Copy buttons beside Address and NPI (`data-copy-text` handler in `docs/app.js`). (2) Pickup history: `summarizePriorContact` now also returns `calls: {answered, total}`, counted from the lead's call-log lines using the same answered/missed rules as the best-times insight (`classifyResult`); `companyService` sums it across a company's branches into `company.pickup`, and the "Why call" strip shows "Answered 2 of 6 calls" (green at half or more, amber, red when none). It only exists for leads worked before and returned to Prospect, because that is where call logs live for unclaimed leads. (3) Same-address lookup: new `GET /companies/same-address?npi=&exclude=` (`worker/src/repos/sameAddressRepo.js`, pure matching in `worker/src/lib/sameAddress.js`). It reads `npi_records` by state, city and a street prefix (suite dropped), keeps providers with the same street and ZIP5, leaves out the lead, its branch NPIs and inactive providers, and marks ones a teammate has claimed. The card asks for it once when opened (`dmeHooks.whyCallOpened`) and shows "Also at this address" inside the strip. Tests: `worker/test/sameAddress.test.js`, additions to `whycall.test.js` and `teamActivity.test.js`.
+
+**Database / System Result.** No schema change and no SQL. Read-only queries on `npi_records`, `leads` and `app_users`; the address lookup uses the existing city index.
+
+**Safety Status.** Additive and read-only. Worker tests pass (258/258); not browser-tested. Needs a Worker deploy (pickup, same-address and company-type chip) and a frontend publish.
+
 ## 2026-10-19 — "Why call" strip on the Prospect lead card
 
 **Objective.** Give reps the few facts that say whether a lead is worth calling, right on the opened Prospect card, using data the lead already carries.

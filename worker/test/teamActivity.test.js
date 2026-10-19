@@ -116,9 +116,9 @@ test('summarises earlier contact on leads that were worked and returned to Prosp
   ];
   const result = summarizePriorContact(rows, names);
   assert.deepEqual([...result.keys()].sort(), ['1', '3', '6']);
-  assert.deepEqual(result.get('1'), { status: 'voicemail', at: '2026-10-02', by: 'Ana Lopez', note: 'Voicemail — asked for a callback' });
-  assert.deepEqual(result.get('3'), { status: '', at: '2026-09-01', by: 'Ben Arthur', note: 'Called, no answer' });
-  assert.deepEqual(result.get('6'), { status: 'called', at: '2026-09-15', by: 'Ana Lopez', note: '' }); // falls back to the status stamp
+  assert.deepEqual(result.get('1'), { status: 'voicemail', at: '2026-10-02', by: 'Ana Lopez', note: 'Voicemail — asked for a callback', calls: { answered: 0, total: 1 } });
+  assert.deepEqual(result.get('3'), { status: '', at: '2026-09-01', by: 'Ben Arthur', note: 'Called, no answer', calls: { answered: 0, total: 0 } });
+  assert.deepEqual(result.get('6'), { status: 'called', at: '2026-09-15', by: 'Ana Lopez', note: '', calls: { answered: 0, total: 0 } }); // falls back to the status stamp
 });
 
 // ---- the meeting outcome ------------------------------------------------------

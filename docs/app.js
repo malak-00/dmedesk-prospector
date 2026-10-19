@@ -2241,8 +2241,8 @@ function detailRowHtml(company, index) {
             <div class="detail-block">
               <h4>Company</h4>
               ${factsHtml([
-                ["Address", fullAddress ? `${escapeHtml(fullAddress)}<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}" target="_blank" rel="noopener">Open in Maps</a>` : "—"],
-                ["NPI", `<span class="mono">${escapeHtml(company.npi || "—")}</span>`],
+                ["Address", fullAddress ? `${escapeHtml(fullAddress)}<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}" target="_blank" rel="noopener">Open in Maps</a> <button type="button" class="copy-inline" data-copy-text="${escapeHtml(fullAddress)}" data-copy-label="address" title="Copy address" aria-label="Copy address">${SIGNAL_ICONS.copy}</button>` : "—"],
+                ["NPI", `<span class="mono">${escapeHtml(company.npi || "—")}</span>${company.npi ? " " + `<button type="button" class="copy-inline" data-copy-text="${escapeHtml(company.npi)}" data-copy-label="NPI" title="Copy NPI" aria-label="Copy NPI">${SIGNAL_ICONS.copy}</button>` : ""}`],
                 ["Main line", mainPhone ? `<a href="tel:${escapeHtml(mainPhone)}">${escapeHtml(mainPhone)}</a>` : "—"],
                 ["Website", company.website ? websiteLink(company.website) : '<span class="muted-note">No website found</span>'],
                 ["Data sources", escapeHtml(sourcesList || "NPPES only")],
@@ -2327,6 +2327,18 @@ document.addEventListener("click", (e) => {
   const done = () => showToast(`Copied ${phone}`);
   if (navigator.clipboard?.writeText) navigator.clipboard.writeText(phone).then(done, () => showToast("Couldn't copy — select the number manually", true));
   else showToast("Couldn't copy — select the number manually", true);
+}, true);
+
+// Copy any text (address, NPI): <button data-copy-text="..." data-copy-label="NPI">
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-copy-text]");
+  if (!btn) return;
+  e.stopPropagation();
+  const text = btn.dataset.copyText;
+  const label = btn.dataset.copyLabel || "text";
+  const done = () => showToast(`Copied ${label}`);
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done, () => showToast(`Couldn't copy the ${label}`, true));
+  else showToast(`Couldn't copy the ${label}`, true);
 }, true);
 
 /* ---------- Call-log (work mode) ---------- */
@@ -2617,6 +2629,7 @@ function toggleRowDetail(idx) {
   row.setAttribute("aria-expanded", "true");
   row.insertAdjacentHTML("afterend", detailRowHtml(state.companies[idx], idx));
   openCardInPlace(row);
+  window.dmeHooks.whyCallOpened?.(state.companies[idx]);
   document.querySelector(`[data-brief-index="${idx}"]`)?.addEventListener("click", (e) => {
     e.stopPropagation();
     generateBrief(idx);

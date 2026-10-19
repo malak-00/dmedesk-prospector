@@ -209,7 +209,9 @@ async function attachPriorContactSafe(supabase, companies) {
       const matches = [company.npi, ...((company.locations || []).map((l) => l.npi))]
         .map((npi) => prior.get(String(npi))).filter(Boolean)
         .sort((a, b) => String(b.at).localeCompare(String(a.at)));
-      return matches.length ? Object.assign({}, company, { priorContact: matches[0] }) : company;
+      if (!matches.length) return company;
+      const calls = matches.reduce((sum, m) => ({ answered: sum.answered + ((m.calls && m.calls.answered) || 0), total: sum.total + ((m.calls && m.calls.total) || 0) }), { answered: 0, total: 0 });
+      return Object.assign({}, company, { priorContact: matches[0], pickup: calls.total ? calls : null });
     });
   } catch (err) {
     console.log("[companyService] Prior-contact lookup failed: " + err.message);

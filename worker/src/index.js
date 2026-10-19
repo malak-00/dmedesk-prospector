@@ -35,6 +35,7 @@ import * as avatarRepo from "./repos/avatarRepo.js";
 import * as badNumbers from "./repos/badNumbersRepo.js";
 import * as insightsRepo from "./repos/insightsRepo.js";
 import * as relatedClaimsRepo from "./repos/relatedClaimsRepo.js";
+import * as sameAddressRepo from "./repos/sameAddressRepo.js";
 import { prettyNumber } from "./lib/badNumbers.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
@@ -478,6 +479,12 @@ app.post("/leads/bad-number/clear", async (c) => {
 app.post("/leads/related-check", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return c.json(ok(await relatedClaimsRepo.checkRelated(supabaseFor(c), c.get("session"), body.companies)));
+});
+
+// Other providers registered at the same building as a lead (opened Prospect card).
+app.get("/companies/same-address", async (c) => {
+  const exclude = String(c.req.query("exclude") || "").split(",").map((v) => v.trim()).filter(Boolean).slice(0, 30);
+  return c.json(ok(await sameAddressRepo.findSameAddress(supabaseFor(c), c.req.query("npi"), exclude)));
 });
 
 // When calls get answered, by the lead's own weekday and hour, from the team's call logs.

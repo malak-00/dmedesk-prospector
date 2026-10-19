@@ -56,11 +56,22 @@
     return { key: "fresh", tone, label: "Registry", text: `Updated ${ageText(months)}`, title };
   }
 
+  // Calls that reached a person, from the call logs of leads worked before and returned to Prospect.
+  function pickupItem(pickup) {
+    if (!pickup || !(pickup.total > 0)) return null;
+    const rate = pickup.answered / pickup.total;
+    const tone = pickup.answered === 0 ? "low" : rate >= 0.5 ? "high" : "mid";
+    const title = pickup.answered === 0
+      ? "Every logged call went to voicemail or no answer: try another number or time"
+      : "Logged calls where a person picked up";
+    return { key: "pickup", tone, label: "Pickup", text: `Answered ${pickup.answered} of ${pickup.total} call${pickup.total === 1 ? "" : "s"}`, title };
+  }
+
   // opts.priorLine: a sentence about earlier contact (the app builds it); opts.priorNote: the note left then
   function buildWhyCall(company, opts = {}) {
     const now = opts.now != null ? opts.now : Date.now();
     const c = company || {};
-    const items = [medicareItem(c.medicare), entityItem(c.isOrganization), freshnessItem(c.lastUpdated, now)].filter(Boolean);
+    const items = [medicareItem(c.medicare), entityItem(c.isOrganization), freshnessItem(c.lastUpdated, now), pickupItem(c.pickup)].filter(Boolean);
     const prior = opts.priorLine ? { text: opts.priorLine, note: opts.priorNote || "" } : null;
     return { items, prior };
   }
@@ -80,7 +91,38 @@
       <h4>Why call</h4>
       <div class="why-chips">${items.map((it) =>
         `<span class="why-chip why-${it.tone}" title="${esc(it.title)}"><span class="why-label">${esc(it.label)}</span>${esc(it.text)}</span>`).join("")}</div>
+      <div class="why-same" data-same-npi="${esc(company && company.npi)}" hidden></div>
       ${prior ? `<div class="why-prior"><strong>Contacted before.</strong> ${esc(prior.text)}${prior.note ? `<span class="why-prior-note">${esc(prior.note)}</span>` : ""}</div>` : ""}
     </div>`;
+  };
+
+  /* Other providers registered at the same building (chains, shared offices). Asked for when the card
+     opens, one small request, and remembered for the session. Silent if it fails or finds nothing. */
+  const sameCache = new Map();
+
+  function sameHtml(data) {
+    if (!data || !data.matches || !data.matches.length) return "";
+    const more = data.total > data.matches.length ? ` <span class="why-more">+${data.total - data.matches.length} more</span>` : "";
+    return `<div class="why-same-head"><strong>Also at this address</strong> <span>${data.total} other provider${data.total === 1 ? "" : "s"} in the same building${more}</span></div>
+      <ul class="why-same-list">${data.matches.map((m) => `<li>
+        <span class="why-same-name">${esc(m.name)}</span>
+        <span class="why-same-meta">${esc([m.suite, m.specialty, m.phone].filter(Boolean).join(" · "))}</span>
+        ${m.claimedBy ? `<span class="why-same-tag why-same-held" title="${esc(m.status ? "Status: " + m.status : "Already claimed")}">Claimed by ${esc(m.claimedBy)}</span>` : '<span class="why-same-tag">Not claimed</span>'}
+      </li>`).join("")}</ul>`;
+  }
+
+  root.dmeHooks.whyCallOpened = async (company) => {
+    if (!company || !company.npi || typeof apiGet !== "function") return;
+    const npi = String(company.npi);
+    const exclude = (company.locations || []).map((l) => l && l.npi).filter((n) => n && String(n) !== npi).join(",");
+    try {
+      if (!sameCache.has(npi)) sameCache.set(npi, apiGet("companies/same-address", { npi, exclude }));
+      const html = sameHtml(await sameCache.get(npi));
+      const box = document.querySelector(`.why-same[data-same-npi="${npi}"]`);
+      if (box && html) { box.innerHTML = html; box.hidden = false; }
+    } catch (err) {
+      sameCache.delete(npi);
+      console.log("[whycall] same address: " + err.message);
+    }
   };
 })(typeof window !== "undefined" ? window : globalThis);

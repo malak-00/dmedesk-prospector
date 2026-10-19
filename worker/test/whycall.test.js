@@ -48,3 +48,14 @@ test('prior contact line is carried through only when given', () => {
   const r = buildWhyCall({}, { now: NOW, priorLine: 'marked "Called" by Dana', priorNote: 'call back' });
   assert.deepEqual(r.prior, { text: 'marked "Called" by Dana', note: 'call back' });
 });
+
+test('pickup history: tone follows the answer rate, and nothing shows without logged calls', () => {
+  const p = (answered, total) => item(buildWhyCall({ pickup: { answered, total } }, { now: NOW }), 'pickup');
+  assert.equal(p(3, 4).tone, 'high');
+  assert.equal(p(1, 4).tone, 'mid');
+  assert.equal(p(0, 3).tone, 'low');
+  assert.equal(p(2, 6).text, 'Answered 2 of 6 calls');
+  assert.equal(p(1, 1).text, 'Answered 1 of 1 call');
+  assert.equal(p(0, 0), undefined);
+  assert.equal(item(buildWhyCall({}, { now: NOW }), 'pickup'), undefined);
+});

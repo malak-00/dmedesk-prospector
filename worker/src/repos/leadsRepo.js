@@ -7,7 +7,8 @@ import { createCompany } from "../lib/companyModel.js";
 import { classifyRole } from "../lib/roleClassifier.js";
 import { findUserByUsernameExact } from "../lib/users.js";
 import { normalizeMeetingInput } from "../lib/meetings.js";
-import { parseNoteLines } from "../lib/teamActivity.js";
+import { noteKind, parseNoteLines } from "../lib/teamActivity.js";
+import { classifyResult } from "../lib/bestTimes.js";
 import { SORTS, buildTodayView } from "../lib/leadView.js";
 import { cleanStatus, isJunkStatus, normalizeStatus, statusOptions } from "../lib/statuses.js";
 import { announceWin } from "./buddyRepo.js";
@@ -993,15 +994,32 @@ export function summarizePriorContact(rows, namesById = new Map()) {
     const notes = String(row.notes || "").trim();
     const worked = (status && status.toLowerCase() !== "new") || notes;
     if (!worked || row.claimed_by || row.is_disconnected) continue;
-    const latest = parseNoteLines(notes)[0];
+    const lines = parseNoteLines(notes);
+    const latest = lines[0];
     out.set(String(row.npi), {
       status: status && status.toLowerCase() !== "new" ? status : "",
       at: (latest && latest.date) || String(row.status_updated_at || "").slice(0, 10),
       by: (latest && latest.by) || namesById.get(row.status_updated_by) || "",
       note: latest ? latest.text : "",
+      calls: pickupCounts(lines),
     });
   }
   return out;
+}
+
+// How many logged calls reached a person. Only lines whose result says so count (voicemail and
+// no answer are misses; a plain "Called" or a free-text note says nothing and is left out).
+export function pickupCounts(lines) {
+  let answered = 0;
+  let total = 0;
+  for (const line of lines || []) {
+    if (noteKind(line.text) !== "call") continue;
+    const verdict = classifyResult(line.text);
+    if (!verdict) continue;
+    total += 1;
+    if (verdict === "answered") answered += 1;
+  }
+  return { answered, total };
 }
 
 export async function getPriorContactAmong(supabase, npis) {
