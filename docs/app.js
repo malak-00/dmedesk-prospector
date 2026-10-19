@@ -2242,16 +2242,11 @@ function detailRowHtml(company, index) {
               <h4>Company</h4>
               ${factsHtml([
                 ["Address", fullAddress ? `${escapeHtml(fullAddress)}<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}" target="_blank" rel="noopener">Open in Maps</a>` : "—"],
+                ["NPI", `<span class="mono">${escapeHtml(company.npi || "—")}</span>`],
                 ["Main line", mainPhone ? `<a href="tel:${escapeHtml(mainPhone)}">${escapeHtml(mainPhone)}</a>` : "—"],
                 ["Website", company.website ? websiteLink(company.website) : '<span class="muted-note">No website found</span>'],
+                ["Data sources", escapeHtml(sourcesList || "NPPES only")],
               ])}
-              <details class="more-details">
-                <summary>More details</summary>
-                ${factsHtml([
-                  ["NPI", `<span class="mono">${escapeHtml(company.npi || "—")}</span>`],
-                  ["Data sources", escapeHtml(sourcesList || "NPPES only")],
-                ])}
-              </details>
               <div class="brief-link-row"><button type="button" class="text-action" data-brief-index="${index}">${SPARK_ICON}Prep a call brief</button></div>
             </div>
             <div class="detail-block">
