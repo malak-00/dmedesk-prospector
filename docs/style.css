@@ -3166,3 +3166,17 @@ html.game-open .buddy { display: none; }
 .ins-feature-row .ins-funnel-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ins-funnel-fill.is-none { background: transparent; }
 @media (max-width: 600px) { .ins-feature-row { grid-template-columns: 120px 1fr 90px; } }
+
+/* ---- Prospect card: "Why call" strip ---- */
+.why-call { margin: 16px 0 0; padding: 14px 18px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--hairline); }
+.why-call h4 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+.why-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.why-chip { display: inline-flex; align-items: baseline; gap: 7px; padding: 5px 11px; border-radius: 999px; font-size: 13px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--hairline); }
+.why-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.why-high { background: var(--glow-high); border-color: var(--score-high); }
+.why-mid { background: var(--glow-mid); border-color: var(--score-mid); }
+.why-low { background: var(--glow-low); border-color: var(--score-low); }
+.why-none { color: var(--muted); }
+.why-prior { margin-top: 10px; font-size: 13px; color: var(--ink); }
+.why-prior strong { color: var(--score-mid); }
+.why-prior-note { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; }

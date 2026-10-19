@@ -2236,7 +2236,6 @@ function detailRowHtml(company, index) {
               <div class="lead-card-sub">${escapeHtml([company.taxonomy?.description, cityLine].filter(Boolean).join(" · "))}</div>
             </div>
           </div>
-          ${priorContactBannerHtml(company.priorContact)}
           ${window.dmeHooks.relatedBlock?.("prospect", index) || ""}
           <div class="detail-grid detail-grid-2">
             <div class="detail-block">
@@ -2263,6 +2262,7 @@ function detailRowHtml(company, index) {
               ${!dms.length && mainPhone ? `<div class="who-actions" style="margin-top:10px"><a class="btn btn-primary btn-small" href="tel:${escapeHtml(mainPhone)}">${SIGNAL_ICONS.phone}Call main line</a></div>` : ""}
             </div>
           </div>
+          ${window.dmeHooks.whyCallBlock?.(company, company.priorContact ? { priorLine: priorContactSummary(company.priorContact), priorNote: company.priorContact.note } : {}) || priorContactBannerHtml(company.priorContact)}
           ${branchLocationsHtml(company.locations) ? `<div class="detail-grid">${branchLocationsHtml(company.locations)}</div>` : ""}
           <div class="brief-box">
             <div class="brief-output" id="brief-${index}"></div>

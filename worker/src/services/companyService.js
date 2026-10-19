@@ -89,6 +89,7 @@ function fromNppesProvider(provider) {
     taxonomy: provider.taxonomy,
     decisionMakers: nppesDM ? [nppesDM] : [],
     lastUpdated: provider.lastUpdated,
+    isOrganization: provider.isOrganization,
     medicare: provider.medicare,
     sources: { nppes: true, cms: Boolean(provider.medicare) },
   });

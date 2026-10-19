@@ -34,6 +34,7 @@ export function createCompany(opts = {}) {
     decisionMakers: opts.decisionMakers || [],
     medicare: opts.medicare != null ? opts.medicare : null,
     lastUpdated: opts.lastUpdated != null ? opts.lastUpdated : null,
+    isOrganization: opts.isOrganization != null ? Boolean(opts.isOrganization) : null,
     sources: {
       nppes: Boolean(sources.nppes),
       places: Boolean(sources.places),
