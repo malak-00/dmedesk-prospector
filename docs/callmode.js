@@ -695,6 +695,9 @@
       }
       if (label) {
         run.outcome[run.pos] = { kind: "saved", label };
+        // Remove from the prospect pool so a new call session in the same browser tab
+        // does not offer this lead again. Disconnected is already removed inside logProspect.
+        if (run.mode === "prospect" && label !== "disconnected") removeCompaniesFromProspect([item]);
         goTo(nextOpen(run.pos + 1));
       }
     } catch (err) {
