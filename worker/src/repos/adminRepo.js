@@ -6,6 +6,7 @@ import { buildTeamActivity, isDay } from "../lib/teamActivity.js";
 import { buildFunnel } from "../lib/funnel.js";
 import { buildInsights } from "../lib/insights.js";
 import { createNote } from "./buddyRepo.js";
+import { buildStaleList, pickHandBack, cleanDays, HAND_BACK_CAP } from "../lib/staleLeads.js";
 import { cleanStatus, isJunkStatus, normalizeStatus, statusCleanupRows, CANONICAL_STATUSES } from "../lib/statuses.js";
 import { toLeadDTO } from "./leadsRepo.js";
 
@@ -1074,4 +1075,68 @@ export async function sendNudge(supabase, session, { userId, body }, now = new D
     .is("retired_at", null).gte("created_at", new Date(now.getTime() - 3 * 86_400_000).toISOString()).limit(1);
   if (!recent.error && (recent.data || []).length) throw httpError(409, "That exact note was already sent in the last 3 days");
   return createNote(supabase, session, { toUserId: userId, body: text, expiresDays: 3 }, now);
+}
+
+
+/* ---------- stale leads: list, and hand back to Prospect ---------- */
+
+const STALE_COLUMNS = "id, npi, company_name, state, specialty, claimed_by, claimed_at, status, status_updated_at, notes, reminder_at, meeting_at, meeting_duration_min, is_disconnected, group_id";
+
+async function staleRows(supabase, extra) {
+  return fetchAllRows(() => {
+    let q = supabase.from("leads").select(STALE_COLUMNS).not("claimed_by", "is", null).eq("is_disconnected", false);
+    if (extra) q = extra(q);
+    return q;
+  }, "claimed leads", true);
+}
+
+async function userNames(supabase) {
+  const res = await supabase.from("app_users").select("id, display_name, username");
+  return new Map((res.data || []).map((u) => [u.id, u.display_name || u.username]));
+}
+
+export async function getStaleLeads(supabase, { days, now = Date.now() } = {}) {
+  const span = cleanDays(days);
+  const [rows, names] = await Promise.all([staleRows(supabase), userNames(supabase)]);
+  return buildStaleList(rows, names, now, span);
+}
+
+// Returns the ticked stale leads to Prospect, using the same release function a rep's own "Return to Prospect" uses
+// (sql/013): the row stays, its history stays, and a 'released' event is written. A second event records that an admin
+// did it and why, so the history does not read as the owner's own choice. Leads that were worked since the list was
+// loaded are left alone.
+export async function handBackStaleLeads(supabase, session, { npis, days } = {}, now = Date.now()) {
+  const list = [...new Set((npis || []).map(String).filter(Boolean))];
+  if (!list.length) throw httpError(400, "Tick at least one lead.");
+  if (list.length > HAND_BACK_CAP) throw httpError(400, `Hand back up to ${HAND_BACK_CAP} leads at a time.`);
+  const span = cleanDays(days);
+  const [rows, names] = await Promise.all([staleRows(supabase, (q) => q.in("npi", list)), userNames(supabase)]);
+  const { byOwner, kept } = pickHandBack(rows, list, names, now, span);
+
+  let returned = 0;
+  const events = [];
+  for (const [ownerId, ownerNpis] of byOwner) {
+    const res = await supabase.rpc("release_claimed_leads", { p_user_id: ownerId, p_npis: ownerNpis });
+    if (res.error) {
+      if (/release_claimed_leads/.test(res.error.message || "") && /could not find|does not exist/i.test(res.error.message || "")) {
+        throw httpError(503, "Returning leads to Prospect isn't installed yet. Run sql/013_release_claimed_leads.sql in Supabase, then try again.");
+      }
+      throw httpError(500, "Failed to hand the leads back: " + res.error.message);
+    }
+    const releasedNpis = ownerNpis.filter((n) => !((res.data && res.data.not_found) || []).includes(n));
+    returned += releasedNpis.length;
+    for (const row of rows.filter((r) => releasedNpis.includes(String(r.npi)) && r.claimed_by === ownerId)) {
+      events.push({
+        lead_id: row.id, npi: row.npi, group_id: row.group_id || null, event_type: "released",
+        from_user_id: ownerId, to_user_id: null, approved_by: session.id,
+        reason: `Handed back by an admin: no activity for ${span}+ days`, source: "admin_stale_handback",
+        metadata: { company_name: row.company_name, admin: session.displayName || session.username || "", days: span },
+      });
+    }
+  }
+  if (events.length) {
+    const log = await supabase.from("lead_ownership_events").insert(events);
+    if (log.error) console.log("[adminRepo] stale hand-back event not written: " + log.error.message);
+  }
+  return { returned, leftAlone: kept };
 }

@@ -25,3 +25,11 @@ export async function runWeeklyDigest(env, now = new Date()) {
   }
   return { sent };
 }
+
+// The "Send me the digest now" button on Home: the same note, to the person who asked, without the once-a-week guard.
+export async function sendDigestNow(supabase, session, now = new Date()) {
+  const insights = await adminRepo.getInsights(supabase, null, { days: 14 });
+  const body = buildDigest(insights);
+  await createNote(supabase, { id: session.id }, { toUserId: session.id, body, expiresDays: 7 }, now);
+  return { body };
+}

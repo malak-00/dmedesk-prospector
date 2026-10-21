@@ -1,5 +1,17 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-21 — Digest test button and the Stale leads hand-back
+
+**Objective.** Let the super admin see the weekly digest on demand, and let an admin return claimed leads nobody is working to Prospect.
+
+**Actions Completed.**
+- **Send me the digest.** `POST /admin/digest/test` (super admin; `sendDigestNow` in `worker/src/services/digest.js`) sends the signed-in super admin the same avatar note the Monday cron sends, without the once-a-week guard. A "Send me the digest" button on the super admin Home calls it.
+- **Stale leads (Admin tab).** New "Stale leads" section (`docs/stale.js`, wired through `docs/team.js` and `docs/index.html`). `GET /admin/stale-leads?days=` lists claimed leads that are quiet for N days (14 to 365, default 30; "stale" is the same rule as a rep's Today screen: no meeting or callback coming up, not won, lost or refused), with rep, status, state and quiet days, a rep filter and select-all. `POST /admin/stale-leads/hand-back` returns the ticked ones to Prospect through the existing `release_claimed_leads` function (sql/013) once per owner, so the lead row, notes and history stay and anyone can claim it again; leads worked since the list loaded are left alone; up to 200 at a time. Because that function records the release as the owner's own choice, a second `released` ownership event (source `admin_stale_handback`, approved_by the admin, with the reason and number of quiet days) is written so the history shows an admin did it. Reassigning to another rep was deliberately not built: claiming for someone else goes through the claim rules and needs its own care.
+
+**Database / System Result.** None. No schema change; uses the existing release function and `lead_ownership_events`.
+
+**Safety Status.** The hand-back changes ownership (leads leave a rep's Claimed list), so it asks for confirmation, only affects leads that are still stale at the moment of the click, and keeps the full history. Worker tests pass (368/368); not browser-tested. Needs a Worker deploy and a frontend publish.
+
 ## 2026-10-21 — Batch 3: phone-system call-log import, weekly digest, and the registry date as a real date (sql/053 applied)
 
 **Objective.** Make pickup numbers exact by importing the phone system's own call log, send the super admin a weekly summary, and show the registry's last-updated date as a month and year instead of "x years ago".

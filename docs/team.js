@@ -24,7 +24,7 @@
 
   try {
     const savedSeg = localStorage.getItem(SEG_KEY);
-    if (savedSeg === "team" || savedSeg === "controls") seg = savedSeg;
+    if (savedSeg === "team" || savedSeg === "controls" || savedSeg === "stale") seg = savedSeg;
     const saved = Number(localStorage.getItem(RANGE_KEY));
     if (RANGES.includes(saved)) weeks = saved;
   } catch { /* storage blocked: defaults apply for this page view */ }
@@ -44,6 +44,9 @@
     if (panel) panel.hidden = seg !== "team";
     if (queues) queues.hidden = seg !== "queues";
     if (controls) controls.hidden = seg !== "controls";
+    const stale = document.getElementById("stalePanel");
+    if (stale) stale.hidden = seg !== "stale";
+    if (seg === "stale" && state.view === "admin") window.dmeHooks.onStaleShown?.();
     if (seg === "team" && state.view === "admin") load();
     if (seg === "controls" && state.view === "admin") window.dmeHooks.onControlsShown?.();
   }

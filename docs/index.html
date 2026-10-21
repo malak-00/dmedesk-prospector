@@ -504,10 +504,12 @@
       <div class="admin-seg" role="tablist" aria-label="Admin sections">
         <button type="button" class="admin-seg-btn" role="tab" id="adminSegTeam" data-admin-seg="team" aria-selected="false">Team activity</button>
         <button type="button" class="admin-seg-btn is-active" role="tab" id="adminSegQueues" data-admin-seg="queues" aria-selected="true">Review queues</button>
+        <button type="button" class="admin-seg-btn" role="tab" id="adminSegStale" data-admin-seg="stale" aria-selected="false">Stale leads</button>
         <button type="button" class="admin-seg-btn" role="tab" id="adminSegControls" data-admin-seg="controls" aria-selected="false">Controls</button>
       </div>
       <section class="results-panel team-panel" id="teamPanel" aria-label="Team activity" hidden></section>
       <section class="results-panel team-panel" id="controlsPanel" aria-label="Controls" hidden></section>
+      <section class="results-panel team-panel" id="stalePanel" aria-label="Stale leads" hidden></section>
       <section class="results-panel admin-panel" id="adminQueuesPanel">
         <div class="admin-stats" id="adminStats">
           <div class="stat-card"><span class="stat-value" id="statTotalUsers">—</span><span class="stat-label">Users</span></div>
@@ -832,9 +834,10 @@
   <script src="today.js?v=16"></script>
   <script src="calllogcsv.js?v=1"></script>
   <script src="insights.js?v=11"></script>
-  <script src="superhome.js?v=1"></script>
+  <script src="superhome.js?v=3"></script>
   <script src="dialtrack.js?v=2"></script>
-  <script src="team.js?v=10"></script>
+  <script src="team.js?v=11"></script>
+  <script src="stale.js?v=1"></script>
   <script src="sheetlib.js?v=1"></script>
   <script src="related.js?v=3"></script>
   <script src="leadage.js?v=1"></script>

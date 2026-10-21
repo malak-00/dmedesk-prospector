@@ -42,7 +42,7 @@ import * as sameOwnerRepo from "./repos/sameOwnerRepo.js";
 import * as followUpRepo from "./repos/followUpRepo.js";
 import * as goalsRepo from "./repos/goalsRepo.js";
 import * as callLogRepo from "./repos/callLogRepo.js";
-import { runWeeklyDigest } from "./services/digest.js";
+import { runWeeklyDigest, sendDigestNow } from "./services/digest.js";
 import { prettyNumber } from "./lib/badNumbers.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
@@ -677,6 +677,25 @@ app.post("/admin/call-log/import", async (c) => {
   requireAdmin(session);
   const body = await c.req.json().catch(() => ({}));
   return c.json(ok(await callLogRepo.importCalls(supabaseFor(c), session, body.rows)));
+});
+
+// Claimed leads nobody has touched for a while, and handing them back to Prospect (admins).
+app.get("/admin/stale-leads", async (c) => {
+  requireAdmin(c.get("session"));
+  return c.json(ok(await adminRepo.getStaleLeads(supabaseFor(c), { days: c.req.query("days") })));
+});
+app.post("/admin/stale-leads/hand-back", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await adminRepo.handBackStaleLeads(supabaseFor(c), session, body)));
+});
+
+// Send the signed-in super admin the weekly digest as an avatar note, right now.
+app.post("/admin/digest/test", async (c) => {
+  const session = c.get("session");
+  requireSuperAdmin(session);
+  return c.json(ok(await sendDigestNow(supabaseFor(c), session)));
 });
 
 app.get("/admin/system", async (c) => {

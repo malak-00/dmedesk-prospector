@@ -136,6 +136,7 @@
           <div class="home-actions">
             <button type="button" class="btn btn-ghost btn-small" data-goto="insights">Open insights</button>
             <button type="button" class="btn btn-ghost btn-small" data-goto="admin" data-section="queues">Open admin</button>
+            <button type="button" class="btn btn-ghost btn-small" data-home="digest" title="Sends you this week's digest as an avatar note, the same one the Monday cron sends">Send me the digest</button>
             <button type="button" class="btn btn-ghost btn-small" data-home="reload"${loading ? " disabled" : ""}>${loading ? "Refreshing…" : "Refresh"}</button>
           </div>
         </header>
@@ -206,6 +207,17 @@
     if (!btn) return;
     const act = btn.dataset.home;
     if (act === "reload") refresh({ force: true });
+    else if (act === "digest") {
+      btn.disabled = true;
+      try {
+        const out = await apiPost("admin/digest/test", {});
+        showToast("Digest sent. Your avatar will show it within a minute.");
+        console.log("[home] digest: " + out.body);
+      } catch (err) {
+        showToast(err.message, true);
+      }
+      btn.disabled = false;
+    }
     else if (act === "goals-edit") { editingGoals = true; render(); }
     else if (act === "goals-cancel") { editingGoals = false; render(); }
     else if (act === "goals-save") {
