@@ -34,11 +34,32 @@ export async function getAnnotations(supabase, npiInput) {
   // Not installed is not an error on a read: the card just shows nothing to read yet.
   if (comments.error || tags.error) {
     const error = comments.error || tags.error;
-    if (isTableMissing(error)) return { installed: false, comments: [], tags: [], suggested: SUGGESTED_TAGS };
+    if (isTableMissing(error)) return { installed: false, comments: [], tags: [], suggested: SUGGESTED_TAGS, popular: SUGGESTED_TAGS };
     throw failed(error, "read comments and tags");
   }
   const names = await namesFor(supabase, [...comments.data.map((r) => r.user_id), ...tags.data.map((r) => r.user_id)]);
-  return { installed: true, ...shapeAnnotations(comments.data, tags.data, names), suggested: SUGGESTED_TAGS };
+  const popular = (await getPopularTags(supabase)).tags;
+  return { installed: true, ...shapeAnnotations(comments.data, tags.data, names), suggested: SUGGESTED_TAGS, popular };
+}
+
+export async function getPopularTags(supabase) {
+  try {
+    const { data, error } = await supabase.from("lead_tags").select("tag");
+    if (error) {
+      if (isTableMissing(error)) return { tags: SUGGESTED_TAGS };
+      return { tags: SUGGESTED_TAGS };
+    }
+    const counts = new Map();
+    (data || []).forEach((row) => {
+      const t = cleanTag(row.tag);
+      if (t) counts.set(t, (counts.get(t) || 0) + 1);
+    });
+    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
+    const combined = [...new Set([...sorted, ...SUGGESTED_TAGS])].slice(0, 10);
+    return { tags: combined };
+  } catch {
+    return { tags: SUGGESTED_TAGS };
+  }
 }
 
 export async function addComment(supabase, npiInput, textInput, session) {

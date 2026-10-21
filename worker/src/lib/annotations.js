@@ -8,7 +8,19 @@ export const MAX_TAG = 24;
 export const MAX_TAGS_PER_LEAD = 12;
 
 // Tags the card offers as one-tap suggestions. Anything else can be typed.
-export const SUGGESTED_TAGS = ["good fit", "wheelchair only", "owner reachable", "call after 2pm", "chain", "closed", "wrong specialty"];
+export const SUGGESTED_TAGS = [
+  "wrong specialty",
+  "do not call",
+  "closed",
+  "not interested",
+  "competitor",
+  "patient",
+  "good fit",
+  "wheelchair only",
+  "owner reachable",
+  "call after 2pm",
+  "chain",
+];
 
 export function cleanNpi(raw) {
   const npi = String(raw == null ? "" : raw).trim();

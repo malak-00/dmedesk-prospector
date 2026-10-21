@@ -275,6 +275,7 @@ app.get("/search/companies", async (c) => {
     clientProvidedVariantSkips: Boolean(c.req.query("variantSkips")) && c.req.query("rescan") !== "true",
     rescan: c.req.query("rescan") === "true",
     resetProgress: c.req.query("resetProgress") === "true",
+    uncalledOnly: c.req.query("uncalledOnly") === "true",
   });
   return c.json(ok(data));
 });
@@ -477,6 +478,7 @@ app.post("/leads/related-check", async (c) => {
 
 // Comments and tags on any lead, claimed or not (sql/049).
 app.get("/leads/annotations", async (c) => c.json(ok(await annotationsRepo.getAnnotations(supabaseFor(c), c.req.query("npi")))));
+app.get("/leads/annotations/popular-tags", async (c) => c.json(ok(await annotationsRepo.getPopularTags(supabaseFor(c)))));
 app.post("/leads/annotations/comment", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return c.json(ok(await annotationsRepo.addComment(supabaseFor(c), body.npi, body.text, c.get("session"))));
