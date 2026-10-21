@@ -565,6 +565,10 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
     );
   }
 
+  if (options.uncalledOnly) {
+    companies = companies.filter((company) => !(company.pickup && company.pickup.total > 0) && !company.priorContact);
+  }
+
   // Leads keep the order the provider table returned them in: NPI order, or the
   // sort the rep chose (applied by the database before paging, so page one is
   // the right page).

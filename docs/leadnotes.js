@@ -10,8 +10,17 @@
   if (typeof document === "undefined" || !hooks) return;
 
   const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
-  const SUGGESTED = ["good fit", "wheelchair only", "owner reachable", "call after 2pm", "chain", "closed", "wrong specialty"];
+  const SUGGESTED = ["wrong specialty", "do not call", "closed", "not interested", "competitor", "patient", "good fit", "wheelchair only", "owner reachable", "call after 2pm", "chain"];
+  let popularTags = [...SUGGESTED];
   const MAX_SHOWN_COMMENTS = 5;
+
+  async function loadPopularTags() {
+    try {
+      const res = await apiGet("leads/annotations/popular-tags");
+      if (res && res.tags && res.tags.length) popularTags = res.tags;
+    } catch { /* use default SUGGESTED */ }
+  }
+  loadPopularTags();
 
   const data = new Map();   // npi -> { installed, comments, tags, suggested }
   const drafts = new Map(); // npi -> { comment, tag } so a redraw does not lose what was typed
@@ -119,6 +128,8 @@
 
   // fresh: ask the server again (a card or the call panel just opened); otherwise a redraw reuses what is held.
   hooks.annotationsOpened = (npi, fresh = true) => { if (npi) load(String(npi), fresh); };
+  hooks.getPopularTags = () => popularTags;
+  hooks.annotationsTag = async (npi, tag) => addTag(npi, tag);
 
   // Small chips for a table row: up to three tags and a comment count.
   hooks.rowTags = (company) => {

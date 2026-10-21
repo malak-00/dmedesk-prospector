@@ -32,6 +32,9 @@
     undo: null,  // { npi, name, pos }: the claim that can still be taken back
     open: { more: false, notes: false }, // which folds are open; kept across redraws
     briefOpen: false, // the call brief panel beside the call panel
+    dncTag: "",
+    dncCustomTag: "",
+    called: false,
   };
   const SHUFFLE_KEY = "dmeProspectorCallShuffle";
   const UNDO_MS = 10000;
@@ -81,6 +84,11 @@
     }, true);
     drawer.addEventListener("input", (e) => {
       if (e.target.classList.contains("cm-note")) run.note = e.target.value;
+      if (e.target.classList.contains("cm-dnc-input")) {
+        run.dncCustomTag = e.target.value;
+        run.dncTag = e.target.value.trim().toLowerCase();
+        drawer.querySelectorAll(".cm-dnc-tag").forEach((c) => c.classList.remove("active"));
+      }
     });
     document.addEventListener("keydown", onKey);
   }
@@ -347,16 +355,32 @@
     }
   }
 
-  // Random order for the leads still to call; turning it off puts them back as they were given.
+  function isUncalled(item) {
+    if (!item) return false;
+    if (run.mode === "prospect") {
+      const hasCalls = item.pickup && item.pickup.total > 0;
+      const hasPrior = Boolean(item.priorContact && ((item.priorContact.calls && item.priorContact.calls.total > 0) || item.priorContact.status));
+      return !hasCalls && !hasPrior;
+    }
+    const notes = String(item.notes || "").trim();
+    const status = String(item.status || "").toLowerCase();
+    return !notes && (!status || status === "new");
+  }
+
+  // Random order for the leads still to call; prioritizes uncalled leads, turning it off puts them back as they were given.
   function reorderRest() {
     const slots = [];
     for (let i = run.pos + 1; i < run.queue.length; i++) if (!run.outcome[i]) slots.push(i);
     const items = slots.map((i) => run.queue[i]);
     if (run.shuffle) {
-      for (let i = items.length - 1; i > 0; i--) {
+      const uncalled = items.filter(isUncalled);
+      const called = items.filter((x) => !isUncalled(x));
+      for (let i = uncalled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [items[i], items[j]] = [items[j], items[i]];
+        [uncalled[i], uncalled[j]] = [uncalled[j], uncalled[i]];
       }
+      const reordered = uncalled.concat(called);
+      reordered.forEach((it, k) => { items[k] = it; });
     } else {
       items.sort((a, b) => run.order.get(a) - run.order.get(b));
     }
@@ -421,12 +445,27 @@
         </details>
       </div>` : "";
 
+    const isDnc = String(run.status || "").toLowerCase() === "do not call";
+    const popTags = (window.dmeHooks && window.dmeHooks.getPopularTags ? window.dmeHooks.getPopularTags() : [])
+      .filter((t) => t !== "do not call")
+      .slice(0, 8);
+    const dncTagHtml = isDnc ? `
+      <div class="cm-dnc-box" style="margin-top:10px;padding:10px 12px;background:var(--hairline, rgba(0,0,0,0.05));border-radius:var(--radius-md, 8px);">
+        <div class="cm-label" style="margin-top:0;"><strong>Tag reason for Do Not Call</strong> (helps team filtering):</div>
+        <div class="cm-chips" style="margin-top:6px;">
+          ${popTags.map((tag) => `<button type="button" class="choice-chip cm-dnc-tag${tag === run.dncTag ? " active" : ""}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join("")}
+        </div>
+        <input type="text" class="cm-dnc-input text-input" maxlength="24" placeholder="Or type a custom tag..." value="${escapeHtml(run.dncCustomTag || "")}" style="margin-top:6px;width:100%;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid var(--input-line, var(--hairline));background:var(--surface);color:var(--ink);">
+        <div class="cm-hint" style="margin-top:4px;">Marking as Do Not Call will tag this lead and permanently exclude it from searches.</div>
+      </div>` : "";
+
     let work;
     let foot;
     if (run.mode === "claimed") {
       work = `<div class="detail-block cm-card">
         <h4>Log this call</h4>
         <div class="cm-chips">${chipsHtml(callResultStatuses(), "cm-status", run.status)}</div>
+        ${dncTagHtml}
         <textarea class="cm-note" rows="3" maxlength="500" placeholder="Add a note (optional)">${escapeHtml(run.note)}</textarea>
         <div class="cm-label">Call back</div>
         <div class="cm-chips">
@@ -447,6 +486,7 @@
         <h4>Team notes <small>seen by everyone \u00b7 doesn't claim</small></h4>
         <div class="cm-label">How did it go?</div>
         <div class="cm-chips">${prospectResults().map((value) => `<button type="button" class="choice-chip cm-status${value === "disconnected" ? " is-danger" : ""}${value === run.status ? " active" : ""}" data-value="${escapeHtml(value)}">${escapeHtml(capital(value))}</button>`).join("")}</div>
+        ${dncTagHtml}
         <textarea class="cm-note" rows="3" maxlength="480" placeholder="Add a note for the team (optional)">${escapeHtml(run.note)}</textarea>
         ${hooks.annotationsBlock ? hooks.annotationsBlock(npi, { compact: true, noForm: true }) : ""}
       </div>`;
@@ -569,11 +609,21 @@
 
   /* ---------- actions ---------- */
 
+  function hasLeftFeedback() {
+    if (run.status) return true;
+    if (run.note.trim()) return true;
+    if (run.dncTag || (run.dncCustomTag && run.dncCustomTag.trim())) return true;
+    return false;
+  }
+
   function goTo(pos) {
     run.pos = pos;
     run.status = "";
     run.remind = "";
     run.note = "";
+    run.dncTag = "";
+    run.dncCustomTag = "";
+    run.called = false;
     render();
   }
 
@@ -590,12 +640,23 @@
       showToast("Pick a result, add a note or a callback, or press Skip", true);
       return null;
     }
+    if (status === "do not call") {
+      const tag = run.dncTag || run.dncCustomTag?.trim() || "do not call";
+      if (window.dmeHooks && window.dmeHooks.annotationsTag) await window.dmeHooks.annotationsTag(String(item.npi), tag);
+      const fullNote = ["Do Not Call", tag, note].filter(Boolean).join(" \u2014 ");
+      await apiPost("leads/status", { npi: item.npi, status: "do not call" });
+      await apiPost("leads/notes", { npi: item.npi, note: fullNote });
+      await apiPost("leads/disconnect", { npis: [item.npi] });
+      state.claimedLoaded = false;
+      showToast(`${item.name} marked Do Not Call (${tag}) and moved to Disconnected`);
+      return "do not call";
+    }
     // Same three calls as the call log on a claimed lead's card.
     if (status && status !== item.status) {
       item.status = (await apiPost("leads/status", { npi: item.npi, status })).status;
     }
     if (status || note) {
-      const data = await apiPost("leads/notes", { npi: item.npi, note: [status, note].filter(Boolean).join(" — ") });
+      const data = await apiPost("leads/notes", { npi: item.npi, note: [status, note].filter(Boolean).join(" \u2014 ") });
       item.notes = data.notes;
     }
     if (remind) {
@@ -649,6 +710,16 @@
     const status = run.status;
     if (!status && !note) { showToast("Pick a result or add a note, or press Skip", true); return null; }
     if (status === "disconnected") return sendProspectToDisconnected(item);
+    if (status === "do not call") {
+      const tag = run.dncTag || run.dncCustomTag?.trim() || "do not call";
+      if (window.dmeHooks && window.dmeHooks.annotationsTag) await window.dmeHooks.annotationsTag(String(item.npi), tag);
+      const text = ["Do Not Call", tag, note].filter(Boolean).join(" \u2014 ").slice(0, 500);
+      if (window.dmeHooks && window.dmeHooks.annotationsPost) await window.dmeHooks.annotationsPost(String(item.npi), text);
+      await apiPost("export/disconnected", { companies: [item] });
+      removeCompaniesFromProspect([item]);
+      showToast(`${item.name} marked Do Not Call (${tag}) and hidden from searches`);
+      return "do not call";
+    }
     if (!window.dmeHooks.annotationsPost) { showToast("Team notes aren't available right now", true); return null; }
     const text = [resultLabel(status), note].filter(Boolean).join(" \u2014 ").slice(0, 500);
     await window.dmeHooks.annotationsPost(String(item.npi), text);
@@ -710,6 +781,11 @@
 
   function skip() {
     if (run.busy) return;
+    if (run.called && !hasLeftFeedback()) {
+      showToast("Call placed: please pick a result, add a note or tag, or claim before moving to the next lead", true);
+      drawer.querySelector(".cm-chips")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     run.outcome[run.pos] = { kind: "skipped", label: "skipped" };
     goTo(nextOpen(run.pos + 1));
   }
@@ -737,8 +813,24 @@
   }
 
   function onClick(e) {
+    if (e.target.closest('[data-cm="called"]') || e.target.closest('a[href^="tel:"]')) {
+      run.called = true;
+      drawer.querySelector(".cm-call-status")?.remove();
+      const hint = document.createElement("div");
+      hint.className = "cm-hint cm-call-status";
+      hint.innerHTML = '<span style="color:var(--accent);font-weight:600;">\u2713 Call placed</span> \u2014 log what happened (result, note, tag, or claim) before moving on.';
+      drawer.querySelector(".cm-call")?.after(hint);
+      // Let the tel: link proceed to dial
+    }
     const jump = e.target.closest("[data-cm-jump]");
-    if (jump) { goTo(Number(jump.dataset.cmJump)); return; }
+    if (jump) {
+      if (run.called && !hasLeftFeedback()) {
+        showToast("Call placed: please log what happened before jumping to another lead", true);
+        return;
+      }
+      goTo(Number(jump.dataset.cmJump));
+      return;
+    }
     const cm = e.target.closest("[data-cm]");
     if (cm) {
       const act = cm.dataset.cm;
@@ -754,7 +846,17 @@
       else if (act === "redo") redoSkipped();
       else if (act === "badnum") flagBad(cm.dataset.number, cm.dataset.reason);
       else if (act === "unbad") unflagBad(cm.dataset.number);
-      // "called" is a plain tel: link; nothing to do beyond letting it dial.
+      // "called" is a plain tel: link; recorded above.
+      return;
+    }
+    const dncChip = e.target.closest(".cm-dnc-tag");
+    if (dncChip) {
+      const tag = dncChip.dataset.tag;
+      run.dncTag = tag;
+      run.dncCustomTag = "";
+      drawer.querySelectorAll(".cm-dnc-tag").forEach((c) => c.classList.toggle("active", c.dataset.tag === tag));
+      const customInput = drawer.querySelector(".cm-dnc-input");
+      if (customInput) customInput.value = "";
       return;
     }
     const chip = e.target.closest(".cm-status, .cm-remind");
@@ -765,11 +867,16 @@
     if (!was) chip.classList.add("active");
     const value = was ? "" : chip.dataset.value;
     if (isStatus) {
+      const prev = run.status;
       run.status = value;
       // "Call back" style results get a callback suggested, as the call log does.
       if (run.mode === "claimed" && value && isCallbackStatus(value) && !run.remind) {
         run.remind = "1";
         drawer.querySelectorAll(".cm-remind").forEach((c) => c.classList.toggle("active", c.dataset.value === "1"));
+      }
+      if (value === "do not call" || prev === "do not call") {
+        render();
+        return;
       }
     } else {
       run.remind = value;
@@ -806,6 +913,7 @@
     Object.assign(run, {
       mode, queue: list, outcome: list.map(() => null), pos: -1, busy: false, status: "", remind: "", note: "", startedAt: Date.now(),
       shuffle, order: new Map(list.map((item, i) => [item, i])), undo: null, bad: new Map(), badUndo: null, briefOpen: false,
+      dncTag: "", dncCustomTag: "", called: false,
     });
     if (shuffle) reorderRest(); // pos -1: every lead is still to call
     run.pos = 0;

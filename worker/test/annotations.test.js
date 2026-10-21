@@ -137,3 +137,18 @@ test('comments that start with a call result count as logged calls', () => {
   assert.deepEqual(sum.get('1').calls, { answered: 2, total: 4 });
   assert.equal(sum.get('1').comments, 5);
 });
+
+test('popular tags are sorted by frequency and fall back to suggestions', async () => {
+  const db = fakeDb({
+    tags: [
+      { npi: '1', tag: 'closed' },
+      { npi: '2', tag: 'closed' },
+      { npi: '3', tag: 'wrong specialty' },
+    ],
+  });
+  const res = await repo.getPopularTags(db);
+  assert.equal(res.tags[0], 'closed');
+  assert.equal(res.tags[1], 'wrong specialty');
+  assert.ok(res.tags.includes('do not call'));
+});
+

@@ -1647,6 +1647,7 @@ function buildSearchParams(formData) {
   if (!formData.get("enrich")) params.enrich = "false";
   if (formData.get("scrape")) params.scrape = "true";
   if (formData.get("resetProgress")) params.resetProgress = "true";
+  if (formData.get("uncalledOnly")) params.uncalledOnly = "true";
   return applyLookupField(params);
 }
 
@@ -1927,7 +1928,15 @@ async function executeSearch(params, { isMore: more = false, isRescan = false } 
           : "No more leads found for this search");
       }
     } else {
-      const page = { companies: data.companies, excludedAsClaimed: data.excludedAsClaimed || 0 };
+      const filteredCompanies = (data.companies || []).filter((c) => {
+        if (params.uncalledOnly === "true") {
+          const hasPickup = c.pickup && c.pickup.total > 0;
+          const hasPrior = Boolean(c.priorContact && ((c.priorContact.calls && c.priorContact.calls.total > 0) || c.priorContact.status));
+          if (hasPickup || hasPrior) return false;
+        }
+        return true;
+      });
+      const page = { companies: filteredCompanies, excludedAsClaimed: data.excludedAsClaimed || 0 };
       if (isMore) {
         // Appends a new page instead of overwriting -- earlier pages stay
         // exactly as they were, one click away via the page-nav below.
@@ -5175,7 +5184,7 @@ document.getElementById("lookupInput").addEventListener("input", updateLookupHin
 // What the form currently asks for, in the shape the server's /search/* routes read.
 function insightParams() {
   const params = buildSearchParams(new FormData(els.form));
-  ["limit", "enrich", "scrape", "resetProgress"].forEach((key) => { delete params[key]; });
+  ["limit", "enrich", "scrape", "resetProgress", "uncalledOnly"].forEach((key) => { delete params[key]; });
   return params;
 }
 
@@ -5582,7 +5591,7 @@ function applySavedSearch(search) {
 function savedValuesToParams(values) {
   const params = {};
   for (const [key, value] of Object.entries(values)) {
-    if (["enrich", "scrape", "limit", "excludeKeywords", "resetProgress"].includes(key)) continue;
+    if (["enrich", "scrape", "limit", "excludeKeywords", "resetProgress", "uncalledOnly"].includes(key)) continue;
     if (Array.isArray(value)) { if (value.length) params[key] = value.join(","); }
     else if (value === true) params[key] = "on";
     else if (value !== false && value !== "" && value != null) params[key] = String(value);
