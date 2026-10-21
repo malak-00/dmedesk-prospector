@@ -10,7 +10,7 @@ import { findUserByUsernameExact } from "../lib/users.js";
 import { normalizeMeetingInput } from "../lib/meetings.js";
 import { noteKind, parseNoteLines } from "../lib/teamActivity.js";
 import { classifyResult } from "../lib/bestTimes.js";
-import { SORTS, buildTodayView } from "../lib/leadView.js";
+import { SORTS, buildTodayView, chunkIntoGroupPages } from "../lib/leadView.js";
 import { cleanStatus, isJunkStatus, normalizeStatus, statusOptions } from "../lib/statuses.js";
 import { announceWin } from "./buddyRepo.js";
 
@@ -1099,8 +1099,10 @@ async function groupIdsForNpi(supabase, npi) {
   }
 }
 
-export async function listClaimedPage(supabase, session, params) {
-  let query = supabase.from("leads").select("*", { count: "exact" }).eq("claimed_by", session.id).eq("is_disconnected", false);
+// The rep's claimed leads, narrowed and ordered the way the Claimed table asked for. Returned inside
+// an object: a query builder is thenable, so returning it bare from an async function would run it.
+async function claimedFilteredQuery(supabase, session, params, columns, options) {
+  let query = supabase.from("leads").select(columns, options).eq("claimed_by", session.id).eq("is_disconnected", false);
   // Case-insensitive, so "Voicemail" and "voicemail" are one status (Today groups them that way too).
   if (params.status) query = /[%_]/.test(params.status) ? query.eq("status", params.status) : query.ilike("status", params.status);
   if (params.overdueOnly) query = query.not("reminder_at", "is", null).lt("reminder_at", new Date(params.nowMs).toISOString());
@@ -1124,7 +1126,61 @@ export async function listClaimedPage(supabase, session, params) {
     query = query.order("status_updated_at", { ascending: false, nullsFirst: false }).order("claimed_at", { ascending: false });
   }
   query = query.order("id"); // a unique last key, so a row is never skipped or repeated between pages
+  return { query };
+}
 
+const GROUP_PAGE_ID_CHUNK = 100; // ids per ?id=in.(...) request, well short of any URL limit
+
+// A page made of whole business groups. The filter and sort run in the database over just
+// (id, group_id) to learn the order; a business group is then placed where its first member
+// falls, pages are cut between groups, and only the rows of the page asked for are loaded.
+async function listClaimedPageGrouped(supabase, session, params) {
+  const keys = [];
+  let offset = 0;
+  for (let pass = 0; pass < MAX_CLAIMED_LEADS_PAGES; pass++) {
+    const { query } = await claimedFilteredQuery(supabase, session, params, "id, group_id");
+    const { data, error } = await query.range(offset, offset + CLAIMED_LEADS_PAGE_SIZE - 1);
+    if (error) throw httpError(500, "Failed to load claimed leads: " + error.message);
+    const batch = data || [];
+    keys.push(...batch);
+    if (batch.length === 0) break;
+    offset += batch.length;
+  }
+
+  const { pages, groups } = chunkIntoGroupPages(keys, params.pageSize);
+  const pageNumber = Math.min(Math.max(params.page, 1), Math.max(pages.length, 1));
+  const ids = pages.length ? pages[pageNumber - 1].ids : [];
+
+  const rowsById = new Map();
+  for (let i = 0; i < ids.length; i += GROUP_PAGE_ID_CHUNK) {
+    const { data, error } = await supabase.from("leads").select("*").in("id", ids.slice(i, i + GROUP_PAGE_ID_CHUNK));
+    if (error) throw httpError(500, "Failed to load claimed leads: " + error.message);
+    (data || []).forEach((row) => rowsById.set(row.id, row));
+  }
+  const rows = ids.map((id) => rowsById.get(id)).filter(Boolean);
+
+  const [counts, statuses] = await Promise.all([claimedCounts(supabase, session, params), getKnownStatuses(supabase)]);
+  const leads = rows.map((row) => toLeadDTO(row, session.displayName));
+  await attachGroupBranches(supabase, rows, leads, session.id);
+  // Members of a group that are on this page are shown in the group itself, so they are not
+  // repeated as "other locations" inside every lead (a 100-lead group would send 100 x 99 entries).
+  const onPage = new Set(leads.map((lead) => String(lead.npi)));
+  leads.forEach((lead) => {
+    if (!lead.branches) return;
+    lead.branches = lead.branches.filter((b) => !(b.ownership === "yours" && onPage.has(String(b.npi))));
+    if (lead.branches.length === 0) delete lead.branches;
+  });
+  await attachProviderChanges(supabase, leads, session.id);
+  await attachEnumerationDates(supabase, leads);
+  return {
+    leads, total: keys.length, page: pageNumber, pageSize: params.pageSize,
+    pages: Math.max(1, pages.length), groups, grouped: true, counts, statuses,
+  };
+}
+
+export async function listClaimedPage(supabase, session, params) {
+  if (params.grouped) return listClaimedPageGrouped(supabase, session, params);
+  const { query } = await claimedFilteredQuery(supabase, session, params, "*", { count: "exact" });
   const from = (params.page - 1) * params.pageSize;
   const [{ data, error, count }, counts, statuses] = await Promise.all([
     query.range(from, from + params.pageSize - 1),

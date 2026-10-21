@@ -13,24 +13,25 @@
 
 **Safety Status.** Worker tests pass (360/360); not browser-tested. The import writes only to the new table. Needs sql/053, a Worker deploy (which also registers the cron trigger) and a frontend publish.
 
-## 2026-10-21 — Leads grouped by business in Claimed and Prospect (written, not committed or deployed)
+## 2026-10-21 — Leads grouped by business in Claimed and Prospect
 
 ### Objective
-Show leads of one business together: under the company name when members share one name, under the authorized official when the names differ but one person is behind them, with the businesses as the rows beneath (Design A, with a second level for big groups, Design C). Applies to Claimed and Prospect; "who to call" and "why to call" stay in each lead's own expanded card, unchanged.
+Show leads of one business together: under the company name when members share one name, under the authorized official when the names differ but one person is behind them, with the businesses beneath (Design A, with foldable sections for big groups, Design C). Applies to Claimed and Prospect; "who to call" and "why to call" stay in each lead's own expanded card, unchanged.
 
 ### Actions Completed
-- Worker: `parseListParams` accepts `grouped=1`; `chunkIntoGroupPages` (leadView.js) cuts pages between whole business groups, a group sitting where its first member falls in the chosen sort; `listClaimedPage` has a grouped path (id/group query over the same filter and sort, then only the page's rows). The row-by-row path is unchanged. The page-local "other locations" lists omit members already shown in the group.
-- Frontend: new `docs/leadgroups.js` (naming, header and sub-header rows, open/close, remembered per tab); `app.js` draws Claimed and Prospect through it; one "Group by business" switch for both lists (Claimed toolbar and Prospect's former "Keep related together"), on by default; the row "N locations" badge and "Related" chip stay quiet when a header covers them; groups of 4 or fewer start open, bigger ones closed.
-- Claimed only groups when the Worker answers with whole groups (`grouped: true`), so deploying the frontend first shows nothing half-grouped.
-- 345 worker tests pass (new: groupedClaimed.test.js, leadgroups.test.js). No browser testing.
-- Mistake caught and repaired: a version-bump loop with a bad regex briefly rewrote `=1/=2/=3` across docs/index.html; it was rebuilt from HEAD plus the other session's pending additions plus mine and verified byte-for-byte by re-applying the corruption.
+- Worker: `parseListParams` accepts `grouped=1`; `chunkIntoGroupPages` (leadView.js) cuts pages between whole business groups, a group sitting where its first member falls in the chosen sort; `listClaimedPage` has a grouped path (id/group query over the same filter and sort, then only the page's rows). The row-by-row path is unchanged. Members already shown in the group are left out of each lead's "other locations".
+- Frontend: new `docs/leadgroups.js` (naming, header rows, open/close remembered per tab); `app.js` draws Claimed and Prospect through it; one "Group by business" switch for both lists, on by default; the row "N locations" badge and "Related" chip stay quiet when a header covers them.
+- Look, after reviewing a preview with fake data (fake API, no live data): a group is one tinted block with a solid accent bar, the lead names indented under the header and a gap after the last lead, so a lead below it is plainly outside; leads inside a group are one compact line (the specialty pill, icon row, quick buttons and time pill are left to the opened card); in a one-name group the name is dimmed and the place stands out; groups of 4 or fewer start open; in a big group (12+ leads or 3+ company names) each company section folds, sections over 8 leads start folded, and one company covering the whole group gets no section.
+- Claimed groups only when the Worker answers with whole groups (`grouped: true`), so the page deployed before the Worker shows ordinary lists.
+- 361 worker tests pass (new: groupedClaimed.test.js, leadgroups.test.js). Looked at in the browser pane against fake data only.
+- Note: commit a81abc3 (another session) had already swept an earlier version of app.js, index.html, style.css and this entry into main without leadgroups.js or the Worker half; this commit completes it.
+- Mistake caught and repaired: a version-bump loop with a bad regex briefly rewrote `=1/=2/=3` across docs/index.html; it was rebuilt from HEAD plus the other session's pending additions plus mine and verified byte-for-byte.
 
 ### Database / System Result
 None. No SQL needed.
 
 ### Safety Status
-Read-only change to how leads are listed; no ownership or data changes. Needs the Worker deployed for Claimed grouping to appear.
-
+Read-only change to how leads are listed; no ownership or data changes. The Worker must be deployed for Claimed grouping to appear.
 ## 2026-10-21 — Batch 2 of the new ideas: follow-up dates, team search filters, weekly goals (sql/051 and sql/052, written, not run)
 
 **Objective.** Let a rep schedule a return to any lead, filter Prospect by what the team knows, and show goal progress on the super admin Home.

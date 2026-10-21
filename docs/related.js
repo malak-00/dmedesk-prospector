@@ -98,7 +98,12 @@
   const nameOf = (kind, item) => item.name;
   const placeOf = (kind, item) => (kind === "prospect" ? [item.address && item.address.city, item.address && item.address.state] : [item.city, item.state]).filter(Boolean).join(", ");
 
+  // When leads are grouped under headers the header says it all, so the chip and block stay quiet.
+  const grouped = (kind, index) => (kind === "prospect" ? isOn() : Boolean(root.dmeGroups && root.dmeGroups.inShownGroup(kind, index)));
+  hooks.relatedClusters = (kind) => clusters(kind);
+
   hooks.relatedChip = (kind, index) => {
+    if (grouped(kind, index)) return "";
     const c = clusters(kind);
     const id = c.clusterOf[index];
     if (id < 0) return "";
@@ -107,6 +112,7 @@
   };
 
   hooks.relatedBlock = (kind, index) => {
+    if (grouped(kind, index)) return "";
     const c = clusters(kind);
     const id = c.clusterOf[index];
     if (id < 0) return "";
@@ -151,11 +157,13 @@
 
   // "Keep related together": reorders the page being shown so each business's rows sit side by side.
   const toggle = document.getElementById("relatedTogether");
-  const isOn = () => { try { return localStorage.getItem(KEY) === "1"; } catch { return false; } };
+  // On unless someone turned it off.
+  const isOn = () => { try { return localStorage.getItem(KEY) !== "0"; } catch { return true; } };
   if (toggle) {
     toggle.checked = isOn();
     toggle.addEventListener("change", () => {
       try { localStorage.setItem(KEY, toggle.checked ? "1" : "0"); } catch { /* not remembered */ }
+      if (hooks.groupingChanged) hooks.groupingChanged(); // Claimed groups by the same setting
       const page = state.resultPages[state.currentPage];
       if (!page) return;
       page.grouped = isOn();

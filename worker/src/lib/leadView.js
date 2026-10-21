@@ -43,6 +43,8 @@ export function parseListParams(query = {}, nowMs = Date.now()) {
     status: String(query.status ?? "").trim().slice(0, 60),
     term: cleanSearchTerm(query.q),
     overdueOnly: query.overdue === "1" || query.overdue === "true",
+    // Pages made of whole business groups (see chunkIntoGroupPages), not of single rows.
+    grouped: query.grouped === "1" || query.grouped === "true",
     states: String(query.states ?? "").split(",").map((s) => s.trim().toUpperCase()).filter((s) => /^[A-Z]{2}$/.test(s)).slice(0, 60),
     sortKey,
     dir: sortKey ? (dir || SORTS[sortKey].firstDir) : "",
@@ -50,6 +52,32 @@ export function parseListParams(query = {}, nowMs = Date.now()) {
     endOfDayMs: Number.isFinite(endOfDay) ? endOfDay : nowMs + DAY,
     nowMs,
   };
+}
+
+/* ---------------- pages made of whole business groups ---------------- */
+
+// keys: [{ id, group_id }] in the order the rep asked for (the filter and sort are already applied).
+// A business group sits at the place of its first member, so a group is never split across pages and
+// the sort still reads naturally. A page closes once it holds `pageSize` leads, so it can run over by
+// the size of the group that crossed the line. A lead with no group is a group of one.
+export function chunkIntoGroupPages(keys, pageSize) {
+  const order = [];
+  const idsByGroup = new Map();
+  for (const key of keys || []) {
+    const group = key.group_id || `lead:${key.id}`;
+    if (!idsByGroup.has(group)) { idsByGroup.set(group, []); order.push(group); }
+    idsByGroup.get(group).push(key.id);
+  }
+  const size = Math.max(1, Math.floor(pageSize) || PAGE_SIZES.default);
+  const pages = [];
+  let current = { ids: [], groups: 0 };
+  for (const group of order) {
+    current.ids.push(...idsByGroup.get(group));
+    current.groups += 1;
+    if (current.ids.length >= size) { pages.push(current); current = { ids: [], groups: 0 }; }
+  }
+  if (current.groups > 0) pages.push(current);
+  return { pages, groups: order.length };
 }
 
 /* ---------------- the Today screen ---------------- */
