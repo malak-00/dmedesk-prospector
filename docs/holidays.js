@@ -139,11 +139,24 @@
     return holidayFor(now);
   }
 
+  // One shared gradient (white shine at the top, a little shadow at the bottom) laid over every filled drawing so it reads as a
+  // rounded object instead of a flat shape. It lives in a tiny hidden svg that is added once.
+  function ensureShade() {
+    if (document.getElementById("hdShadeDefs")) return;
+    const holder = document.createElement("div");
+    holder.id = "hdShadeDefs";
+    holder.setAttribute("aria-hidden", "true");
+    holder.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+    holder.innerHTML = '<svg width="0" height="0"><defs><linearGradient id="hdShade" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.6"/><stop offset="0.45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.3"/></linearGradient></defs></svg>';
+    document.body.appendChild(holder);
+  }
+
   function glyphSvg([name, colour], i) {
     const [kind, shapes] = G[name];
     const paint = kind === "fill" ? `fill="${colour}"` : `fill="none" stroke="${colour}" stroke-width="2" stroke-linecap="round"`;
-    // Each ornament hangs from a little cord (drawn by CSS on .hd-item); the glow is its own colour.
-    return `<span class="hd-item" style="--i:${i}"><svg class="hd-glyph" style="color:${colour}" viewBox="0 0 24 24" ${paint} stroke-linejoin="round" aria-hidden="true">${shapes}</svg></span>`;
+    const shade = kind === "fill" ? `<g fill="url(#hdShade)" stroke="none">${shapes}</g>` : "";
+    // Each ornament hangs from a little cord (drawn by CSS on .hd-item) and twinkles with a small spark of its own.
+    return `<span class="hd-item" style="--i:${i}"><svg class="hd-glyph" style="color:${colour}" viewBox="0 0 24 24" ${paint} stroke-linejoin="round" aria-hidden="true">${shapes}${shade}</svg></span>`;
   }
 
   function unmount() {
@@ -159,6 +172,7 @@
     const header = document.querySelector(".app-header");
     const right = header && header.querySelector(".header-right");
     if (!key || !header || !right) return;
+    ensureShade();
     strip = document.createElement("div");
     strip.className = `holiday-strip hd-${key}`;
     strip.setAttribute("aria-hidden", "true");

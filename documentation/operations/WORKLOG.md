@@ -653,6 +653,28 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-21 — Holiday decorations: shaded and twinkling
+
+### Objective
+
+Make the decorations look better still.
+
+### Actions Completed
+
+- `docs/holidays.js`: every filled drawing gets a shared shine-and-shadow gradient laid over it (one hidden svg of definitions added once), so it reads as
+  a rounded object rather than a flat shape.
+- `docs/style.css`: ornaments are larger again (40px header, 38px sidebar, 30px collapsed rail), cords are a little shorter, and each header ornament
+  has a small spark that twinkles on and off at its own time (not in the sidebar; off for reduced motion). Checked on a test page (Christmas).
+- `docs/index.html`: versions bumped.
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required.
+
 ## 2026-10-21 — Holiday decorations: bigger and better looking
 
 ### Objective

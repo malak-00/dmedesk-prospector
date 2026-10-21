@@ -3107,11 +3107,15 @@ html.game-open .buddy { display: none; }
 .holiday-strip { flex: 1 1 0; min-width: 0; align-self: stretch; position: relative; display: flex; align-items: flex-start; justify-content: center; gap: clamp(14px, 2.8vw, 40px); padding: 0 12px; overflow: hidden; pointer-events: none; user-select: none; }
 .holiday-strip::before { content: ""; position: absolute; left: 4%; right: 4%; top: 6px; height: 16px; border-top: 2px solid color-mix(in srgb, var(--muted) 50%, transparent); border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
 /* Each ornament hangs from a cord of its own length, with a little glow in its own colour behind it. */
-.hd-item { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; margin-top: 14px; transform-origin: 50% 0; animation: hd-sway 4.6s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.7s); }
+.hd-item { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; margin-top: 10px; transform-origin: 50% 0; animation: hd-sway 4.6s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.7s); }
 .hd-item::before { content: ""; width: 2px; height: 8px; border-radius: 1px; background: color-mix(in srgb, var(--muted) 60%, transparent); }
-.hd-item:nth-child(even)::before { height: 20px; }
-.hd-item:nth-child(3n)::before { height: 14px; }
-.hd-glyph { width: 34px; height: 34px; flex: none; overflow: visible; stroke: rgba(0, 0, 0, 0.35); stroke-width: 0.6; paint-order: stroke; filter: drop-shadow(0 0 5px color-mix(in srgb, currentColor 55%, transparent)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3)); }
+.hd-item:nth-child(even)::before { height: 14px; }
+.hd-item:nth-child(3n)::before { height: 10px; }
+.hd-item::after { content: ""; position: absolute; top: calc(100% - 38px); right: -4px; width: 11px; height: 11px; background: #fff; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); opacity: 0; animation: hd-twinkle 3.2s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.9s); }
+.hd-item:nth-child(even)::after { right: auto; left: -4px; top: calc(100% - 30px); width: 9px; height: 9px; }
+@keyframes hd-twinkle { 0%, 55%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); } 70% { opacity: 0.95; transform: scale(1) rotate(25deg); } 85% { opacity: 0; transform: scale(0.4) rotate(45deg); } }
+@media (prefers-reduced-motion: reduce) { .hd-item::after { animation: none; opacity: 0; } }
+.hd-glyph { width: 40px; height: 40px; flex: none; overflow: visible; stroke: rgba(0, 0, 0, 0.35); stroke-width: 0.6; paint-order: stroke; filter: drop-shadow(0 0 5px color-mix(in srgb, currentColor 55%, transparent)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3)); }
 @keyframes hd-sway { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
 @media (max-width: 1100px) { .holiday-strip { display: none; } }
 @media (prefers-reduced-motion: reduce) { .hd-item { animation: none; } }
@@ -3123,14 +3127,15 @@ html.game-open .buddy { display: none; }
   .holiday-side::before { content: ""; position: absolute; top: 4px; bottom: 4px; left: 50%; margin-left: -1px; border-left: 2px dotted color-mix(in srgb, var(--muted) 50%, transparent); }
   /* Expanded: ornaments alternate either side of the line, each on a short cord to it. */
   .holiday-side .hd-item { flex-direction: row; align-items: center; margin: 0; width: 100%; box-sizing: border-box; padding-left: 50%; justify-content: flex-start; transform-origin: 50% 50%; animation: hd-bob 3.8s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.6s); }
+  .holiday-side .hd-item::after { display: none; }
   .holiday-side .hd-item::before { width: 22px; height: 2px !important; }
   .holiday-side .hd-item:nth-child(odd) { flex-direction: row-reverse; padding-left: 0; padding-right: 50%; }
-  .holiday-side .hd-glyph { width: 34px; height: 34px; }
+  .holiday-side .hd-glyph { width: 38px; height: 38px; }
   /* Collapsed to the icon rail: one column, a little smaller, strung on the line. */
   :root.nav-rail .holiday-side { gap: 12px; }
   :root.nav-rail .holiday-side .hd-item, :root.nav-rail .holiday-side .hd-item:nth-child(odd) { justify-content: center; padding: 0; }
   :root.nav-rail .holiday-side .hd-item::before { display: none; }
-  :root.nav-rail .holiday-side .hd-glyph { width: 28px; height: 28px; }
+  :root.nav-rail .holiday-side .hd-glyph { width: 30px; height: 30px; }
   .view-tabs .holiday-side + .nav-action { margin-top: 0; }
 }
 @keyframes hd-bob { 0%, 100% { transform: translateY(-3px) rotate(-6deg); } 50% { transform: translateY(3px) rotate(6deg); } }
