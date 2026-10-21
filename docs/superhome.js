@@ -13,6 +13,9 @@
   const CACHE_MS = 60 * 1000;
 
   let on = false;
+  let goals = null; // { installed, callsWeek, meetingsWeek } (sql/051)
+  let week = null; // this week's team totals from admin/team-activity
+  let editingGoals = false;
   let data = null;
   let fetchedAt = 0;
   let loading = false;
@@ -75,6 +78,27 @@
     return bad
       ? `<p class="ins-note"><strong>${num(bad)} of ${num(checks.length)}</strong> checks need attention. <button type="button" class="link-btn" data-goto="insights" data-section="system">See which</button></p>`
       : `<p class="ins-note ins-allgood">All ${num(checks.length)} checks are fine.</p>`;
+  }
+
+  const sumOf = (list) => (list || []).reduce((a, b) => a + b, 0);
+
+  // This week against the goals an admin set (sql/051). Hidden until that file is installed.
+  function goalsCard() {
+    if (!goals || !goals.installed) return "";
+    const calls = week && week.totals ? sumOf(week.totals.calls) : 0;
+    const held = week && week.totals ? sumOf(week.totals.meetingsHeld) : 0;
+    const bar = (label, value, goal) => `<div class="home-goal">
+      <div class="home-goal-head"><span>${esc(label)}</span><span><b>${num(value)}</b> of ${num(goal)}</span></div>
+      <div class="home-goal-bar" role="img" aria-label="${esc(label)}: ${num(value)} of ${num(goal)}"><i style="width:${Math.min(100, goal ? Math.round((value / goal) * 100) : 0)}%"></i></div></div>`;
+    const set = [goals.callsWeek != null ? bar("Calls this week", calls, goals.callsWeek) : "", goals.meetingsWeek != null ? bar("Meetings held this week", held, goals.meetingsWeek) : ""].join("");
+    const form = editingGoals ? `<div class="home-goal-form">
+        <label>Calls per week<input type="number" min="0" max="100000" data-goal="callsWeek" value="${goals.callsWeek ?? ""}"></label>
+        <label>Meetings held per week<input type="number" min="0" max="100000" data-goal="meetingsWeek" value="${goals.meetingsWeek ?? ""}"></label>
+        <button type="button" class="btn btn-primary btn-small" data-home="goals-save">Save</button>
+        <button type="button" class="link-btn" data-home="goals-cancel">Cancel</button></div>` : "";
+    return `<section class="ins-card"><h3>Weekly goals <small>since Monday, UTC</small></h3>
+      ${set || `<p class="ins-note">No goals set yet.</p>`}
+      ${form || `<p class="ins-note"><button type="button" class="link-btn" data-home="goals-edit">${set ? "Change goals" : "Set goals"}</button></p>`}</section>`;
   }
 
   function render() {
@@ -146,6 +170,7 @@
             <p class="ins-note">Last column: actions this week. <button type="button" class="link-btn" data-goto="insights" data-section="people">Everyone in Insights</button></p>` : `<p class="ins-empty">No reps yet.</p>`}
           </section>
 
+          ${goalsCard()}
           <section class="ins-card"><h3>System</h3>${systemLine(d.system)}</section>
         </div>
       </div>`;
@@ -157,7 +182,14 @@
     loading = true;
     if (!data) { error = ""; render(); }
     try {
-      data = await apiGet("admin/insights", { days: 7 });
+      const [d, g, w] = await Promise.all([
+        apiGet("admin/insights", { days: 7 }),
+        apiGet("admin/goals").catch(() => null),
+        apiGet("admin/team-activity", { weeks: 1 }).catch(() => null),
+      ]);
+      data = d;
+      goals = g;
+      week = w;
       fetchedAt = Date.now();
       error = "";
     } catch (err) {
@@ -168,8 +200,25 @@
     render();
   }
 
-  panel?.addEventListener("click", (e) => {
-    if (on && e.target.closest('[data-home="reload"]')) refresh({ force: true });
+  panel?.addEventListener("click", async (e) => {
+    if (!on) return;
+    const btn = e.target.closest("[data-home]");
+    if (!btn) return;
+    const act = btn.dataset.home;
+    if (act === "reload") refresh({ force: true });
+    else if (act === "goals-edit") { editingGoals = true; render(); }
+    else if (act === "goals-cancel") { editingGoals = false; render(); }
+    else if (act === "goals-save") {
+      const field = (k) => panel.querySelector(`[data-goal="${k}"]`)?.value ?? "";
+      try {
+        goals = await apiPost("admin/goals", { callsWeek: field("callsWeek"), meetingsWeek: field("meetingsWeek") });
+        editingGoals = false;
+        showToast("Goals saved");
+      } catch (err) {
+        showToast(err.message, true);
+      }
+      render();
+    }
   });
 
   const hooks = window.dmeHooks;

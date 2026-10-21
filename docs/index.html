@@ -25,7 +25,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Plus+Jakarta+Sans:wght@600..800&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="icons/bd-icon-light.png" media="(prefers-color-scheme: light)">
 <link rel="icon" type="image/png" href="icons/bd-icon-dark.png" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="style.css?v=95">
+<link rel="stylesheet" href="style.css?v=96">
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay" hidden>
@@ -330,7 +330,17 @@
           <label class="refine-check"><input form="searchForm" type="checkbox" name="hasPhone"><span>Phone number</span></label>
           <label class="refine-check"><input form="searchForm" type="checkbox" name="hasDecisionMaker"><span>Decision maker</span></label>
           <label class="refine-check"><input form="searchForm" type="checkbox" name="activeMedicare"><span>Active Medicare biller</span></label>
-          <label class="refine-check refine-right" title="Puts leads that look like the same business (same phone or owner) next to each other"><input type="checkbox" id="relatedTogether"><span>Keep related together</span></label>
+          <span class="refine-team" id="teamFilters" hidden>
+            <label class="refine-check" title="NPI registered in the last 2 years"><input form="searchForm" type="checkbox" name="newSupplier"><span>New supplier</span></label>
+            <label class="refine-check" title="NPI registered 15 or more years ago"><input form="searchForm" type="checkbox" name="establishedSupplier"><span>Established</span></label>
+            <label class="refine-check" title="Nobody on the team has claimed, called, noted or tagged it"><input form="searchForm" type="checkbox" name="untouched"><span>Nobody has contacted</span></label>
+            <input form="searchForm" type="text" name="tag" class="refine-input" maxlength="24" placeholder="Team tag" aria-label="Team tag">
+            <select form="searchForm" name="objection" aria-label="Objection heard">
+              <option value="">Any objection</option><option value="price">Price</option><option value="in-house">In-house</option><option value="happy with current">Happy with current</option>
+              <option value="bad timing">Bad timing</option><option value="not the decision maker">Not the decision maker</option><option value="no need">No need</option><option value="other">Other</option>
+            </select>
+          </span>
+          <label class="refine-check refine-right" title="Puts leads from the same business under one header: the same company name, or the same owner or phone"><input type="checkbox" id="relatedTogether"><span>Group by business</span></label>
         </div>
 
         <div class="table-wrap">
@@ -401,6 +411,10 @@
             <label class="checkbox" title="Only leads where it is a good time to call right now: 8 AM to 5 PM on a weekday in their own time zone, not the lunch hour">
               <input type="checkbox" id="claimedOpenNow">
               <span>Good time to call</span>
+            </label>
+            <label class="checkbox" title="Puts leads from the same business under one header: the same company name, or the same authorized official">
+              <input type="checkbox" id="claimedGrouped">
+              <span>Group by business</span>
             </label>
             <label class="checkbox" title="Shows a browser notification the moment a callback reminder comes due -- works as long as you have this app open in a tab, even a different one">
               <input type="checkbox" id="enableNotifications">
@@ -811,16 +825,17 @@
   <script src="config.js?v=10"></script>
   <script src="usLocations.js?v=11"></script>
   <script src="uiicons.js?v=1"></script>
-  <script src="app.js?v=75"></script>
+  <script src="leadgroups.js?v=1"></script>
+  <script src="app.js?v=76"></script>
   <script src="localtime.js?v=2"></script>
   <script src="callmode.js?v=16"></script>
-  <script src="today.js?v=15"></script>
+  <script src="today.js?v=16"></script>
   <script src="insights.js?v=10"></script>
   <script src="superhome.js?v=1"></script>
   <script src="dialtrack.js?v=2"></script>
   <script src="team.js?v=10"></script>
   <script src="sheetlib.js?v=1"></script>
-  <script src="related.js?v=1"></script>
+  <script src="related.js?v=2"></script>
   <script src="leadage.js?v=1"></script>
   <script src="whycall.js?v=9"></script>
   <script src="leadnotes.js?v=3"></script>

@@ -19,6 +19,7 @@
     { key: "directLine", label: "Best direct line", placeholder: "(555) 555-5555", type: "tel", max: 30 },
     { key: "email", label: "Email", placeholder: "name@company.com", type: "email", max: 120 },
     { key: "patientVolume", label: "Size", placeholder: "e.g. about 80 patients a month", type: "text", max: 60 },
+    { key: "followUpAt", label: "Follow up on", placeholder: "", type: "date", max: 10 },
   ];
 
   const data = new Map(); // npi -> { installed, ...values }
@@ -38,6 +39,9 @@
         <label class="intel-field"><span>Main objection</span>
           <select data-intel-field="objection"><option value="">None heard</option>${OBJECTIONS.map((o) => `<option value="${esc(o)}"${d.objection === o ? " selected" : ""}>${esc(capital(o))}</option>`).join("")}</select></label>
       </div>
+      <div class="intel-follow muted-note">Follow up in
+        ${[3, 7, 14, 30].map((n) => `<button type="button" class="link-btn" data-intel-follow="${n}">${n === 7 ? "1 week" : n === 14 ? "2 weeks" : n === 30 ? "1 month" : n + " days"}</button>`).join(" \u00b7 ")}
+        \u00b7 <button type="button" class="link-btn" data-intel-follow="0">Clear</button></div>
       <div class="intel-foot muted-note"><span class="intel-status" aria-live="polite">${who(d)}</span></div>`;
   }
 
@@ -86,6 +90,25 @@
       busy.delete(npi + key);
     }
   }
+
+  // Quick follow-up dates: a number of days from today (in the rep's own calendar), or 0 to clear.
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest && e.target.closest("[data-intel-follow]");
+    const box = btn && btn.closest(".intel");
+    if (!box) return;
+    e.stopPropagation();
+    const days = Number(btn.dataset.intelFollow);
+    const input = box.querySelector('[data-intel-field="followUpAt"]');
+    if (!input) return;
+    if (days) {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      input.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    } else {
+      input.value = "";
+    }
+    save(box, input);
+  }, true);
 
   document.addEventListener("change", (e) => {
     const el = e.target.closest && e.target.closest("[data-intel-field]");

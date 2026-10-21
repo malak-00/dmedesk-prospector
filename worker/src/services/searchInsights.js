@@ -64,7 +64,13 @@ export async function getCapabilities(config, supabase) {
         reason: isMissingFunction(error) ? "Run sql/021_search_insights.sql to turn on lead counts, quality filters and sorting." : "Search insights are unavailable right now.",
       };
     }
-    return { source, advanced: true, version: (data && data.version) || 1 };
+    // sql/052: the team filters exist when the filter builder knows the new keys.
+    let teamFilters = false;
+    try {
+      const probe = await supabase.rpc("provider_filter_sql", { p_criteria: { newSupplier: true } });
+      teamFilters = !probe.error && /enumeration_date/.test(String(probe.data || ""));
+    } catch { /* not installed */ }
+    return { source, advanced: true, version: (data && data.version) || 1, teamFilters };
   });
 }
 

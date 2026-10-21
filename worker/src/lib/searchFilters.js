@@ -5,6 +5,7 @@
 // one-click "quick picks". No I/O here, so it is unit tested on its own.
 
 export const SORT_OPTIONS = ["medicare", "updated", "name"];
+export const OBJECTION_FILTERS = ["price", "in-house", "happy with current", "bad timing", "not the decision maker", "no need", "other"];
 
 const truthy = (value) => value === true || value === "true" || value === "on" || value === "1";
 const digits = (value) => String(value ?? "").replace(/\D/g, "");
@@ -16,6 +17,14 @@ export function readAdvancedCriteria(q) {
   if (truthy(q("hasPhone"))) out.hasPhone = true;
   if (truthy(q("hasDecisionMaker"))) out.hasDecisionMaker = true;
   if (truthy(q("activeMedicare"))) out.activeMedicare = true;
+  // What the team knows (sql/052). Only a lower-case word or two is ever sent on.
+  if (truthy(q("newSupplier"))) out.newSupplier = true;
+  if (truthy(q("establishedSupplier"))) out.establishedSupplier = true;
+  if (truthy(q("untouched"))) out.untouched = true;
+  const tag = String(q("tag") || "").toLowerCase().replace(/[^a-z0-9 +&'./-]/g, " ").replace(/\s+/g, " ").trim().slice(0, 24);
+  if (tag) out.tag = tag;
+  const objection = String(q("objection") || "").toLowerCase().trim();
+  if (OBJECTION_FILTERS.includes(objection)) out.objection = objection;
 
   const zip = digits(q("zip"));
   if (zip.length >= 3) out.zip = zip.slice(0, 5);
@@ -39,6 +48,7 @@ export function readAdvancedCriteria(q) {
 export function usesAdvancedSearch(criteria = {}) {
   return Boolean(
     criteria.hasPhone || criteria.hasDecisionMaker || criteria.activeMedicare ||
+    criteria.newSupplier || criteria.establishedSupplier || criteria.untouched || criteria.tag || criteria.objection ||
     criteria.zip || criteria.sortBy || criteria.lookupText || criteria.lookupPhone
   );
 }
@@ -78,6 +88,11 @@ export function toFilterPayload(criteria = {}, { collapsed = false } = {}) {
     hasPhone: criteria.hasPhone || undefined,
     hasDecisionMaker: criteria.hasDecisionMaker || undefined,
     activeMedicare: criteria.activeMedicare || undefined,
+    newSupplier: criteria.newSupplier || undefined,
+    establishedSupplier: criteria.establishedSupplier || undefined,
+    untouched: criteria.untouched || undefined,
+    tag: criteria.tag || undefined,
+    objection: criteria.objection || undefined,
     zip: criteria.zip || undefined,
     minMedicareClaims: claims != null && claims !== "" && Number.isFinite(Number(claims)) && Number(claims) > 0 ? Number(claims) : undefined,
     sortBy: criteria.sortBy || undefined,
@@ -106,6 +121,11 @@ const RELAXATIONS = [
   { key: "hasPhone", active: (c) => c.hasPhone, label: () => "Don't require a phone number", drop: { hasPhone: undefined } },
   { key: "hasDecisionMaker", active: (c) => c.hasDecisionMaker, label: () => "Don't require a decision maker on file", drop: { hasDecisionMaker: undefined } },
   { key: "activeMedicare", active: (c) => c.activeMedicare, label: () => "Include providers with no Medicare activity", drop: { activeMedicare: undefined } },
+  { key: "newSupplier", active: (c) => c.newSupplier, label: () => "Include suppliers that are not new", drop: { newSupplier: undefined } },
+  { key: "establishedSupplier", active: (c) => c.establishedSupplier, label: () => "Include suppliers that are not long established", drop: { establishedSupplier: undefined } },
+  { key: "untouched", active: (c) => c.untouched, label: () => "Include leads the team has already touched", drop: { untouched: undefined } },
+  { key: "tag", active: (c) => c.tag, label: (c) => `Remove the "${c.tag}" tag filter`, drop: { tag: undefined } },
+  { key: "objection", active: (c) => c.objection, label: () => "Remove the objection filter", drop: { objection: undefined } },
   { key: "minMedicareClaims", active: (c) => Number(c.minMedicareClaims) > 0, label: () => "Remove the Medicare claims minimum", drop: { minMedicareClaims: undefined } },
   { key: "zip", active: (c) => c.zip, label: (c) => `Remove the ZIP filter (${c.zip})`, drop: { zip: undefined } },
   { key: "lastUpdatedYears", active: (c) => (c.lastUpdatedYears && c.lastUpdatedYears.length) || c.lastUpdatedYear, label: () => "Remove the \"last updated\" year filter", drop: { lastUpdatedYears: [], lastUpdatedYear: undefined } },

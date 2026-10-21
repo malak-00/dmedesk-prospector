@@ -39,6 +39,8 @@ import * as ProductMix from "./services/productMix.js";
 import * as annotationsRepo from "./repos/annotationsRepo.js";
 import * as intelRepo from "./repos/intelRepo.js";
 import * as sameOwnerRepo from "./repos/sameOwnerRepo.js";
+import * as followUpRepo from "./repos/followUpRepo.js";
+import * as goalsRepo from "./repos/goalsRepo.js";
 import { prettyNumber } from "./lib/badNumbers.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
@@ -484,6 +486,9 @@ app.post("/leads/intel", async (c) => {
   return c.json(ok(await intelRepo.saveIntel(supabaseFor(c), body.npi, body.fields, c.get("session"))));
 });
 
+// Follow-ups the signed-in rep set on leads that are due (sql/051). `today` is the rep's own day, YYYY-MM-DD.
+app.get("/leads/follow-ups", async (c) => c.json(ok(await followUpRepo.listFollowUps(supabaseFor(c), c.get("session"), c.req.query("today")))));
+
 // Comments and tags on any lead, claimed or not (sql/049).
 app.get("/leads/annotations", async (c) => c.json(ok(await annotationsRepo.getAnnotations(supabaseFor(c), c.req.query("npi")))));
 app.post("/leads/annotations/comment", async (c) => {
@@ -650,6 +655,18 @@ app.post("/admin/insights/nudge", async (c) => {
   requireSuperAdmin(session);
   const body = await c.req.json().catch(() => ({}));
   return c.json(ok(await adminRepo.sendNudge(supabaseFor(c), session, body)));
+});
+
+// The team's weekly goals (sql/051): admins read and set them; Home shows progress.
+app.get("/admin/goals", async (c) => {
+  requireAdmin(c.get("session"));
+  return c.json(ok(await goalsRepo.getGoals(supabaseFor(c))));
+});
+app.post("/admin/goals", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await goalsRepo.saveGoals(supabaseFor(c), session, body)));
 });
 
 app.get("/admin/system", async (c) => {

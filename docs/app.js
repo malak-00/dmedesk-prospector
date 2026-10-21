@@ -193,6 +193,7 @@ const state = {
   // The Claimed table is one server page at a time (sorted and filtered there).
   claimedPage: 1,
   claimedPageSize: 50,
+  claimedServerGrouped: false, // the last page came back as whole business groups (Worker with grouped paging)
   claimedTotal: 0,      // leads matching the current filters
   claimedPages: 1,
   claimedCounts: { total: 0, due: 0, withReminder: 0, overdue: 0 }, // whole-list figures, whatever the filters
@@ -1677,8 +1678,8 @@ function buildSearchParams(formData) {
 // filters are dropped for them. Phone, ZIP and name-by-owner need the DME Desk
 // provider table (sql/021); without it a name still works the old way.
 const LOOKUP_IGNORED_PARAMS = ["nameContainsTerms", "excludeKeywords", "states", "taxonomyDescriptions", "lastUpdatedYears", "city", "minMedicareClaims",
-  "hasPhone", "hasDecisionMaker", "activeMedicare", "zip", "sortBy"];
-const ADVANCED_PARAMS = ["hasPhone", "hasDecisionMaker", "activeMedicare", "zip", "sortBy"];
+  "hasPhone", "hasDecisionMaker", "activeMedicare", "zip", "sortBy", "newSupplier", "establishedSupplier", "untouched", "tag", "objection"];
+const ADVANCED_PARAMS = ["hasPhone", "hasDecisionMaker", "activeMedicare", "zip", "sortBy", "newSupplier", "establishedSupplier", "untouched", "tag", "objection"];
 
 function isNpiLookupValue(value) {
   return /^\d{10}$/.test(String(value || "").trim());
@@ -2083,8 +2084,11 @@ function renderResults(excludedAsClaimed) {
     return;
   }
 
-  els.resultsBody.innerHTML = companies.map((c, i) => leadRowHtml(c, i)).join("");
-  attachRowHandlers();
+  // Related businesses (same phone or owner) sit together under a header when grouping is on.
+  const clusterInfo = groupingOn() && window.dmeHooks.relatedClusters ? window.dmeHooks.relatedClusters("prospect") : null;
+  els.resultsBody.innerHTML = clusterInfo && window.dmeGroups
+    ? window.dmeGroups.rowsHtml("prospect", companies, leadRowHtml, window.dmeGroups.prospectGroups(companies, clusterInfo), 7)
+    : companies.map((c, i) => leadRowHtml(c, i)).join("");  attachRowHandlers();
   updateSelectionUI();
 }
 
@@ -3288,6 +3292,13 @@ function endOfTodayIso() {
   return d.toISOString();
 }
 
+// "Group by business" is one switch for both lists (Prospect's checkbox lives in related.js). On unless
+// someone turned it off.
+const GROUPING_KEY = "dmeProspectorRelatedTogether";
+function groupingOn() {
+  try { return localStorage.getItem(GROUPING_KEY) !== "0"; } catch { return true; }
+}
+
 function claimedQuery() {
   const query = {
     page: state.claimedPage,
@@ -3296,6 +3307,8 @@ function claimedQuery() {
     q: state.claimedSearchQuery.trim(),
     overdue: state.claimedDueOnly ? "1" : "",
     endOfDay: endOfTodayIso(),
+    // Pages made of whole business groups, so a group is never split across pages.
+    grouped: groupingOn() ? "1" : "",
   };
   // Every claimed lead is yours, so sorting by "claimed by" can't change the order.
   if (state.claimedSortKey && state.claimedSortKey !== "claimedBy") {
@@ -3481,6 +3494,7 @@ async function loadClaimedLeads(silent = false) {
     state.claimedTotal = data.total;
     state.claimedCounts = data.counts;
     state.claimedLeadsAll = data.leads || []; // this page; the full list is no longer held in the browser
+    state.claimedServerGrouped = data.grouped === true;
     renderClaimedLeads(state.claimedLeadsAll);
     updateClaimedPager();
     els.refreshClaimedBtn.classList.remove("is-spinning");
@@ -3521,8 +3535,11 @@ function renderClaimedLeads(leads) {
     return;
   }
 
-  els.claimedBody.innerHTML = leads.map((lead, i) => claimedLeadRowHtml(lead, i)).join("");
-  attachClaimedRowHandlers();
+  // Leads of one business sit together under a header (design: group rows that open into the leads).
+  // Only when the server sent whole groups; an older Worker would show half a group per page.
+  els.claimedBody.innerHTML = groupingOn() && state.claimedServerGrouped && window.dmeGroups
+    ? window.dmeGroups.rowsHtml("claimed", leads, claimedLeadRowHtml, window.dmeGroups.claimedGroups(leads), 10)
+    : leads.map((lead, i) => claimedLeadRowHtml(lead, i)).join("");  attachClaimedRowHandlers();
   updateClaimedSelectionUI();
 }
 
@@ -3609,7 +3626,7 @@ function claimedLeadRowHtml(lead, index) {
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-claimed-index="${index}" tabindex="0" aria-expanded="false" style="--i:${Math.min(index, 12)}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="claimed-row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
-        <div class="company-name">${escapeHtml(lead.name)}${claimedBranchesBadge(lead.branches)}${window.dmeHooks.ageBadge?.(lead.enumerationDate) || ""}${providerChangeBadge(lead.providerChange)}${window.dmeHooks.relatedChip?.("claimed", index) || ""}</div>
+        <div class="company-name">${escapeHtml(lead.name)}${window.dmeGroups?.inShownGroup("claimed", index) ? "" : claimedBranchesBadge(lead.branches)}${window.dmeHooks.ageBadge?.(lead.enumerationDate) || ""}${providerChangeBadge(lead.providerChange)}${window.dmeHooks.relatedChip?.("claimed", index) || ""}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
         ${lead.taxonomy ? specialtyPillHtml(lead.taxonomy) : ""}
         ${leadSignalsHtml({
@@ -4876,7 +4893,30 @@ document.getElementById("claimedOpenNow")?.addEventListener("change", (e) => {
   state.claimedOpenNow = e.target.checked;
   reloadClaimedFromStart();
 });
-document.getElementById("claimedPagePrev")?.addEventListener("click", () => { state.claimedPage = Math.max(1, state.claimedPage - 1); loadClaimedLeads(); });
+
+// The Claimed switch drives the same setting as Prospect's: flip Prospect's checkbox (related.js saves it
+// and redraws that list), then reload Claimed from page one so its pages are cut between groups.
+const claimedGroupedBox = document.getElementById("claimedGrouped");
+if (claimedGroupedBox) {
+  claimedGroupedBox.checked = groupingOn();
+  claimedGroupedBox.addEventListener("change", () => {
+    const prospectBox = document.getElementById("relatedTogether");
+    if (prospectBox) {
+      // Its handler saves the setting, redraws Prospect and calls groupingChanged below, which reloads Claimed.
+      prospectBox.checked = claimedGroupedBox.checked;
+      prospectBox.dispatchEvent(new Event("change"));
+    } else {
+      try { localStorage.setItem(GROUPING_KEY, claimedGroupedBox.checked ? "1" : "0"); } catch { /* not remembered */ }
+      state.claimedPage = 1;
+      loadClaimedLeads();
+    }
+  });
+}
+// Prospect's checkbox changed it first (related.js): keep Claimed's switch in step and redraw it.
+window.dmeHooks.groupingChanged = () => {
+  if (claimedGroupedBox) claimedGroupedBox.checked = groupingOn();
+  if (state.claimedLoaded) { state.claimedPage = 1; loadClaimedLeads(true); }
+};document.getElementById("claimedPagePrev")?.addEventListener("click", () => { state.claimedPage = Math.max(1, state.claimedPage - 1); loadClaimedLeads(); });
 document.getElementById("claimedPageNext")?.addEventListener("click", () => { state.claimedPage = Math.min(state.claimedPages, state.claimedPage + 1); loadClaimedLeads(); });
 els.refreshClaimedBtn.addEventListener("click", loadClaimedLeads);
 els.staleNudge.addEventListener("click", loadClaimedLeads);
@@ -5056,6 +5096,11 @@ function renderFilterChips() {
   if (form.elements.hasPhone && form.elements.hasPhone.checked) chips.push({ key: "hasPhone", label: "Has phone" });
   if (form.elements.hasDecisionMaker && form.elements.hasDecisionMaker.checked) chips.push({ key: "hasDecisionMaker", label: "Has decision maker" });
   if (form.elements.activeMedicare && form.elements.activeMedicare.checked) chips.push({ key: "activeMedicare", label: "Active Medicare biller" });
+  if (form.elements.newSupplier && form.elements.newSupplier.checked) chips.push({ key: "newSupplier", label: "New supplier" });
+  if (form.elements.establishedSupplier && form.elements.establishedSupplier.checked) chips.push({ key: "establishedSupplier", label: "Established supplier" });
+  if (form.elements.untouched && form.elements.untouched.checked) chips.push({ key: "untouched", label: "Nobody has contacted" });
+  if (form.elements.tag && String(form.elements.tag.value || "").trim()) chips.push({ key: "tag", label: `Tag: ${String(form.elements.tag.value).trim()}` });
+  if (form.elements.objection && form.elements.objection.value) chips.push({ key: "objection", label: `Objection: ${form.elements.objection.value}` });
   const states = checked("states").map((cb) => cb.value);
   if (states.length) chips.push({ key: "states", label: `State: ${summarize(states, "states")}` });
   if (value("city")) chips.push({ key: "city", label: `City: ${value("city")}` });
@@ -5076,7 +5121,8 @@ function renderFilterChips() {
 function removeFilterChip(key) {
   const form = els.form;
   if (["npi", "city", "minMedicareClaims"].includes(key)) form.elements[key].value = "";
-  else if (["hasPhone", "hasDecisionMaker", "activeMedicare"].includes(key)) form.elements[key].checked = false;
+  else if (["hasPhone", "hasDecisionMaker", "activeMedicare", "newSupplier", "establishedSupplier", "untouched"].includes(key)) form.elements[key].checked = false;
+  else if (key === "tag" || key === "objection") form.elements[key].value = "";
   else if (key === "states") document.getElementById("stateClearBtn").click();
   else if (key === "taxonomy") document.getElementById("taxonomyClearBtn").click();
   else if (key === "years") document.getElementById("yearClearBtn").click();
@@ -5138,6 +5184,7 @@ applyNavRail();
 // Which "remove this" chip action undoes each suggestion the server offers.
 const RELAX_TO_CHIP = {
   hasPhone: "hasPhone", hasDecisionMaker: "hasDecisionMaker", activeMedicare: "activeMedicare",
+  newSupplier: "newSupplier", establishedSupplier: "establishedSupplier", untouched: "untouched", tag: "tag", objection: "objection",
   minMedicareClaims: "minMedicareClaims", lastUpdatedYears: "years", city: "city", nameContains: "nameContains", taxonomy: "taxonomy",
 };
 
@@ -5160,6 +5207,8 @@ async function loadSearchCapabilities() {
 function applySearchCaps() {
   const on = searchAdvancedAvailable();
   document.getElementById("resultsRefine").hidden = !on;
+  const teamFilters = document.getElementById("teamFilters");
+  if (teamFilters) teamFilters.hidden = !(on && state.searchCaps && state.searchCaps.teamFilters); // sql/052
   document.getElementById("territoryBtn").hidden = !on;
   document.getElementById("availability").hidden = true;
   document.getElementById("quickPicks").hidden = true;
@@ -5601,7 +5650,8 @@ function savedSearchSummary(values) {
 // restoring only touches what a preset names -- so put them back to their
 // defaults first, or the new search would inherit whatever was set before.
 function resetAdvancedFields() {
-  ["hasPhone", "hasDecisionMaker", "activeMedicare"].forEach((name) => { if (els.form.elements[name]) els.form.elements[name].checked = false; });
+  ["hasPhone", "hasDecisionMaker", "activeMedicare", "newSupplier", "establishedSupplier", "untouched"].forEach((name) => { if (els.form.elements[name]) els.form.elements[name].checked = false; });
+  ["tag", "objection"].forEach((name) => { if (els.form.elements[name]) els.form.elements[name].value = ""; });
   if (els.form.elements.sortBy) els.form.elements.sortBy.value = "";
 }
 

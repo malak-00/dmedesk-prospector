@@ -1,5 +1,36 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-21 — Leads grouped by business in Claimed and Prospect (written, not committed or deployed)
+
+### Objective
+Show leads of one business together: under the company name when members share one name, under the authorized official when the names differ but one person is behind them, with the businesses as the rows beneath (Design A, with a second level for big groups, Design C). Applies to Claimed and Prospect; "who to call" and "why to call" stay in each lead's own expanded card, unchanged.
+
+### Actions Completed
+- Worker: `parseListParams` accepts `grouped=1`; `chunkIntoGroupPages` (leadView.js) cuts pages between whole business groups, a group sitting where its first member falls in the chosen sort; `listClaimedPage` has a grouped path (id/group query over the same filter and sort, then only the page's rows). The row-by-row path is unchanged. The page-local "other locations" lists omit members already shown in the group.
+- Frontend: new `docs/leadgroups.js` (naming, header and sub-header rows, open/close, remembered per tab); `app.js` draws Claimed and Prospect through it; one "Group by business" switch for both lists (Claimed toolbar and Prospect's former "Keep related together"), on by default; the row "N locations" badge and "Related" chip stay quiet when a header covers them; groups of 4 or fewer start open, bigger ones closed.
+- Claimed only groups when the Worker answers with whole groups (`grouped: true`), so deploying the frontend first shows nothing half-grouped.
+- 345 worker tests pass (new: groupedClaimed.test.js, leadgroups.test.js). No browser testing.
+- Mistake caught and repaired: a version-bump loop with a bad regex briefly rewrote `=1/=2/=3` across docs/index.html; it was rebuilt from HEAD plus the other session's pending additions plus mine and verified byte-for-byte by re-applying the corruption.
+
+### Database / System Result
+None. No SQL needed.
+
+### Safety Status
+Read-only change to how leads are listed; no ownership or data changes. Needs the Worker deployed for Claimed grouping to appear.
+
+## 2026-10-21 — Batch 2 of the new ideas: follow-up dates, team search filters, weekly goals (sql/051 and sql/052, written, not run)
+
+**Objective.** Let a rep schedule a return to any lead, filter Prospect by what the team knows, and show goal progress on the super admin Home.
+
+**Actions Completed.**
+- **Follow-up dates (needs sql/051).** `lead_intel.follow_up_at` and `follow_up_by`: set from the Call intel box (a date field and 3 days / 1 week / 2 weeks / 1 month / Clear chips) on any lead, claimed or not. `GET /leads/follow-ups?today=` (`worker/src/repos/followUpRepo.js`) returns the ones the signed-in rep set that are due, each with a card-shaped company so call mode can dial an unclaimed lead; `docs/today.js` shows a "Follow-ups due" card with Call, Open in call mode and Done (clears the date).
+- **Team search filters (needs sql/052).** New optional criteria `newSupplier` (NPI under 2 years old), `establishedSupplier` (15+ years), `untouched` (nobody has claimed, called, noted or tagged it), `tag` and `objection`, read in `worker/src/lib/searchFilters.js`, added to the saved-progress fingerprint, offered as "loosen this" suggestions, and shown as controls in the Prospect "Only show" row, hidden until the Worker's capability check (`teamFilters`, a probe of `provider_filter_sql`) says sql/052 is installed. `sql/052_team_search_filters.sql` renames the live `provider_filter_sql` to `provider_filter_sql_base` and adds a thin wrapper with the old name that appends the new clauses; with none of the new keys it returns the base text unchanged, lookups by NPI, phone or name are left alone, and a one-line rollback is in the file. Baseline recorded before running it: Florida with active Medicare billers = 2,752 matches.
+- **Weekly goals (needs sql/051).** `team_goals` table; `GET` and `POST /admin/goals` (admins); a "Weekly goals" card on the super admin Home with progress bars (calls and meetings held this week, from `admin/team-activity`) and a Set/Change goals form.
+
+**Database / System Result.** None applied yet. sql/051 (two columns on `lead_intel`, one new table) and sql/052 (function rename plus wrapper) are written and need the user's go-ahead. Until they run, follow-up dates and goals say they are not installed, and the team filters stay hidden.
+
+**Safety Status.** Worker tests pass (338/338); not browser-tested. Needs a Worker deploy and a frontend publish.
+
 ## 2026-10-21 — Batch 1 of the new ideas: Try again now, Who we're up against, same owner elsewhere, follow-up email
 
 **Objective.** First batch of the ideas agreed after the Insights/Home work: use the call intel and call history to help reps decide who to call and what to say.

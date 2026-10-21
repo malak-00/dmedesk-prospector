@@ -29,6 +29,7 @@
   // the browser holds only what this screen shows, however many leads they have.
 
   let view = null;
+  let followUps = []; // follow-up dates the rep set on leads (sql/051) that have come due
   const STALE_KEY = "dmeStaleDays";
   const time = (iso) => Date.parse(iso) || 0;
   const phoneOf = (l) => (l.contactPhone || l.companyPhone || "").trim();
@@ -152,6 +153,7 @@
       b.review.length ? `${b.review.length} meeting${b.review.length === 1 ? "" : "s"} to wrap up` : "",
       b.meetingsToday.length ? `${b.meetingsToday.length} meeting${b.meetingsToday.length === 1 ? "" : "s"} today` : "",
       b.callbacksTotal ? `${b.callbacksTotal} callback${b.callbacksTotal === 1 ? "" : "s"} due` : "",
+      followUps.length ? `${followUps.length} follow-up${followUps.length === 1 ? "" : "s"} due` : "",
       retry.length ? `${retry.length} worth another try right now` : "",
       b.staleTotal ? `${b.staleTotal} going cold` : "",
       b.firstTotal ? `${b.firstTotal} waiting for a first call` : "",
@@ -217,6 +219,23 @@
       { hint: "Voicemail or no answer earlier, and it's a good time to call there now.", action: `<button type="button" class="link-btn today-card-link" data-today="start-retry">Call these ${retry.length}</button>` });
     }
 
+    if (followUps.length) {
+      html += section("Follow-ups due", followUps.length, followUps.map((f) => {
+        const c = f.company || {};
+        const place = [c.address && c.address.city, c.address && c.address.state].filter(Boolean).join(", ");
+        const phone = ((c.decisionMakers && c.decisionMakers[0] && c.decisionMakers[0].phone) || c.phone || "").trim();
+        return `<div class="today-row">
+          <div class="today-who"><div class="today-name">${escapeHtml(c.name || f.npi)}</div><div class="today-sub">${escapeHtml(place)} ${window.dmeHooks.localTime?.(c.address && c.address.state) || ""}</div></div>
+          <span class="today-when"><span class="muted-note">${escapeHtml(f.objection ? f.objection : "follow up")} \u00b7 due ${escapeHtml(f.followUpAt)}</span></span>
+          <div class="today-actions">
+            ${phone ? `<a class="btn btn-primary btn-small" href="tel:${escapeHtml(phone.replace(/[^\d+*#]/g, ""))}">${SIGNAL_ICONS.phone}Call</a>` : ""}
+            <button type="button" class="btn btn-ghost btn-small" data-today="fu-start" data-npi="${escapeHtml(f.npi)}">Open in call mode</button>
+            <button type="button" class="link-btn" data-today="fu-done" data-npi="${escapeHtml(f.npi)}">Done</button>
+          </div>
+        </div>`;
+      }).join(""), { hint: "Days you set on leads, claimed or not. Mark one done to clear it.", tone: "is-attention" });
+    }
+
     if (b.stale.length) {
       const shown = b.stale.slice(0, FIRST_CALLS_SHOWN);
       const more = b.staleTotal - shown.length;
@@ -240,7 +259,7 @@
         </div>`).join("") + (more > 0 ? `<div class="today-more">+ ${more} more. <button type="button" class="link-btn" data-today="start-first">Call ${b.firstTotal > b.firstCalls.length ? "the first" : "all"} ${b.firstCalls.length}</button></div>` : ""));
     }
 
-    if (!b.review.length && !b.meetingsToday.length && !b.callbacks.length && !retry.length && !b.stale.length && !b.firstCalls.length) {
+    if (!b.review.length && !b.meetingsToday.length && !b.callbacks.length && !followUps.length && !retry.length && !b.stale.length && !b.firstCalls.length) {
       html += `<div class="today-empty">
         <div class="today-empty-title">${b.total ? "You're all caught up" : "No claimed leads yet"}</div>
         <p>${b.total
@@ -385,7 +404,11 @@
   async function refresh({ showSpinner = false } = {}) {
     if (showSpinner || !view) { loadFailed = false; render(); }
     try {
-      view = await apiGet("leads/today", todayQuery());
+      const d = new Date();
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const [v, fu] = await Promise.all([apiGet("leads/today", todayQuery()), apiGet("leads/follow-ups", { today: day }).catch(() => ({ items: [] }))]);
+      view = v;
+      followUps = (fu && fu.items) || [];
       loadFailed = false;
       window.dmeBuddy?.onToday(view, dailyGoal());
     } catch (err) {
@@ -446,6 +469,16 @@
     else if (act === "open" && lead) openInClaimed(lead);
     else if (act === "log" && lead) window.dmeCall.start([lead], "claimed");
     else if (act === "review" && lead) openOutcome(lead);
+    else if (act === "fu-start") {
+      const f = followUps.find((x) => x.npi === btn.dataset.npi);
+      if (f) window.dmeCall.start([f.company], "prospect");
+    }
+    else if (act === "fu-done") {
+      const npi = btn.dataset.npi;
+      apiPost("leads/intel", { npi, fields: { followUpAt: "" } })
+        .then(() => { followUps = followUps.filter((x) => x.npi !== npi); render(); })
+        .catch((err) => showToast(err.message, true));
+    }
     else if (act === "start-retry") {
       const list = retryNow(buckets());
       if (list.length) window.dmeCall.start(list, "claimed");

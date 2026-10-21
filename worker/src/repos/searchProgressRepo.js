@@ -33,6 +33,11 @@ export function fingerprint(criteria = {}) {
   if (criteria.hasPhone) advanced.hasPhone = true;
   if (criteria.hasDecisionMaker) advanced.hasDecisionMaker = true;
   if (criteria.activeMedicare) advanced.activeMedicare = true;
+  if (criteria.newSupplier) advanced.newSupplier = true;
+  if (criteria.establishedSupplier) advanced.establishedSupplier = true;
+  if (criteria.untouched) advanced.untouched = true;
+  if (criteria.tag) advanced.tag = String(criteria.tag);
+  if (criteria.objection) advanced.objection = String(criteria.objection);
   if (criteria.zip) advanced.zip = String(criteria.zip);
   if (criteria.sortBy) advanced.sortBy = String(criteria.sortBy);
   // The Medicare minimum only counts once the database applies it (any of the

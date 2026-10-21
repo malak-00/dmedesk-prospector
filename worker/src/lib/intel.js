@@ -15,7 +15,7 @@ const clean = (v) => String(v == null ? "" : v).replace(/\s+/g, " ").trim();
 
 // Accepts the fields a rep changed (camelCase from the browser) and returns { patch } with only valid, trimmed
 // values (an empty string clears a field), or { error } for the first bad one. Unknown keys are ignored.
-export function cleanIntel(input = {}) {
+export function cleanIntel(input = {}, now = Date.now()) {
   const map = { currentBiller: "current_biller", gatekeeper: "gatekeeper", directLine: "direct_line", email: "email", patientVolume: "patient_volume", objection: "objection" };
   const patch = {};
   for (const [key, column] of Object.entries(map)) {
@@ -31,12 +31,22 @@ export function cleanIntel(input = {}) {
     if (column === "direct_line" && value && !/^[\d\s().+\-x#]{7,30}$/i.test(value)) return { error: "That doesn't look like a phone number." };
     patch[column] = value || null;
   }
+  if ("followUpAt" in input) {
+    const day = clean(input.followUpAt);
+    if (day) {
+      const t = Date.parse(`${day}T00:00:00Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(t)) return { error: "That doesn't look like a date." };
+      if (t < now - 2 * 86_400_000) return { error: "Pick today or a day in the future." };
+      if (t > now + 400 * 86_400_000) return { error: "Pick a date within the next year." };
+    }
+    patch.follow_up_at = day || null;
+  }
   return Object.keys(patch).length ? { patch } : { error: "Nothing to save." };
 }
 
 // Row -> what the browser gets.
 export function shapeIntel(row, userName) {
-  if (!row) return { currentBiller: "", gatekeeper: "", directLine: "", email: "", patientVolume: "", objection: "", updatedBy: "", updatedAt: "" };
+  if (!row) return { currentBiller: "", gatekeeper: "", directLine: "", email: "", patientVolume: "", objection: "", followUpAt: "", updatedBy: "", updatedAt: "" };
   return {
     currentBiller: row.current_biller || "",
     gatekeeper: row.gatekeeper || "",
@@ -44,6 +54,7 @@ export function shapeIntel(row, userName) {
     email: row.email || "",
     patientVolume: row.patient_volume || "",
     objection: row.objection || "",
+    followUpAt: row.follow_up_at ? String(row.follow_up_at).slice(0, 10) : "",
     updatedBy: userName || "",
     updatedAt: row.updated_at || "",
   };
