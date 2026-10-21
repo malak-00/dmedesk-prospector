@@ -1,5 +1,6 @@
 /* Small holiday decorations, and the dates Caro dresses up for: only the holidays that have a picture of her. Around each holiday a short string of little ornaments hangs in the empty middle of the
-   header, between the logo and your name. It can't cover anything: it only uses space that is otherwise empty, never
+   header, between the logo and your name, and a second set drifts down the empty part of the sidebar (a zigzag when it is
+   expanded, one column when it is collapsed). It can't cover anything: it only uses space that is otherwise empty, never
    takes clicks, shrinks to nothing when the header needs the room, and is hidden on narrow screens. Anyone can switch
    it off from Caro's panel. Add ?holiday=halloween (or any key below) to the address to preview one.
    holidayFor(date) is pure and tested (worker/test/holidays.test.js); the rest draws the strip. */
@@ -124,6 +125,7 @@
 
   const OFF_KEY = "dmeHolidayDecor"; // "off" when switched off
   let strip = null;
+  let side = null;
   let shownKey = "";
 
   const switchedOff = () => { try { return localStorage.getItem(OFF_KEY) === "off"; } catch { return false; } };
@@ -145,12 +147,13 @@
 
   function unmount() {
     if (strip) { strip.remove(); strip = null; }
+    if (side) { side.remove(); side = null; }
     shownKey = "";
   }
 
   function mount() {
     const key = switchedOff() ? "" : current();
-    if (key === shownKey && (strip ? strip.isConnected : !key)) return;
+    if (key === shownKey && (strip ? strip.isConnected && (!side || side.isConnected) : !key)) return;
     unmount();
     const header = document.querySelector(".app-header");
     const right = header && header.querySelector(".header-right");
@@ -160,6 +163,17 @@
     strip.setAttribute("aria-hidden", "true");
     strip.innerHTML = SETS[key].map(glyphSvg).join("");
     header.insertBefore(strip, right);
+    // The sidebar gets its own take: the same ornaments in the opposite order, zigzagging down the empty space above Quick
+    // actions (or in a single column when the sidebar is collapsed to its icon rail).
+    const nav = document.querySelector(".view-tabs");
+    const action = nav && nav.querySelector(".nav-action");
+    if (nav && action) {
+      side = document.createElement("div");
+      side.className = `holiday-side hd-${key}`;
+      side.setAttribute("aria-hidden", "true");
+      side.innerHTML = SETS[key].slice().reverse().map((g, i) => glyphSvg(g, i)).join("");
+      nav.insertBefore(side, action);
+    }
     shownKey = key;
   }
 

@@ -641,6 +641,29 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-21 — Holiday decorations also in the sidebar
+
+### Objective
+
+Show the holiday decorations in the sidebar as well as the header, in a different arrangement, and respect the sidebar being expanded or collapsed.
+
+### Actions Completed
+
+- `docs/holidays.js`: besides the header strip, mounts a `.holiday-side` block in the sidebar between the tabs and Quick actions, using the same
+  holiday's ornaments in reverse order. It is removed together with the header strip (the Caro-panel switch and the holiday roll-over cover both).
+- `docs/style.css`: expanded sidebar = ornaments zigzag down a dotted line and bob gently; collapsed icon rail = one smaller column, no line.
+  It sits only in otherwise empty space (clips instead of pushing anything), takes no clicks, is hidden when the sidebar becomes the top tab bar
+  (960px and under), and stops moving for reduced-motion users.
+- `docs/index.html`: versions bumped for `holidays.js` and `style.css`.
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required (`?holiday=halloween` previews one).
+
 ## 2026-10-19 — Caro: the pose a person picks now sticks on Mondays, Fridays and holidays
 
 ### Objective
