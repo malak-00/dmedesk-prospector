@@ -2755,7 +2755,12 @@ const MATCH_KEY_WORDS = { name: "name", state: "state", official: "authorized of
 
 function claimedCountText(data) {
   const n = data.rowsAdded || 0;
-  return `Claimed ${n} lead${n === 1 ? "" : "s"} as ${data.claimedBy || "you"}.`;
+  const mates = data.groupMatesClaimed || 0;
+  const tooLarge = data.groupsTooLarge || 0;
+  return `Claimed ${n} lead${n === 1 ? "" : "s"} as ${data.claimedBy || "you"}.` +
+    // sql/038: the rest of a claimed business's group comes with it.
+    (mates ? ` ${mates} other location${mates === 1 ? "" : "s"} of the same business ${mates === 1 ? "was" : "were"} added too.` : "") +
+    (tooLarge ? ` ${tooLarge} business group${tooLarge === 1 ? " is" : "s are"} too large to add automatically — ask an admin.` : "");
 }
 
 const CLAIM_DIALOG = {

@@ -1,5 +1,21 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-21 — A claimed business's whole group goes to its owner (sql/038, written, not run)
+
+### Objective
+User question: do claimed leads appear with their group? Finding (code read, not run): Claimed leads showed only the user's own lead rows; other NPIs in the group appeared only as "Other locations" inside a lead, and only if they were lead rows. Merges never claimed siblings ("ownership never changes"). Other reps were already shielded: Prospect hides groups someone else owns (`owned_group_npis`) and claiming them is blocked. Decision (user): auto-claim the whole group for its owner.
+
+### Actions Completed
+- `sql/038_auto_claim_group.sql`: `auto_claim_group_siblings(group, actor, max=50, dry_run)`, `auto_claim_group_siblings_for(groups[], actor)`, and `auto_claim_existing_groups(...)` (one-off backfill, dry run by default). Rules: exactly one owner in the group; only NPIs with no active claim, not disconnected, in `npi_records`, not deactivated; groups with more than 50 such NPIs are skipped and reported (`too_many`); new lead rows built from `npi_records` with a `claimed` ownership event (source `auto_claim_group`); takes the same per-group lock as `claim_leads`.
+- `resolve_identity_match` replaced (otherwise identical to sql/030): after joining two groups it auto-claims for the single owner; a failure there never undoes the merge; the result is recorded in the decision metadata.
+- Worker: `exportCompaniesToLeads` calls `auto_claim_group_siblings_for` after a successful claim (best effort; claim never fails because of it) and returns `groupMatesClaimed` / `groupsTooLarge`; the claim toast mentions them. 299 worker tests pass (4 new in `worker/test/groupClaim.test.js`).
+
+### Database / System Result
+None yet: sql/038 has not been run and the existing 9,000+ merges have not been touched. Run `select public.auto_claim_existing_groups(null, 50, 50, true);` (dry run) repeatedly with the returned `next` to see what the backfill would claim before running it for real.
+
+### Safety Status
+This changes ownership rules (siblings become claimed without the rep choosing them), which is why it is capped, skips conflicted groups, never re-claims disconnected NPIs, and leaves a `claimed` event for every row. Not yet handled: "Return to Prospect" on one NPI releases only that NPI, so its auto-claimed group-mates stay with the rep.
+
 ## 2026-10-19 — Call brief as a side panel next to the call panel; the call-mode avatar moves to the outer edge
 
 **Objective.** Offer the call brief from inside the call panel, opening beside it, and keep the call-mode avatar from being covered by the panels.

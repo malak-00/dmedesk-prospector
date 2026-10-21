@@ -414,7 +414,28 @@ export async function exportCompaniesToLeads(supabase, companies, session, flatt
   }
 
   const verdict = fromClaimResult(data);
-  return Object.assign({ rowsAdded: verdict.claimedNpis.length, claimedBy: session.displayName }, verdict);
+  const groupMates = await claimGroupMates(supabase, data, options.actorId);
+  return Object.assign({ rowsAdded: verdict.claimedNpis.length, claimedBy: session.displayName }, verdict, groupMates);
+}
+
+// A claimed business's other NPIs (merged by an admin, or branches grouped by
+// identity) become the same rep's leads (sql/038), so the whole group sits in
+// their Claimed leads and no one else sees it. Best-effort on purpose: the
+// claim itself has already succeeded, so a failure here is logged, not thrown.
+async function claimGroupMates(supabase, claimResult, actorId) {
+  const none = { groupMatesClaimed: 0, groupsTooLarge: 0 };
+  const groupIds = [...new Set(((claimResult && claimResult.claimed) || []).map((c) => c && c.groupId).filter(Boolean))];
+  if (groupIds.length === 0) return none;
+  const { data, error } = await supabase.rpc("auto_claim_group_siblings_for", { p_group_ids: groupIds, p_actor: actorId || null });
+  if (error) {
+    if (!isMissingFunction(error)) console.log("[leadsRepo] group-mate claim failed: " + error.message);
+    return none;
+  }
+  const result = data || {};
+  return {
+    groupMatesClaimed: Number(result.claimed) || 0,
+    groupsTooLarge: (result.skipped_groups || []).filter((g) => g && g.skipped === "too_many").length,
+  };
 }
 
 // "Send to Sheet" asks the same question claiming asks, and writes nothing:
