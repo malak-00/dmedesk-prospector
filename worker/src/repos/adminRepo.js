@@ -1029,7 +1029,7 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
   if (!users.length) throw httpError(500, "Failed to load users for the insights");
   const nameById = new Map(users.map((u) => [u.id, u.display_name || u.username]));
 
-  const [claimEvents, taps, leads, suggestionRows, badNumbers, searches, matchReviews, providerChanges, sentNotes, eventsProbe, intel] = await Promise.all([
+  const [claimEvents, taps, leads, suggestionRows, badNumbers, searches, matchReviews, providerChanges, sentNotes, eventsProbe, callRecords, intel] = await Promise.all([
     tryRows(() => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at").eq("event_type", "claimed").gte("created_at", since), "claim history"),
     tryRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at").gte("tapped_at", since), "phone taps"),
     tryRows(() => supabase.from("leads").select("npi, company_name, claimed_by, claimed_at, is_disconnected, notes, reminder_at, meeting_at, status, specialty, state").not("claimed_by", "is", null), "leads"),
@@ -1041,6 +1041,8 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
     tryRows(() => supabase.from("buddy_notes").select("to_user_id, body, created_at").not("to_user_id", "is", null).gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString()), "sent notes"),
     tryCount(() => supabase.from("app_events").select("*", { count: "exact", head: true })),
     // sql/050: why leads said no. Empty until that file is run.
+    // sql/053: the phone system's calls in the period. Empty until that file is run and a log is imported.
+    tryRows(() => supabase.from("call_records").select("called_at, agent, duration_sec, disposition").gte("called_at", since), "phone system calls", false).then((rows) => rows),
     tryRows(() => supabase.from("lead_intel").select("npi, objection, current_biller").or("objection.not.is.null,current_biller.not.is.null"), "call intel", false),
   ]);
   // null = sql/046 isn't installed; the dashboard then says events aren't being collected yet.
@@ -1050,7 +1052,7 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
     users, claimEvents, taps, leads, badNumbers, searches,
     suggestions: suggestionRows.map((s) => ({ ...s, submitted_by_name: nameById.get(s.submitted_by) || "" })),
     queues: { matchReviews, providerChanges },
-    system: systemInfo, days: span, events: appEvents, intel,
+    system: systemInfo, days: span, events: appEvents, intel, callRecords,
   });
   // When each person last got a note, so the dashboard doesn't invite sending a second one on top.
   const lastNote = new Map();

@@ -28,7 +28,7 @@ test('a full lead gets who to ask for, the money, and a five-part plan', () => {
   assert.equal(brief.title, 'Medical Hotspots, Inc');
   assert.match(fact(brief, 'Ask for'), /Trisha Bailey, CEO \(direct 772-226-7700, main line 727-256-1305\)/);
   assert.match(fact(brief, 'Medicare'), /\$526k paid, 1,307 claims, 194 patients/);
-  assert.match(fact(brief, 'Business'), /a company \(NPI-2\).*registry updated 2 years ago/);
+  assert.match(fact(brief, 'Business'), /a company \(NPI-2\).*registry updated Sep 2024/);
   assert.deepEqual(brief.script.map((s) => s.label), ['Opening line', 'If the front desk asks', 'Likely pain point', 'Talking point', 'Questions to ask', 'If they push back', 'Close', 'Voicemail']);
   assert.match(part(brief, 'Opening line'), /^Hi Trisha, this is \[your name\] with \[company name\]\./);
   assert.match(part(brief, 'Opening line'), /30 seconds.*prior authorizations/);

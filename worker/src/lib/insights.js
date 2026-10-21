@@ -8,6 +8,7 @@
 import { buildFunnel } from "./funnel.js";
 import { buildStateHeat } from "./stateHeat.js";
 import { billerCounts, objectionCounts } from "./intel.js";
+import { summarizeCallRecords } from "./callLog.js";
 import { FEATURES } from "./events.js";
 import { allCallEvents, noteKind, parseNoteLines, tapsToLines } from "./teamActivity.js";
 
@@ -19,7 +20,7 @@ const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
 export function buildInsights({
   users = [], claimEvents = [], taps = [], leads = [], suggestions = [], badNumbers = [], searches = [],
-  queues = {}, system = null, days = 28, now = new Date(), events = null, intel = [],
+  queues = {}, system = null, days = 28, now = new Date(), events = null, intel = [], callRecords = [],
 } = {}) {
   const span = Math.min(Math.max(Math.round(Number(days)) || 28, 7), 90);
   const nowMs = now.getTime();
@@ -243,6 +244,7 @@ export function buildInsights({
     nudges,
     callAt,
     territory: buildStateHeat({ leads: teamLeads, days: span, now }),
+    callSystem: summarizeCallRecords(callRecords),
     system,
     signals,
   };

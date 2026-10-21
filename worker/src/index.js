@@ -41,6 +41,8 @@ import * as intelRepo from "./repos/intelRepo.js";
 import * as sameOwnerRepo from "./repos/sameOwnerRepo.js";
 import * as followUpRepo from "./repos/followUpRepo.js";
 import * as goalsRepo from "./repos/goalsRepo.js";
+import * as callLogRepo from "./repos/callLogRepo.js";
+import { runWeeklyDigest } from "./services/digest.js";
 import { prettyNumber } from "./lib/badNumbers.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
@@ -669,6 +671,14 @@ app.post("/admin/goals", async (c) => {
   return c.json(ok(await goalsRepo.saveGoals(supabaseFor(c), session, body)));
 });
 
+// Import the phone system's call log (sql/053): the browser sends the parsed rows in chunks.
+app.post("/admin/call-log/import", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await callLogRepo.importCalls(supabaseFor(c), session, body.rows)));
+});
+
 app.get("/admin/system", async (c) => {
   requireAdmin(c.get("session"));
   return c.json(ok(await SystemInfo.getSystemInfo(c.get("config"), supabaseFor(c))));
@@ -1009,4 +1019,10 @@ app.get("/debug/suggestion-email", (c) =>
 
 app.notFound((c) => c.json({ success: false, status: 404, error: "Unknown path: " + c.req.path }, 404));
 
-export default app;
+// fetch serves the app; scheduled is the Monday digest (cron trigger in wrangler.toml).
+export default {
+  fetch: app.fetch,
+  scheduled(event, env, ctx) {
+    ctx.waitUntil(runWeeklyDigest(env).catch((err) => console.log("[digest] " + err.message)));
+  },
+};

@@ -121,6 +121,75 @@
         <span class="ins-funnel-num">${num(b.count)}${b.objections && b.objections.length ? ` <small>${esc(b.objections.map((o) => `${cap(o.reason)} ${o.count}`).join(", "))}</small>` : ""}</span></div>`).join("")}</div>`;
   }
 
+  // The phone system's calls in the period (sql/053), imported from its call log.
+  function callSystemCard(c) {
+    if (!c) return `<p class="ins-empty">No phone system calls in this period yet. Import the call log under System.</p>`;
+    return `<p class="ins-note" style="margin-top:0"><strong>${num(c.calls)}</strong> calls, <strong>${num(c.answered)}</strong> answered (${pct(c.rate)}), about ${num(c.talkMinutes)} minutes of conversation.</p>
+      ${table([{ label: "Agent" }, { label: "Calls", num: 1 }, { label: "Answered", num: 1 }, { label: "Rate", num: 1 }],
+        c.agents.map((a) => [esc(a.agent), num(a.calls), num(a.answered), pct(a.calls ? a.answered / a.calls : 0)]))}
+      ${table([{ label: "Day" }, { label: "Calls", num: 1 }, { label: "Answered", num: 1 }, { label: "Rate", num: 1 }],
+        c.weekdays.map((d) => [esc(d.day), num(d.calls), num(d.answered), d.calls ? pct(d.answered / d.calls) : "\u2014"]))}
+      <p class="ins-note">Answered means the phone system said so, or the call lasted 15 seconds or more.</p>`;
+  }
+
+  // Import the phone system's call log (a CSV export). Nothing is sent until you press Import.
+  const importState = { rows: [], mapping: null, name: "", status: "", busy: false };
+  const COLUMN_LABELS = { calledAt: "Date and time", phone: "Phone number", durationSec: "Duration", disposition: "Outcome", agent: "Agent" };
+
+  function importCard() {
+    const st = importState;
+    const mapText = st.mapping ? Object.entries(COLUMN_LABELS).map(([k, label]) => `${label}: ${st.mapping[k] >= 0 ? "found" : "not found"}`).join(" \u00b7 ") : "";
+    const ready = st.rows.length > 0 && st.mapping && st.mapping.calledAt >= 0 && st.mapping.phone >= 0;
+    return `<p class="ins-note" style="margin-top:0">Upload the call log exported from the phone system (a CSV with one row per call). Calls already imported are skipped, so it is safe to upload an overlapping file. Matched to leads by phone number.</p>
+      <div class="intel-grid">
+        <label class="intel-field"><span>Call log file (.csv)</span><input type="file" accept=".csv,text/csv" data-ins="calllog-file"></label>
+      </div>
+      ${st.name ? `<p class="ins-note"><strong>${esc(st.name)}</strong>: ${num(st.rows.length)} rows. ${esc(mapText)}</p>` : ""}
+      ${st.name && !ready ? `<p class="ins-note">Needs at least a date and a phone number column. Check the file's first row has headers.</p>` : ""}
+      <p class="ins-note"><button type="button" class="btn btn-primary btn-small" data-ins="calllog-import"${ready && !st.busy ? "" : " disabled"}>${st.busy ? "Importing\u2026" : "Import calls"}</button> <span aria-live="polite">${esc(st.status)}</span></p>`;
+  }
+
+  async function runImport() {
+    const st = importState;
+    if (st.busy || !st.rows.length) return;
+    st.busy = true;
+    st.status = "";
+    render();
+    const total = { received: 0, imported: 0, alreadyThere: 0, skipped: {} };
+    try {
+      for (let i = 0; i < st.rows.length; i += 500) {
+        const part = await apiPost("admin/call-log/import", { rows: st.rows.slice(i, i + 500) });
+        total.received += part.received; total.imported += part.imported; total.alreadyThere += part.alreadyThere;
+        Object.entries(part.skipped || {}).forEach(([why, n]) => { total.skipped[why] = (total.skipped[why] || 0) + n; });
+        st.status = `Importing\u2026 ${num(Math.min(i + 500, st.rows.length))} of ${num(st.rows.length)}`;
+        const live = panel.querySelector('[data-ins="calllog-import"]')?.parentElement?.querySelector("[aria-live]");
+        if (live) live.textContent = st.status;
+      }
+      const skippedCount = Object.values(total.skipped).reduce((a, b) => a + b, 0);
+      st.status = `Done: ${num(total.imported)} new calls, ${num(total.alreadyThere)} already there${skippedCount ? `, ${num(skippedCount)} skipped (${Object.entries(total.skipped).map(([w, n]) => `${n} ${w}`).join(", ")})` : ""}.`;
+      st.rows = [];
+      st.name = "";
+      st.mapping = null;
+      refresh();
+    } catch (err) {
+      st.status = err.message;
+    }
+    st.busy = false;
+    render();
+  }
+
+  async function readCallLog(file) {
+    const csv = window.dmeCallLogCsv;
+    if (!file || !csv) return;
+    const records = csv.parseCsv(await file.text());
+    const mapping = records.length ? csv.detectColumns(records[0]) : null;
+    importState.name = file.name;
+    importState.mapping = mapping;
+    importState.rows = mapping ? csv.toImportRows(records, mapping) : [];
+    importState.status = "";
+    render();
+  }
+
   // The reasons leads gave for not signing, from Call intel (sql/050).
   function objectionsList(list) {
     if (!list || !list.length) return `<p class="ins-empty">No objections recorded yet. Reps pick one under Call intel on a lead (sql/050).</p>`;
@@ -357,7 +426,8 @@
         <div class="ins-grid">
           ${sec("Speed to first call", firstCall(p.firstCall))}
           ${sec("When the team calls", heatmap(d.callAt))}
-        </div>`)}
+        </div>
+        ${sec("Phone system calls", callSystemCard(d.callSystem))}`)}
 
       ${pane("pipeline", `
         <div class="ins-grid">
@@ -388,7 +458,7 @@
             <li><span class="ins-dot"></span><span>Waiting on an admin<small>${esc(queueText || "unknown")} \u00b7 <button type="button" class="link-btn" data-goto="admin" data-section="queues">Open the review queues</button></small></span></li>
             <li><span class="ins-dot"></span><span>Claimed with no call notes<small>${num(fr.leadsWithoutNotes)}</small></span></li></ul>`)}`)}
 
-      ${pane("system", sec("System health", system(d.system)))}
+      ${pane("system", sec("System health", system(d.system)) + sec("Phone system call log", importCard()))}
       </div>`;
   }
 
@@ -438,6 +508,7 @@
     }
     const send = e.target.closest('[data-ins="nudge"]');
     if (send) sendNudge(send);
+    if (e.target.closest('[data-ins="calllog-import"]')) runImport();
     const measure = e.target.closest('[data-ins="territory"]');
     if (measure) { territoryMeasure = measure.dataset.measure; render(); }
   });
@@ -461,6 +532,7 @@
   }
   panel?.addEventListener("change", (e) => {
     if (!canView) return;
+    if (e.target.matches('[data-ins="calllog-file"]')) { readCallLog(e.target.files && e.target.files[0]); return; }
     if (e.target.matches('[data-ins="days"]')) {
       days = Number(e.target.value) || 28;
       try { localStorage.setItem(DAYS_KEY, String(days)); } catch { /* not remembered */ }

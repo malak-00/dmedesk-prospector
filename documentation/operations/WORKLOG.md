@@ -1,5 +1,18 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-21 — Batch 3: phone-system call-log import, weekly digest, and the registry date as a real date (sql/053 applied)
+
+**Objective.** Make pickup numbers exact by importing the phone system's own call log, send the super admin a weekly summary, and show the registry's last-updated date as a month and year instead of "x years ago".
+
+**Actions Completed.**
+- **Registry date.** The "Registry" chip and the brief now read "Updated Sep 2024" (and "registry updated Sep 2024"); the age moves into the hover text.
+- **Call-log import (needs sql/053).** `sql/053_call_records.sql` (`call_records`: time, agent, 10-digit phone, duration, outcome; the same agent, number and time is stored once). `docs/calllogcsv.js` reads a CSV export in the browser (quotes, CRLF, BOM, comma, semicolon or tab separators), finds the date, phone, duration, outcome and agent columns from the headers, and shows what it found before anything is sent. Insights > System has a "Phone system call log" card: choose the file, then Import sends it in chunks of 500 to `POST /admin/call-log/import` (admins). `worker/src/lib/callLog.js` cleans each row (UTC dates in ISO or M/D/YYYY forms, mm:ss durations, phone to 10 digits), skips bad rows with a reason, and decides "answered" (the outcome says so, or the call lasted 15 seconds or more; voicemail, no answer, busy and the like are misses). Matching to leads is by phone number at read time, not stored against an NPI. Pickup: a lead's "Answered X of Y calls" chip now uses the phone system's calls when it has any for the lead's numbers (main line, contacts, branches), replacing the estimate built from typed results, and its tooltip says so. Insights > People gets a "Phone system calls" card (calls, answered rate, minutes, by agent, by weekday).
+- **Weekly digest.** `worker/src/services/digest.js` and `lib/digest.js`: a Worker cron trigger (`[triggers] crons = ["0 6 * * 1"]` in `worker/wrangler.toml`, Monday 06:00 UTC) sends each super admin one avatar note: calls and claims for the last 7 days against the 7 before, reps active, up to two things worth a look, and what is waiting in the queues. At most one per person per week. The Worker's default export is now `{ fetch, scheduled }`.
+
+**Database / System Result.** sql/053 was applied on 2026-10-21 at the user's request to the dmedesk-prospector project as migration `call_records`; checked afterwards: the table exists and is empty, row level security is on, 4 indexes, no access for `anon` or `authenticated`. The digest needs no SQL (it uses the avatar notes table). Worker deployed as 0b4b2cd6 with the cron trigger `0 6 * * 1` registered.
+
+**Safety Status.** Worker tests pass (360/360); not browser-tested. The import writes only to the new table. Needs sql/053, a Worker deploy (which also registers the cron trigger) and a frontend publish.
+
 ## 2026-10-21 — Leads grouped by business in Claimed and Prospect (written, not committed or deployed)
 
 ### Objective

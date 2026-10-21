@@ -35,10 +35,10 @@ test('entity type: company, individual, and unknown', () => {
 test('registry freshness buckets and wording', () => {
   const f = (d) => item(buildWhyCall({ lastUpdated: d }, { now: NOW }), 'fresh');
   assert.equal(f('2026-07-15').tone, 'high');
-  assert.equal(f('2026-07-15').text, 'Updated 3 mo ago');
+  assert.equal(f('2026-07-15').text, 'Updated Jul 2026');
   assert.equal(f('2024-10-01').tone, 'mid');
   assert.equal(f('2021-01-01').tone, 'low');
-  assert.equal(f('2021-01-01').text, 'Updated 5 yrs ago');
+  assert.equal(f('2021-01-01').text, 'Updated Jan 2021');
   assert.equal(f(null), undefined);
   assert.equal(f('not a date'), undefined);
 });

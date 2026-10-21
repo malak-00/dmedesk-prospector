@@ -131,8 +131,8 @@
     if (sig.branches > 1) biz.push(`${sig.branches} locations`);
     if (sig.sameBuilding) biz.push(`${plural(sig.sameBuilding, "other provider")} at the same address`);
     if (sig.ownerOthers) biz.push(`the owner also runs ${plural(sig.ownerOthers, "other business", "other businesses")}${sig.ownerNames.length ? ` (${sig.ownerNames.join(", ")})` : ""}`);
-    const registry = ageText(c.lastUpdated, now);
-    if (registry) biz.push(`registry updated ${registry}`);
+    const registryAt = Date.parse(c.lastUpdated);
+    if (c.lastUpdated && !Number.isNaN(registryAt)) biz.push(`registry updated ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][new Date(registryAt).getUTCMonth()]} ${new Date(registryAt).getUTCFullYear()}`);
     if (!c.website) biz.push("no website found");
     add("Business", biz.join(", "));
 

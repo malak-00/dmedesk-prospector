@@ -15,6 +15,10 @@ keep_vars = true
 [vars]
 NPI_SOURCE = "dmedesk"
 
+# Monday 06:00 UTC: the weekly digest (src/services/digest.js) goes to each super admin as an avatar note.
+[triggers]
+crons = ["0 6 * * 1"]
+
 # All of these are secrets, not vars -- never put real values here.
 # Set them with `wrangler secret put <NAME>` (see worker/README.md):
 #   SUPABASE_URL

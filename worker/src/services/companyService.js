@@ -26,6 +26,7 @@ import { classifyRole } from "../lib/roleClassifier.js";
 import { createCompany } from "../lib/companyModel.js";
 import * as annotationsRepo from "../repos/annotationsRepo.js";
 import { enumerationDatesFor } from "../repos/enumerationRepo.js";
+import { attachCallRecords } from "../repos/callLogRepo.js";
 import * as leadsRepo from "../repos/leadsRepo.js";
 import * as searchProgressRepo from "../repos/searchProgressRepo.js";
 import * as ProviderSource from "./providerSource.js";
@@ -243,6 +244,16 @@ async function attachAnnotationsSafe(supabase, companies) {
     });
   } catch (err) {
     console.log("[companyService] Tags and comments lookup skipped: " + err.message);
+    return companies;
+  }
+}
+
+// Exact pickup history from the phone system's imported call log (sql/053). Best-effort.
+async function attachCallRecordsSafe(supabase, companies) {
+  try {
+    return await attachCallRecords(supabase, companies);
+  } catch (err) {
+    console.log("[companyService] Phone system pickup skipped: " + err.message);
     return companies;
   }
 }
@@ -559,6 +570,7 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   companies = await attachPriorContactSafe(supabase, companies);
   companies = await attachAnnotationsSafe(supabase, companies);
   companies = await attachEnumerationSafe(supabase, companies);
+  companies = await attachCallRecordsSafe(supabase, companies);
 
   if (trackProgress && !resetProgress) {
     await saveSearchProgressSafe(supabase, options.userId, criteria, fetchResult.variantSkips, fetchResult.allSeenNpis);

@@ -38,6 +38,9 @@
     return null;
   }
 
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthYear = (t) => `${MONTHS[new Date(t).getUTCMonth()]} ${new Date(t).getUTCFullYear()}`;
+
   function ageText(months) {
     if (months < 1) return "this month";
     if (months < 12) return `${months} mo ago`;
@@ -53,7 +56,7 @@
     const title = tone === "low"
       ? "Registry record untouched for over 3 years: higher risk of turnover or a closed shop"
       : "When this provider last updated their NPPES registry record";
-    return { key: "fresh", tone, label: "Registry", text: `Updated ${ageText(months)}`, title };
+    return { key: "fresh", tone, label: "Registry", text: `Updated ${monthYear(t)}`, title: `${title} (${ageText(months)} ago)` };
   }
 
   // How long ago the provider got its NPI: a new supplier is often still choosing vendors.
@@ -70,9 +73,10 @@
     if (!pickup || !(pickup.total > 0)) return null;
     const rate = pickup.answered / pickup.total;
     const tone = pickup.answered === 0 ? "low" : rate >= 0.5 ? "high" : "mid";
-    const title = pickup.answered === 0
+    const from = pickup.source === "phone system" ? " (from the phone system's call log)" : "";
+    const title = (pickup.answered === 0
       ? "Every logged call went to voicemail or no answer: try another number or time"
-      : "Logged calls where a person picked up";
+      : "Logged calls where a person picked up") + from;
     return { key: "pickup", tone, label: "Pickup", text: `Answered ${pickup.answered} of ${pickup.total} call${pickup.total === 1 ? "" : "s"}`, title };
   }
 
