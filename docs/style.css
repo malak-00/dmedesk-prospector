@@ -3104,29 +3104,37 @@ html.game-open .buddy { display: none; }
 
 /* Holiday decorations: a string of little ornaments in the empty middle of the header. It only uses space that is
    otherwise empty, takes no clicks, shrinks to nothing if the header needs the room, and is hidden on narrow screens. */
-.holiday-strip { flex: 1 1 0; min-width: 0; align-self: stretch; position: relative; display: flex; align-items: flex-start; justify-content: center; gap: clamp(10px, 2.2vw, 28px); padding: 0 12px; overflow: hidden; pointer-events: none; user-select: none; }
-.holiday-strip::before { content: ""; position: absolute; left: 6%; right: 6%; top: 6px; height: 14px; border-top: 1.5px solid color-mix(in srgb, var(--muted) 45%, transparent); border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
-.hd-glyph { width: 24px; height: 24px; margin-top: 14px; flex: none; transform-origin: 50% -8px; animation: hd-sway 4.6s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.7s); filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.28)); }
-.hd-glyph:nth-child(odd) { margin-top: 20px; }
+.holiday-strip { flex: 1 1 0; min-width: 0; align-self: stretch; position: relative; display: flex; align-items: flex-start; justify-content: center; gap: clamp(14px, 2.8vw, 40px); padding: 0 12px; overflow: hidden; pointer-events: none; user-select: none; }
+.holiday-strip::before { content: ""; position: absolute; left: 4%; right: 4%; top: 6px; height: 16px; border-top: 2px solid color-mix(in srgb, var(--muted) 50%, transparent); border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+/* Each ornament hangs from a cord of its own length, with a little glow in its own colour behind it. */
+.hd-item { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; margin-top: 14px; transform-origin: 50% 0; animation: hd-sway 4.6s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.7s); }
+.hd-item::before { content: ""; width: 2px; height: 8px; border-radius: 1px; background: color-mix(in srgb, var(--muted) 60%, transparent); }
+.hd-item:nth-child(even)::before { height: 20px; }
+.hd-item:nth-child(3n)::before { height: 14px; }
+.hd-glyph { width: 34px; height: 34px; flex: none; overflow: visible; stroke: rgba(0, 0, 0, 0.35); stroke-width: 0.6; paint-order: stroke; filter: drop-shadow(0 0 5px color-mix(in srgb, currentColor 55%, transparent)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3)); }
 @keyframes hd-sway { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
 @media (max-width: 1100px) { .holiday-strip { display: none; } }
-@media (prefers-reduced-motion: reduce) { .hd-glyph { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .hd-item { animation: none; } }
 
 /* The sidebar's decorations: only in the empty space between the tabs and Quick actions, so they clip away rather than push anything. */
 .holiday-side { display: none; }
 @media (min-width: 961px) {
-  .holiday-side { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 14px 0; overflow: hidden; pointer-events: none; user-select: none; position: relative; }
-  .holiday-side::before { content: ""; position: absolute; top: 6px; bottom: 6px; left: 50%; border-left: 1.5px dotted color-mix(in srgb, var(--muted) 40%, transparent); }
-  .holiday-side .hd-glyph { position: relative; width: 24px; height: 24px; margin: 0; flex: none; transform-origin: 50% 50%; animation: hd-bob 3.8s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.6s); }
-  .holiday-side .hd-glyph:nth-child(odd) { margin-top: 0; transform: none; left: -26px; }
-  .holiday-side .hd-glyph:nth-child(even) { left: 26px; }
-  :root.nav-rail .holiday-side { gap: 10px; }
-  :root.nav-rail .holiday-side .hd-glyph { width: 20px; height: 20px; left: 0 !important; }
-  :root.nav-rail .holiday-side::before { display: none; }
+  .holiday-side { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 0; overflow: hidden; pointer-events: none; user-select: none; position: relative; }
+  .holiday-side::before { content: ""; position: absolute; top: 4px; bottom: 4px; left: 50%; margin-left: -1px; border-left: 2px dotted color-mix(in srgb, var(--muted) 50%, transparent); }
+  /* Expanded: ornaments alternate either side of the line, each on a short cord to it. */
+  .holiday-side .hd-item { flex-direction: row; align-items: center; margin: 0; width: 100%; box-sizing: border-box; padding-left: 50%; justify-content: flex-start; transform-origin: 50% 50%; animation: hd-bob 3.8s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.6s); }
+  .holiday-side .hd-item::before { width: 22px; height: 2px !important; }
+  .holiday-side .hd-item:nth-child(odd) { flex-direction: row-reverse; padding-left: 0; padding-right: 50%; }
+  .holiday-side .hd-glyph { width: 34px; height: 34px; }
+  /* Collapsed to the icon rail: one column, a little smaller, strung on the line. */
+  :root.nav-rail .holiday-side { gap: 12px; }
+  :root.nav-rail .holiday-side .hd-item, :root.nav-rail .holiday-side .hd-item:nth-child(odd) { justify-content: center; padding: 0; }
+  :root.nav-rail .holiday-side .hd-item::before { display: none; }
+  :root.nav-rail .holiday-side .hd-glyph { width: 28px; height: 28px; }
   .view-tabs .holiday-side + .nav-action { margin-top: 0; }
 }
 @keyframes hd-bob { 0%, 100% { transform: translateY(-3px) rotate(-6deg); } 50% { transform: translateY(3px) rotate(6deg); } }
-@media (prefers-reduced-motion: reduce) { .holiday-side .hd-glyph { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .holiday-side .hd-item { animation: none; } }
 
 /* ---------- App insights (super admin, replaces Today) ---------- */
 .ins-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }

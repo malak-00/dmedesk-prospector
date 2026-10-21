@@ -142,7 +142,8 @@
   function glyphSvg([name, colour], i) {
     const [kind, shapes] = G[name];
     const paint = kind === "fill" ? `fill="${colour}"` : `fill="none" stroke="${colour}" stroke-width="2" stroke-linecap="round"`;
-    return `<svg class="hd-glyph" style="--i:${i};color:${colour}" viewBox="0 0 24 24" ${paint} aria-hidden="true">${shapes}</svg>`;
+    // Each ornament hangs from a little cord (drawn by CSS on .hd-item); the glow is its own colour.
+    return `<span class="hd-item" style="--i:${i}"><svg class="hd-glyph" style="color:${colour}" viewBox="0 0 24 24" ${paint} stroke-linejoin="round" aria-hidden="true">${shapes}</svg></span>`;
   }
 
   function unmount() {

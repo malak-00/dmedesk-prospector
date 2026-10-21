@@ -641,6 +641,28 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-21 — Holiday decorations: bigger and better looking
+
+### Objective
+
+The decorations looked plain and small; make them larger and nicer.
+
+### Actions Completed
+
+- `docs/holidays.js`: each ornament is now wrapped in an `.hd-item` so it can hang from its own cord.
+- `docs/style.css`: ornaments are about 34px (were 24px; 28px in the collapsed rail), outlined, with a soft glow in their own colour and a drop shadow.
+  Header: cords of three different lengths hang from a heavier arc, so the ornaments sit at different heights. Sidebar: ornaments alternate either side
+  of a dotted string on short cords (expanded); one column on the string (collapsed). Sizes checked on a test page with the real stylesheet.
+- `docs/index.html`: versions bumped for `holidays.js` and `style.css`.
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required (`?holiday=halloween`).
+
 ## 2026-10-21 — Holiday decorations also in the sidebar
 
 ### Objective
