@@ -57,3 +57,34 @@ export function objectionCounts(rows) {
   }
   return [...counts.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
 }
+
+// "Who we're up against": the billers reps recorded, counted, with the objections that came with them.
+// Typed names are grouped by a loose key (case, punctuation and company endings ignored); "in-house" answers
+// become one bucket. Most common first, top 10.
+const IN_HOUSE = /^(in.?house|inhouse|internal|ourselves|themselves|own staff|their own|self)$/;
+const nameKey = (raw) => String(raw || "").toLowerCase().replace(/\b(llc|inc|incorporated|corp|corporation|co|company|ltd|billing|services)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+
+export function billerCounts(rows, limit = 10) {
+  const groups = new Map();
+  for (const r of rows || []) {
+    const name = String((r && r.current_biller) || "").replace(/\s+/g, " ").trim();
+    if (!name) continue;
+    const inHouse = IN_HOUSE.test(name.toLowerCase().replace(/[^a-z\- ]/g, "").trim());
+    const key = inHouse ? "in-house" : nameKey(name) || name.toLowerCase();
+    if (!groups.has(key)) groups.set(key, { key, inHouse, count: 0, names: new Map(), objections: new Map() });
+    const g = groups.get(key);
+    g.count += 1;
+    g.names.set(name, (g.names.get(name) || 0) + 1);
+    if (r.objection) g.objections.set(r.objection, (g.objections.get(r.objection) || 0) + 1);
+  }
+  const top = (m) => [...m.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+  return [...groups.values()]
+    .map((g) => ({
+      name: g.inHouse ? "In-house" : [...g.names.entries()].sort((a, b) => b[1] - a[1] || b[0].length - a[0].length || a[0].localeCompare(b[0]))[0][0],
+      inHouse: g.inHouse,
+      count: g.count,
+      objections: top(g.objections).slice(0, 2).map(([reason, count]) => ({ reason, count })),
+    }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, limit);
+}

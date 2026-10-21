@@ -1,5 +1,19 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-21 — Batch 1 of the new ideas: Try again now, Who we're up against, same owner elsewhere, follow-up email
+
+**Objective.** First batch of the ideas agreed after the Insights/Home work: use the call intel and call history to help reps decide who to call and what to say.
+
+**Actions Completed.**
+- **Try again now (Today).** `buildTodayView` (`worker/src/lib/leadView.js`) now returns `retry`: claimed leads whose last call result that says anything about being answered was voicemail, no answer or similar, 3 hours to 14 days ago, with the number of misses in a row, leaving out finished leads, leads with a meeting or a callback already due. `docs/today.js` shows only the ones whose local time is a good time to call right now, as a "Try again now" card with a "Call these N" button that opens call mode.
+- **Who we're up against (Insights > Pipeline).** `billerCounts` (`worker/src/lib/intel.js`) groups the "Current biller" answers loosely (case, punctuation and company endings ignored; "in-house" is one bucket) with the objections that came with each; shown as a card next to "Why leads say no".
+- **Same owner elsewhere.** `GET /companies/same-owner` (`worker/src/lib/sameOwner.js`, `worker/src/repos/sameOwnerRepo.js`): other active NPIs with the same authorized official name, kept only when in the same state or sharing the official's phone, and dropped as ambiguous when a common name has more than 12 same-state matches and nothing else backs it up. Shown in "Why call" and the call panel, and in the brief ("the owner also runs 2 other businesses", with a first question about them).
+- **Follow-up email.** The brief panel and cards get "Copy email: after a call" and "Copy email: after a voicemail", built from the same signals and the call intel (their email, the biller they named), with `[day] at [time]`, `[your name]`, `[company name]` and `[number]` left to fill. No prices, results or freebies are promised.
+
+**Database / System Result.** None. No schema change; reads `npi_records`, `leads`, `app_users` and `lead_intel` only.
+
+**Safety Status.** Read-only features. Worker tests pass (324/324); not browser-tested. Needs a Worker deploy and a frontend publish.
+
 ## 2026-10-21 — New/Established badge, Medicare icon, call intel, auto-disconnect sweep, separate Insights page, super admin Home, Insights/Admin de-duplication
 
 **Objective.** Several requests in one: show how new a supplier is, mark leads that bill Medicare, keep what reps learn on calls in structured fields, finish auto-disconnect, give Insights its own page for admins, give the super admin a different Home, and remove what the Insights and Admin pages both showed.

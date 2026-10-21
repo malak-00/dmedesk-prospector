@@ -4,6 +4,7 @@
 //   parseListParams   the query string of GET /leads/page -> a safe, clamped description
 //   buildTodayView    the lists, numbers and nudges of the Today screen from a rep's leads
 import { allCallEvents, noteKind, parseNoteLines, tapsToLines, HELD_STATUS } from "./teamActivity.js";
+import { classifyResult } from "./bestTimes.js";
 
 const DAY = 86_400_000;
 
@@ -84,7 +85,31 @@ function streakOf(days, todayIdx) {
   return n;
 }
 
-const CAPS = { review: 50, meetingsToday: 50, callbacks: 100, firstCalls: 100, stale: 50, upNext: 6 };
+const CAPS = { review: 50, meetingsToday: 50, callbacks: 100, firstCalls: 100, stale: 50, upNext: 6, retry: 60 };
+
+// "Try again": the last call that said anything about being answered went to voicemail or nobody picked up.
+// Worth another dial once a few hours have passed, and for two weeks after. The browser picks the ones whose
+// local time is a good time to call right now. tries = misses in a row since someone last answered.
+export const RETRY_AFTER_MS = 3 * 60 * 60 * 1000;
+export const RETRY_WITHIN_MS = 14 * DAY;
+
+export function retryInfo(lead, nowMs) {
+  let tries = 0;
+  let lastAt = 0;
+  let lastText = "";
+  for (const line of parseNoteLines(lead.notes)) {
+    if (noteKind(line.text) !== "call") continue;
+    const verdict = classifyResult(line.text);
+    if (!verdict) continue;
+    if (verdict === "answered") break;
+    tries += 1;
+    if (!lastAt) { lastAt = Date.parse(`${line.date}T${line.time}:00Z`) || 0; lastText = line.text.split(/\s+[\u2014\u2013-]\s+/)[0]; }
+  }
+  if (!tries || !lastAt) return null;
+  const age = nowMs - lastAt;
+  if (age < RETRY_AFTER_MS || age > RETRY_WITHIN_MS) return null;
+  return { tries, lastAt: new Date(lastAt).toISOString(), lastResult: lastText };
+}
 
 // leads: the rep's active claimed leads as the app shows them (see leadsRepo.toLeadDTO).
 // opts: nowMs, startOfDayMs, endOfDayMs, startOfWeekMs (the rep's own day and week),
@@ -104,6 +129,12 @@ export function buildTodayView(leads, opts) {
     .filter((l) => isStale(l, nowMs, staleDays) && !queued.has(l.npi) && !reviewing.has(l.npi))
     .map((l) => ({ lead: l, last: lastActivityMs(l) }))
     .sort((a, b) => a.last - b.last);
+  const retry = leads
+    .filter((l) => !queued.has(l.npi) && !reviewing.has(l.npi) && !TERMINAL.test(String(l.status || "")) && !(l.meetingAt && !pastMeeting(l)))
+    .map((l) => ({ lead: l, info: retryInfo(l, nowMs) }))
+    .filter((x) => x.info)
+    .sort((a, b) => Date.parse(a.info.lastAt) - Date.parse(b.info.lastAt))
+    .map((x) => ({ ...x.lead, retryTries: x.info.tries, retryAt: x.info.lastAt, retryResult: x.info.lastResult }));
   const nextMeeting = leads.filter((l) => l.meetingAt && !pastMeeting(l) && t(l.meetingAt) > endOfDayMs).sort((a, b) => t(a.meetingAt) - t(b.meetingAt))[0] || null;
 
   // The rep's own call-log lines (lines with no name are older ones and count as theirs).
@@ -145,6 +176,7 @@ export function buildTodayView(leads, opts) {
     callbacksTotal: callbacks.length,
     firstCalls: { total: firstCalls.length, items: cap(firstCalls, CAPS.firstCalls) },
     stale: { total: stale.length, days: staleDays, items: cap(stale.map((s) => ({ ...s.lead, quietDays: Math.floor((nowMs - s.last) / DAY) })), CAPS.stale) },
+    retry: { total: retry.length, items: cap(retry, CAPS.retry) },
     nextMeeting,
     stats: {
       callsToday: calls.filter((l) => l.at >= startOfDayMs).length,

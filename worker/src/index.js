@@ -38,6 +38,7 @@ import * as sameAddressRepo from "./repos/sameAddressRepo.js";
 import * as ProductMix from "./services/productMix.js";
 import * as annotationsRepo from "./repos/annotationsRepo.js";
 import * as intelRepo from "./repos/intelRepo.js";
+import * as sameOwnerRepo from "./repos/sameOwnerRepo.js";
 import { prettyNumber } from "./lib/badNumbers.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
@@ -500,6 +501,12 @@ app.post("/leads/annotations/tag/remove", async (c) => {
 
 // What a supplier bills Medicare for (product categories and our verticals), from CMS's public file.
 app.get("/companies/product-mix", async (c) => c.json(ok(await ProductMix.getProductMix(supabaseFor(c), c.req.query("npi")))));
+
+// Other businesses run by the same authorized official (opened Prospect card).
+app.get("/companies/same-owner", async (c) => {
+  const exclude = String(c.req.query("exclude") || "").split(",").map((v) => v.trim()).filter(Boolean).slice(0, 30);
+  return c.json(ok(await sameOwnerRepo.findSameOwner(supabaseFor(c), c.req.query("npi"), exclude)));
+});
 
 // Other providers registered at the same building as a lead (opened Prospect card).
 app.get("/companies/same-address", async (c) => {

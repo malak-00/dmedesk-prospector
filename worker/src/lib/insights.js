@@ -7,7 +7,7 @@
 // so counting it would make adoption look better than it is.
 import { buildFunnel } from "./funnel.js";
 import { buildStateHeat } from "./stateHeat.js";
-import { objectionCounts } from "./intel.js";
+import { billerCounts, objectionCounts } from "./intel.js";
 import { FEATURES } from "./events.js";
 import { allCallEvents, noteKind, parseNoteLines, tapsToLines } from "./teamActivity.js";
 
@@ -237,7 +237,7 @@ export function buildInsights({
       daily: [...daily.values()],
       people: peopleList.map((p) => ({ ...p, lastActive: p.lastActive ? new Date(p.lastActive).toISOString() : null })),
     },
-    pipeline: { objections: objectionCounts(intel), funnel, statuses, firstCall, stuck: stuck.slice(0, 12), neverContacted, overdueCallbacks: overdue, openLeads: worked.length, staleDays: STALE_DAYS },
+    pipeline: { objections: objectionCounts(intel), billers: billerCounts(intel), funnel, statuses, firstCall, stuck: stuck.slice(0, 12), neverContacted, overdueCallbacks: overdue, openLeads: worked.length, staleDays: STALE_DAYS },
     friction,
     usage,
     nudges,

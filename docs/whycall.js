@@ -151,6 +151,7 @@
         `<span class="why-chip why-${it.tone}" title="${esc(it.title)}"><span class="why-label">${esc(it.label)}</span>${esc(it.text)}</span>`).join("")}</div>` : ""}
       <div class="why-mix" data-mix-npi="${esc(company && company.npi)}"${compact ? ' data-compact="1"' : ""} hidden></div>
       <div class="why-same" data-same-npi="${esc(company && company.npi)}" hidden></div>
+      <div class="why-owner why-same" data-owner-npi="${esc(company && company.npi)}" hidden></div>
       ${prior ? `<div class="why-prior"><strong>Contacted before.</strong> ${esc(prior.text)}${prior.note ? `<span class="why-prior-note">${esc(prior.note)}</span>` : ""}</div>` : ""}
     </div>`;
   };
@@ -180,6 +181,7 @@
   /* Other providers registered at the same building (chains, shared offices). Asked for when the card
      opens, one small request, and remembered for the session. Silent if it fails or finds nothing. */
   const sameCache = new Map();
+  const ownerCache = new Map();
   const mixCache = new Map();
 
   function sameHtml(data, box) {
@@ -192,6 +194,19 @@
         <span class="why-same-name">${esc(m.name)}</span>
         <span class="why-same-meta">${esc([m.suite, m.specialty, m.phone].filter(Boolean).join(" · "))}</span>
         ${m.claimedBy ? `<span class="why-same-tag why-same-held" title="${esc(m.status ? "Status: " + m.status : "Already claimed")}">Claimed by ${esc(m.claimedBy)}</span>` : '<span class="why-same-tag">Not claimed</span>'}
+      </li>`).join("")}</ul>`;
+  }
+
+  function ownerHtml(data, box) {
+    if (!data || !data.matches || !data.matches.length) return "";
+    const compact = box && box.dataset.compact;
+    const shown = compact ? data.matches.slice(0, 3) : data.matches;
+    const more = data.total > shown.length ? ` <span class="why-more">+${data.total - shown.length} more</span>` : "";
+    return `<div class="why-same-head"><strong>Same owner elsewhere</strong> <span>${data.total} other business${data.total === 1 ? "" : "es"} with this owner${more}</span></div>
+      <ul class="why-same-list">${shown.map((m) => `<li>
+        <span class="why-same-name">${esc(m.name)}</span>
+        <span class="why-same-meta">${esc([[m.city, m.state].filter(Boolean).join(", "), m.specialty, m.why].filter(Boolean).join(" \u00b7 "))}</span>
+        ${m.claimedBy ? `<span class="why-same-tag why-same-held">Claimed by ${esc(m.claimedBy)}</span>` : '<span class="why-same-tag">Not claimed</span>'}
       </li>`).join("")}</ul>`;
   }
 
@@ -243,5 +258,6 @@
     loadInto(mixCache, "companies/product-mix", npi, { npi }, "mix", mixHtml, (d) => d);
     loadInto(mixCache, "companies/product-mix", npi, { npi }, "snap", snapHtml, (d) => d);
     loadInto(sameCache, "companies/same-address", npi, { npi, exclude }, "same", sameHtml, (d) => d);
+    loadInto(ownerCache, "companies/same-owner", npi, { npi, exclude }, "owner", ownerHtml, (d) => d);
   };
 })(typeof window !== "undefined" ? window : globalThis);

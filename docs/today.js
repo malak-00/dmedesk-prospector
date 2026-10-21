@@ -51,11 +51,11 @@
     return { start: start.toISOString(), end: end.toISOString(), week: monday.toISOString(), tz: now.getTimezoneOffset(), staleDays: staleDays() };
   }
 
-  const allLeads = () => (view ? [...view.review, ...view.meetingsToday, ...view.callbacks, ...view.firstCalls.items, ...view.stale.items] : []);
+  const allLeads = () => (view ? [...view.review, ...view.meetingsToday, ...view.callbacks, ...view.firstCalls.items, ...view.stale.items, ...((view.retry && view.retry.items) || [])] : []);
   const byNpi = (npi) => allLeads().find((l) => l.npi === npi);
 
   function buckets() {
-    if (!view) return { review: [], meetingsToday: [], callbacks: [], callbacksTotal: 0, firstCalls: [], firstTotal: 0, stale: [], staleTotal: 0, staleDays: staleDays(), nextMeeting: null, total: 0 };
+    if (!view) return { review: [], meetingsToday: [], callbacks: [], callbacksTotal: 0, firstCalls: [], firstTotal: 0, stale: [], staleTotal: 0, retry: [], staleDays: staleDays(), nextMeeting: null, total: 0 };
     return {
       review: view.review,
       meetingsToday: view.meetingsToday,
@@ -64,6 +64,7 @@
       firstCalls: view.firstCalls.items,
       firstTotal: view.firstCalls.total,
       stale: view.stale.items,
+      retry: (view.retry && view.retry.items) || [],
       staleTotal: view.stale.total,
       staleDays: view.stale.days,
       nextMeeting: view.nextMeeting,
@@ -75,6 +76,14 @@
   function openFirst(list) {
     const good = (l) => (window.dmeTime && window.dmeTime.localInfo(l.state)?.good ? 0 : 1);
     return list.map((l, i) => ({ l, i })).sort((a, b) => good(a.l) - good(b.l) || a.i - b.i).map((x) => x.l);
+  }
+  // "Try again now": earlier misses (voicemail, no answer) whose local time is a good time to call right now.
+  const goodNow = (l) => Boolean(window.dmeTime && window.dmeTime.localInfo(l.state)?.good);
+  const retryNow = (b) => b.retry.filter(goodNow);
+  function missedText(l) {
+    const hrs = Math.round((Date.now() - Date.parse(l.retryAt)) / 3600000);
+    const when = hrs < 1 ? "just now" : hrs < 24 ? `${hrs} h ago` : `${Math.round(hrs / 24)} d ago`;
+    return `${l.retryResult || "No answer"}${l.retryTries > 1 ? ` \u00d7${l.retryTries}` : ""}, ${when}`;
   }
   const unique = (list) => list.filter((l, i, all) => all.findIndex((x) => x.npi === l.npi) === i);
 
@@ -135,6 +144,7 @@
     }
     const b = buckets();
     const calling = openFirst(unique([...b.callbacks, ...b.firstCalls]));
+    const retry = retryNow(b);
     const dateLine = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 
     const ins = insights(b);
@@ -142,6 +152,7 @@
       b.review.length ? `${b.review.length} meeting${b.review.length === 1 ? "" : "s"} to wrap up` : "",
       b.meetingsToday.length ? `${b.meetingsToday.length} meeting${b.meetingsToday.length === 1 ? "" : "s"} today` : "",
       b.callbacksTotal ? `${b.callbacksTotal} callback${b.callbacksTotal === 1 ? "" : "s"} due` : "",
+      retry.length ? `${retry.length} worth another try right now` : "",
       b.staleTotal ? `${b.staleTotal} going cold` : "",
       b.firstTotal ? `${b.firstTotal} waiting for a first call` : "",
     ].filter(Boolean);
@@ -194,6 +205,18 @@
         </div>`).join(""), { hint: "Overdue first." });
     }
 
+    if (retry.length) {
+      const shown = retry.slice(0, FIRST_CALLS_SHOWN);
+      const more = retry.length - shown.length;
+      html += section("Try again now", retry.length, shown.map((l) => `
+        <div class="today-row">
+          ${whoHtml(l)}
+          <span class="today-when"><span class="muted-note">${escapeHtml(missedText(l))}</span></span>
+          ${actionsHtml(l)}
+        </div>`).join("") + (more > 0 ? `<div class="today-more">+ ${more} more.</div>` : ""),
+      { hint: "Voicemail or no answer earlier, and it's a good time to call there now.", action: `<button type="button" class="link-btn today-card-link" data-today="start-retry">Call these ${retry.length}</button>` });
+    }
+
     if (b.stale.length) {
       const shown = b.stale.slice(0, FIRST_CALLS_SHOWN);
       const more = b.staleTotal - shown.length;
@@ -217,7 +240,7 @@
         </div>`).join("") + (more > 0 ? `<div class="today-more">+ ${more} more. <button type="button" class="link-btn" data-today="start-first">Call ${b.firstTotal > b.firstCalls.length ? "the first" : "all"} ${b.firstCalls.length}</button></div>` : ""));
     }
 
-    if (!b.review.length && !b.meetingsToday.length && !b.callbacks.length && !b.stale.length && !b.firstCalls.length) {
+    if (!b.review.length && !b.meetingsToday.length && !b.callbacks.length && !retry.length && !b.stale.length && !b.firstCalls.length) {
       html += `<div class="today-empty">
         <div class="today-empty-title">${b.total ? "You're all caught up" : "No claimed leads yet"}</div>
         <p>${b.total
@@ -423,6 +446,10 @@
     else if (act === "open" && lead) openInClaimed(lead);
     else if (act === "log" && lead) window.dmeCall.start([lead], "claimed");
     else if (act === "review" && lead) openOutcome(lead);
+    else if (act === "start-retry") {
+      const list = retryNow(buckets());
+      if (list.length) window.dmeCall.start(list, "claimed");
+    }
     else if (act === "start-all" || act === "start-first" || act === "start-stale") {
       const b = buckets();
       const list = act === "start-first" ? b.firstCalls : act === "start-stale" ? b.stale : [...b.callbacks, ...b.firstCalls];

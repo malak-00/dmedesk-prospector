@@ -110,6 +110,17 @@
     ) + `<p class="ins-note">Calls, meetings and claims for each rep, week by week: <button type="button" class="link-btn" data-goto="admin" data-section="team">Admin &rsaquo; Team activity</button>.</p>`;
   }
 
+  // The billers reps recorded under Call intel, counted, with the objections that came with each (sql/050).
+  function billersList(list) {
+    if (!list || !list.length) return `<p class="ins-empty">No billers recorded yet. Reps fill in "Current biller" under Call intel on a lead (sql/050).</p>`;
+    const max = Math.max(1, ...list.map((b) => b.count));
+    const cap = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1);
+    return `<div class="ins-funnel">${list.map((b) => `
+      <div class="ins-funnel-row ins-biller-row"><span class="ins-funnel-label" title="${esc(b.name)}">${esc(b.name)}</span>
+        <span class="ins-funnel-track"><span class="ins-funnel-fill" style="width:${Math.max(3, Math.round((b.count / max) * 100))}%"></span></span>
+        <span class="ins-funnel-num">${num(b.count)}${b.objections && b.objections.length ? ` <small>${esc(b.objections.map((o) => `${cap(o.reason)} ${o.count}`).join(", "))}</small>` : ""}</span></div>`).join("")}</div>`;
+  }
+
   // The reasons leads gave for not signing, from Call intel (sql/050).
   function objectionsList(list) {
     if (!list || !list.length) return `<p class="ins-empty">No objections recorded yet. Reps pick one under Call intel on a lead (sql/050).</p>`;
@@ -357,8 +368,9 @@
           ${sec("Which specialties convert", segments("Specialty", F.specialties), dataIssues ? `<p class="ins-note">${num(dataIssues.claimed)} claimed leads have no specialty recorded, so they can't be broken down.</p>` : "")}
           ${sec("Which states convert", segments("State", F.states))}
         </div>
+        ${sec("Which reps convert", segments("Rep", F.reps))}
         <div class="ins-grid">
-          ${sec("Which reps convert", segments("Rep", F.reps))}
+          ${sec("Who we're up against", billersList(p.billers))}
           ${sec("Why leads say no", objectionsList(p.objections))}
         </div>
         ${sec("Territory map", territoryMap(d.territory))}

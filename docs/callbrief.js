@@ -48,6 +48,8 @@
       noWebsite: !c.website,
       branches: Array.isArray(c.locations) ? c.locations.length : 0,
       sameBuilding: input.same && input.same.total ? input.same.total : 0,
+      ownerOthers: input.owner && input.owner.total ? input.owner.total : 0,
+      ownerNames: input.owner && input.owner.matches ? input.owner.matches.slice(0, 3).map((m) => m.name).filter(Boolean) : [],
       intel: input.intel && input.intel.installed !== false ? input.intel : null,
       contact: dm,
       noDirect: !dm || !String(dm.phone || "").trim(),
@@ -128,6 +130,7 @@
     if (c.isOrganization === false) biz.push("an individual or sole proprietor (NPI-1)");
     if (sig.branches > 1) biz.push(`${sig.branches} locations`);
     if (sig.sameBuilding) biz.push(`${plural(sig.sameBuilding, "other provider")} at the same address`);
+    if (sig.ownerOthers) biz.push(`the owner also runs ${plural(sig.ownerOthers, "other business", "other businesses")}${sig.ownerNames.length ? ` (${sig.ownerNames.join(", ")})` : ""}`);
     const registry = ageText(c.lastUpdated, now);
     if (registry) biz.push(`registry updated ${registry}`);
     if (!c.website) biz.push("no website found");
@@ -210,7 +213,8 @@
       "Where does the work get stuck most: intake, authorizations, claims, or collections?",
     ];
     let first;
-    if (sig.rental) first = "How do you keep track of monthly rental billing and resupply today?";
+    if (sig.ownerOthers && sig.ownerNames.length) first = `I see you also run ${sig.ownerNames[0]}. Is the back office shared across your businesses?`;
+    else if (sig.rental) first = "How do you keep track of monthly rental billing and resupply today?";
     else if (sig.growing) first = "Billing has grown a lot recently. Is your back office keeping up?";
     else if (sig.branches > 1 || sig.sameBuilding) first = "How is the back-office work split across your locations?";
     else if (sig.individual) first = "How many hours a week do you personally spend on billing and paperwork?";
@@ -253,6 +257,43 @@
     ];
   }
 
+  // A short follow-up email to paste into a mail program: after a conversation, or after a voicemail / no answer.
+  // Built from the same signals as the call plan; the rep fills the bracketed parts.
+  function buildFollowUpEmail(input, variant) {
+    const safe = input || {};
+    const sig = signalsOf(safe);
+    const c = safe.company || {};
+    const who = firstName(sig.contact && sig.contact.name);
+    const sells = sig.verticals.length ? sig.verticals.join(" and ") : sig.topCategory ? lower(sig.topCategory) : lower(c.taxonomy && c.taxonomy.description) || "DME";
+    const intel = sig.intel || {};
+    let hook;
+    if (sig.growing) hook = `${c.name || "Your company"}'s Medicare billing has grown recently, and back-office work tends to grow with it.`;
+    else if (sig.isNew) hook = "As a newer supplier, you may still be setting up your back office.";
+    else if (sig.rental) hook = "Recurring rental billing and resupply follow-up add up quickly.";
+    else if (sig.volume === "high") hook = "At your volume, unworked denials and slow claims follow-up can add up.";
+    else hook = "Verifications, prior authorizations and billing follow-up take hours away from patients and deliveries.";
+    const biller = intel.currentBiller && !/^in.?house$/i.test(intel.currentBiller) ? intel.currentBiller : "";
+    const lines = [
+      `Hi${who ? ` ${who}` : ""},`,
+      "",
+      variant === "missed" ? "I tried you earlier and didn't catch you, so I'll keep this short." : "Thanks for taking my call.",
+      "",
+      `I'm with ${COMPANY}. We run the back office for DME suppliers that supply ${sells}: intake and benefits verification, prior authorizations, billing and denials follow-up, and patient and resupply calls. ${hook}`,
+      biller ? `We often work alongside an existing biller such as ${biller}, taking just the part that is hardest to keep up with.` : "We can work alongside your current team and take just the part that is hardest to keep up with.",
+      "",
+      "Would [day] at [time] or [day] at [time] work for a 15-minute call?",
+      "",
+      "Best,",
+      "[your name]",
+      `${COMPANY} \u00b7 [number]`,
+    ];
+    return { to: intel.email || "", subject: variant === "missed" ? "Sorry I missed you" : "Following up on our call", body: lines.join("\n") };
+  }
+
+  function emailToText(email) {
+    return `${email.to ? `To: ${email.to}\n` : ""}Subject: ${email.subject}\n\n${email.body}`;
+  }
+
   function buildCallBrief(input) {
     const now = input && input.now != null ? input.now : Date.now();
     const safe = input || {};
@@ -267,7 +308,7 @@
     return `${brief.title}\n\nWhat we know\n${facts}\n\nCall plan\n${script}`;
   }
 
-  const api = { buildCallBrief, briefToText, trendText };
+  const api = { buildCallBrief, buildFollowUpEmail, emailToText, briefToText, trendText };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
   root.dmeCallBrief = api;
 
@@ -277,14 +318,18 @@
   const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   const texts = new Map(); // npi -> plain text of the latest brief, for the Copy button
 
-  function briefHtml(brief, key) {
+  function briefHtml(brief, key, input) {
     texts.set(key, briefToText(brief));
+    texts.set(`${key}:spoke`, emailToText(buildFollowUpEmail(input, "spoke")));
+    texts.set(`${key}:missed`, emailToText(buildFollowUpEmail(input, "missed")));
     return `<div class="brief-sections">
       <div class="brief-group"><h5>What we know</h5>
         <dl class="brief-facts">${brief.facts.map((f) => `<div><dt>${esc(f.label)}</dt><dd>${esc(f.text)}</dd></div>`).join("")}</dl></div>
       <div class="brief-group"><h5>Call plan</h5>
         <ol class="brief-plan">${brief.script.map((s) => `<li><strong>${esc(s.label)}</strong>${s.items ? `<ul class="brief-sub">${s.items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : `<span>${esc(s.text)}</span>`}</li>`).join("")}</ol></div>
       <div class="brief-actions"><button type="button" class="text-action" data-brief-copy="${esc(key)}">Copy brief</button>
+        <button type="button" class="text-action" data-brief-copy="${esc(key)}:spoke" data-brief-what="the email">Copy email: after a call</button>
+        <button type="button" class="text-action" data-brief-copy="${esc(key)}:missed" data-brief-what="the email">Copy email: after a voicemail</button>
         <span class="muted-note">Built from this lead's own data. No AI.</span></div>
     </div>`;
   }
@@ -293,15 +338,16 @@
   root.dmeHooks.briefHtml = async (company, claimed) => {
     const npi = String(company.npi || "");
     const ask = (path, params) => (typeof apiGet === "function" && npi ? apiGet(path, params) : Promise.reject(new Error("offline")));
-    const [mixRes, sameRes, notesRes, intelRes] = await Promise.allSettled([
+    const [mixRes, sameRes, notesRes, intelRes, ownerRes] = await Promise.allSettled([
       ask("companies/product-mix", { npi }),
       ask("companies/same-address", { npi }),
       ask("leads/annotations", { npi }),
       ask("leads/intel", { npi }),
+      ask("companies/same-owner", { npi }),
     ]);
     const val = (r) => (r.status === "fulfilled" ? r.value : null);
     const state = company.address && company.address.state;
-    const brief = buildCallBrief({
+    const input = {
       company,
       mix: val(mixRes) && val(mixRes).mix,
       trend: val(mixRes) && val(mixRes).trend,
@@ -309,9 +355,10 @@
       notes: val(notesRes),
       intel: val(intelRes),
       claimed,
+      owner: val(ownerRes),
       local: root.dmeTime && state ? root.dmeTime.localInfo(state) : null,
-    });
-    return briefHtml(brief, npi || "lead");
+    };
+    return briefHtml(buildCallBrief(input), npi || "lead", input);
   };
 
   document.addEventListener("click", (e) => {
@@ -320,7 +367,7 @@
     e.stopPropagation();
     const text = texts.get(btn.dataset.briefCopy);
     if (!text) return;
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => showToast("Copied the brief"), () => showToast("Couldn't copy the brief", true));
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => showToast(`Copied ${btn.dataset.briefWhat || "the brief"}`), () => showToast(`Couldn't copy ${btn.dataset.briefWhat || "the brief"}`, true));
     else showToast("Couldn't copy the brief", true);
   }, true);
 })(typeof window !== "undefined" ? window : globalThis);

@@ -1041,7 +1041,7 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
     tryRows(() => supabase.from("buddy_notes").select("to_user_id, body, created_at").not("to_user_id", "is", null).gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString()), "sent notes"),
     tryCount(() => supabase.from("app_events").select("*", { count: "exact", head: true })),
     // sql/050: why leads said no. Empty until that file is run.
-    tryRows(() => supabase.from("lead_intel").select("npi, objection").not("objection", "is", null), "call intel", false),
+    tryRows(() => supabase.from("lead_intel").select("npi, objection, current_biller").or("objection.not.is.null,current_biller.not.is.null"), "call intel", false),
   ]);
   // null = sql/046 isn't installed; the dashboard then says events aren't being collected yet.
   const appEvents = eventsProbe === null ? null : await tryRows(() => supabase.from("app_events").select("user_id, kind, name, status, ms, result_count, detail, created_at").gte("created_at", since).order("created_at", { ascending: false }), "events");
