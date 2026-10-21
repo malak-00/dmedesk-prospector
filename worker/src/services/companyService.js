@@ -25,6 +25,7 @@ import * as Scraper from "./scraper.js";
 import { classifyRole } from "../lib/roleClassifier.js";
 import { createCompany } from "../lib/companyModel.js";
 import * as annotationsRepo from "../repos/annotationsRepo.js";
+import { enumerationDatesFor } from "../repos/enumerationRepo.js";
 import * as leadsRepo from "../repos/leadsRepo.js";
 import * as searchProgressRepo from "../repos/searchProgressRepo.js";
 import * as ProviderSource from "./providerSource.js";
@@ -242,6 +243,18 @@ async function attachAnnotationsSafe(supabase, companies) {
     });
   } catch (err) {
     console.log("[companyService] Tags and comments lookup skipped: " + err.message);
+    return companies;
+  }
+}
+
+// When each result got its NPI, for the New / Established badge. Best-effort: a failure leaves the badge off.
+async function attachEnumerationSafe(supabase, companies) {
+  try {
+    const dates = await enumerationDatesFor(supabase, companies.map((c) => c.npi));
+    if (dates.size === 0) return companies;
+    return companies.map((company) => (dates.has(String(company.npi)) ? Object.assign({}, company, { enumerationDate: dates.get(String(company.npi)) }) : company));
+  } catch (err) {
+    console.log("[companyService] Enumeration dates skipped: " + err.message);
     return companies;
   }
 }
@@ -545,6 +558,7 @@ export async function searchCompanies(config, supabase, criteria = {}, options =
   companies = await attachTaxonomyDescriptionsSafe(supabase, companies);
   companies = await attachPriorContactSafe(supabase, companies);
   companies = await attachAnnotationsSafe(supabase, companies);
+  companies = await attachEnumerationSafe(supabase, companies);
 
   if (trackProgress && !resetProgress) {
     await saveSearchProgressSafe(supabase, options.userId, criteria, fetchResult.variantSkips, fetchResult.allSeenNpis);

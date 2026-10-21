@@ -413,6 +413,8 @@ function showLogin() {
   els.userChip.hidden = true;
   els.suggestBtn.hidden = true;
   els.adminTab.hidden = true;
+  const insightsTabOut = document.getElementById("insightsTab");
+  if (insightsTabOut) insightsTabOut.hidden = true;
   state.searchCaps = null;
   applySearchCaps();
   applySourceTrialUi();
@@ -433,6 +435,8 @@ function hideLogin() {
     els.userChip.hidden = false;
     els.suggestBtn.hidden = false;
     els.adminTab.hidden = !session.isAdmin;
+    const insightsTabEl = document.getElementById("insightsTab");
+    if (insightsTabEl) insightsTabEl.hidden = !session.isAdmin; // insights.js also shows it for a super admin whose token lacks the flag
     applyExcludeKeywordsDefaultIfBlank();
     applySourceTrialUi();
     loadSearchCapabilities();
@@ -1470,6 +1474,18 @@ function stopAdminAutoRefresh() {
   }
 }
 
+// Links between the admin pages: <button data-goto="admin" data-section="queues"> or data-goto="insights" data-section="pipeline".
+document.addEventListener("click", (e) => {
+  const link = e.target.closest("[data-goto]");
+  if (!link) return;
+  e.preventDefault();
+  const view = link.dataset.goto;
+  const section = link.dataset.section || "";
+  switchView(view);
+  if (view === "admin" && section) document.querySelector(`[data-admin-seg="${section}"]`)?.click();
+  if (view === "insights" && section) window.dmeInsights?.openTab?.(section);
+});
+
 /* ---------- Surviving a page refresh ---------- */
 // A refresh used to land on Today and drop the Prospect results. The tab and the search results are kept in
 // sessionStorage (this tab only, never shared) together with who was signed in, so a refresh puts the rep back
@@ -1489,8 +1505,8 @@ function savedViewForRefresh() {
   try {
     const saved = JSON.parse(sessionStorage.getItem(LAST_VIEW_KEY) || "null");
     if (!session || !saved || saved.u !== session.username) return null;
-    if (!["today", "search", "claimed", "admin"].includes(saved.view)) return null;
-    if (saved.view === "admin" && !session.isAdmin) return null;
+    if (!["today", "search", "claimed", "insights", "admin"].includes(saved.view)) return null;
+    if ((saved.view === "admin" || saved.view === "insights") && !session.isAdmin) return null;
     return saved.view;
   } catch { return null; }
 }
@@ -1550,6 +1566,8 @@ function switchView(view) {
   els.viewAdmin.hidden = view !== "admin";
   const viewToday = document.getElementById("viewToday");
   if (viewToday) viewToday.hidden = view !== "today";
+  const viewInsights = document.getElementById("viewInsights");
+  if (viewInsights) viewInsights.hidden = view !== "insights";
   updateSelectionBar();
   window.dmeHooks.onView?.(view);
 
@@ -2130,12 +2148,13 @@ function leadRowHtml(company, index) {
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-index="${index}" tabindex="0" aria-expanded="false" style="--i:${Math.min(index, 12)}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
-        <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}${priorContactBadgeHtml(company.priorContact)}${window.dmeHooks.rowTags?.(company) || ""}${window.dmeHooks.relatedChip?.("prospect", index) || ""}</div>
+        <div class="company-name">${escapeHtml(company.name)}${locationsBadge(company.locations)}${window.dmeHooks.ageBadge?.(company.enumerationDate) || ""}${priorContactBadgeHtml(company.priorContact)}${window.dmeHooks.rowTags?.(company) || ""}${window.dmeHooks.relatedChip?.("prospect", index) || ""}</div>
         ${sourceBadges(company.sources)}
         ${leadSignalsHtml({
           phone: primaryContact?.phone || company.phone,
           website: company.website,
           hasContact: Boolean(company.decisionMakers?.length),
+          medicare: { claims: company.medicare?.totalClaims, payment: company.medicare?.medicarePayment },
         })}
       </td>
       <td class="specialty-cell">${specialtyPillHtml(company.taxonomy?.description)}</td>
@@ -2257,6 +2276,7 @@ function detailRowHtml(company, index) {
           </div>
           ${window.dmeHooks.whyCallBlock?.(company, company.priorContact ? { priorLine: priorContactSummary(company.priorContact), priorNote: company.priorContact.note } : {}) || priorContactBannerHtml(company.priorContact)}
           ${window.dmeHooks.annotationsBlock?.(company.npi) || ""}
+          ${window.dmeHooks.intelBlock ? `<div class="ann intel-card"><h4>Call intel <small>what you learn on the call, shared with the team</small></h4>${window.dmeHooks.intelBlock(company.npi)}</div>` : ""}
           ${branchLocationsHtml(company.locations) ? `<div class="detail-grid">${branchLocationsHtml(company.locations)}</div>` : ""}
           <div class="brief-box">
             <div class="brief-output" id="brief-${index}"></div>
@@ -2303,17 +2323,28 @@ const SIGNAL_ICONS = {
   phone: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2h2.2l1 3-1.4 1c.7 1.5 1.9 2.7 3.4 3.4l1-1.4 3 1v2.2c0 .8-.7 1.5-1.5 1.5C6.9 12.7 3.3 9.1 3.3 4.2 3.3 3 3.5 2 3.5 2Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
   web: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 8h11M8 2.5c1.6 1.7 2.3 3.5 2.3 5.5S9.6 11.8 8 13.5C6.4 11.8 5.7 10 5.7 8S6.4 4.2 8 2.5Z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
   person: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3 13.5c.5-2.5 2.5-3.8 5-3.8s4.5 1.3 5 3.8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
+  money: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M9.7 6.3c-.3-.6-.9-.9-1.7-.9-.9 0-1.6.5-1.6 1.2 0 1.7 3.4.9 3.4 2.6 0 .7-.7 1.3-1.8 1.3-.8 0-1.4-.3-1.8-.9M8 3.9v8.2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   copy: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M10.5 3.5v-.5A1 1 0 0 0 9.5 2h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
 };
 
 // Tiny at-a-glance indicators (dimmed when missing) plus hover-only quick
 // actions. Wrapped in a stopPropagation so using them never toggles the row.
-function leadSignalsHtml({ phone, website, hasContact }) {
+// medicare: { claims, payment } from the lead; a money icon shows when it has Medicare claims.
+function medicareSignalTitle(medicare) {
+  const claims = Number(medicare && medicare.claims);
+  if (!(claims > 0)) return "";
+  const pay = Number(medicare.payment);
+  return `Bills Medicare: ${claims.toLocaleString()} claims${Number.isFinite(pay) && pay > 0 ? `, $${Math.round(pay).toLocaleString()} paid` : ""}`;
+}
+
+function leadSignalsHtml({ phone, website, hasContact, medicare }) {
   const cleanPhone = (phone || "").trim();
+  const moneyTitle = medicareSignalTitle(medicare);
   const signals = `
     <span class="signal ${cleanPhone ? "on" : ""}" title="${cleanPhone ? "Phone number on file" : "No phone number"}">${SIGNAL_ICONS.phone}</span>
     <span class="signal ${website ? "on" : ""}" title="${website ? "Has a website" : "No website"}">${SIGNAL_ICONS.web}</span>
-    <span class="signal ${hasContact ? "on" : ""}" title="${hasContact ? "Decision maker identified" : "No decision maker yet"}">${SIGNAL_ICONS.person}</span>`;
+    <span class="signal ${hasContact ? "on" : ""}" title="${hasContact ? "Decision maker identified" : "No decision maker yet"}">${SIGNAL_ICONS.person}</span>
+    <span class="signal signal-money ${moneyTitle ? "on" : ""}" title="${moneyTitle ? escapeHtml(moneyTitle) : "No Medicare claims found"}">${SIGNAL_ICONS.money}</span>`;
   const actions = `
     ${cleanPhone ? `<button type="button" class="quick-btn" data-copy-phone="${escapeHtml(cleanPhone)}" title="Copy phone number">${SIGNAL_ICONS.copy}<span>Copy</span></button>` : ""}
     ${website ? `<a class="quick-btn" href="${escapeHtml(website)}" target="_blank" rel="noopener" title="Open website">${SIGNAL_ICONS.web}<span>Site</span></a>` : ""}`;
@@ -2632,6 +2663,7 @@ function toggleRowDetail(idx) {
   openCardInPlace(row);
   window.dmeHooks.whyCallOpened?.(state.companies[idx]);
   window.dmeHooks.annotationsOpened?.(state.companies[idx].npi);
+  window.dmeHooks.intelOpened?.(state.companies[idx].npi);
   document.querySelector(`[data-brief-index="${idx}"]`)?.addEventListener("click", (e) => {
     e.stopPropagation();
     generateBrief(idx);
@@ -3577,13 +3609,14 @@ function claimedLeadRowHtml(lead, index) {
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-claimed-index="${index}" tabindex="0" aria-expanded="false" style="--i:${Math.min(index, 12)}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="claimed-row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
-        <div class="company-name">${escapeHtml(lead.name)}${claimedBranchesBadge(lead.branches)}${providerChangeBadge(lead.providerChange)}${window.dmeHooks.relatedChip?.("claimed", index) || ""}</div>
+        <div class="company-name">${escapeHtml(lead.name)}${claimedBranchesBadge(lead.branches)}${window.dmeHooks.ageBadge?.(lead.enumerationDate) || ""}${providerChangeBadge(lead.providerChange)}${window.dmeHooks.relatedChip?.("claimed", index) || ""}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
         ${lead.taxonomy ? specialtyPillHtml(lead.taxonomy) : ""}
         ${leadSignalsHtml({
           phone: lead.contactPhone || lead.companyPhone,
           website: lead.website,
           hasContact: Boolean(lead.contactName),
+          medicare: { claims: lead.medicareClaims === "" ? null : lead.medicareClaims, payment: lead.medicarePayment === "" ? null : lead.medicarePayment },
         })}
       </td>
       <td class="mono">${escapeHtml(lead.city)}, ${escapeHtml(lead.state)}${window.dmeHooks.localTime ? `<div class="tz-line">${window.dmeHooks.localTime(lead.state)}</div>` : ""}</td>
@@ -5715,6 +5748,8 @@ function paletteCommands() {
     { label: "Go to Prospect", hint: "View", run: () => switchView("search") },
     { label: "Go to Claimed leads", hint: "View", run: () => switchView("claimed") },
   ];
+  const insightsTab = document.getElementById("insightsTab");
+  if (insightsTab && !insightsTab.hidden) cmds.push({ label: "Go to Insights", hint: "View", run: () => switchView("insights") });
   if (!els.adminTab.hidden) cmds.push({ label: "Go to Admin", hint: "View", run: () => switchView("admin") });
   cmds.push(
     { label: "Run search with current filters", hint: "Prospect", run: () => { switchView("search"); els.form.requestSubmit(); } },

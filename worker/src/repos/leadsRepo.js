@@ -4,6 +4,7 @@
 // old per-teammate-tab-plus-shared-Disconnected-tab layout entirely -- see
 // MIGRATION_TO_VERCEL_SUPABASE.md's schema notes for why.
 import { createCompany } from "../lib/companyModel.js";
+import { enumerationDatesFor } from "./enumerationRepo.js";
 import { classifyRole } from "../lib/roleClassifier.js";
 import { findUserByUsernameExact } from "../lib/users.js";
 import { normalizeMeetingInput } from "../lib/meetings.js";
@@ -1136,8 +1137,19 @@ export async function listClaimedPage(supabase, session, params) {
   const leads = rows.map((row) => toLeadDTO(row, session.displayName));
   await attachGroupBranches(supabase, rows, leads, session.id);
   await attachProviderChanges(supabase, leads, session.id);
+  await attachEnumerationDates(supabase, leads);
   const total = count ?? leads.length;
   return { leads, total, page: params.page, pageSize: params.pageSize, pages: Math.max(1, Math.ceil(total / params.pageSize)), counts, statuses };
+}
+
+// When each claimed lead got its NPI (for the New / Established badge). Best-effort.
+async function attachEnumerationDates(supabase, leads) {
+  try {
+    const dates = await enumerationDatesFor(supabase, leads.map((l) => l.npi));
+    leads.forEach((l) => { if (dates.has(String(l.npi))) l.enumerationDate = dates.get(String(l.npi)); });
+  } catch (err) {
+    console.log("[leadsRepo] Enumeration dates skipped: " + err.message);
+  }
 }
 
 // The Today screen, built here from all of the rep's leads and sent as just the lists it shows.

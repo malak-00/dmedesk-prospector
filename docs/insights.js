@@ -1,23 +1,27 @@
-/* App insights: what a super admin sees in place of the Today screen.
-   Usage and adoption, how far leads get, where people hit friction, and system health,
-   all from GET admin/insights (see worker/src/lib/insights.js). Ordinary reps and admins
-   never see it: the Worker refuses anyone who is not a super admin (sql/045).
-   Loaded after today.js, which it steps in front of only for a super admin. */
+/* App insights: its own page for admins and super admins (the Insights tab).
+   Usage and adoption, how far leads get, why leads say no, where people hit friction, and system health, all from
+   GET admin/insights (see worker/src/lib/insights.js). Read-only analytics: managing people, queues and settings
+   stays on the Admin page. Admins can read everything; only a super admin can send the avatar notes it suggests.
+   A super admin's Home (the Today tab) is superhome.js. */
 (function () {
   "use strict";
 
-  const panel = document.getElementById("todayPanel");
-  const todayTab = document.querySelector('.view-tabs .tab[data-view="today"]');
-  const FLAG_KEY = "dmeSuperAdmin"; // remembered per username so the right screen shows at once
+  const panel = document.getElementById("insightsPanel");
+  const insightsTab = document.getElementById("insightsTab");
   const DAYS_KEY = "dmeInsightsDays";
+  const FUNNEL_KEY = "dmeInsightsFunnelDays";
+  const FUNNEL_RANGES = [[30, "Last 30 days"], [90, "Last 90 days"], [180, "Last 6 months"], [0, "All time"]];
   const RANGES = [14, 28, 60, 90];
 
   const TABS = [["overview", "Overview"], ["people", "People"], ["pipeline", "Pipeline"], ["quality", "Search & errors"], ["system", "System"]];
   const TAB_KEY = "dmeInsightsTab";
   let tab = "overview";
   try { const t = localStorage.getItem(TAB_KEY); if (TABS.some(([k]) => k === t)) tab = t; } catch { /* default */ }
-  let isSuper = false;
+  let canView = false; // an admin or super admin
+  let isSuper = false; // may send avatar notes
   let data = null;
+  let funnelDays = 0; // which claims the funnel and conversion tables count: 0 = all time
+  let funnelAlt = null; // the answer for another period; null means use the all-time numbers in `data`
   let days = 28;
   let loading = false;
   let error = "";
@@ -25,6 +29,8 @@
   try {
     const saved = Number(localStorage.getItem(DAYS_KEY));
     if (RANGES.includes(saved)) days = saved;
+    const savedFunnel = Number(localStorage.getItem(FUNNEL_KEY));
+    if (FUNNEL_RANGES.some(([n]) => n === savedFunnel)) funnelDays = savedFunnel;
   } catch { /* defaults apply */ }
 
   const num = (n) => Number(n || 0).toLocaleString();
@@ -40,20 +46,11 @@
     return `${d} days ago`;
   }
 
-  function rememberedFlag() {
-    try { return localStorage.getItem(FLAG_KEY) === (getSession()?.username || "\0"); } catch { return false; }
-  }
-
-  function setFlag(on) {
-    isSuper = on;
-    window.dmeInsightsActive = on; // today.js stops drawing into the shared panel
-    try {
-      if (on) localStorage.setItem(FLAG_KEY, getSession()?.username || "");
-      else localStorage.removeItem(FLAG_KEY);
-    } catch { /* not remembered */ }
-    const label = todayTab?.querySelector(".tab-label");
-    if (label) label.textContent = on ? "Insights" : "Today";
-    if (todayTab) todayTab.title = on ? "App insights" : "Today";
+  // Who may see the page and who may send notes, from GET auth/flags.
+  function setAccess({ admin, superAdmin }) {
+    canView = Boolean(admin || superAdmin);
+    isSuper = Boolean(superAdmin);
+    if (insightsTab) insightsTab.hidden = !canView;
   }
 
   /* ---------- pieces ---------- */
@@ -98,18 +95,30 @@
     return `<div class="ins-table-wrap"><table class="ins-table"><thead><tr>${cols.map((c) => `<th${c.num ? ' class="num"' : ""}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows.map((cells) => `<tr>${cells.map((html, i) => `<td data-label="${esc(cols[i].label)}"${cols[i].num ? ' class="num"' : ""}>${html}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   }
 
+  // Adoption only: who is using the app and who is stuck. Calls, meetings and claims per rep and week are Admin > Team activity.
   function people(list) {
     if (!list.length) return `<p class="ins-empty">No reps yet.</p>`;
     const recent = (p) => p.lastActive && Date.now() - Date.parse(p.lastActive) < 7 * 86_400_000;
     return table(
-      [{ label: "Person" }, { label: "Last active" }, { label: "Vs last week" }, { label: "Claims", num: 1 }, { label: "Taps", num: 1 }, { label: "Calls", num: 1 }, { label: "Searches", num: 1 }, { label: "Open leads", num: 1 }, { label: "Never called", num: 1 }, { label: "Overdue", num: 1 }],
+      [{ label: "Person" }, { label: "Last active" }, { label: "Vs last week" }, { label: "Searches", num: 1 }, { label: "Open leads", num: 1 }, { label: "Never called", num: 1 }],
       list.map((p) => [
         `${esc(p.name)}${p.isAdmin ? ' <span class="reminder-badge reminder-upcoming">admin</span>' : ""}`,
         recent(p) ? esc(ago(p.lastActive)) : `<span class="ins-dim">${esc(ago(p.lastActive))}</span>`,
         trend(p),
-        num(p.claims), num(p.dials), num(p.calls), num(p.searches), num(p.openLeads), num(p.neverContacted), num(p.overdue),
+        num(p.searches), num(p.openLeads), num(p.neverContacted),
       ]),
-    );
+    ) + `<p class="ins-note">Calls, meetings and claims for each rep, week by week: <button type="button" class="link-btn" data-goto="admin" data-section="team">Admin &rsaquo; Team activity</button>.</p>`;
+  }
+
+  // The reasons leads gave for not signing, from Call intel (sql/050).
+  function objectionsList(list) {
+    if (!list || !list.length) return `<p class="ins-empty">No objections recorded yet. Reps pick one under Call intel on a lead (sql/050).</p>`;
+    const max = Math.max(1, ...list.map((o) => o.count));
+    const cap = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1);
+    return `<div class="ins-funnel">${list.map((o) => `
+      <div class="ins-funnel-row"><span class="ins-funnel-label" title="${esc(cap(o.reason))}">${esc(cap(o.reason))}</span>
+        <span class="ins-funnel-track"><span class="ins-funnel-fill" style="width:${Math.max(3, Math.round((o.count / max) * 100))}%"></span></span>
+        <span class="ins-funnel-num">${num(o.count)}</span></div>`).join("")}</div>`;
   }
 
   function funnel(f) {
@@ -274,7 +283,8 @@
     const good = checks.filter((c) => c.ok);
     return `${bad.length ? `<ul class="ins-list">${bad.map(row).join("")}</ul>` : `<p class="ins-note ins-allgood">All ${checks.length} checks are fine.</p>`}
       <details class="ins-details"><summary>${good.length} working</summary><ul class="ins-list">${good.map(row).join("")}
-        <li class="ins-ok"><span class="ins-dot"></span><span>Search source<small>${esc(sys.searchSource || "unknown")}</small></span></li></ul></details>`;
+        <li class="ins-ok"><span class="ins-dot"></span><span>Search source<small>${esc(sys.searchSource || "unknown")}</small></span></li></ul></details>
+      <p class="ins-note">Sessions last ${num(sys.sessionHours || 6)} hours. Keys and secrets are never shown here; they are set in the Worker's settings.</p>`;
   }
 
   /* ---------- page ---------- */
@@ -301,7 +311,8 @@
 
     const sec = (title, body, extra = "") => `<section class="ins-card"><h3>${title}</h3>${body}${extra}</section>`;
     const pane = (key, html) => `<div class="ins-pane" data-ins-pane="${key}"${key === tab ? "" : " hidden"}>${html}</div>`;
-    const dataIssues = p.funnel.specialties.find((r) => r.label === "Unknown specialty");
+    const F = funnelAlt || p.funnel; // the funnel for the chosen period
+    const dataIssues = F.specialties.find((r) => r.label === "Unknown specialty");
 
     panel.innerHTML = `
       <div class="ins-wrap">
@@ -327,12 +338,11 @@
           ${kpi("Meetings held", num(held ? held.count : 0), held ? `${pct(held.ofClaimed)} of claimed` : "")}
         </div>
         ${sec("Activity per day", chart(d.adoption.daily))}
-        ${sec(`What the team is asking for <small>${num(fr.suggestions.total)} suggestions, ${num(fr.suggestions.last7)} this week</small>`,
-          fr.suggestions.recent.length ? `<ul class="ins-quotes">${fr.suggestions.recent.map((s) => `<li><p>${esc(s.text)}</p><small>${esc(s.by || "Someone")} \u00b7 ${esc(ago(s.at))}</small></li>`).join("")}</ul>` : `<p class="ins-empty">No suggestions yet.</p>`)}`)}
+        ${sec("What the team is asking for", `<p class="ins-note">${num(fr.suggestions.total)} suggestion${fr.suggestions.total === 1 ? "" : "s"}, ${num(fr.suggestions.last7)} this week. <button type="button" class="link-btn" data-goto="admin" data-section="queues">Read and act on them in Admin</button>.</p>`)}`)}
 
       ${pane("people", `
         ${sec("People", people(d.adoption.people))}
-        ${sec('Notes you could send <small>they appear through the avatar within a minute if the person is signed in</small>', nudgeList(d.nudges || []))}
+        ${isSuper ? sec('Notes you could send <small>they appear through the avatar within a minute if the person is signed in</small>', nudgeList(d.nudges || [])) : ""}
         <div class="ins-grid">
           ${sec("Speed to first call", firstCall(p.firstCall))}
           ${sec("When the team calls", heatmap(d.callAt))}
@@ -340,12 +350,16 @@
 
       ${pane("pipeline", `
         <div class="ins-grid">
-          ${sec("How far claimed leads get", funnel(p.funnel), `<p class="ins-note">${num(p.neverContacted)} claimed ${p.neverContacted === 1 ? "lead was" : "leads were"} never contacted ${p.staleDays}+ days after claiming.</p>`)}
+          ${sec(`How far claimed leads get <label class="ins-period">claimed in <select data-ins="funnel-days" aria-label="Which claims to count">${FUNNEL_RANGES.map(([n, label]) => `<option value="${n}"${n === funnelDays ? " selected" : ""}>${label}</option>`).join("")}</select></label>`, funnel(F), `<p class="ins-note">${num(p.neverContacted)} claimed ${p.neverContacted === 1 ? "lead was" : "leads were"} never contacted ${p.staleDays}+ days after claiming.</p>`)}
           ${sec("Where leads sit", p.statuses.length ? `<ul class="ins-list">${p.statuses.map((s) => `<li><span class="ins-dot"></span><span>${esc(s.label)}<small>${num(s.count)}</small></span></li>`).join("")}</ul>` : `<p class="ins-empty">No leads yet.</p>`)}
         </div>
         <div class="ins-grid">
-          ${sec("Which specialties convert", segments("Specialty", p.funnel.specialties), dataIssues ? `<p class="ins-note">${num(dataIssues.claimed)} claimed leads have no specialty recorded, so they can't be broken down.</p>` : "")}
-          ${sec("Which states convert", segments("State", p.funnel.states))}
+          ${sec("Which specialties convert", segments("Specialty", F.specialties), dataIssues ? `<p class="ins-note">${num(dataIssues.claimed)} claimed leads have no specialty recorded, so they can't be broken down.</p>` : "")}
+          ${sec("Which states convert", segments("State", F.states))}
+        </div>
+        <div class="ins-grid">
+          ${sec("Which reps convert", segments("Rep", F.reps))}
+          ${sec("Why leads say no", objectionsList(p.objections))}
         </div>
         ${sec("Territory map", territoryMap(d.territory))}
         ${sec('Claimed but never called <small>oldest first</small>', stuckList(p.stuck || []))}`)}
@@ -359,19 +373,30 @@
         ${sec("Friction", `<ul class="ins-list">
             <li><span class="ins-dot"></span><span>Bad numbers flagged<small>${num(fr.badNumbers.open)} open (${num(fr.badNumbers.wrong)} wrong, ${num(fr.badNumbers.disconnected)} disconnected), ${num(fr.badNumbers.last7)} this week</small></span></li>
             <li><span class="ins-dot"></span><span>Leads sent to disconnected<small>${num(fr.disconnected.count)} (${fr.disconnected.share}% of claimed)</small></span></li>
-            <li><span class="ins-dot"></span><span>Waiting on an admin<small>${esc(queueText || "unknown")}</small></span></li>
+            <li><span class="ins-dot"></span><span>Waiting on an admin<small>${esc(queueText || "unknown")} \u00b7 <button type="button" class="link-btn" data-goto="admin" data-section="queues">Open the review queues</button></small></span></li>
             <li><span class="ins-dot"></span><span>Claimed with no call notes<small>${num(fr.leadsWithoutNotes)}</small></span></li></ul>`)}`)}
 
       ${pane("system", sec("System health", system(d.system)))}
       </div>`;
   }
 
+  // The funnel for a period other than all time comes from the same endpoint the Admin funnel used to use.
+  async function loadFunnel() {
+    if (!funnelDays) { funnelAlt = null; return; }
+    try {
+      funnelAlt = await apiGet("admin/funnel", { days: funnelDays });
+    } catch (err) {
+      console.log("[insights] funnel: " + err.message);
+      funnelAlt = null;
+    }
+  }
+
   async function refresh({ showSpinner = false } = {}) {
-    if (!isSuper) return;
+    if (!canView) return;
     loading = true;
     if (showSpinner || !data) { error = ""; render(); }
     try {
-      data = await apiGet("admin/insights", { days });
+      [data] = await Promise.all([apiGet("admin/insights", { days }), loadFunnel()]);
       error = "";
     } catch (err) {
       console.log("[insights] " + err.message);
@@ -381,8 +406,16 @@
     render();
   }
 
+  function openTab(key) {
+    if (!TABS.some(([k]) => k === key)) return;
+    tab = key;
+    try { localStorage.setItem(TAB_KEY, tab); } catch { /* not remembered */ }
+    if (data) render();
+  }
+  window.dmeInsights = { openTab };
+
   panel?.addEventListener("click", (e) => {
-    if (!isSuper) return;
+    if (!canView) return;
     if (e.target.closest('[data-ins="reload"]')) refresh({ showSpinner: true });
     const tabBtn = e.target.closest("[data-ins-tab]");
     if (tabBtn) {
@@ -415,48 +448,48 @@
     }
   }
   panel?.addEventListener("change", (e) => {
-    if (!isSuper || !e.target.matches('[data-ins="days"]')) return;
-    days = Number(e.target.value) || 28;
-    try { localStorage.setItem(DAYS_KEY, String(days)); } catch { /* not remembered */ }
-    refresh({ showSpinner: true });
+    if (!canView) return;
+    if (e.target.matches('[data-ins="days"]')) {
+      days = Number(e.target.value) || 28;
+      try { localStorage.setItem(DAYS_KEY, String(days)); } catch { /* not remembered */ }
+      refresh({ showSpinner: true });
+    } else if (e.target.matches('[data-ins="funnel-days"]')) {
+      funnelDays = Number(e.target.value) || 0;
+      try { localStorage.setItem(FUNNEL_KEY, String(funnelDays)); } catch { /* not remembered */ }
+      loadFunnel().then(render);
+    }
   });
 
-  /* ---------- stepping in front of Today, for a super admin only ---------- */
+  /* ---------- access and loading ---------- */
 
   const hooks = window.dmeHooks;
   const previousOnView = hooks.onView;
   hooks.onView = (view) => {
-    if (isSuper && view === "today") { refresh(); return; }
+    if (view === "insights" && canView) refresh(!data ? { showSpinner: true } : {});
     previousOnView?.(view);
   };
 
-  async function checkFlag() {
+  async function checkFlags() {
     if (!getSession() || getSession().mustChangePassword) return;
-    const known = rememberedFlag();
-    if (known && !isSuper) { setFlag(true); if (state.view === "today") refresh({ showSpinner: true }); }
     try {
       const flags = await apiGet("auth/flags");
-      const on = Boolean(flags.isSuperAdmin);
-      if (on !== isSuper) {
-        setFlag(on);
-        if (state.view === "today") { on ? refresh({ showSpinner: true }) : window.dmeToday?.refresh({ showSpinner: true }); }
-      } else if (on && state.view === "today") {
-        refresh();
-      }
+      setAccess({ admin: flags.isAdmin, superAdmin: flags.isSuperAdmin });
+      if (state.view === "insights" && canView) refresh({ showSpinner: !data });
     } catch (err) {
       console.log("[insights] " + err.message);
     }
   }
 
   const previousSignedIn = hooks.onSignedIn;
-  hooks.onSignedIn = () => { previousSignedIn?.(); checkFlag(); };
+  hooks.onSignedIn = () => { previousSignedIn?.(); checkFlags(); };
   const previousSignedOut = hooks.onSignedOut;
   hooks.onSignedOut = () => {
     previousSignedOut?.();
     data = null;
+    funnelAlt = null;
     error = "";
-    setFlag(false);
+    setAccess({ admin: false, superAdmin: false });
   };
 
-  if (getSession()) checkFlag();
+  if (getSession()) checkFlags();
 })();

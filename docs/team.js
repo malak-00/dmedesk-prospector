@@ -16,15 +16,9 @@
   let seg = "queues";
   let weeks = 8;
   let data = null;
-  let funnel = null;
-  let funnelDays = 90; // 0 = all time; "week" = since Monday; "custom" = funnelFrom..funnelTo
   let custom = false; // Team activity: pick a date range instead of a number of weeks
   let rangeFrom = "";
   let rangeTo = "";
-  let funnelFrom = "";
-  let funnelTo = "";
-  let funnelBy = "reps";
-  let funnelError = "";
   let loading = false;
   let error = "";
 
@@ -36,10 +30,6 @@
   } catch { /* storage blocked: defaults apply for this page view */ }
 
   const todayUtc = () => new Date().toISOString().slice(0, 10);
-  const mondayUtc = () => {
-    const d = new Date();
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - ((d.getUTCDay() + 6) % 7))).toISOString().slice(0, 10);
-  };
   const dateInputs = (kind, from, to) => `<span class="inline-field"><input type="date" data-team-date="${kind}-from" value="${from}" max="${todayUtc()}" aria-label="From"> <span>to</span> <input type="date" data-team-date="${kind}-to" value="${to}" max="${todayUtc()}" aria-label="To"></span>`;
 
   const sum = (list) => (list || []).reduce((a, b) => a + b, 0);
@@ -63,7 +53,6 @@
     loading = true;
     error = "";
     render();
-    const funnelLoaded = loadFunnel();
     try {
       data = await apiGet("admin/team-activity", custom && rangeFrom && rangeTo ? { from: rangeFrom, to: rangeTo } : { weeks });
     } catch (err) {
@@ -72,64 +61,6 @@
       loading = false;
       render();
     }
-    await funnelLoaded;
-    render();
-  }
-
-  async function loadFunnel() {
-    funnelError = "";
-    try {
-      if (funnelDays === "week") funnel = await apiGet("admin/funnel", { from: mondayUtc(), to: todayUtc() });
-      else if (funnelDays === "custom") funnel = funnelFrom && funnelTo ? await apiGet("admin/funnel", { from: funnelFrom, to: funnelTo }) : funnel;
-      else funnel = await apiGet("admin/funnel", { days: funnelDays });
-    } catch (err) {
-      funnelError = err.message;
-    }
-  }
-
-  // A whole percent from 10% up, one decimal below that, so a small but real rate never reads as 0%.
-  const pct = (x) => {
-    const v = (x || 0) * 100;
-    if (v === 0) return "0%";
-    if (v >= 10) return `${Math.round(v)}%`;
-    return `${v < 0.1 ? "<0.1" : v.toFixed(1)}%`;
-  };
-
-  function funnelHtml() {
-    const options = [["week", "Claimed this week"], [30, "Claimed in the last 30 days"], [90, "Claimed in the last 90 days"], [0, "All time"], ["custom", "Custom dates\u2026"]]
-      .map(([d, label]) => `<option value="${d}"${d === funnelDays ? " selected" : ""}>${label}</option>`).join("");
-    let body;
-    if (funnelError) body = `<div class="team-state">${escapeHtml(funnelError)}</div>`;
-    else if (!funnel) body = '<div class="team-state"><span class="spinner"></span> Counting\u2026</div>';
-    else if (!funnel.total) body = '<div class="team-state">No leads were claimed in that period.</div>';
-    else {
-      const bars = funnel.stages.map((s, i) => `
-        <div class="funnel-row">
-          <span class="funnel-label">${escapeHtml(s.label)}</span>
-          <span class="funnel-track"><span class="funnel-fill stage-${i}" style="width:${Math.max(s.count ? 2 : 0, Math.round(s.ofClaimed * 100))}%"></span></span>
-          <span class="funnel-count mono">${s.count.toLocaleString()}</span>
-          <span class="funnel-rate" title="${i === 0 ? "" : `Of the leads that reached "${funnel.stages[i - 1].label}"`}">${i === 0 ? "" : `${pct(s.ofPrevious)} of previous`}</span>
-        </div>`).join("");
-      const won = funnel.stages[4];
-      const rows = (funnel[funnelBy] || []).map((r) => `
-        <tr><td>${escapeHtml(r.label)}</td><td class="mono">${r.claimed}</td><td class="mono">${r.contacted}</td><td class="mono">${r.booked}</td>
-          <td class="mono">${r.held}</td><td class="mono">${r.won}</td><td class="mono"><strong>${r.claimed ? pct(r.won / r.claimed) : "0%"}</strong></td></tr>`).join("");
-      const tabs = [["reps", "By rep"], ["specialties", "By specialty"], ["states", "By state"]]
-        .map(([k, label]) => `<button type="button" class="admin-seg-btn${funnelBy === k ? " is-active" : ""}" data-funnel-by="${k}">${label}</button>`).join("");
-      body = `
-        <div class="funnel-bars">${bars}</div>
-        <p class="funnel-sum"><strong>${won.count.toLocaleString()}</strong> of ${funnel.total.toLocaleString()} claimed leads (<strong>${pct(won.ofClaimed)}</strong>) reached Onboarded.</p>
-        <div class="admin-seg funnel-tabs">${tabs}</div>
-        <div class="table-wrap"><table class="results-table team-table"><thead><tr>
-          <th>${funnelBy === "reps" ? "Rep" : funnelBy === "specialties" ? "Specialty" : "State"}</th><th>Claimed</th><th>Contacted</th><th>Booked</th><th>Held</th><th>Onboarded</th><th title="Claimed to Onboarded">Win rate</th>
-        </tr></thead><tbody>${rows || '<tr class="empty-row"><td colspan="7">Nothing here yet.</td></tr>'}</tbody></table></div>`;
-    }
-    return `<div class="team-block team-funnel">
-      <div class="funnel-head"><h4>Pipeline funnel</h4>
-        <select data-team="funnel-days" aria-label="Which leads to count">${options}</select>${funnelDays === "custom" ? dateInputs("funnel", funnelFrom, funnelTo) : ""}</div>
-      ${body}
-      <p class="team-foot">A lead counts at every stage it has reached. Stages come from the lead's status, its booked meeting and its call log; "Onboarded" means the status says onboarded, closed won or signed. Recently claimed leads haven't had time to convert yet.</p>
-    </div>`;
   }
 
   /* ---------- rendering ---------- */
@@ -226,7 +157,7 @@
           <div class="team-block"><h4>By week</h4>${chartHtml(data)}</div>
           <div class="team-block team-block-table"><h4>By rep</h4>${tableHtml(data)}</div>
         </div>
-        ${funnelHtml()}
+        <p class="team-foot">How far claimed leads get, and which reps, specialties and states convert: <button type="button" class="link-btn" data-goto="insights" data-section="pipeline">Insights &rsaquo; Pipeline</button>.</p>
         ${userActivityHtml(data)}
         <p class="team-foot">Calls are the dated lines in each lead's call log, so they count what was written down. Claims come from the ownership history. Weeks start on Monday (UTC). Open leads, overdue and meetings ahead are as of now.</p>`;
     }
@@ -260,30 +191,15 @@
     if (e.target.closest('[data-team="reload"]')) load();
     const view = e.target.closest("[data-admin-view-leads]");
     if (view) openAdminUserLeads(view.dataset.userId, view.dataset.displayName);
-    const by = e.target.closest("[data-funnel-by]");
-    if (by) { funnelBy = by.dataset.funnelBy; render(); }
   });
   panel?.addEventListener("change", async (e) => {
     const dateBox = e.target.closest("[data-team-date]");
     if (dateBox) {
-      const [kind, end] = dateBox.dataset.teamDate.split("-");
-      if (kind === "funnel") { if (end === "from") funnelFrom = dateBox.value; else funnelTo = dateBox.value; }
-      else if (end === "from") rangeFrom = dateBox.value; else rangeTo = dateBox.value;
-      const from = kind === "funnel" ? funnelFrom : rangeFrom;
-      const to = kind === "funnel" ? funnelTo : rangeTo;
-      if (!from || !to) return; // wait until both dates are picked
-      if (from > to) { showToast("The start date is after the end date", true); return; }
-      if (kind === "funnel") { funnel = null; render(); await loadFunnel(); render(); } else load();
-      return;
-    }
-    if (e.target.matches('[data-team="funnel-days"]')) {
-      const v = e.target.value;
-      funnelDays = v === "week" || v === "custom" ? v : Number(v);
-      if (funnelDays === "custom" && !(funnelFrom && funnelTo)) { render(); return; } // dates first
-      funnel = null;
-      render();
-      await loadFunnel();
-      render();
+      const end = dateBox.dataset.teamDate.split("-")[1];
+      if (end === "from") rangeFrom = dateBox.value; else rangeTo = dateBox.value;
+      if (!rangeFrom || !rangeTo) return; // wait until both dates are picked
+      if (rangeFrom > rangeTo) { showToast("The start date is after the end date", true); return; }
+      load();
       return;
     }
     if (!e.target.matches('[data-team="range"]')) return;
@@ -303,7 +219,6 @@
   window.dmeHooks.onSignedOut = () => {
     previousSignedOut?.();
     data = null;
-    funnel = null;
     error = "";
     if (panel) panel.innerHTML = "";
   };

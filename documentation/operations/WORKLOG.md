@@ -1,5 +1,23 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-21 — New/Established badge, Medicare icon, call intel, auto-disconnect sweep, separate Insights page, super admin Home, Insights/Admin de-duplication
+
+**Objective.** Several requests in one: show how new a supplier is, mark leads that bill Medicare, keep what reps learn on calls in structured fields, finish auto-disconnect, give Insights its own page for admins, give the super admin a different Home, and remove what the Insights and Admin pages both showed.
+
+**Actions Completed.**
+- **NPI age badge.** `npi_records.enumeration_date` already exists (270,148 of 276,893 rows filled), so no schema change. `worker/src/repos/enumerationRepo.js` reads it for the results on screen (search results via `companyService.attachEnumerationSafe`, the claimed list via `leadsRepo.attachEnumerationDates`). `docs/leadage.js`: registered under 2 years ago is "New", 15 or more years ago is "Established", in between no badge. Shown as a badge in the Prospect and Claimed rows, as a chip in "Why call" (a "New" chip also in the call panel snapshot), and in the brief ("a new supplier (NPI since Jun 2025)", with its own pain point).
+- **Medicare icon.** A dollar icon in the row signals (green when the lead has Medicare claims; hover shows claims and payment), Prospect and Claimed.
+- **Call intel (needs sql/050).** New `sql/050_lead_intel.sql` (table `lead_intel`, one row per NPI: current biller, gatekeeper, best direct line, email, size, and the main objection from a pick-list; service-role only). Worker: `lib/intel.js`, `repos/intelRepo.js`, `GET /leads/intel` and `POST /leads/intel`. Frontend `docs/leadintel.js`: a "Call intel" box on the Prospect card and in the call panel; each field saves when you leave it. The call brief now uses it (gatekeeper in the front-desk line, the biller they named in the objection reply, the objection they gave first, the email in the close, the direct line). Insights gets "Why leads say no" (from `lead_intel.objection`).
+- **Auto-disconnect.** Besides flagging, a lead whose numbers were all already flagged "not in service" is now sent to Disconnected when it comes up in the call list (one try per lead; a failure shows the lead normally).
+- **Team call counts: no change.** Phone taps on unclaimed leads are already counted as calls, and a result logged with a team note is not an extra call, so counting both would double count. Results logged as team notes only feed the "Answered X of Y" chip.
+- **Insights is its own page.** New Insights tab (visible to admins and super admins) with `#viewInsights`; `GET /admin/insights` and `/auth/flags` now allow admins; only sending avatar notes stays super admin. The Today takeover is gone from `docs/insights.js`.
+- **Super admin Home.** `docs/superhome.js` replaces the Today screen for a super admin only (the tab reads "Home"): today against yesterday, things worth a look, what is waiting in the admin queues, who has been active, and system health, each with a link to where the work is done. Everyone else keeps Today.
+- **De-duplication.** System health appeared on both pages: it now lives only under Insights > System (Admin > Controls points to it and no longer fetches `/admin/system`). The pipeline funnel and conversion by rep, specialty and state appeared on both: it now lives only under Insights > Pipeline, with a "claimed in" period (30 days, 90 days, 6 months, all time) and a new "Which reps convert" table; Admin > Team activity points to it. The Insights People table keeps adoption columns only (last active, vs last week, searches, open leads, never called), because calls, meetings and claims per rep already live in Team activity. The suggestions list on Insights is now a count with a link, because the full list and actions are in Admin. New `data-goto` links jump between the pages.
+
+**Database / System Result.** `sql/050_lead_intel.sql` is written but not applied: it needs the user's go-ahead. Everything else needs no schema change. Until 050 is applied, Call intel shows "not set up yet".
+
+**Safety Status.** Worker tests pass (312/312); every `docs/*.js` file syntax-checks; none of it is browser-tested. Needs a Worker deploy (enumeration dates, intel routes, insights for admins) and a frontend publish. Admin > Team activity lost its date-range funnel (custom dates and "this week"); the Insights funnel offers fixed periods instead.
+
 ## 2026-10-21 — A claimed business's whole group goes to its owner (sql/038, written, not run)
 
 ### Objective

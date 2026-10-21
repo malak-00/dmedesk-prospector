@@ -10,8 +10,6 @@
 
   let users = null;
   let features = { remove: true, claimForOthers: true };
-  let system = null;
-  let systemError = "";
   let taxonomies = null;
   let statusData = null;
   let statusError = "";
@@ -33,9 +31,8 @@
     loading = true;
     error = "";
     render();
-    const [u, s, t, st, bd] = await Promise.allSettled([apiGet("admin/users"), apiGet("admin/system"), apiGet("taxonomies/list"), apiGet("admin/statuses"), apiGet("admin/buddy")]);
+    const [u, t, st, bd] = await Promise.allSettled([apiGet("admin/users"), apiGet("taxonomies/list"), apiGet("admin/statuses"), apiGet("admin/buddy")]);
     if (u.status === "fulfilled") { users = u.value.users; features = u.value.features; } else { error = u.reason.message; }
-    if (s.status === "fulfilled") { system = s.value; systemError = ""; } else { systemError = s.reason.message; }
     if (t.status === "fulfilled") taxonomies = t.value.taxonomies || [];
     if (st.status === "fulfilled") { statusData = st.value; statusError = ""; } else { statusError = st.reason.message; }
     if (bd.status === "fulfilled") { buddyData = bd.value; buddyError = ""; } else { buddyError = bd.reason.message; }
@@ -65,24 +62,6 @@
       </tr>`).join("");
   }
 
-  function systemHtml() {
-    if (systemError) return `<div class="team-state">${escapeHtml(systemError)}</div>`;
-    if (!system) return '<div class="team-state"><span class="spinner"></span> Checking…</div>';
-    const dot = (on) => `<span class="sys-dot ${on ? "is-on" : "is-off"}" aria-hidden="true"></span><span class="sr-only">${on ? "On" : "Off"}</span>`;
-    const row = (label, on, note) => `<li class="sys-row">${dot(on)}<span class="sys-label">${escapeHtml(label)}</span><span class="sys-note">${escapeHtml(note || "")}</span></li>`;
-    const source = system.searchSource === "dmedesk" ? "DME Desk's own provider table" : `The mirror project (${system.searchSource})`;
-    return `
-      <div class="ctl-grid">
-        <div class="team-block"><h4>Connected services</h4>
-          <ul class="sys-list">${system.integrations.map((i) => row(i.label, i.configured, i.configured ? i.note : "Not set up")).join("")}</ul>
-        </div>
-        <div class="team-block"><h4>Installed in the database</h4>
-          <ul class="sys-list">${system.installed.map((i) => row(i.label, i.installed, i.installed ? "Installed" : `Not installed (${i.note})`)).join("")}</ul>
-        </div>
-      </div>
-      <p class="team-foot">Leads are searched from: <strong>${escapeHtml(source)}</strong>. Sessions last ${system.sessionHours} hours. Keys and secrets are never shown here; they are set in the Worker's settings.</p>`;
-  }
-
   function render() {
     let usersBody;
     if (error) usersBody = `<div class="team-state">${escapeHtml(error)} <button type="button" class="link-btn" data-ctl="reload">Try again</button></div>`;
@@ -107,7 +86,7 @@
       <div class="team-body${loading && users ? " is-stale" : ""}">
         <section><h3 class="ctl-h">Users</h3>${usersBody}</section>
         <section><h3 class="ctl-h">Avatar notes</h3><div id="ctlBuddyHost">${buddyHtml()}</div></section>
-        <section><h3 class="ctl-h">System</h3>${systemHtml()}</section>
+        <section><h3 class="ctl-h">System health</h3><p class="team-foot">Connected services and what is installed in the database are on <button type="button" class="link-btn" data-goto="insights" data-section="system">Insights &rsaquo; System</button>.</p></section>
         <section><h3 class="ctl-h">Search defaults</h3>${defaultsHtml()}</section>
         <section><h3 class="ctl-h">Statuses</h3>${statusesHtml()}</section>
         <section><h3 class="ctl-h">Sheet import &amp; export</h3><div id="ctlSheetHost">${users ? sheetHtml() : ""}</div></section>
@@ -1006,7 +985,6 @@
     previousSignedOut?.();
     closeDialog();
     users = null;
-    system = null;
     taxonomies = null;
     statusData = null;
     buddyData = null;

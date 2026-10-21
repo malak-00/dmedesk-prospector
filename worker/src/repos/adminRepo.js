@@ -1029,7 +1029,7 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
   if (!users.length) throw httpError(500, "Failed to load users for the insights");
   const nameById = new Map(users.map((u) => [u.id, u.display_name || u.username]));
 
-  const [claimEvents, taps, leads, suggestionRows, badNumbers, searches, matchReviews, providerChanges, sentNotes, eventsProbe] = await Promise.all([
+  const [claimEvents, taps, leads, suggestionRows, badNumbers, searches, matchReviews, providerChanges, sentNotes, eventsProbe, intel] = await Promise.all([
     tryRows(() => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at").eq("event_type", "claimed").gte("created_at", since), "claim history"),
     tryRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at").gte("tapped_at", since), "phone taps"),
     tryRows(() => supabase.from("leads").select("npi, company_name, claimed_by, claimed_at, is_disconnected, notes, reminder_at, meeting_at, status, specialty, state").not("claimed_by", "is", null), "leads"),
@@ -1040,6 +1040,8 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
     tryCount(() => supabase.from("provider_change_queue").select("*", { count: "exact", head: true })),
     tryRows(() => supabase.from("buddy_notes").select("to_user_id, body, created_at").not("to_user_id", "is", null).gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString()), "sent notes"),
     tryCount(() => supabase.from("app_events").select("*", { count: "exact", head: true })),
+    // sql/050: why leads said no. Empty until that file is run.
+    tryRows(() => supabase.from("lead_intel").select("npi, objection").not("objection", "is", null), "call intel", false),
   ]);
   // null = sql/046 isn't installed; the dashboard then says events aren't being collected yet.
   const appEvents = eventsProbe === null ? null : await tryRows(() => supabase.from("app_events").select("user_id, kind, name, status, ms, result_count, detail, created_at").gte("created_at", since).order("created_at", { ascending: false }), "events");
@@ -1048,7 +1050,7 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
     users, claimEvents, taps, leads, badNumbers, searches,
     suggestions: suggestionRows.map((s) => ({ ...s, submitted_by_name: nameById.get(s.submitted_by) || "" })),
     queues: { matchReviews, providerChanges },
-    system: systemInfo, days: span, events: appEvents,
+    system: systemInfo, days: span, events: appEvents, intel,
   });
   // When each person last got a note, so the dashboard doesn't invite sending a second one on top.
   const lastNote = new Map();

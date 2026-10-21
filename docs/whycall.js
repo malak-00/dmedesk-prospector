@@ -56,6 +56,15 @@
     return { key: "fresh", tone, label: "Registry", text: `Updated ${ageText(months)}`, title };
   }
 
+  // How long ago the provider got its NPI: a new supplier is often still choosing vendors.
+  function ageItem(enumerationDate, now) {
+    const lead = root.dmeLeadAge || (typeof require === "function" ? require("./leadage.js") : null);
+    const age = lead && lead.ageOf(enumerationDate, now);
+    if (!age) return null;
+    const tone = age.kind === "new" ? "high" : age.kind === "established" ? "none" : "none";
+    return { key: "age", tone, label: "NPI", text: age.text, title: age.title };
+  }
+
   // Calls that reached a person, from the call logs of leads worked before and returned to Prospect.
   function pickupItem(pickup) {
     if (!pickup || !(pickup.total > 0)) return null;
@@ -71,7 +80,7 @@
   function buildWhyCall(company, opts = {}) {
     const now = opts.now != null ? opts.now : Date.now();
     const c = company || {};
-    const items = [medicareItem(c.medicare), entityItem(c.isOrganization), freshnessItem(c.lastUpdated, now), pickupItem(c.pickup)].filter(Boolean);
+    const items = [medicareItem(c.medicare), entityItem(c.isOrganization), freshnessItem(c.lastUpdated, now), ageItem(c.enumerationDate, now), pickupItem(c.pickup)].filter(Boolean);
     const prior = opts.priorLine ? { text: opts.priorLine, note: opts.priorNote || "" } : null;
     return { items, prior };
   }
@@ -150,7 +159,7 @@
   // join it when the CMS answer arrives. Everything else lives under "More about this lead".
   root.dmeHooks.whyCallSnapshot = (company, opts) => {
     const { items, prior } = buildWhyCall(company, opts);
-    const chips = items.filter((i) => i.key === "medicare" || i.key === "pickup");
+    const chips = items.filter((i) => i.key === "medicare" || i.key === "pickup" || (i.key === "age" && i.tone === "high"));
     if (prior) chips.push({ tone: "mid", label: "Before", text: "Contacted before", title: prior.text });
     return `<div class="cm-snap" aria-label="Lead snapshot">${chips.map((it) =>
       `<span class="why-chip why-${it.tone}" title="${esc(it.title)}"><span class="why-label">${esc(it.label)}</span>${esc(it.text)}</span>`).join("")}<span class="why-snap" data-snap-npi="${esc(company && company.npi)}"></span>${(opts && opts.extraHtml) || ""}</div>`;

@@ -125,7 +125,7 @@
   }
 
   function render() {
-    if (!panel || window.dmeInsightsActive) return; // a super admin's panel shows App insights (insights.js)
+    if (!panel || window.dmeHomeOverride) return; // a super admin's Home is drawn by superhome.js
     if (!view) {
       panel.innerHTML = loadFailed
         ? `<div class="today-empty"><div class="today-empty-title">Couldn't load your leads</div>

@@ -35,8 +35,10 @@
     const pickup = c.pickup || null;
     let volume = "none";
     if (med) volume = pay >= HIGH_PAYMENT || claims >= HIGH_CLAIMS ? "high" : pay >= MID_PAYMENT || claims >= MID_CLAIMS ? "mid" : "low";
+    const age = ageOfLead(c.enumerationDate, input.now != null ? input.now : Date.now());
     return {
       pay, claims, volume,
+      isNew: Boolean(age && age.kind === "new"),
       growing: Boolean(trend && (trend.direction === "new" || trend.direction === "up")),
       shrinking: Boolean(trend && (trend.direction === "down" || trend.direction === "stopped")),
       rental: Boolean(mix && typeof mix.rentalShare === "number" && mix.rentalShare >= 0.5),
@@ -46,10 +48,17 @@
       noWebsite: !c.website,
       branches: Array.isArray(c.locations) ? c.locations.length : 0,
       sameBuilding: input.same && input.same.total ? input.same.total : 0,
+      intel: input.intel && input.intel.installed !== false ? input.intel : null,
       contact: dm,
       noDirect: !dm || !String(dm.phone || "").trim(),
       neverPickedUp: Boolean(pickup && pickup.total >= 2 && pickup.answered === 0),
     };
+  }
+
+  // How long the provider has had its NPI (docs/leadage.js): new, established, or neither.
+  function ageOfLead(enumerationDate, now) {
+    const lib = root.dmeLeadAge || (typeof require === "function" ? require("./leadage.js") : null);
+    return lib ? lib.ageOf(enumerationDate, now) : null;
   }
 
   function trendText(trend) {
@@ -84,7 +93,8 @@
     // Who to ask for, and when
     const dm = sig.contact;
     const numbers = [];
-    if (dm && String(dm.phone || "").trim()) numbers.push(`direct ${String(dm.phone).trim()}`);
+    const direct = (dm && String(dm.phone || "").trim()) || (sig.intel && sig.intel.directLine) || "";
+    if (direct) numbers.push(`direct ${direct}`);
     if (String(c.phone || "").trim()) numbers.push(`main line ${String(c.phone).trim()}`);
     if (dm) add("Ask for", `${dm.name}${dm.title ? `, ${dm.title}` : ""}${numbers.length ? ` (${numbers.join(", ")})` : ""}`);
     else add("Ask for", `No decision maker on file: ask the front desk for the owner or manager${numbers.length ? ` (${numbers.join(", ")})` : ""}`);
@@ -112,6 +122,8 @@
 
     // The business
     const biz = [];
+    const age = ageOfLead(c.enumerationDate, now);
+    if (age) biz.push(age.kind === "new" ? `a new supplier (NPI since ${age.registered})` : age.kind === "established" ? `established (NPI since ${age.registered})` : `NPI since ${age.registered}`);
     if (c.isOrganization === true) biz.push("a company (NPI-2)");
     if (c.isOrganization === false) biz.push("an individual or sole proprietor (NPI-1)");
     if (sig.branches > 1) biz.push(`${sig.branches} locations`);
@@ -120,6 +132,17 @@
     if (registry) biz.push(`registry updated ${registry}`);
     if (!c.website) biz.push("no website found");
     add("Business", biz.join(", "));
+
+    // What reps learned on earlier calls (the call intel fields)
+    const intel = sig.intel;
+    if (intel) {
+      add("Current biller", intel.currentBiller);
+      add("Gatekeeper", intel.gatekeeper);
+      add("Direct line", intel.directLine);
+      add("Email", intel.email);
+      add("Size", intel.patientVolume);
+      add("Main objection", intel.objection);
+    }
 
     // What the team already knows
     const history = [];
@@ -157,12 +180,17 @@
 
     const opening = `Hi${who ? ` ${who}` : ""}, this is [your name] with ${COMPANY}. I'll be quick: about 30 seconds on why I called, and then you tell me if it's worth going on. We take billing, prior authorizations and patient calls off DME suppliers' plates, and ${name}${place ? ` in ${place}` : ""} came up because you supply ${sells}.`;
 
-    const frontDesk = who
+    const intel = sig.intel || {};
+    const gk = firstName(intel.gatekeeper);
+    const frontDesk = gk
+      ? `The front desk is usually ${intel.gatekeeper}: greet ${gk} by name, say it's a business matter for ${who || "the owner"} about billing and back-office support, and ask when ${who || "they"} can be reached. Do not pitch the front desk.`
+      : who
       ? `\u201CIt's a business matter for ${who} about billing and back-office support. Is ${who} available, or when is a better time to reach them?\u201D Do not pitch the front desk.`
       : "\u201CCould you tell me who looks after billing and the back office? It's a business matter, and I'd like to ask for them by name.\u201D Do not pitch the front desk.";
 
     let pain;
     if (sig.growing) pain = "Their Medicare billing is climbing, and back-office work (verifications, prior auths, claims, denials) grows faster than the team that does it.";
+    else if (sig.isNew) pain = "A newer supplier is likely still building its back office and choosing vendors, so this is the time to be part of the setup.";
     else if (sig.volume === "high") pain = `At ${sig.pay != null ? `about ${money(sig.pay)} in Medicare payments` : `${num(sig.claims)} claims`}, slow claims follow-up and unworked denials leave real money uncollected.`;
     else if (sig.rental) pain = "Mostly rental billing means recurring monthly claims, resupply follow-up and compliance paperwork that never stops.";
     else if (sig.branches > 1 || sig.sameBuilding) pain = "More than one office or team at the address means back-office work is split and duplicated, and things fall between people.";
@@ -189,16 +217,27 @@
     const questions = [first, ...base].filter(Boolean).slice(0, 4);
 
     // Every pushback: agree, ask, then a small next step. Nothing here criticises what they use today.
+    const biller = intel.currentBiller && !/^in.?house$/i.test(intel.currentBiller) ? intel.currentBiller : "";
     const objections = [
       "\u201CNot interested.\u201D Agree: \u201CFair enough, I called out of the blue.\u201D Ask: \u201CIs the back office under control, or is it just not a priority right now?\u201D Next step: if it's priority, offer to send a one-page overview and call back in two weeks.",
-      "\u201CWe do it in-house\u201D or \u201CWe already have a biller.\u201D Agree: \u201CThat works for a lot of suppliers.\u201D Ask: \u201CWhat takes the most time, or what do you wish got done faster?\u201D Next step: we work alongside your people and can take just the overflow or the hardest part, like denials or prior authorizations. Offer a 15-minute call about that one part.",
+      `${biller ? `\u201CWe already use ${biller}.\u201D` : "\u201CWe do it in-house\u201D or \u201CWe already have a biller.\u201D"} Agree: \u201CThat works for a lot of suppliers.\u201D Ask: \u201CWhat takes the most time, or what do you wish got done faster?\u201D Next step: we work alongside your people and can take just the overflow or the hardest part, like denials or prior authorizations. Offer a 15-minute call about that one part.`,
       sig.neverPickedUp
         ? "\u201CNot a good time.\u201D Agree: \u201CUnderstood.\u201D Ask: \u201CWhen is better, later this week?\u201D Next step: offer two times and say you'll email a short summary. Earlier calls here went unanswered, so confirm the best time of day."
         : "\u201CNot a good time\u201D or \u201CSend me an email.\u201D Agree: \u201CUnderstood.\u201D Ask: \u201CWhat would make it worth your time to look at?\u201D Next step: offer two times and say you'll email a short summary first.",
     ];
+    const REPLY = {
+      "price": "Agree: \u201CCost matters, and it should be weighed against what it saves.\u201D Ask: \u201CWhat would make it worth it: fewer denials, faster payment, or fewer hours?\u201D Next step: a 15-minute call to size it against their volume.",
+      "in-house": "Agree: \u201CHaving it in-house gives you control.\u201D Ask: \u201CWhich part would you most like off your team's plate?\u201D Next step: offer to take just that part, alongside their staff.",
+      "happy with current": "Agree: \u201CGood, a working setup is worth keeping.\u201D Ask: \u201CWhat do you wish got done faster?\u201D Next step: a short call about that one gap, with no change to what works.",
+      "bad timing": "Agree: \u201CUnderstood, timing matters.\u201D Ask: \u201CWhen does it get quieter?\u201D Next step: set a specific callback date and send a short email now.",
+      "not the decision maker": "Agree: \u201CThank you, that helps.\u201D Ask: \u201CWho decides on billing and back-office support, and when are they in?\u201D Next step: ask for their name and direct line, and note both.",
+      "no need": "Agree: \u201CIf it's under control, that's good news.\u201D Ask: \u201CHow are denials and prior authorizations running?\u201D Next step: if there is a gap, offer a 15-minute call about it.",
+      "other": "Agree with what they said, ask one question to understand it, then offer a 15-minute call.",
+    };
+    if (intel.objection && REPLY[intel.objection]) objections.unshift(`Last time they said: ${intel.objection}. ${REPLY[intel.objection]}`);
     if (sig.individual) objections.unshift("\u201CI do it all myself.\u201D Agree: \u201CMost owner-operators do.\u201D Ask: \u201CHow many hours a week does that take?\u201D Next step: a 15-minute call to look at which task to hand off first.");
 
-    const close = "Offer two specific times, not \u201Clet me know\u201D: \u201CWould [day] at [time] or [day] at [time] work for a 15-minute call? I'll send a short email with what we covered.\u201D";
+    const close = `Offer two specific times, not \u201Clet me know\u201D: \u201CWould [day] at [time] or [day] at [time] work for a 15-minute call? I'll send a short email${intel.email ? ` to ${intel.email}` : ""} with what we covered.\u201D`;
 
     const voicemail = `\u201CHi${who ? ` ${who}` : ""}, this is [your name] with ${COMPANY}. I'm calling about billing and back-office support for ${sells} suppliers like ${name}. I'll try you again on [day], or you can reach me at [number]. Again, [your name], ${COMPANY}, [number].\u201D Keep it under 25 seconds.`;
 
@@ -254,10 +293,11 @@
   root.dmeHooks.briefHtml = async (company, claimed) => {
     const npi = String(company.npi || "");
     const ask = (path, params) => (typeof apiGet === "function" && npi ? apiGet(path, params) : Promise.reject(new Error("offline")));
-    const [mixRes, sameRes, notesRes] = await Promise.allSettled([
+    const [mixRes, sameRes, notesRes, intelRes] = await Promise.allSettled([
       ask("companies/product-mix", { npi }),
       ask("companies/same-address", { npi }),
       ask("leads/annotations", { npi }),
+      ask("leads/intel", { npi }),
     ]);
     const val = (r) => (r.status === "fulfilled" ? r.value : null);
     const state = company.address && company.address.state;
@@ -267,6 +307,7 @@
       trend: val(mixRes) && val(mixRes).trend,
       same: val(sameRes),
       notes: val(notesRes),
+      intel: val(intelRes),
       claimed,
       local: root.dmeTime && state ? root.dmeTime.localInfo(state) : null,
     });

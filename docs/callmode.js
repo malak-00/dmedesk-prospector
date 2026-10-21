@@ -245,6 +245,7 @@
           medicarePayment: item.medicarePayment !== "" && item.medicarePayment != null ? Number(item.medicarePayment) : null,
         } : null,
         lastUpdated: item.nppesLastUpdated || null,
+        enumerationDate: item.enumerationDate || null,
         isOrganization: null,
         locations: [],
       },
@@ -370,10 +371,22 @@
     render();
   }
 
+  // A lead whose numbers were all flagged "not in service" earlier (by anyone) is sent to Disconnected when it comes
+  // up, without drawing it. One try per lead: if it fails the lead is shown normally.
+  const sweepTried = new Set();
+  function sweepIfDead(item) {
+    const key = `${run.mode}:${String(item.npi)}`;
+    if (!item || !item.npi || sweepTried.has(key) || !allNotInService(item)) return false;
+    sweepTried.add(key);
+    autoDisconnect(item).catch((err) => { showToast(`Couldn't move ${item.name} to Disconnected: ${err.message}`, true); render(); });
+    return true;
+  }
+
   function render() {
     if (!drawer) return;
     if (run.pos >= run.queue.length) { renderDone(); return; }
     const item = run.queue[run.pos];
+    if (sweepIfDead(item)) return;
     const info = describe(item);
     const total = run.queue.length;
     const c = counts();
@@ -473,6 +486,7 @@
         ${why}
         ${context}
         ${work}
+        ${hooks.intelBlock ? `<div class="detail-block cm-card"><h4>Call intel <small>shared with the team</small></h4>${hooks.intelBlock(npi)}</div>` : ""}
         ${upNextHtml()}
       </div>
       <div class="cm-foot">${foot}</div>
@@ -535,6 +549,7 @@
     lastInfoNpi = npi;
     window.dmeHooks.whyCallOpened?.(company);
     window.dmeHooks.annotationsOpened?.(npi, changed);
+    window.dmeHooks.intelOpened?.(npi, changed);
   }
 
   function renderDone() {

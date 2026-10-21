@@ -37,6 +37,7 @@ import * as relatedClaimsRepo from "./repos/relatedClaimsRepo.js";
 import * as sameAddressRepo from "./repos/sameAddressRepo.js";
 import * as ProductMix from "./services/productMix.js";
 import * as annotationsRepo from "./repos/annotationsRepo.js";
+import * as intelRepo from "./repos/intelRepo.js";
 import { prettyNumber } from "./lib/badNumbers.js";
 import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
@@ -475,6 +476,13 @@ app.post("/leads/related-check", async (c) => {
   return c.json(ok(await relatedClaimsRepo.checkRelated(supabaseFor(c), c.get("session"), body.companies)));
 });
 
+// Structured call fields on any lead (sql/050): current biller, gatekeeper, best direct line, email, size, objection.
+app.get("/leads/intel", async (c) => c.json(ok(await intelRepo.getIntel(supabaseFor(c), c.req.query("npi")))));
+app.post("/leads/intel", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await intelRepo.saveIntel(supabaseFor(c), body.npi, body.fields, c.get("session"))));
+});
+
 // Comments and tags on any lead, claimed or not (sql/049).
 app.get("/leads/annotations", async (c) => c.json(ok(await annotationsRepo.getAnnotations(supabaseFor(c), c.req.query("npi")))));
 app.post("/leads/annotations/comment", async (c) => {
@@ -610,8 +618,8 @@ app.post("/admin/users/update", async (c) => {
   return c.json(ok(await userAdminRepo.updateUser(supabaseFor(c), session, body)));
 });
 
-// The App insights dashboard: usage, funnel, friction and system health. Super admin only
-// (sql/045), so ordinary admins who also prospect keep their normal Today screen.
+// The App insights page: usage, funnel, friction and system health. Admins and super admins can read it; only a
+// super admin (sql/045) can send the avatar notes it suggests.
 function requireSuperAdmin(session) {
   if (!session.isSuperAdmin) {
     const err = new Error("Super admins only");
@@ -621,10 +629,10 @@ function requireSuperAdmin(session) {
 }
 
 // What the signed-in browser needs to know about itself that the sign-in token doesn't carry.
-app.get("/auth/flags", (c) => c.json(ok({ isSuperAdmin: Boolean(c.get("session").isSuperAdmin) })));
+app.get("/auth/flags", (c) => c.json(ok({ isSuperAdmin: Boolean(c.get("session").isSuperAdmin), isAdmin: Boolean(c.get("session").isAdmin || c.get("session").isSuperAdmin) })));
 
 app.get("/admin/insights", async (c) => {
-  requireSuperAdmin(c.get("session"));
+  requireAdmin(c.get("session"));
   const supabase = supabaseFor(c);
   const system = await SystemInfo.getSystemInfo(c.get("config"), supabase).catch(() => null);
   return c.json(ok(await adminRepo.getInsights(supabase, system, { days: c.req.query("days") })));
