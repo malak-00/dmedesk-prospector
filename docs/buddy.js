@@ -188,7 +188,13 @@
 
   /* ---------- poses she has shown (the gallery) ---------- */
 
-  const seenPoses = () => ({ neutral: "start", wave: "start", ...read(POSES_KEY, {}) });
+  // An outfit is unlocked for everyone while its day or season is on (not only on the device that happened to be open at the time), and
+  // stays unlocked afterwards.
+  const seenPoses = () => {
+    const now = new Date().getDay();
+    [typeof seasonPose === "function" ? seasonPose() : "", now === 5 ? "friday" : "", now === 1 ? "monday" : ""].forEach((p) => { if (p) unlockPose(p); });
+    return { neutral: "start", wave: "start", ...read(POSES_KEY, {}) };
+  };
   function unlockPose(pose) {
     if (!pose || !POSES[pose]) return;
     const have = read(POSES_KEY, {});

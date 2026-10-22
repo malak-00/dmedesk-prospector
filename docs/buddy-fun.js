@@ -349,7 +349,7 @@
     }).join("");
     const count = Object.keys(api.POSES).filter((p) => seen[p]).length;
     return section("gallery", `${uiIcon("sparkle")} Her looks (${count}/${Object.keys(api.POSES).length})`, `<div class="buddy-gallery">${cells}</div>
-      <div class="buddy-fun-note">She shows each look at the right moment. Pick one to be her resting pose; outfits for holidays and Fridays still take over on their days.</div>`);
+      <div class="buddy-fun-note">She shows each look at the right moment. Pick one to be her resting pose; your pick stays, except on your birthday. A holiday or Friday look unlocks while it is on.</div>`);
   }
 
   /* ---------- a note to tomorrow's you ---------- */

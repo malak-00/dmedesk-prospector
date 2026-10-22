@@ -653,6 +653,30 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-22 — Exclude keywords fold, and holiday outfits unlock while they are on
+
+### Objective
+
+Shorten the search form, and fix a user (Selene) who could not pick Caro's Halloween look.
+
+### Actions Completed
+
+- `docs/kwfold.js` (new, loaded after `adminfold.js`): with more than six Exclude keywords the chip box shows one row and a "Show all" / "Show fewer"
+  button (remembered on the device). Focusing the box or pressing Enter opens it, so nothing typed is hidden. Chips still count and save as before.
+  `docs/style.css` gets the folded style; `docs/index.html` the script tag and version bumps.
+- Cause of the locked Halloween look: gallery looks unlock only on the device when Caro has actually shown them, and her picked pose now takes priority
+  over holiday outfits, so a person who had picked a pose never saw Halloween and it stayed locked. `docs/buddy.js` `seenPoses` now unlocks the current
+  holiday's outfit (and Friday's or Monday's on those days) for everyone while it is on, and keeps it unlocked after. The gallery note in
+  `docs/buddy-fun.js` was reworded to match.
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required.
+
 ## 2026-10-22 — Fix: page shifted sideways with "Group by business" on
 
 ### Objective

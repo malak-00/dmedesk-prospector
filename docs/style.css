@@ -3506,3 +3506,7 @@ tr.group-collapsed, tr.sub-collapsed { display: none !important; }
 @media (min-width: 961px) {
   .group-head, .subgroup-head { width: auto; }
 }
+
+/* Exclude keywords, folded: one row of chips, the rest hidden until "Show all". */
+.kw-fold-btn { margin-left: 10px; }
+.field.kw-folded .chip-input { max-height: 46px; overflow: hidden; }
