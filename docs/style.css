@@ -3501,3 +3501,8 @@ html.brief-open .buddy-call { right: calc(var(--call-drawer-w) + var(--brief-w) 
 .subgroup-meta { font-weight: 400; font-size: 12px; color: var(--muted); }
 tr.group-collapsed, tr.sub-collapsed { display: none !important; }
 .group-gap:hover { background: transparent; }
+/* The 100vw width above is for the sideways-scrolling table on small windows. On a desktop the table fits its panel, and 100vw ignores the sidebar,
+   so there it made the group header ~175px wider than the panel and pushed the whole page sideways. The header just fills its row instead. */
+@media (min-width: 961px) {
+  .group-head, .subgroup-head { width: auto; }
+}

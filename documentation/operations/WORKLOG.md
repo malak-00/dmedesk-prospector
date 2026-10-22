@@ -653,6 +653,29 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-22 — Fix: page shifted sideways with "Group by business" on
+
+### Objective
+
+A user's screenshots showed the whole page scrolled about 175px to the right: the left of every table hidden, the filter panel and cards sliding over the
+sidebar, and an empty strip down the right edge.
+
+### Actions Completed
+
+- Cause: `.group-head` and `.subgroup-head` (the business header rows) are `width: calc(100vw - 90px)`, written for the sideways-scrolling table on small
+  windows. On a desktop `100vw` ignores the 216px sidebar, so the header was wider than its panel, stretched the table, and made the page scroll sideways
+  (the app's `overflow-x: hidden` stops the user scrolling but not the browser jumping there).
+- `docs/style.css`: from 961px wide the two headers are `width: auto` and fill their row; the small-window rule is unchanged.
+- `docs/index.html`: `style.css` version bumped.
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required (Prospect with "Group by business" on, sidebar expanded and collapsed, wide and narrow windows).
+
 ## 2026-10-21 — Holiday decorations: shaded and twinkling
 
 ### Objective
