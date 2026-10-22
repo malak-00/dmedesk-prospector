@@ -2790,7 +2790,7 @@ changed. To undo: `alter function public.identity_candidate_keys(jsonb) rows 100
 
 No destructive command, secret change or other production mutation.
 
-## 2026-10-22 — Same-owner lookup timeouts (index written, not run)
+## 2026-10-22 — Same-owner lookup timeouts (index sql/054 written, not run)
 
 ### Objective
 
@@ -2804,7 +2804,7 @@ The App insights error list (28 days) showed 360 failures; 268 were
   creates an index on those columns, so each Prospect-card open scans the table.
   The live index list could not be re-checked (the Supabase connection started
   refusing the agent's queries with a permission error).
-- Added `sql/050_owner_name_index.sql` (one index). Not run.
+- Added `sql/054_owner_name_index.sql` (one index). Not run.
 - Other entries in the same list, not changed: `/search/insights` 503 x45 (the
   intentional "took too long" message), `/export/sheets` 500 x14 and
   `/export/google-sheet` 500 x13 (claim_leads timeouts; sql/049 should help),
@@ -2814,7 +2814,7 @@ The App insights error list (28 days) showed 360 failures; 268 were
 
 ### Database / System Result
 
-No change in Supabase. sql/050 must be reviewed and run by hand.
+No change in Supabase. sql/054 must be reviewed and run by hand.
 
 ### Safety Status
 
