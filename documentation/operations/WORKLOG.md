@@ -665,6 +665,32 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-22 — UI: user menu, filter pills, clearer empty and error states
+
+### Objective
+
+Three interface updates: tidy the header's user chip, make the Prospect "Only show" filters easier to read and clear, and give empty and failed
+states a proper look.
+
+### Actions Completed
+
+- `docs/usermenu.js` (new): the chip's picture and name open a menu with Change password and Sign out (arrow keys, Escape and outside click work).
+  The two buttons keep their ids and are only moved, so `app.js`, `account.js` and `buddy.js` behave as before.
+- `docs/refineclear.js` (new) and `docs/style.css`: the "Only show" checkboxes (and Group by business) are pills that fill with a tick when on; a
+  "Clear" / "Clear (n)" button appears while any is on, counting the tag box and objection menu, and clearing fires the same change events.
+- Empty and failed states: a failed Prospect search and a failed Claimed load now use the same icon card as the other empty states (new alert icon; the
+  search one offers "Change the search"); Today's "all caught up" / "no claimed leads yet" card has an icon; empty Insights panels are a quiet dashed box.
+  (`docs/app.js`, `docs/today.js`, `docs/style.css`.)
+- `docs/index.html`: script tags and version bumps. Header menu and pills checked on a test page with the real stylesheet.
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required.
+
 ## 2026-10-22 — Exclude keywords fold, and holiday outfits unlock while they are on
 
 ### Objective

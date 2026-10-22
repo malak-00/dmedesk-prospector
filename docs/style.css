@@ -3166,6 +3166,8 @@ html.game-open .buddy { display: none; }
 .ins-info .ins-dot { background: var(--accent); }
 .ins-table .ins-dim { color: var(--score-mid); }
 .ins-empty, .ins-note { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+/* An empty panel in Insights reads as an empty panel (a quiet dashed box), not as a stray line of small text. */
+.ins-empty { text-align: center; padding: 18px 14px; border: 1px dashed var(--hairline); border-radius: var(--radius-md); line-height: 1.5; }
 .ins-funnel { display: flex; flex-direction: column; gap: 8px; }
 .ins-funnel-row { display: grid; grid-template-columns: 110px 1fr 90px; align-items: center; gap: 10px; font-size: 12px; }
 .ins-funnel-track { background: var(--surface-2); border-radius: 4px; height: 10px; overflow: hidden; }
@@ -3511,3 +3513,31 @@ tr.group-collapsed, tr.sub-collapsed { display: none !important; }
 /* Exclude keywords, folded: one row of chips, the rest hidden until "Show all". */
 .kw-fold-btn { margin-left: 10px; }
 .field.kw-folded .chip-input { max-height: 46px; overflow: hidden; }
+
+/* ---------- User menu (header chip) ---------- */
+.user-chip { position: relative; }
+.user-trigger { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 2px 4px 2px 0; font: inherit; color: inherit; background: none; border: 0; border-radius: 999px; cursor: pointer; }
+.user-trigger:hover #userName { text-decoration: underline; text-underline-offset: 3px; }
+.user-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.user-caret { flex: none; color: var(--muted); transition: transform 0.15s ease; }
+.user-trigger[aria-expanded="true"] .user-caret { transform: rotate(180deg); }
+.user-menu { position: absolute; z-index: 30; top: calc(100% + 8px); right: 0; min-width: 190px; display: flex; flex-direction: column; padding: 6px; background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-md); box-shadow: var(--shadow-card); }
+.user-menu[hidden] { display: none; }
+.user-menu-item { display: block; width: 100%; text-align: left; font: inherit; font-size: 13px; font-weight: 550; color: var(--ink); background: none; border: 0; border-radius: var(--radius-sm); padding: 9px 12px; cursor: pointer; }
+.user-menu-item:hover, .user-menu-item:focus-visible { background: var(--surface-2); outline: none; }
+.user-chip .user-menu-item + .user-menu-item { margin-left: 0; margin-top: 2px; }
+
+/* ---------- "Only show" filters as pills ---------- */
+.results-refine .refine-check { position: relative; gap: 0; padding: 5px 12px; border: 1px solid var(--hairline); border-radius: 999px; background: var(--surface-2); color: var(--muted); font-weight: 550; transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease; }
+.results-refine .refine-check input { position: absolute; opacity: 0; width: 100%; height: 100%; inset: 0; margin: 0; cursor: pointer; }
+.results-refine .refine-check:hover { border-color: var(--hairline-hover); color: var(--ink); }
+.results-refine .refine-check:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.results-refine .refine-check:has(input:checked)::before { content: "\2713"; margin-right: 6px; font-size: 11px; font-weight: 700; }
+.results-refine .refine-check:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.results-refine { row-gap: 8px; }
+.refine-clear { font: inherit; font-size: 12.5px; font-weight: 600; color: var(--accent-ink); background: none; border: 0; padding: 4px 6px; cursor: pointer; border-radius: var(--radius-sm); }
+.refine-clear:hover { text-decoration: underline; text-underline-offset: 3px; }
+.refine-clear[hidden] { display: none; }
+
+/* ---------- Empty states: the icon on Today's card ---------- */
+.today-empty-icon { margin: 0 auto 12px; }

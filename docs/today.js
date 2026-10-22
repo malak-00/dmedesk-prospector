@@ -263,6 +263,7 @@
 
     if (!b.review.length && !b.meetingsToday.length && !b.callbacks.length && !followUps.length && !retry.length && !b.stale.length && !b.firstCalls.length) {
       html += `<div class="today-empty">
+        <div class="empty-icon today-empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${b.total ? '<path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' : '<path d="M6 3h12v18l-6-4.5L6 21Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'}</svg></div>
         <div class="today-empty-title">${b.total ? "You're all caught up" : "No claimed leads yet"}</div>
         <p>${b.total
           ? (b.nextMeeting ? `Next meeting: ${escapeHtml(b.nextMeeting.name)}, ${escapeHtml(formatMeeting(b.nextMeeting.meetingAt))}.` : "Nothing is due today. A good time to find more leads.")

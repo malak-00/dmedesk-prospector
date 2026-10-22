@@ -1991,7 +1991,7 @@ async function executeSearch(params, { isMore: more = false, isRescan = false } 
     const message = err instanceof TypeError
       ? "Lost connection or the search took too long — try narrowing your filters (fewer specialties/states) or click Search more again."
       : err.message;
-    if (!isMore) els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(message)}</td></tr>`;
+    if (!isMore) els.resultsBody.innerHTML = emptyRowHtml(7, "alert", "The search didn't finish", message, { action: "focus-search", label: "Change the search" });
     setStatus("error", "Error");
     showToast(message, true);
     // A failed click always leaves it re-clickable -- reaching here means it
@@ -2297,6 +2297,7 @@ const EMPTY_ICONS = {
   search: '<circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
   bookmark: '<path d="M6 3h12v18l-6-4.5L6 21Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
   filter: '<path d="M3 5h18l-7 8v6l-4-2v-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  alert: '<path d="M12 3.5l9.5 16.5h-19Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 10v4.5M12 17.3v.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
 };
 
 function emptyRowHtml(colspan, icon, title, body, action) {
@@ -3507,7 +3508,7 @@ async function loadClaimedLeads(silent = false) {
       console.log("[claimed] background refresh failed: " + err.message);
       return;
     }
-    els.claimedBody.innerHTML = `<tr class="empty-row"><td colspan="10">${escapeHtml(err.message)}</td></tr>`;
+    els.claimedBody.innerHTML = emptyRowHtml(10, "alert", "Couldn't load your claimed leads", err.message);
     showToast(err.message, true);
   }
 }
