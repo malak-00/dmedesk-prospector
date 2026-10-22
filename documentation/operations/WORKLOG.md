@@ -2819,3 +2819,30 @@ No change in Supabase. sql/054 must be reviewed and run by hand.
 ### Safety Status
 
 No destructive command, secret change or production mutation.
+
+## 2026-10-22 — Google Sheet "tab already exists" error
+
+### Objective
+
+An export to Google Sheets failed with 'A sheet with the name "Claimed - Selene
+myles" already exists' (POST /export/google-sheet, 502).
+
+### Actions Completed
+
+- `worker/src/services/googleSheets.js` `ensureUserTab`: the tab lookup compared
+  names exactly, but Google treats names that differ only in capitals as the same
+  tab. A tab renamed by hand ("Selene Myles") was therefore missed and creating
+  "Selene myles" failed. It now matches ignoring capitals and spaces at the ends,
+  writes to the tab's real title, and if creation fails with "already exists"
+  (two exports at the same moment) it looks again and uses the tab that is there.
+  Both exporters use the returned title. Any other Google error still fails.
+- Added `worker/test/googleSheets.test.js` (5 tests, Google API stubbed). All 379
+  worker tests pass.
+
+### Database / System Result
+
+No Supabase or Google change was made by the agent. Worker change NOT deployed yet.
+
+### Safety Status
+
+No destructive command, secret change or production mutation.

@@ -105,19 +105,39 @@ async function sheetsApi(token, path, options = {}) {
   return res.json();
 }
 
-// Gets (or creates) the tab that belongs to one teammate, returning its
-// numeric sheetId (for the sheetUrl gid) and whether it was freshly created
-// (so the caller knows to write a header row).
-async function ensureUserTab(token, spreadsheetId, tabName) {
-  const meta = await sheetsApi(token, `${spreadsheetId}?fields=sheets.properties`);
-  const existing = (meta.sheets || []).find((s) => s.properties.title === tabName);
-  if (existing) return { sheetId: existing.properties.sheetId, created: false };
+// Google treats tab names as the same when only their capitalisation differs
+// ("Claimed - Selene Myles" and "Claimed - Selene myles" cannot both exist), so
+// a tab is found that way too -- an exact match missed a tab someone had
+// renamed by hand, and then creating the "new" one failed.
+const sameTab = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
 
-  const result = await sheetsApi(token, `${spreadsheetId}:batchUpdate`, {
-    method: "POST",
-    body: JSON.stringify({ requests: [{ addSheet: { properties: { title: tabName } } }] }),
-  });
-  return { sheetId: result.replies[0].addSheet.properties.sheetId, created: true };
+async function findTab(token, spreadsheetId, tabName) {
+  const meta = await sheetsApi(token, `${spreadsheetId}?fields=sheets.properties`);
+  return (meta.sheets || []).find((s) => sameTab(s.properties.title, tabName)) || null;
+}
+
+// Gets (or creates) the tab that belongs to one teammate, returning its
+// numeric sheetId (for the sheetUrl gid), the title it really has (to write to,
+// whatever its capitalisation) and whether it was freshly created (so the
+// caller knows to write a header row). If the tab turns up while creating it
+// -- two exports at the same moment, say -- the one that is there is used.
+export async function ensureUserTab(token, spreadsheetId, tabName) {
+  const existing = await findTab(token, spreadsheetId, tabName);
+  if (existing) return { sheetId: existing.properties.sheetId, created: false, title: existing.properties.title };
+
+  try {
+    const result = await sheetsApi(token, `${spreadsheetId}:batchUpdate`, {
+      method: "POST",
+      body: JSON.stringify({ requests: [{ addSheet: { properties: { title: tabName } } }] }),
+    });
+    return { sheetId: result.replies[0].addSheet.properties.sheetId, created: true, title: tabName };
+  } catch (err) {
+    if (/already exists/i.test(err.message || "")) {
+      const now = await findTab(token, spreadsheetId, tabName);
+      if (now) return { sheetId: now.properties.sheetId, created: false, title: now.properties.title };
+    }
+    throw err;
+  }
 }
 
 async function writeHeaderRow(token, spreadsheetId, tabName) {
@@ -189,8 +209,8 @@ export async function exportLeadsToSheet(config, leads, session) {
   const spreadsheetId = config.googleSheetId();
   const tabName = claimedTabName(session.displayName);
 
-  const { sheetId, created } = await ensureUserTab(token, spreadsheetId, tabName);
-  await ensureHeaderRow(token, spreadsheetId, tabName, created);
+  const { sheetId, created, title } = await ensureUserTab(token, spreadsheetId, tabName);
+  await ensureHeaderRow(token, spreadsheetId, title, created);
 
   const rows = leads.map((lead) => {
     const csvValues = flatLeadRow(lead);
@@ -206,10 +226,10 @@ export async function exportLeadsToSheet(config, leads, session) {
     return csvValues.concat(trackingValues).concat(claimedOtherLocationsCell(lead));
   });
 
-  await appendRows(token, spreadsheetId, tabName, rows);
+  await appendRows(token, spreadsheetId, title, rows);
 
   return {
-    tab: tabName,
+    tab: title,
     rowsAdded: rows.length,
     claimedBy: session.displayName,
     sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheetId}`,
@@ -229,8 +249,8 @@ export async function exportCompaniesToSheet(config, companies, session) {
   const spreadsheetId = config.googleSheetId();
   const tabName = claimedTabName(session.displayName);
 
-  const { sheetId, created } = await ensureUserTab(token, spreadsheetId, tabName);
-  await ensureHeaderRow(token, spreadsheetId, tabName, created);
+  const { sheetId, created, title } = await ensureUserTab(token, spreadsheetId, tabName);
+  await ensureHeaderRow(token, spreadsheetId, title, created);
 
   const now = new Date().toISOString();
   const rows = companies.map((company) => {
@@ -240,10 +260,10 @@ export async function exportCompaniesToSheet(config, companies, session) {
     return csvValues.concat(trackingValues).concat(otherLocationsCell(company));
   });
 
-  await appendRows(token, spreadsheetId, tabName, rows);
+  await appendRows(token, spreadsheetId, title, rows);
 
   return {
-    tab: tabName,
+    tab: title,
     rowsAdded: rows.length,
     claimedBy: session.displayName,
     sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheetId}`,
