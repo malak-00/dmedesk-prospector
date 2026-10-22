@@ -70,3 +70,18 @@ test('reassigning needs leads and a live target', async () => {
   const off = fakeDb([row('1')], { target: { id: 'u2', display_name: 'Ben', disabled_at: '2026-01-01' } });
   await assert.rejects(() => reassignStaleLeads(off, { id: 'a' }, { npis: ['1'], toUserId: 'u2' }, NOW), (e) => e.status === 400 && /disabled/.test(e.message));
 });
+
+test('sending stale leads to Disconnected marks only the still-stale ones and notes why', async () => {
+  const { disconnectStaleLeads } = await import('../src/repos/adminRepo.js');
+  const rows = [row('1'), row('2', { status_updated_at: day(1) })];
+  const db = fakeDb(rows);
+  const out = await disconnectStaleLeads(db, { id: 'admin1', displayName: 'Boss' }, { npis: ['1', '2'], days: 30 }, NOW);
+  assert.deepEqual(out, { disconnected: 1, leftAlone: 1 });
+  assert.equal(db.log.updates.length, 1);
+  assert.equal(db.log.updates[0].patch.is_disconnected, true);
+  assert.equal(db.log.updates[0].patch.status, 'disconnected');
+  assert.equal(db.log.updates[0].patch.status_updated_by, 'admin1');
+  assert.match(db.log.updates[0].patch.notes, /Boss: Disconnected by Boss\. No activity for 30\+ days\./);
+  assert.equal(noteKind('Disconnected by Boss. No activity for 30+ days.'), 'import');
+  await assert.rejects(() => disconnectStaleLeads(db, { id: 'a' }, { npis: [] }, NOW), (e) => e.status === 400);
+});

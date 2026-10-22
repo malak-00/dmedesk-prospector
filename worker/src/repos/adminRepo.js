@@ -1205,3 +1205,29 @@ export async function reassignStaleLeads(supabase, session, { npis, toUserId, da
   }
   return { reassigned, leftAlone: kept + (stale.size - eligible.length), noGroup, skipped, to: toName };
 }
+
+// Sends the ticked stale leads to Disconnected, the same state a rep's own "Move to Disconnected" gives (is_disconnected,
+// status "disconnected"), for leads that cannot be reached or are not worth another try. Only leads still stale right now
+// are touched. A dated note line records that an admin did it and why; it is context, not a call.
+export async function disconnectStaleLeads(supabase, session, { npis, days } = {}, now = Date.now()) {
+  const list = [...new Set((npis || []).map(String).filter(Boolean))];
+  if (!list.length) throw httpError(400, "Tick at least one lead.");
+  if (list.length > HAND_BACK_CAP) throw httpError(400, `Send up to ${HAND_BACK_CAP} leads at a time.`);
+  const span = cleanDays(days);
+  const [rows, names] = await Promise.all([staleRows(supabase, (q) => q.in("npi", list)), userNames(supabase)]);
+  const { byOwner, kept } = pickHandBack(rows, list, names, now, span);
+  const stale = new Set([...byOwner.values()].flat());
+  const adminName = session.displayName || session.username || "An admin";
+  const stamp = new Date(now).toISOString().slice(0, 16).replace("T", " ");
+  let disconnected = 0;
+  for (const row of rows.filter((r) => stale.has(String(r.npi)))) {
+    const entry = `${stamp} — ${adminName}: Disconnected by ${adminName}. No activity for ${span}+ days.`;
+    const notes = String(row.notes || "").trim() ? `${entry}\n${String(row.notes).trim()}` : entry;
+    const upd = await supabase.from("leads")
+      .update({ is_disconnected: true, status: "disconnected", status_updated_by: session.id, status_updated_at: new Date(now).toISOString(), notes })
+      .eq("id", row.id).eq("is_disconnected", false).eq("claimed_by", row.claimed_by);
+    if (upd.error) throw httpError(500, "Failed to disconnect a lead: " + upd.error.message);
+    disconnected += 1;
+  }
+  return { disconnected, leftAlone: kept };
+}

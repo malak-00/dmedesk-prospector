@@ -691,6 +691,12 @@ app.post("/admin/stale-leads/hand-back", async (c) => {
   return c.json(ok(await adminRepo.handBackStaleLeads(supabaseFor(c), session, body)));
 });
 
+app.post("/admin/stale-leads/disconnect", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await adminRepo.disconnectStaleLeads(supabaseFor(c), session, body)));
+});
 app.post("/admin/stale-leads/reassign", async (c) => {
   const session = c.get("session");
   requireAdmin(session);
