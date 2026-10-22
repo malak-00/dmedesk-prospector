@@ -691,6 +691,13 @@ app.post("/admin/stale-leads/hand-back", async (c) => {
   return c.json(ok(await adminRepo.handBackStaleLeads(supabaseFor(c), session, body)));
 });
 
+app.post("/admin/stale-leads/reassign", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await adminRepo.reassignStaleLeads(supabaseFor(c), session, body)));
+});
+
 // Send the signed-in super admin the weekly digest as an avatar note, right now.
 app.post("/admin/digest/test", async (c) => {
   const session = c.get("session");

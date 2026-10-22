@@ -1140,3 +1140,68 @@ export async function handBackStaleLeads(supabase, session, { npis, days } = {},
   }
   return { returned, leftAlone: kept };
 }
+
+// Moves the ticked stale leads to another rep. The move itself is the one the Ownership conflicts screen uses
+// (resolve_ownership_conflict, sql/005): atomic, one 'reassigned' event per lead with the admin and the reason, and the
+// whole business group goes together so it is never split between two reps. status, notes and claimed_at are untouched,
+// so a dated note line is added to each moved lead: the new owner sees why it arrived, and it starts a fresh quiet clock.
+// A lead with no business group cannot be moved this way and is left where it is.
+export async function reassignStaleLeads(supabase, session, { npis, toUserId, days } = {}, now = Date.now()) {
+  const list = [...new Set((npis || []).map(String).filter(Boolean))];
+  if (!list.length) throw httpError(400, "Tick at least one lead.");
+  if (list.length > HAND_BACK_CAP) throw httpError(400, `Reassign up to ${HAND_BACK_CAP} leads at a time.`);
+  if (!toUserId) throw httpError(400, "Choose who should get these leads.");
+  const target = await supabase.from("app_users").select("id, display_name, username, disabled_at").eq("id", toUserId).maybeSingle();
+  if (target.error && /disabled_at/.test(target.error.message || "")) {
+    // sql/026 not installed: no accounts can be disabled, so only existence needs checking.
+    const plain = await supabase.from("app_users").select("id, display_name, username").eq("id", toUserId).maybeSingle();
+    if (!plain.data) throw httpError(404, "That user does not exist.");
+    target.data = plain.data; target.error = null;
+  }
+  if (target.error) throw httpError(500, "Failed to look up the user: " + target.error.message);
+  if (!target.data) throw httpError(404, "That user does not exist.");
+  if (target.data.disabled_at) throw httpError(400, "That account is disabled. Choose someone active.");
+
+  const span = cleanDays(days);
+  const [rows, names] = await Promise.all([staleRows(supabase, (q) => q.in("npi", list)), userNames(supabase)]);
+  const { byOwner, kept } = pickHandBack(rows, list, names, now, span);
+  const stale = new Set([...byOwner.values()].flat());
+  const eligible = rows.filter((r) => stale.has(String(r.npi)) && r.claimed_by !== toUserId);
+  const toName = target.data.display_name || target.data.username;
+
+  const byGroup = new Map();
+  let noGroup = 0;
+  for (const r of eligible) {
+    if (!r.group_id) { noGroup += 1; continue; }
+    if (!byGroup.has(r.group_id)) byGroup.set(r.group_id, []);
+    byGroup.get(r.group_id).push(r);
+  }
+
+  const adminName = session.displayName || session.username || "An admin";
+  const stamp = new Date(now).toISOString().slice(0, 16).replace("T", " ");
+  let reassigned = 0;
+  let skipped = 0;
+  for (const [groupId, groupRows] of byGroup) {
+    const res = await supabase.rpc("resolve_ownership_conflict", {
+      p_group_id: groupId, p_to_user_id: toUserId, p_approved_by: session.id,
+      p_reason: `Reassigned by an admin: no activity for ${span}+ days`,
+    });
+    if (res.error) {
+      if (/resolve_ownership_conflict/.test(res.error.message || "") && /could not find|does not exist/i.test(res.error.message || "")) {
+        throw httpError(503, "Moving leads between reps isn't installed yet. Run sql/005_ownership_conflict_resolution.sql in Supabase, then try again.");
+      }
+      throw httpError(500, "Failed to reassign the leads: " + res.error.message);
+    }
+    const moved = new Set(((res.data && res.data.moved) || []).map((m) => String(m.npi)));
+    reassigned += moved.size;
+    skipped += ((res.data && res.data.skipped) || []).length;
+    for (const row of groupRows.filter((r) => moved.has(String(r.npi)))) {
+      const was = names.get(row.claimed_by) || "the previous owner";
+      const entry = `${stamp} — ${adminName}: Reassigned by ${adminName} from ${was}. It had been quiet for ${span}+ days.`;
+      const notes = String(row.notes || "").trim() ? `${entry}\n${String(row.notes).trim()}` : entry;
+      const upd = await supabase.from("leads").update({ notes }).eq("id", row.id);
+      if (upd.error) console.log("[adminRepo] reassign note not written: " + upd.error.message);
+    }
+  }
+  return { reassigned, leftAlone: kept + (stale.size - eligible.length), noGroup, skipped, to: toName };
+}

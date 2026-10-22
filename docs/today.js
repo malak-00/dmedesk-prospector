@@ -42,6 +42,8 @@
     return 14;
   }
 
+  window.dmeHooks.staleDays = staleDays; // the Claimed list marks leads quiet past this
+
   // The rep's own day and week, as the server needs them (call-log stamps are UTC).
   function todayQuery() {
     const now = new Date();

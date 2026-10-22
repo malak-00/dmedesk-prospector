@@ -10,7 +10,7 @@ import { findUserByUsernameExact } from "../lib/users.js";
 import { normalizeMeetingInput } from "../lib/meetings.js";
 import { noteKind, parseNoteLines } from "../lib/teamActivity.js";
 import { classifyResult } from "../lib/bestTimes.js";
-import { SORTS, buildTodayView, chunkIntoGroupPages } from "../lib/leadView.js";
+import { SORTS, buildTodayView, chunkIntoGroupPages, quietDaysOf } from "../lib/leadView.js";
 import { cleanStatus, isJunkStatus, normalizeStatus, statusOptions } from "../lib/statuses.js";
 import { announceWin } from "./buddyRepo.js";
 
@@ -37,6 +37,10 @@ function isMissingFunction(error) {
 export function toLeadDTO(row, claimedByDisplayName) {
   const statusUpdatedAt = row.status_updated_at || "";
   const claimedAt = row.claimed_at || "";
+  const quietDays = quietDaysOf({
+    status: row.status, meetingAt: row.meeting_at, meetingDurationMin: row.meeting_duration_min, reminderAt: row.reminder_at,
+    lastUpdated: statusUpdatedAt || claimedAt, claimedAt, notes: row.notes,
+  }, Date.now());
   return {
     npi: row.npi,
     name: row.company_name,
@@ -65,6 +69,7 @@ export function toLeadDTO(row, claimedByDisplayName) {
     status: row.status || "new",
     statusUpdatedAt,
     lastUpdated: statusUpdatedAt || claimedAt,
+    quietDays,
     notes: row.notes || "",
     reminderAt: row.reminder_at || "",
     meetingAt: row.meeting_at || "",

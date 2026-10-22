@@ -1,5 +1,17 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-22 — Quiet chip on Claimed leads, and reassigning stale leads
+
+**Objective.** Warn a rep before their lead is handed back, and let an admin give a quiet lead to another rep instead of only returning it to Prospect.
+
+**Actions Completed.**
+- **Quiet chip.** `quietDaysOf` (`worker/src/lib/leadView.js`) gives whole days since the last activity, blank when a meeting or callback is ahead or the lead is finished. `toLeadDTO` now carries `quietDays`. The Claimed list shows "Quiet 21d" beside the company name once it passes the rep's own cold-after setting (the Today "Change" value, exposed as `window.dmeHooks.staleDays`).
+- **Reassign.** Stale leads panel gets "Give to" and "Reassign N". `POST /admin/stale-leads/reassign` (admins; up to 200) re-checks staleness, then moves each business through the existing `resolve_ownership_conflict` function (sql/005): atomic, a `reassigned` event per lead with the admin as approver and the reason, and the whole business group moves together. Leads with no business group, already owned by the target, or worked since the list loaded stay put. The target must exist and not be disabled. A dated note line ("Reassigned by <admin> from <rep>...") is added to each moved lead so the new owner sees why and the quiet clock restarts; `noteKind` files that line as context, so it is not counted as a call.
+
+**Database / System Result.** None. No schema change.
+
+**Safety Status.** Reassigning changes ownership, so it asks for confirmation and uses the sanctioned audited function. Worker tests pass (373/373); not browser-tested. Needs a Worker deploy and a frontend publish.
+
 ## 2026-10-21 — Digest test button and the Stale leads hand-back
 
 **Objective.** Let the super admin see the weekly digest on demand, and let an admin return claimed leads nobody is working to Prospect.

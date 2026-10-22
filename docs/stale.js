@@ -1,4 +1,4 @@
-/* Stale leads (Admin tab): claimed leads nobody has touched for a while, so an admin can hand them back to Prospect.
+/* Stale leads (Admin tab): claimed leads nobody has touched for a while, so an admin can hand them back to Prospect or give them to another rep.
    Stale means what it means on a rep's Today screen: quiet for N days, no meeting or callback coming up, not won, lost or refused.
    GET admin/stale-leads lists them; POST admin/stale-leads/hand-back returns the ticked ones using the same release
    function a rep's own "Return to Prospect" uses, so the lead's history stays and anyone can claim it again.
@@ -18,6 +18,8 @@
   let error = "";
   let repFilter = "";
   let busy = false;
+  let users = []; // active accounts a lead can be reassigned to
+  let targetId = "";
   const picked = new Set();
 
   const num = (n) => Number(n || 0).toLocaleString();
@@ -30,7 +32,9 @@
     error = "";
     render();
     try {
-      data = await apiGet("admin/stale-leads", { days });
+      const [list, people] = await Promise.all([apiGet("admin/stale-leads", { days }), users.length ? null : apiGet("admin/users").catch(() => null)]);
+      data = list;
+      if (people && people.users) users = people.users.filter((u) => !u.disabled);
       const still = new Set(data.items.map((i) => i.npi));
       [...picked].forEach((n) => { if (!still.has(n)) picked.delete(n); });
     } catch (err) {
@@ -57,7 +61,11 @@
           Tick the ones to hand back. They leave the rep's Claimed list, the lead's notes and history stay with it, and anyone can claim it again.</p>
         <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin:10px 0">
           <label class="inline-field">Rep <select data-stale="rep"><option value="">Everyone (${num(data.total)})</option>${data.reps.map((r) => `<option value="${esc(r.repId)}"${r.repId === repFilter ? " selected" : ""}>${esc(r.rep)} (${num(r.count)})</option>`).join("")}</select></label>
-          <button type="button" class="btn btn-primary btn-small" data-stale="hand-back"${chosen.length && !busy ? "" : " disabled"}>${busy ? "Handing back…" : `Hand back ${chosen.length ? num(chosen.length) : ""} to Prospect`}</button>
+          <span style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+            <label class="inline-field">Give to <select data-stale="target"><option value="">Choose a rep…</option>${users.map((u) => `<option value="${esc(u.id)}"${u.id === targetId ? " selected" : ""}>${esc(u.displayName || u.username)}</option>`).join("")}</select></label>
+            <button type="button" class="btn btn-ghost btn-small" data-stale="reassign"${chosen.length && targetId && !busy ? "" : " disabled"} title="Moves the business to that rep. Notes and history stay, and a note records who moved it.">Reassign${chosen.length ? " " + num(chosen.length) : ""}</button>
+            <button type="button" class="btn btn-primary btn-small" data-stale="hand-back"${chosen.length && !busy ? "" : " disabled"}>${busy ? "Working…" : `Hand back ${chosen.length ? num(chosen.length) : ""} to Prospect`}</button>
+          </span>
         </div>
         <div class="ins-table-wrap"><table class="ins-table"><thead><tr>
           <th style="width:34px"><input type="checkbox" data-stale="all" aria-label="Tick every lead shown"${allOn ? " checked" : ""}></th>
@@ -98,10 +106,35 @@
     load();
   }
 
+  async function reassign() {
+    const chosen = visible().filter((i) => picked.has(i.npi));
+    const who = users.find((u) => u.id === targetId);
+    if (!chosen.length || !who || busy) return;
+    const name = who.displayName || who.username;
+    if (!confirm(`Give ${chosen.length} lead${chosen.length === 1 ? "" : "s"} to ${name}?
+
+The whole business moves with each lead, so a business is never split between two reps. Notes and history stay, and a note records who moved it. It will not count as ${name}'s own calls.`)) return;
+    busy = true;
+    render();
+    try {
+      const out = await apiPost("admin/stale-leads/reassign", { npis: chosen.map((i) => i.npi), toUserId: targetId, days });
+      const left = out.leftAlone + out.noGroup + out.skipped;
+      showToast(`Gave ${num(out.reassigned)} lead${out.reassigned === 1 ? "" : "s"} to ${out.to}${left ? `. ${num(left)} stayed where they were (worked since, already theirs, or not part of a business group)` : ""}`);
+      picked.clear();
+      state.claimedLoaded = false;
+    } catch (err) {
+      showToast(err.message, true);
+    }
+    busy = false;
+    data = null;
+    load();
+  }
+
   panel.addEventListener("click", (e) => {
     const act = e.target.closest("[data-stale]")?.dataset.stale;
     if (act === "reload") load();
     else if (act === "hand-back") handBack();
+    else if (act === "reassign") reassign();
   });
 
   panel.addEventListener("change", (e) => {
@@ -112,6 +145,9 @@
       picked.clear();
       data = null;
       load();
+    } else if (t.matches('[data-stale="target"]')) {
+      targetId = t.value;
+      render();
     } else if (t.matches('[data-stale="rep"]')) {
       repFilter = t.value;
       render();

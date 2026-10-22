@@ -3617,6 +3617,13 @@ function claimedBranchesHtml(branches) {
   `;
 }
 
+// "Quiet 21d" on a claimed lead nobody has touched for the rep's cold-after setting (Today > Change). An admin can hand it back.
+function quietChip(lead) {
+  const limit = window.dmeHooks.staleDays?.() || 14;
+  if (!(lead.quietDays >= limit)) return "";
+  return ` <span class="quiet-chip" title="No call, note or status change for ${lead.quietDays} days, and nothing scheduled. It may be handed back to Prospect.">Quiet ${lead.quietDays}d</span>`;
+}
+
 function claimedLeadRowHtml(lead, index) {
   const contactLine = lead.contactName
     ? `${escapeHtml(lead.contactName)}${lead.contactTitle ? ` — ${escapeHtml(lead.contactTitle)}` : ""}`
@@ -3626,7 +3633,7 @@ function claimedLeadRowHtml(lead, index) {
     <tr class="lead-row ${isSelected ? "is-selected" : ""}" data-claimed-index="${index}" tabindex="0" aria-expanded="false" style="--i:${Math.min(index, 12)}">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="claimed-row-check" data-index="${index}" ${isSelected ? "checked" : ""}></td>
       <td>
-        <div class="company-name">${escapeHtml(lead.name)}${window.dmeGroups?.inShownGroup("claimed", index) ? "" : claimedBranchesBadge(lead.branches)}${window.dmeHooks.ageBadge?.(lead.enumerationDate) || ""}${providerChangeBadge(lead.providerChange)}${window.dmeHooks.relatedChip?.("claimed", index) || ""}</div>
+        <div class="company-name">${escapeHtml(lead.name)}${window.dmeGroups?.inShownGroup("claimed", index) ? "" : claimedBranchesBadge(lead.branches)}${window.dmeHooks.ageBadge?.(lead.enumerationDate) || ""}${quietChip(lead)}${providerChangeBadge(lead.providerChange)}${window.dmeHooks.relatedChip?.("claimed", index) || ""}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
         ${lead.taxonomy ? specialtyPillHtml(lead.taxonomy) : ""}
         ${leadSignalsHtml({

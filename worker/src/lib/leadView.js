@@ -106,6 +106,16 @@ export function isStale(lead, nowMs, staleDays) {
   return last > 0 && nowMs - last >= staleDays * DAY;
 }
 
+// How many whole days a lead has been quiet, or null when quiet does not apply (finished, or a meeting or
+// callback is still ahead). The Claimed list shows a chip once this passes the rep's own "cold after" setting.
+export function quietDaysOf(lead, nowMs) {
+  if (TERMINAL.test(String(lead.status || ""))) return null;
+  if (lead.meetingAt && meetingEnd(lead) >= nowMs) return null;
+  if (lead.reminderAt && t(lead.reminderAt) > nowMs) return null;
+  const last = lastActivityMs(lead);
+  return last > 0 ? Math.max(0, Math.floor((nowMs - last) / DAY)) : null;
+}
+
 function streakOf(days, todayIdx) {
   let day = days.has(todayIdx) ? todayIdx : todayIdx - 1; // not lost before the first call of the day
   let n = 0;

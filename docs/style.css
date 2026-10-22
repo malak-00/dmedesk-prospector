@@ -3416,6 +3416,7 @@ html.brief-open .buddy-call { right: calc(var(--call-drawer-w) + var(--brief-w) 
 @media (max-width: 1320px) { html.brief-open .buddy-call { display: none; } }
 
 /* ---- New / Established badge and the Medicare money icon ---- */
+.quiet-chip { font-family: var(--font-mono); font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; vertical-align: middle; color: var(--score-mid); background: var(--glow-mid); white-space: nowrap; }
 .age-badge { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.03em; padding: 2px 6px; border-radius: 4px; vertical-align: middle; text-transform: uppercase; }
 .age-new { color: var(--on-accent); background: var(--score-high); }
 .age-established { color: var(--muted); background: var(--surface-2); border: 1px solid var(--hairline); }
