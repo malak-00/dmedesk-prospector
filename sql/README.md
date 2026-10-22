@@ -46,6 +46,7 @@ Required manual sequence:
 043_territory_excludes_flagged.sql  (Territory map ignores keyword-excluded providers; needs 042)
 044_remove_excluded_providers.sql   (batched permanent removal of flagged providers; dry run first, confirm phrase required)
 049_identity_keys_one_row.sql     (planner hint: identity_candidate_keys() returns one row, so the ownership check uses index lookups)
+050_owner_name_index.sql         (index on the authorized official's name, so opening a Prospect card's same-owner lookup stops scanning the whole table)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -118,6 +119,7 @@ in `003`); save their output with the run.
 | `043_territory_excludes_flagged.sql` | Replaces only `refresh_territory_code()` and `search_territory()` (025's versions plus `excluded_reason is null`) so the Territory map ignores keyword-excluded providers; marks the small `territory_totals` cache stale so it recounts. Needs 042. Rerun after the 042 apply finishes. No provider data touched | **Not yet run. The map keeps counting excluded providers until it is** |
 | `044_remove_excluded_providers.sql` | Creates `remove_excluded_providers(dry_run, batch, confirm)`: permanently deletes keyword-flagged `npi_records` (plus their `npi_cms_enrichment`, `npi_identity_keys`, `lead_group_members` rows) in batches. Keeps any flagged provider with a lead, call, ownership event, claim request, or a shared identity group with a lead. No archive, no undo. Creating the function deletes nothing | **Not yet run. Nothing is removed until it is called with dry_run = false and the confirm phrase** |
 | `049_identity_keys_one_row.sql` | `ALTER FUNCTION identity_candidate_keys(jsonb) ROWS 1`: a planner estimate only. Function body, results, tables and data untouched; rerun-safe | **Run 2026-10-19 (at the user's request). `prorows` is now 1** |
+| `050_owner_name_index.sql` | Creates `idx_npi_records_official_name` (official last name, first name). No table or data changed; rerun-safe; about a second, briefly blocks writes to `npi_records` | **Not yet run. The same-owner lookup on a Prospect card keeps scanning the whole table and often times out** |
 
 ## Notes on individual files
 

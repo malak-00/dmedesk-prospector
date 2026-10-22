@@ -1,5 +1,15 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-22 — Draft plan: lead outcomes from BD MEETINGS
+
+**Objective.** Plan how to bring BD MEETINGS results (onboarded, contract sent, dead, disqualified) into Prospector as per-NPI conversion labels for analysis, scoring and prediction.
+
+**Actions Completed.** Added `documentation/plans/LEAD_OUTCOMES_PLAN.md` (draft / RFC) and linked it from `documentation/plans/README.md`. Documentation only.
+
+**Database / System Result.** None. The plan proposes an additive `lead_outcomes` table (`sql/054`, not written or applied).
+
+**Safety Status.** No code, schema or production data touched. Awaiting review by Ben and Malak.
+
 ## 2026-10-22 — Quiet chip on Claimed leads, and reassigning stale leads
 
 **Objective.** Warn a rep before their lead is handed back, and let an admin give a quiet lead to another rep instead of only returning it to Prospect.
@@ -2779,3 +2789,33 @@ changed. To undo: `alter function public.identity_candidate_keys(jsonb) rows 100
 ### Safety Status
 
 No destructive command, secret change or other production mutation.
+
+## 2026-10-22 — Same-owner lookup timeouts (index written, not run)
+
+### Objective
+
+The App insights error list (28 days) showed 360 failures; 268 were
+`GET /companies/same-owner` 500 "statement timeout" (6 people).
+
+### Actions Completed
+
+- Read `worker/src/repos/sameOwnerRepo.js`: it filters `npi_records` by
+  `authorizedofficial_lastname` and `authorizedofficial_firstname`; no SQL file
+  creates an index on those columns, so each Prospect-card open scans the table.
+  The live index list could not be re-checked (the Supabase connection started
+  refusing the agent's queries with a permission error).
+- Added `sql/050_owner_name_index.sql` (one index). Not run.
+- Other entries in the same list, not changed: `/search/insights` 503 x45 (the
+  intentional "took too long" message), `/export/sheets` 500 x14 and
+  `/export/google-sheet` 500 x13 (claim_leads timeouts; sql/049 should help),
+  `/admin/match-reviews` 500 x14, `/companies/same-address` 500 x2,
+  `/companies/product-mix` 502 x3 (CMS did not answer), and one Google Sheets
+  "a sheet with the name 'Claimed - Selene myles' already exists" 502.
+
+### Database / System Result
+
+No change in Supabase. sql/050 must be reviewed and run by hand.
+
+### Safety Status
+
+No destructive command, secret change or production mutation.
