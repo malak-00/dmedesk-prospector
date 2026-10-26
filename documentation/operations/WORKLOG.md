@@ -2994,3 +2994,35 @@ No Supabase change by the agent. sql/055 must be reviewed and run by hand. Worke
 ### Safety Status
 
 No destructive command, secret change or production mutation.
+
+## 2026-10-27 — Why claiming times out (diagnosis; script written, not run)
+
+### Objective
+
+Find why claiming gives a statement timeout (POST /export/sheets, POST /export/google-sheet).
+
+### Actions Completed
+
+- Read the claim path end to end (no live database access: the Supabase connection no longer lists this project).
+  Findings, in order of weight:
+  1. claim_leads step 3 (the "others" CTE, sql/010/011/014) calls identity_candidate_keys() once for EVERY active
+     lead held by another rep, on every claim and every "Send to Sheet" check, however few leads are claimed. The cost
+     grows with the whole team's claimed leads (about 2,300 on Oct 19; sql/038 adds group-mates, so it grows faster).
+  2. Evidence it is the read step and not locks or writes: on Oct 14-15 the database statistics showed a real claim
+     averaging 5.1 s (384 calls) and the dry run, which writes and locks nothing, averaging 5.6 s (257 calls); the
+     Send-to-Sheet check (a dry run) fails as often as the claim (31 vs 33 in the error list).
+  3. owned_group_npis (run on every search round) had a planner problem, fixed by sql/049; claims share the same
+     helper function and should have gained a little.
+  4. Not the cause: ensure_identity_membership (a few index lookups per lead); the group-mates call after a claim
+     (a separate request whose errors are swallowed).
+- Wrote sql/audit_claim_cost.sql (read-only): measures the current "others" step, a set-based equivalent with the
+  same inputs and key functions, and checks that both return identical rows. No change to claim_leads is made until
+  that check shows 0 differences and a real saving.
+
+### Database / System Result
+
+Nothing changed in Supabase. The script has not been run.
+
+### Safety Status
+
+No destructive command, secret change or production mutation. Claim and ownership rules are untouched.
