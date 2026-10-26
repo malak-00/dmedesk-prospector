@@ -677,6 +677,11 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-26 — Fix: super admin Home greeting is a card
+
+The team picture had dropped onto its own line under the buttons. `docs/style.css`: the Home greeting is now a card like Today's (same tinted background
+and border), with the picture flush at its bottom right and the buttons under the text; checked on a test page. No other change.
+
 ## 2026-10-26 — Team picture on the super admin Home
 
 ### Objective

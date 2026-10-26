@@ -3550,8 +3550,10 @@ tr.group-collapsed, tr.sub-collapsed { display: none !important; }
   .today-hero-team { display: block; position: absolute; right: 18px; bottom: 0; width: auto; height: 100%; max-height: 190px; max-width: 280px; object-fit: contain; object-position: right bottom; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.25)); }
 }
 
-/* The team picture on the super admin Home, at the right of the greeting. */
+/* The super admin Home greeting is a card like Today's, with the team picture flush at its bottom right. */
+.home-head { position: relative; overflow: hidden; padding: 22px 26px; margin-bottom: 14px; border-radius: var(--radius-lg); border: 1px solid var(--selection-chip-border); background: linear-gradient(135deg, var(--accent-soft), transparent 70%), var(--surface); box-shadow: var(--shadow-card); }
 .home-head-team { display: none; pointer-events: none; user-select: none; }
 @media (min-width: 900px) {
-  .home-head-team { display: block; order: 3; height: 120px; width: auto; margin-left: auto; align-self: flex-end; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.25)); }
+  .home-head { min-height: 150px; padding-right: 270px; }
+  .home-head-team { display: block; position: absolute; right: 18px; bottom: 0; height: 100%; max-height: 170px; width: auto; max-width: 250px; object-fit: contain; object-position: right bottom; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.25)); }
 }
