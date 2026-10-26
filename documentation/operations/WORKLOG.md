@@ -677,6 +677,27 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-26 — Team picture in Today's greeting
+
+### Objective
+
+Show the group picture of the users in the "Good morning" card on Today.
+
+### Actions Completed
+
+- `docs/avatar/team.webp` (new): the picture, scaled to 720px wide (about 110 KB) with its transparent background kept.
+- `docs/today.js`: the hero card includes the picture. `docs/style.css`: from 900px wide it sits flush at the bottom right of the card with a soft shadow,
+  the card keeps room for it, and it takes no clicks; narrower windows do not show it.
+- `docs/index.html`: versions bumped.
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required. Other uncommitted work in the tree (`sql/038`, `sql/047`, `sql/048`, the plans folder) is not part of this change and was left alone.
+
 ## 2026-10-22 — UI: user menu, filter pills, clearer empty and error states
 
 ### Objective

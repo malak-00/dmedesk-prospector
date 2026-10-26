@@ -171,6 +171,7 @@
         <button type="button" class="btn btn-ghost" data-today="prospect">Find leads</button>
         <button type="button" class="btn btn-ghost" data-today="claimed">My leads</button>
       </div>
+      <img class="today-hero-team" src="avatar/team.webp" alt="The team" width="240" height="180" decoding="async">
     </div>
     <div class="today-kpis">
       ${kpi("Calls today", ins.callsToday, "logged in call logs")}
