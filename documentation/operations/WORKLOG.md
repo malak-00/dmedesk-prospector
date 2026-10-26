@@ -677,6 +677,25 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-26 — Team picture on the super admin Home
+
+### Objective
+
+Show the team picture on the super admin Home as well as in Today's greeting.
+
+### Actions Completed
+
+- `docs/superhome.js`: the Home header includes `avatar/team.webp` at its right. `docs/style.css`: 120px tall from 900px wide, hidden below that, no clicks.
+- `docs/index.html`: versions bumped.
+
+### Database / System Result
+
+- No SQL, no Worker change.
+
+### Safety Status
+
+- Frontend only. Manual look required.
+
 ## 2026-10-26 — Team picture in Today's greeting
 
 ### Objective

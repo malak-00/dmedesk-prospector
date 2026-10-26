@@ -139,6 +139,7 @@
             <button type="button" class="btn btn-ghost btn-small" data-home="digest" title="Sends you this week's digest as an avatar note, the same one the Monday cron sends">Send me the digest</button>
             <button type="button" class="btn btn-ghost btn-small" data-home="reload"${loading ? " disabled" : ""}>${loading ? "Refreshing…" : "Refresh"}</button>
           </div>
+          <img class="home-head-team" src="avatar/team.webp" alt="The team" width="160" height="120" decoding="async">
         </header>
 
         <div class="kpi-strip ins-kpis">
