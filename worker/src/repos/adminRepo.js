@@ -33,12 +33,16 @@ async function fetchAllRows(queryFactory, errorContext, byId = false) {
   let offset = 0;
   for (let page = 0; page < FETCH_ALL_MAX_PAGES; page++) {
     const query = byId ? queryFactory().order("id") : queryFactory();
-    const { data, error } = await query.range(offset, offset + FETCH_ALL_PAGE_SIZE - 1);
+    const { data, error, count } = await query.range(offset, offset + FETCH_ALL_PAGE_SIZE - 1);
     if (error) throw httpError(500, `Failed to load ${errorContext}: ` + error.message);
     const batch = data || [];
     rows.push(...batch);
     if (batch.length === 0) break;
     offset += batch.length;
+    // When the query asked for { count: "exact" } the total is known, so the last page ends the loop. Without it the
+    // loop needed one more, empty, request to find the end: one wasted subrequest per table, and a Worker request
+    // is allowed only 50 of them on the free plan (see getInsights).
+    if (Number.isFinite(count) && offset >= count) break;
   }
   return rows;
 }
@@ -1004,12 +1008,19 @@ export async function applyStatusMerges(supabase, merges) {
 // ---- App insights (super admin) ---------------------------------------------------------
 // Everything the dashboard shows, from what the app already records. Each source is best
 // effort: one that is missing or slow leaves its part empty instead of failing the page.
+// What to tell the reader about a failed read: the Cloudflare per-request cap gets its own plain wording.
+function reason(err) {
+  const text = String((err && err.message) || "");
+  if (/too many subrequests/i.test(text)) return "reached Cloudflare's limit on requests per call (50 on the free plan): choose a shorter period, or upgrade the Cloudflare plan";
+  return text.slice(0, 160);
+}
+
 // A source that can't be read leaves its part empty, but it is no longer SILENT about it: the reason is added to
 // `problems`, which the dashboard shows, so an empty list can't pass for "nothing happened".
 async function tryRows(factory, context, byId = true, problems = null) {
   try { return await fetchAllRows(factory, context, byId); } catch (err) {
     console.log(`[adminRepo] insights: ${context} unavailable: ${err.message}`);
-    if (problems) problems.push({ source: context, message: String(err.message || "").slice(0, 160) });
+    if (problems) problems.push({ source: context, message: reason(err) });
     return [];
   }
 }
@@ -1025,7 +1036,7 @@ async function tryCount(factory, context = "", problems = null) {
     }
     return count || 0;
   } catch (err) {
-    if (problems) problems.push({ source: context, message: String(err.message || "").slice(0, 160) });
+    if (problems) problems.push({ source: context, message: reason(err) });
     return null;
   }
 }
@@ -1044,20 +1055,20 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
 
   const problems = [];
   const [claimEvents, taps, leads, suggestionRows, badNumbers, searches, matchReviews, providerChanges, sentNotes, eventsProbe, callRecords, intel] = await Promise.all([
-    tryRows(() => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at").eq("event_type", "claimed").gte("created_at", since), "claim history", true, problems),
-    tryRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at").gte("tapped_at", since), "phone taps", true, problems),
-    tryRows(() => supabase.from("leads").select("npi, company_name, claimed_by, claimed_at, is_disconnected, notes, reminder_at, meeting_at, status, specialty, state").not("claimed_by", "is", null), "leads", true, problems),
-    tryRows(() => supabase.from("suggestions").select("id, text, submitted_by, created_at").order("created_at", { ascending: false }), "suggestions", true, problems),
-    tryRows(() => supabase.from("bad_numbers").select("reason, flagged_at, cleared_at"), "bad numbers", true, problems),
-    tryRows(() => supabase.from("search_progress").select("user_id, updated_at"), "search activity", false, problems),
+    tryRows(() => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at", { count: "exact" }).eq("event_type", "claimed").gte("created_at", since), "claim history", true, problems),
+    tryRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at", { count: "exact" }).gte("tapped_at", since), "phone taps", true, problems),
+    tryRows(() => supabase.from("leads").select("npi, company_name, claimed_by, claimed_at, is_disconnected, notes, reminder_at, meeting_at, status, specialty, state", { count: "exact" }).not("claimed_by", "is", null), "leads", true, problems),
+    tryRows(() => supabase.from("suggestions").select("id, text, submitted_by, created_at", { count: "exact" }).order("created_at", { ascending: false }), "suggestions", true, problems),
+    tryRows(() => supabase.from("bad_numbers").select("reason, flagged_at, cleared_at", { count: "exact" }), "bad numbers", true, problems),
+    tryRows(() => supabase.from("search_progress").select("user_id, updated_at", { count: "exact" }), "search activity", false, problems),
     tryCount(() => supabase.from("identity_review_queue").select("*", { count: "exact", head: true }), "possible duplicates", problems),
     tryCount(() => supabase.from("provider_change_queue").select("*", { count: "exact", head: true }), "provider changes", problems),
-    tryRows(() => supabase.from("buddy_notes").select("to_user_id, body, created_at").not("to_user_id", "is", null).gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString()), "sent notes", true, problems),
+    tryRows(() => supabase.from("buddy_notes").select("to_user_id, body, created_at", { count: "exact" }).not("to_user_id", "is", null).gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString()), "sent notes", true, problems),
     tryCount(() => supabase.from("app_events").select("*", { count: "exact", head: true }), "event log", problems),
     // sql/050: why leads said no. Empty until that file is run.
     // sql/053: the phone system's calls in the period. Empty until that file is run and a log is imported.
-    tryRows(() => supabase.from("call_records").select("called_at, agent, duration_sec, disposition").gte("called_at", since), "phone system calls", false, problems),
-    tryRows(() => supabase.from("lead_intel").select("npi, objection, current_biller").or("objection.not.is.null,current_biller.not.is.null"), "call intel", false, problems),
+    tryRows(() => supabase.from("call_records").select("called_at, agent, duration_sec, disposition", { count: "exact" }).gte("called_at", since), "phone system calls", false, problems),
+    tryRows(() => supabase.from("lead_intel").select("npi, objection, current_biller", { count: "exact" }).or("objection.not.is.null,current_biller.not.is.null"), "call intel", false, problems),
   ]);
   // 'not_installed' = sql/046 isn't there (the dashboard says events aren't being collected yet); 'failed' = it is, but
   // could not be read just now (the dashboard says so, instead of showing "no errors"); 'ok' otherwise.
@@ -1067,13 +1078,13 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
   if (eventsProbe === null) {
     if (problems.some((p) => p.source === "event log")) eventsStatus = "failed";
   } else {
-    const read = () => fetchAllRows(() => supabase.from("app_events").select("user_id, kind, name, status, ms, result_count, detail, created_at").gte("created_at", since), "events", true);
+    const read = () => fetchAllRows(() => supabase.from("app_events").select("user_id, kind, name, status, ms, result_count, detail, created_at", { count: "exact" }).gte("created_at", since), "events", true);
     try {
       try { appEvents = await read(); } catch { await new Promise((resolve) => setTimeout(resolve, 500)); appEvents = await read(); }
       eventsStatus = "ok";
     } catch (err) {
       console.log(`[adminRepo] insights: events unavailable: ${err.message}`);
-      problems.push({ source: "event log", message: String(err.message || "").slice(0, 160) });
+      problems.push({ source: "event log", message: reason(err) });
       appEvents = null;
       eventsStatus = "failed";
     }

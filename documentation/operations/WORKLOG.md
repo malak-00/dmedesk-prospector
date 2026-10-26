@@ -2932,3 +2932,36 @@ before this change cannot be recovered.
 ### Safety Status
 
 No destructive command, secret change or production mutation.
+
+## 2026-10-26 — Insights: the real cause was Cloudflare's 50-request cap
+
+### Objective
+
+After the previous fix, the Insights page said it "couldn't load the event log". Find out why.
+
+### Actions Completed
+
+- Watched the live Worker log (`wrangler tail`) while the page refreshed: both
+  `events` and `leads` failed with "Too many subrequests by single Worker invocation".
+  The Worker is on the Cloudflare free plan (a Worker call may make 50 requests; the repo already notes
+  this in `adminRepo.js`). The page reads ~12 tables 1,000 rows at a time, plus one empty
+  request per table to find the end; at 90 days that passes 50, and 28 days is close to it and grows.
+  It was not a database timeout.
+- `worker/src/repos/adminRepo.js`: the insights reads ask for the exact total, so a table
+  needs exactly as many requests as it has pages (no empty extra one: about 12 saved).
+  A failed read caused by the cap is worded plainly ("reached Cloudflare's limit on requests per
+  call ... choose a shorter period, or upgrade the Cloudflare plan").
+- `worker/src/index.js`: the "what is connected" checks for the insights page (4 requests) are
+  reused for 5 minutes.
+- `docs/insights.js` (v13): the warning banner also shows the reason.
+- Tests: 2 more in `worker/test/insightsHealth.test.js`; 388 pass.
+
+### Database / System Result
+
+No Supabase change. This reduces the page's requests; it does not remove the ceiling. As events and
+leads grow, the longer periods will hit 50 again. Lasting fixes: the Workers Paid plan
+(a much higher cap) or summing events and leads in SQL so the Worker reads a few rows.
+
+### Safety Status
+
+No destructive command, secret change or production mutation.

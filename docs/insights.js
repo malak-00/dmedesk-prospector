@@ -325,7 +325,8 @@
     const list = (problems || []).filter((p) => p && p.source);
     if (!list.length) return "";
     const names = [...new Set(list.map((p) => p.source))];
-    return `<p class="ins-note ins-warn-note" role="alert"><strong>Some numbers could not be loaded just now:</strong> ${esc(names.join(", "))}. They are missing from this view, not zero. Press Refresh to try again.</p>`;
+    const why = [...new Set(list.map((p) => p.message).filter(Boolean))].slice(0, 2).join(" / ");
+    return `<p class="ins-note ins-warn-note" role="alert"><strong>Some numbers could not be loaded just now:</strong> ${esc(names.join(", "))}. They are missing from this view, not zero.${why ? ` Reason: ${esc(why)}.` : ""} Press Refresh to try again.</p>`;
   }
 
   function searchQuality(u) {

@@ -645,10 +645,20 @@ function requireSuperAdmin(session) {
 // What the signed-in browser needs to know about itself that the sign-in token doesn't carry.
 app.get("/auth/flags", (c) => c.json(ok({ isSuperAdmin: Boolean(c.get("session").isSuperAdmin), isAdmin: Boolean(c.get("session").isAdmin || c.get("session").isSuperAdmin) })));
 
+// The "what is connected" checks cost four requests, and a Worker call is allowed only 50 on the free plan, which
+// the insights page needs for its own data. They change rarely, so they are reused for five minutes.
+let systemCache = null;
+async function systemForInsights(config, supabase) {
+  if (systemCache && Date.now() - systemCache.at < 300_000) return systemCache.value;
+  const value = await SystemInfo.getSystemInfo(config, supabase).catch(() => null);
+  if (value) systemCache = { at: Date.now(), value };
+  return value;
+}
+
 app.get("/admin/insights", async (c) => {
   requireAdmin(c.get("session"));
   const supabase = supabaseFor(c);
-  const system = await SystemInfo.getSystemInfo(c.get("config"), supabase).catch(() => null);
+  const system = await systemForInsights(c.get("config"), supabase);
   return c.json(ok(await adminRepo.getInsights(supabase, system, { days: c.req.query("days") })));
 });
 

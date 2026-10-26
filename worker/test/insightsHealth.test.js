@@ -7,20 +7,25 @@ import { saveEvent } from '../src/lib/events.js';
 // the way a statement timeout does.
 function fakeDb(tables, { fail = [], missing = [], insertResults = [] } = {}) {
   const inserts = [];
+  const ranges = {};
   const db = {
     inserts,
+    ranges,
     from(table) {
       let ranged = false;
+      let wantCount = false;
       let range = [0, 999];
       const result = () => {
         if (missing.includes(table)) return { data: null, count: null, error: { code: '42P01', message: `relation "public.${table}" does not exist` } };
         if (fail.includes(table)) return { data: null, count: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } };
         const rows = tables[table] || [];
-        return ranged ? { data: rows.slice(range[0], range[1] + 1), error: null } : { data: rows, count: rows.length, error: null };
+        if (ranged) ranges[table] = (ranges[table] || 0) + 1;
+        return ranged ? { data: rows.slice(range[0], range[1] + 1), ...(wantCount ? { count: rows.length } : {}), error: null } : { data: rows, count: rows.length, error: null };
       };
       const chain = new Proxy({}, {
         get(_, prop) {
           if (prop === 'then') return (resolve, reject) => Promise.resolve(result()).then(resolve, reject);
+          if (prop === 'select') return (_cols, opts) => { wantCount = Boolean(opts && opts.count); return chain; };
           if (prop === 'range') return (a, b) => { ranged = true; range = [a, b]; return chain; };
           if (prop === 'insert') return async (row) => { inserts.push(row); return insertResults.shift() || { error: null }; };
           return () => chain;
@@ -92,4 +97,25 @@ test('saving an event: a missing table is quiet and not retried', async () => {
   assert.equal(await saveEvent(db, { kind: 'search', name: 'companies' }, { wait: async () => {}, log: (m) => logs.push(m) }), false);
   assert.equal(db.inserts.length, 1);
   assert.deepEqual(logs, []);
+});
+
+test('insights: a table is read in exactly as many requests as it has pages (no extra empty one)', async () => {
+  const many = Array.from({ length: 2500 }, (_, i) => ({ user_id: 'u1', kind: 'feature', name: 'call_tap', status: 200, ms: 5, result_count: null, detail: null, created_at: recent, id: i }));
+  const db = fakeDb({ app_users: users, app_events: many });
+  const out = await getInsights(db, null, { days: 28 });
+  assert.equal(out.eventsStatus, 'ok');
+  assert.equal(db.ranges.app_events, 3, '2,500 rows = pages of 1,000 + 1,000 + 500, and nothing after');
+});
+
+test('insights: running into the Cloudflare request limit is named plainly', async () => {
+  const db = fakeDb({ app_users: users, app_events: events });
+  const original = db.from.bind(db);
+  db.from = (table) => {
+    if (table !== 'call_taps') return original(table);
+    const chain = new Proxy({}, { get(_, prop) { return prop === 'then' ? (resolve) => resolve({ data: null, error: { message: 'Error: Too many subrequests by single Worker invocation.' } }) : () => chain; } });
+    return chain;
+  };
+  const out = await getInsights(db, null, { days: 28 });
+  const taps = out.problems.find((p) => p.source === 'phone taps');
+  assert.match(taps.message, /limit on requests per call.*shorter period/);
 });
