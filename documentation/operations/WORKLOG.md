@@ -2965,3 +2965,32 @@ leads grow, the longer periods will hit 50 again. Lasting fixes: the Workers Pai
 ### Safety Status
 
 No destructive command, secret change or production mutation.
+
+## 2026-10-27 — Errors fade after 5 days; suggestions can be marked done
+
+### Objective
+
+Insights errors older than five days should stop appearing, and admins should be able to mark suggestions done.
+
+### Actions Completed
+
+- Confirmed with the user's paste that the Insights page now loads real figures (1,104 failed requests listed,
+  the previous fix for Cloudflare's 50-request cap worked).
+- `worker/src/lib/insights.js`: the Errors list, its tab count and the "worth a look" line count only failed
+  requests from the last 5 days (`ERROR_DAYS`); older ones are not listed. The pill and text in
+  `docs/insights.js` follow.
+- Suggestions: `sql/055_suggestion_done.sql` adds nullable `done_at` / `done_by` (NOT run).
+  `worker/src/repos/suggestionsRepo.js` returns done / doneAt / doneBy and has `setSuggestionDone`;
+  `POST /admin/suggestions/done` (admin only). Before sql/055 the list still loads (all open) and the button
+  says which file to run. Insights and Home count only OPEN suggestions.
+- Admin page (`docs/app.js`, `index.html`, `style.css`): open suggestions first, done ones dimmed with who and
+  when, a "Mark done" / "Reopen" button on each row.
+- Tests: `worker/test/suggestionsDone.test.js` (8 new); 396 worker tests pass.
+
+### Database / System Result
+
+No Supabase change by the agent. sql/055 must be reviewed and run by hand. Worker and docs changes are not deployed yet.
+
+### Safety Status
+
+No destructive command, secret change or production mutation.

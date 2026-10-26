@@ -14,6 +14,8 @@ import { allCallEvents, noteKind, parseNoteLines, tapsToLines } from "./teamActi
 
 const DAY_MS = 86_400_000;
 const STALE_DAYS = 14;
+// Failed requests older than this drop off the Errors list: what was fixed or has gone quiet stops crowding out what is broken now.
+export const ERROR_DAYS = 5;
 const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
 const pct = (part, whole) => (whole ? Math.round((part / whole) * 100) : 0);
 const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -145,15 +147,16 @@ export function buildInsights({
   const bad = badNumbers.filter((b) => !b.cleared_at);
   const badRecent = bad.filter((b) => Date.parse(b.flagged_at) >= weekAgo).length;
   const disconnected = teamLeads.length - worked.length;
-  const recentSuggestions = suggestions.filter((s) => Date.parse(s.created_at) >= weekAgo).length;
-  const suggestionList = suggestions.slice(0, 8).map((s) => ({
+  const openSuggestions = suggestions.filter((s) => !s.done_at);
+  const recentSuggestions = openSuggestions.filter((s) => Date.parse(s.created_at) >= weekAgo).length;
+  const suggestionList = openSuggestions.slice(0, 8).map((s) => ({
     text: String(s.text || "").slice(0, 400), by: s.submitted_by_name || "", at: s.created_at,
   }));
 
   const friction = {
     badNumbers: { open: bad.length, wrong: bad.filter((b) => b.reason === "wrong").length, disconnected: bad.filter((b) => b.reason === "disconnected").length, last7: badRecent },
     disconnected: { count: disconnected, share: pct(disconnected, teamLeads.length) },
-    suggestions: { total: suggestions.length, last7: recentSuggestions, recent: suggestionList },
+    suggestions: { total: suggestions.length, open: openSuggestions.length, last7: recentSuggestions, recent: suggestionList },
     queues: {
       matchReviews: queues.matchReviews ?? null,
       providerChanges: queues.providerChanges ?? null,
@@ -163,7 +166,7 @@ export function buildInsights({
   };
 
   // ---- searches, features and errors from the event log (sql/046); null until it is installed ----
-  const usage = buildUsage(events, { superIds, team, sinceMs, weekAgo, nameOf, span });
+  const usage = buildUsage(events, { superIds, team, sinceMs, weekAgo, errorsSince: nowMs - ERROR_DAYS * DAY_MS, nameOf, span });
 
   // ---- what to look at next, in plain words --------------------------------
   const signals = [];
@@ -222,7 +225,7 @@ export function buildInsights({
   if (usage && usage.searches.total >= 10 && usage.searches.zeroShare >= 25) {
     add("warn", `${usage.searches.zeroShare}% of searches (${usage.searches.zero} of ${usage.searches.total}) found nothing. See which filters below: the defaults or the filter wording may need work.`);
   }
-  if (usage && usage.errors.last7) add("bad", `${plural(usage.errors.last7, "request")} failed in the last 7 days, affecting ${plural(usage.errors.people, "person", "people")}. Details below.`);
+  if (usage && usage.errors.total) add("bad", `${plural(usage.errors.total, "request")} failed in the last ${usage.errors.days} days, affecting ${plural(usage.errors.people, "person", "people")}. Details below.`);
   if (usage && team.length >= 3) {
     const unused = usage.features.filter((f) => !f.uses).map((f) => f.label.toLowerCase());
     if (unused.length) add("info", `Nobody used these in ${span} days: ${unused.slice(0, 5).join(", ")}${unused.length > 5 ? "…" : ""}. Either they're hard to find or nobody needs them.`);
@@ -254,7 +257,7 @@ const percentile = (sorted, q) => (sorted.length ? sorted[Math.min(sorted.length
 const SLOW_MS = 5000;
 
 // events: rows of public.app_events, or null when the table isn't installed.
-function buildUsage(events, { superIds, team, sinceMs, weekAgo, nameOf, span }) {
+function buildUsage(events, { superIds, team, sinceMs, weekAgo, errorsSince, nameOf, span }) {
   if (!Array.isArray(events)) return null;
   const mine = events.filter((e) => !superIds.has(e.user_id) && Date.parse(e.created_at) >= sinceMs);
 
@@ -278,7 +281,7 @@ function buildUsage(events, { superIds, team, sinceMs, weekAgo, nameOf, span }) 
     return { name: f.name, label: f.label, uses: rows.length, people: new Set(rows.map((e) => e.user_id)).size };
   }).sort((a, b) => b.uses - a.uses || a.label.localeCompare(b.label));
 
-  const errs = mine.filter((e) => e.kind === "error");
+  const errs = mine.filter((e) => e.kind === "error" && Date.parse(e.created_at) >= errorsSince);
   const errBy = new Map();
   for (const e of errs) {
     const key = `${e.name}|${e.status}`;
@@ -291,7 +294,6 @@ function buildUsage(events, { superIds, team, sinceMs, weekAgo, nameOf, span }) 
   }
   const errList = [...errBy.values()].sort((a, b) => b.count - a.count).slice(0, 10)
     .map((e) => ({ name: e.name, status: e.status, count: e.count, people: e.people.size, last: new Date(e.last).toISOString(), message: e.message }));
-  const recent = errs.filter((e) => Date.parse(e.created_at) >= weekAgo);
 
   return {
     total: mine.length,
@@ -305,7 +307,7 @@ function buildUsage(events, { superIds, team, sinceMs, weekAgo, nameOf, span }) 
       zeroTop,
     },
     features,
-    errors: { total: errs.length, last7: recent.length, people: new Set(recent.map((e) => e.user_id)).size, top: errList },
+    errors: { days: ERROR_DAYS, total: errs.length, people: new Set(errs.map((e) => e.user_id)).size, top: errList },
     span,
   };
 }

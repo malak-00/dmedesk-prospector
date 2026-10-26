@@ -50,7 +50,7 @@ test('summarises empty searches, feature use and errors, leaving the super admin
   assert.equal(u.searches.zeroTop[0].count, 2);
   assert.equal(u.features.find((f) => f.name === 'call_tap').uses, 1);
   assert.equal(u.features.find((f) => f.name === 'bad_number').uses, 0);
-  assert.equal(u.errors.last7, 1);
+  assert.equal(u.errors.total, 1);
   assert.equal(u.errors.top[0].message, 'timeout');
 });
 

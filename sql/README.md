@@ -47,6 +47,7 @@ Required manual sequence:
 044_remove_excluded_providers.sql   (batched permanent removal of flagged providers; dry run first, confirm phrase required)
 049_identity_keys_one_row.sql     (planner hint: identity_candidate_keys() returns one row, so the ownership check uses index lookups)
 054_owner_name_index.sql         (index on the authorized official's name, so opening a Prospect card's same-owner lookup stops scanning the whole table)
+055_suggestion_done.sql           (done_at / done_by on suggestions, so an admin can mark a suggestion done)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -120,6 +121,7 @@ in `003`); save their output with the run.
 | `044_remove_excluded_providers.sql` | Creates `remove_excluded_providers(dry_run, batch, confirm)`: permanently deletes keyword-flagged `npi_records` (plus their `npi_cms_enrichment`, `npi_identity_keys`, `lead_group_members` rows) in batches. Keeps any flagged provider with a lead, call, ownership event, claim request, or a shared identity group with a lead. No archive, no undo. Creating the function deletes nothing | **Not yet run. Nothing is removed until it is called with dry_run = false and the confirm phrase** |
 | `049_identity_keys_one_row.sql` | `ALTER FUNCTION identity_candidate_keys(jsonb) ROWS 1`: a planner estimate only. Function body, results, tables and data untouched; rerun-safe | **Run 2026-10-19 (at the user's request). `prorows` is now 1** |
 | `054_owner_name_index.sql` | Creates `idx_npi_records_official_name` (official last name, first name). No table or data changed; rerun-safe; about a second, briefly blocks writes to `npi_records` | **Not yet run. The same-owner lookup on a Prospect card keeps scanning the whole table and often times out** |
+| `055_suggestion_done.sql` | Adds nullable `done_at` and `done_by` to `suggestions`. Existing rows stay open; nothing dropped; rerun-safe | **Not yet run. Admin still lists suggestions, but "Mark done" says this file is needed** |
 
 ## Notes on individual files
 

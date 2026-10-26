@@ -701,21 +701,43 @@ function renderAdminStats(stats) {
   els.statSuggestions.textContent = stats.totalSuggestions;
 }
 
+// Open suggestions first, then the ones marked done (dimmed, with who and when), each with a button to flip it.
 function renderAdminSuggestions(suggestions) {
+  state.adminSuggestions = suggestions;
   if (suggestions.length === 0) {
-    els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">No suggestions yet.</td></tr>`;
+    els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="4">No suggestions yet.</td></tr>`;
     return;
   }
-  els.adminSuggestionsBody.innerHTML = suggestions
-    .map(
-      (s) => `
-    <tr>
+  const ordered = [...suggestions.filter((s) => !s.done), ...suggestions.filter((s) => s.done)];
+  els.adminSuggestionsBody.innerHTML = ordered
+    .map((s) => {
+      const doneNote = s.done
+        ? ` <small class="muted-note">Done${s.doneBy ? ` by ${escapeHtml(s.doneBy)}` : ""}${s.doneAt ? `, ${escapeHtml(String(s.doneAt).slice(0, 10))}` : ""}</small>`
+        : "";
+      return `
+    <tr class="${s.done ? "suggestion-done" : ""}">
       <td>${escapeHtml(s.submittedBy || "")}</td>
-      <td>${escapeHtml(s.text || "")}</td>
+      <td>${escapeHtml(s.text || "")}${doneNote}</td>
       <td class="mono">${escapeHtml((s.submittedAt || "").slice(0, 10))}</td>
-    </tr>`
-    )
+      <td><button type="button" class="btn btn-ghost btn-small" data-sug-done="${escapeHtml(String(s.id))}" data-done="${s.done ? "0" : "1"}">${s.done ? "Reopen" : "Mark done"}</button></td>
+    </tr>`;
+    })
     .join("");
+}
+
+async function toggleSuggestionDone(btn) {
+  const id = btn.dataset.sugDone;
+  const done = btn.dataset.done === "1";
+  btn.disabled = true;
+  try {
+    const result = await apiPost("admin/suggestions/done", { id, done });
+    const item = (state.adminSuggestions || []).find((x) => String(x.id) === String(id));
+    if (item) { item.done = result.done; item.doneAt = result.doneAt; item.doneBy = result.doneBy; }
+    renderAdminSuggestions(state.adminSuggestions || []);
+  } catch (err) {
+    showToast(err.message, true);
+    btn.disabled = false;
+  }
 }
 
 // ---- ownership conflicts (admin) ----------------------------------------
@@ -1339,7 +1361,7 @@ async function handleMatchReviewSubmit(event) {
 // throwing an error toast every 30s.
 async function loadAdminOverview(silent = false) {
   if (!silent) {
-    els.adminSuggestionsBody.innerHTML = skeletonRows(3, 3);
+    els.adminSuggestionsBody.innerHTML = skeletonRows(3, 4);
   }
   // Conflicts load in parallel and own their own error handling, so a
   // failure there (e.g. the identity schema isn't installed) degrades to a
@@ -1361,7 +1383,7 @@ async function loadAdminOverview(silent = false) {
       return;
     }
     showToast(err.message, true);
-    els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="3">Failed to load.</td></tr>`;
+    els.adminSuggestionsBody.innerHTML = `<tr class="empty-row"><td colspan="4">Failed to load.</td></tr>`;
   } finally {
     await Promise.all([conflictsLoaded, reviewsLoaded, providerChangesLoaded]);
   }
@@ -4777,6 +4799,10 @@ els.sendDisconnectedBtn.addEventListener("click", sendProspectToDisconnected);
 els.loginForm.addEventListener("submit", handleLogin);
 els.signOutBtn.addEventListener("click", handleSignOut);
 els.suggestBtn.addEventListener("click", openSuggestionBox);
+els.adminSuggestionsBody.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-sug-done]");
+  if (btn) toggleSuggestionDone(btn);
+});
 els.suggestionForm.addEventListener("submit", handleSuggestionSubmit);
 els.suggestionCancelBtn.addEventListener("click", closeSuggestionBox);
 els.suggestionOverlay.addEventListener("click", (e) => { if (e.target === els.suggestionOverlay) closeSuggestionBox(); });

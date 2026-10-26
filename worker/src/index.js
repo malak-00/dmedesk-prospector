@@ -568,6 +568,13 @@ app.post("/leads/book-meeting", async (c) => {
 
 // ---- suggestions / taxonomies ---------------------------------------------
 
+app.post("/admin/suggestions/done", async (c) => {
+  const session = c.get("session");
+  requireAdmin(session);
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(ok(await suggestionsRepo.setSuggestionDone(supabaseFor(c), session, body.id, body.done !== false)));
+});
+
 app.post("/suggestions/submit", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const data = await suggestionsRepo.addSuggestion(supabaseFor(c), body.text, c.get("session"));

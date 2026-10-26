@@ -357,8 +357,8 @@
 
   function errorList(u) {
     if (!u) return noEvents();
-    if (!u.errors.total) return `<p class="ins-note ins-allgood">No failed requests in this period.</p>`;
-    return `<p class="ins-note">${num(u.errors.total)} failed, ${num(u.errors.last7)} in the last 7 days.</p>
+    if (!u.errors.total) return `<p class="ins-note ins-allgood">No failed requests in the last ${u.errors.days} days.</p>`;
+    return `<p class="ins-note">${num(u.errors.total)} failed in the last ${u.errors.days} days (older ones are not listed).</p>
       ${table(
         [{ label: "Request" }, { label: "Status" }, { label: "Times", num: 1 }, { label: "People", num: 1 }, { label: "Last seen" }, { label: "Message" }],
         u.errors.top.map((e) => [esc(e.name), esc(e.status), num(e.count), num(e.people), esc(ago(e.last)), esc(e.message)]),
@@ -421,7 +421,7 @@
 
       ${problemBanner(d.problems)}
 
-      <div class="admin-seg ins-tabs" role="tablist" aria-label="Insight sections">${TABS.map(([k, label]) => `<button type="button" class="admin-seg-btn${k === tab ? " is-active" : ""}" role="tab" data-ins-tab="${k}" aria-selected="${k === tab}">${label}${k === "quality" && d.usage && d.usage.errors.last7 ? ` <span class="ins-pill">${d.usage.errors.last7}</span>` : ""}${k === "people" && (d.nudges || []).length ? ` <span class="ins-pill">${d.nudges.length}</span>` : ""}</button>`).join("")}</div>
+      <div class="admin-seg ins-tabs" role="tablist" aria-label="Insight sections">${TABS.map(([k, label]) => `<button type="button" class="admin-seg-btn${k === tab ? " is-active" : ""}" role="tab" data-ins-tab="${k}" aria-selected="${k === tab}">${label}${k === "quality" && d.usage && d.usage.errors.total ? ` <span class="ins-pill">${d.usage.errors.total}</span>` : ""}${k === "people" && (d.nudges || []).length ? ` <span class="ins-pill">${d.nudges.length}</span>` : ""}</button>`).join("")}</div>
 
       ${pane("overview", `
         <section class="ins-card ins-signals" aria-label="What to look at"><h3>Worth a look</h3>
@@ -434,7 +434,7 @@
           ${kpi("Meetings held", num(held ? held.count : 0), held ? `${pct(held.ofClaimed)} of claimed` : "")}
         </div>
         ${sec("Activity per day", chart(d.adoption.daily))}
-        ${sec("What the team is asking for", `<p class="ins-note">${num(fr.suggestions.total)} suggestion${fr.suggestions.total === 1 ? "" : "s"}, ${num(fr.suggestions.last7)} this week. <button type="button" class="link-btn" data-goto="admin" data-section="queues">Read and act on them in Admin</button>.</p>`)}`)}
+        ${sec("What the team is asking for", `<p class="ins-note">${num(fr.suggestions.open)} open suggestion${fr.suggestions.open === 1 ? "" : "s"} (${num(fr.suggestions.last7)} this week), ${num(fr.suggestions.total - fr.suggestions.open)} done. <button type="button" class="link-btn" data-goto="admin" data-section="queues">Read and act on them in Admin</button>.</p>`)}`)}
 
       ${pane("people", `
         ${sec("People", people(d.adoption.people))}

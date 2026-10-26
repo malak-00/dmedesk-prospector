@@ -1041,6 +1041,16 @@ async function tryCount(factory, context = "", problems = null) {
   }
 }
 
+// Suggestions with their done flag (sql/055). Before that file is run the column is missing: read them without it
+// (all open) and say nothing, since that is expected rather than a failure.
+async function readSuggestionRows(supabase, problems) {
+  const read = (columns, list) => tryRows(() => supabase.from("suggestions").select(columns, { count: "exact" }).order("created_at", { ascending: false }), "suggestions", true, list);
+  const trial = [];
+  const withDone = await read("id, text, submitted_by, created_at, done_at", trial);
+  if (!trial.length) return withDone;
+  return read("id, text, submitted_by, created_at", problems);
+}
+
 export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
   const span = Math.min(Math.max(Math.round(Number(days)) || 28, 7), 90);
   const since = new Date(Date.now() - (span + 1) * 86_400_000).toISOString();
@@ -1058,7 +1068,7 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
     tryRows(() => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at", { count: "exact" }).eq("event_type", "claimed").gte("created_at", since), "claim history", true, problems),
     tryRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at", { count: "exact" }).gte("tapped_at", since), "phone taps", true, problems),
     tryRows(() => supabase.from("leads").select("npi, company_name, claimed_by, claimed_at, is_disconnected, notes, reminder_at, meeting_at, status, specialty, state", { count: "exact" }).not("claimed_by", "is", null), "leads", true, problems),
-    tryRows(() => supabase.from("suggestions").select("id, text, submitted_by, created_at", { count: "exact" }).order("created_at", { ascending: false }), "suggestions", true, problems),
+    readSuggestionRows(supabase, problems),
     tryRows(() => supabase.from("bad_numbers").select("reason, flagged_at, cleared_at", { count: "exact" }), "bad numbers", true, problems),
     tryRows(() => supabase.from("search_progress").select("user_id, updated_at", { count: "exact" }), "search activity", false, problems),
     tryCount(() => supabase.from("identity_review_queue").select("*", { count: "exact", head: true }), "possible duplicates", problems),
