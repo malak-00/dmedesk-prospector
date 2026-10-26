@@ -18,7 +18,10 @@ test('quiet days count from the last activity, and are blank when something is s
 });
 
 test('the claimed lead carries its quiet days', () => {
-  const dto = toLeadDTO({ npi: '1234567890', status: 'voicemail', status_updated_at: day(30), claimed_at: day(50), notes: '' }, 'Ana');
+  // toLeadDTO reads the real clock, so these dates are counted back from it, not from the fixed NOW above
+  // (with NOW it only passed within two days of 2026-10-21).
+  const ago = (n) => new Date(Date.now() - n * 86_400_000).toISOString();
+  const dto = toLeadDTO({ npi: '1234567890', status: 'voicemail', status_updated_at: ago(30), claimed_at: ago(50), notes: '' }, 'Ana');
   assert.ok(dto.quietDays >= 29 && dto.quietDays <= 31);
 });
 

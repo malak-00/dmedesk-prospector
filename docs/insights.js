@@ -315,9 +315,21 @@
   }
 
   const NOT_COLLECTING = `<p class="ins-empty">Not collecting yet. Run sql/046_app_events.sql in Supabase, then this fills in as people use the app.</p>`;
+  const COULD_NOT_LOAD = `<p class="ins-note ins-warn-note"><strong>Couldn't load the event log just now.</strong> This is not "nothing happened": searches, feature use and errors are missing from this view. Press Refresh to try again.</p>`;
+  // Set at the start of each render: whether the event log was read ("ok"), isn't installed, or failed to load.
+  let eventsStatus = "ok";
+  const noEvents = () => (eventsStatus === "failed" ? COULD_NOT_LOAD : NOT_COLLECTING);
+
+  // Parts of the page that could not be read this time. They are empty, not zero.
+  function problemBanner(problems) {
+    const list = (problems || []).filter((p) => p && p.source);
+    if (!list.length) return "";
+    const names = [...new Set(list.map((p) => p.source))];
+    return `<p class="ins-note ins-warn-note" role="alert"><strong>Some numbers could not be loaded just now:</strong> ${esc(names.join(", "))}. They are missing from this view, not zero. Press Refresh to try again.</p>`;
+  }
 
   function searchQuality(u) {
-    if (!u) return NOT_COLLECTING;
+    if (!u) return noEvents();
     const s = u.searches;
     if (!s.total) return `<p class="ins-empty">No searches recorded in this period yet.</p>`;
     const sec = (ms) => (ms === null ? "n/a" : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
@@ -331,7 +343,7 @@
   }
 
   function featureUsage(u) {
-    if (!u) return NOT_COLLECTING;
+    if (!u) return noEvents();
     const used = u.features.filter((f) => f.uses);
     const unused = u.features.filter((f) => !f.uses);
     const max = Math.max(1, ...used.map((f) => f.uses));
@@ -343,7 +355,7 @@
   }
 
   function errorList(u) {
-    if (!u) return NOT_COLLECTING;
+    if (!u) return noEvents();
     if (!u.errors.total) return `<p class="ins-note ins-allgood">No failed requests in this period.</p>`;
     return `<p class="ins-note">${num(u.errors.total)} failed, ${num(u.errors.last7)} in the last 7 days.</p>
       ${table(
@@ -379,6 +391,7 @@
       return;
     }
     const d = data;
+    eventsStatus = d.eventsStatus || "ok";
     const p = d.pipeline;
     const fr = d.friction;
     const taps = d.adoption.daily.reduce((n, x) => n + x.dials, 0);
@@ -404,6 +417,8 @@
           <button type="button" class="btn btn-ghost btn-small" data-ins="reload"${loading ? " disabled" : ""}>${loading ? "Refreshing…" : "Refresh"}</button>
         </div>
       </div>
+
+      ${problemBanner(d.problems)}
 
       <div class="admin-seg ins-tabs" role="tablist" aria-label="Insight sections">${TABS.map(([k, label]) => `<button type="button" class="admin-seg-btn${k === tab ? " is-active" : ""}" role="tab" data-ins-tab="${k}" aria-selected="${k === tab}">${label}${k === "quality" && d.usage && d.usage.errors.last7 ? ` <span class="ins-pill">${d.usage.errors.last7}</span>` : ""}${k === "people" && (d.nudges || []).length ? ` <span class="ins-pill">${d.nudges.length}</span>` : ""}</button>`).join("")}</div>
 

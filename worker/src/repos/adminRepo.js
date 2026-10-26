@@ -1004,18 +1004,30 @@ export async function applyStatusMerges(supabase, merges) {
 // ---- App insights (super admin) ---------------------------------------------------------
 // Everything the dashboard shows, from what the app already records. Each source is best
 // effort: one that is missing or slow leaves its part empty instead of failing the page.
-async function tryRows(factory, context, byId = true) {
+// A source that can't be read leaves its part empty, but it is no longer SILENT about it: the reason is added to
+// `problems`, which the dashboard shows, so an empty list can't pass for "nothing happened".
+async function tryRows(factory, context, byId = true, problems = null) {
   try { return await fetchAllRows(factory, context, byId); } catch (err) {
     console.log(`[adminRepo] insights: ${context} unavailable: ${err.message}`);
+    if (problems) problems.push({ source: context, message: String(err.message || "").slice(0, 160) });
     return [];
   }
 }
 
-async function tryCount(factory) {
+// null = could not count. A table that isn't installed yet is not a problem; anything else is reported.
+async function tryCount(factory, context = "", problems = null) {
   try {
     const { count, error } = await factory();
-    return error ? null : count || 0;
-  } catch { return null; }
+    if (error) {
+      const missing = error.code === "42P01" || error.code === "PGRST205" || /does not exist|schema cache/i.test(error.message || "");
+      if (problems && !missing) problems.push({ source: context, message: String(error.message || "").slice(0, 160) });
+      return null;
+    }
+    return count || 0;
+  } catch (err) {
+    if (problems) problems.push({ source: context, message: String(err.message || "").slice(0, 160) });
+    return null;
+  }
 }
 
 export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
@@ -1030,24 +1042,42 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
   if (!users.length) throw httpError(500, "Failed to load users for the insights");
   const nameById = new Map(users.map((u) => [u.id, u.display_name || u.username]));
 
+  const problems = [];
   const [claimEvents, taps, leads, suggestionRows, badNumbers, searches, matchReviews, providerChanges, sentNotes, eventsProbe, callRecords, intel] = await Promise.all([
-    tryRows(() => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at").eq("event_type", "claimed").gte("created_at", since), "claim history"),
-    tryRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at").gte("tapped_at", since), "phone taps"),
-    tryRows(() => supabase.from("leads").select("npi, company_name, claimed_by, claimed_at, is_disconnected, notes, reminder_at, meeting_at, status, specialty, state").not("claimed_by", "is", null), "leads"),
-    tryRows(() => supabase.from("suggestions").select("id, text, submitted_by, created_at").order("created_at", { ascending: false }), "suggestions"),
-    tryRows(() => supabase.from("bad_numbers").select("reason, flagged_at, cleared_at"), "bad numbers"),
-    tryRows(() => supabase.from("search_progress").select("user_id, updated_at"), "search activity", false),
-    tryCount(() => supabase.from("identity_review_queue").select("*", { count: "exact", head: true })),
-    tryCount(() => supabase.from("provider_change_queue").select("*", { count: "exact", head: true })),
-    tryRows(() => supabase.from("buddy_notes").select("to_user_id, body, created_at").not("to_user_id", "is", null).gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString()), "sent notes"),
-    tryCount(() => supabase.from("app_events").select("*", { count: "exact", head: true })),
+    tryRows(() => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at").eq("event_type", "claimed").gte("created_at", since), "claim history", true, problems),
+    tryRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at").gte("tapped_at", since), "phone taps", true, problems),
+    tryRows(() => supabase.from("leads").select("npi, company_name, claimed_by, claimed_at, is_disconnected, notes, reminder_at, meeting_at, status, specialty, state").not("claimed_by", "is", null), "leads", true, problems),
+    tryRows(() => supabase.from("suggestions").select("id, text, submitted_by, created_at").order("created_at", { ascending: false }), "suggestions", true, problems),
+    tryRows(() => supabase.from("bad_numbers").select("reason, flagged_at, cleared_at"), "bad numbers", true, problems),
+    tryRows(() => supabase.from("search_progress").select("user_id, updated_at"), "search activity", false, problems),
+    tryCount(() => supabase.from("identity_review_queue").select("*", { count: "exact", head: true }), "possible duplicates", problems),
+    tryCount(() => supabase.from("provider_change_queue").select("*", { count: "exact", head: true }), "provider changes", problems),
+    tryRows(() => supabase.from("buddy_notes").select("to_user_id, body, created_at").not("to_user_id", "is", null).gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString()), "sent notes", true, problems),
+    tryCount(() => supabase.from("app_events").select("*", { count: "exact", head: true }), "event log", problems),
     // sql/050: why leads said no. Empty until that file is run.
     // sql/053: the phone system's calls in the period. Empty until that file is run and a log is imported.
-    tryRows(() => supabase.from("call_records").select("called_at, agent, duration_sec, disposition").gte("called_at", since), "phone system calls", false).then((rows) => rows),
-    tryRows(() => supabase.from("lead_intel").select("npi, objection, current_biller").or("objection.not.is.null,current_biller.not.is.null"), "call intel", false),
+    tryRows(() => supabase.from("call_records").select("called_at, agent, duration_sec, disposition").gte("called_at", since), "phone system calls", false, problems),
+    tryRows(() => supabase.from("lead_intel").select("npi, objection, current_biller").or("objection.not.is.null,current_biller.not.is.null"), "call intel", false, problems),
   ]);
-  // null = sql/046 isn't installed; the dashboard then says events aren't being collected yet.
-  const appEvents = eventsProbe === null ? null : await tryRows(() => supabase.from("app_events").select("user_id, kind, name, status, ms, result_count, detail, created_at").gte("created_at", since).order("created_at", { ascending: false }), "events");
+  // 'not_installed' = sql/046 isn't there (the dashboard says events aren't being collected yet); 'failed' = it is, but
+  // could not be read just now (the dashboard says so, instead of showing "no errors"); 'ok' otherwise.
+  // Read in id order, which never moves while events keep arriving; newest-first paging shifted under the reader.
+  let appEvents = null;
+  let eventsStatus = "not_installed";
+  if (eventsProbe === null) {
+    if (problems.some((p) => p.source === "event log")) eventsStatus = "failed";
+  } else {
+    const read = () => fetchAllRows(() => supabase.from("app_events").select("user_id, kind, name, status, ms, result_count, detail, created_at").gte("created_at", since), "events", true);
+    try {
+      try { appEvents = await read(); } catch { await new Promise((resolve) => setTimeout(resolve, 500)); appEvents = await read(); }
+      eventsStatus = "ok";
+    } catch (err) {
+      console.log(`[adminRepo] insights: events unavailable: ${err.message}`);
+      problems.push({ source: "event log", message: String(err.message || "").slice(0, 160) });
+      appEvents = null;
+      eventsStatus = "failed";
+    }
+  }
 
   const out = buildInsights({
     users, claimEvents, taps, leads, badNumbers, searches,
@@ -1055,6 +1085,8 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
     queues: { matchReviews, providerChanges },
     system: systemInfo, days: span, events: appEvents, intel, callRecords,
   });
+  out.problems = problems;
+  out.eventsStatus = eventsStatus;
   // When each person last got a note, so the dashboard doesn't invite sending a second one on top.
   const lastNote = new Map();
   for (const n of sentNotes) {

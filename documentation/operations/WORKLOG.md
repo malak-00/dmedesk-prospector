@@ -2891,3 +2891,44 @@ No Supabase or Google change was made by the agent. Worker change NOT deployed y
 ### Safety Status
 
 No destructive command, secret change or production mutation.
+
+## 2026-10-26 — App insights no longer shows "no errors" when it couldn't look
+
+### Objective
+
+The App insights page showed no errors although users were getting them, and its
+numbers looked wrong.
+
+### Actions Completed
+
+- Found three ways the page could be wrong without saying so (could not check the
+  live database: the Supabase connection no longer lists this project):
+  1. `adminRepo.tryRows` turned any failed read (an 8 s statement timeout on a busy
+     database, with ~12 sources read at once) into an empty list, and the page printed
+     "No failed requests in this period" or zeros from it.
+  2. Event rows were written with `.insert(row).then(() => {}, () => {})`, but the
+     Supabase client returns a failure as `{ error }` instead of rejecting, so a
+     write that timed out was dropped silently, mostly when the database was busiest.
+  3. The events were read newest-first with offset paging, so events arriving during
+     the read shifted the pages (duplicates and misses).
+- `worker/src/repos/adminRepo.js` getInsights: failed reads are collected in
+  `problems`; the event log reports `eventsStatus` ("ok", "not_installed" or "failed",
+  one retry before failing); events are read in id order. `worker/src/lib/events.js`
+  `saveEvent`: checks the result, retries once, logs if it still fails
+  (`wrangler tail` shows "[events] could not save ..."); used by `worker/src/index.js`.
+- `docs/insights.js`: a banner names any section that could not be loaded ("missing,
+  not zero"); the event sections say "Couldn't load the event log just now" instead
+  of "No failed requests" / "Not collecting yet". Cache versions: insights.js 12, style.css 108.
+- Tests: `worker/test/insightsHealth.test.js` (7). Fixed a time bomb in
+  `worker/test/reassign.test.js` ("the claimed lead carries its quiet days" used a
+  fixed date but the code reads the real clock, so it failed from 2026-10-24).
+  386 worker tests pass.
+
+### Database / System Result
+
+No Supabase change. Worker and frontend changes are NOT deployed yet. Events lost
+before this change cannot be recovered.
+
+### Safety Status
+
+No destructive command, secret change or production mutation.

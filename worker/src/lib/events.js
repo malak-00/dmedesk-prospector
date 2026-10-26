@@ -70,3 +70,22 @@ export function buildEvent({ method, path, status, ms, userId, query = {}, resul
 }
 
 export const isSearchRoute = (method, path) => SEARCHES.has(`${String(method || "").toUpperCase()} ${path}`);
+
+// Writes one event row and reports what happened. The Supabase client returns a failure as `{ error }` instead of
+// throwing, and the write used to ignore it, so a write that timed out (when the database is busiest, which is
+// exactly when the errors worth recording happen) vanished without a trace. It is now tried twice and, if it still
+// fails, logged. A table that isn't installed (sql/046 not run) is not worth a log line. Never throws.
+export async function saveEvent(supabase, row, { wait = (ms) => new Promise((r) => setTimeout(r, ms)), log = console.log } = {}) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const { error } = await supabase.from("app_events").insert(row);
+      if (!error) return true;
+      if (error.code === "42P01" || error.code === "PGRST205" || /does not exist|schema cache/i.test(error.message || "")) return false;
+      if (attempt === 2) log(`[events] could not save ${row.kind} ${row.name}: ${error.message}`);
+    } catch (err) {
+      if (attempt === 2) log(`[events] could not save ${row.kind} ${row.name}: ${err.message}`);
+    }
+    if (attempt === 1) await wait(300);
+  }
+  return false;
+}

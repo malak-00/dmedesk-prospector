@@ -48,7 +48,7 @@ import { loadUserFlags, applyUserFlags } from "./lib/userGate.js";
 import { readAdvancedCriteria, usesAdvancedSearch } from "./lib/searchFilters.js";
 import { parseListParams } from "./lib/leadView.js";
 import { applySourceTrial, SOURCE_HEADER } from "./lib/sourceTrial.js";
-import { buildEvent, isSearchRoute } from "./lib/events.js";
+import { buildEvent, isSearchRoute, saveEvent } from "./lib/events.js";
 
 const app = new Hono();
 
@@ -121,7 +121,7 @@ app.use("*", async (c, next) => {
     }
     const row = buildEvent({ method: c.req.method, path: url.pathname, status, ms: Date.now() - started, userId: session.id, query: url.searchParams, resultCount, errorMessage });
     if (!row) return;
-    const write = getSupabase(c.get("config")).from("app_events").insert(row).then(() => {}, () => {});
+    const write = saveEvent(getSupabase(c.get("config")), row);
     try { c.executionCtx.waitUntil(write); } catch { /* no execution context (tests): the write simply runs on its own */ }
   } catch { /* logging must never break a request */ }
 });
