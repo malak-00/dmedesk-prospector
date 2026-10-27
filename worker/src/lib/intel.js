@@ -3,6 +3,9 @@
 
 export const OBJECTIONS = ["price", "in-house", "happy with current", "bad timing", "not the decision maker", "no need", "other"];
 
+// Why a lead signed (sql/056), asked when it is marked onboarded.
+export const WIN_REASONS = ["savings", "trust", "bad experience", "growth", "compliance", "timing", "other"];
+
 export const TEXT_FIELDS = {
   current_biller: 80,
   gatekeeper: 80,
@@ -31,6 +34,11 @@ export function cleanIntel(input = {}, now = Date.now()) {
     if (column === "direct_line" && value && !/^[\d\s().+\-x#]{7,30}$/i.test(value)) return { error: "That doesn't look like a phone number." };
     patch[column] = value || null;
   }
+  if ("winReason" in input) {
+    const value = clean(input.winReason).toLowerCase();
+    if (value && !WIN_REASONS.includes(value)) return { error: "Pick one of the listed reasons." };
+    patch.win_reason = value || null;
+  }
   if ("followUpAt" in input) {
     const day = clean(input.followUpAt);
     if (day) {
@@ -46,7 +54,7 @@ export function cleanIntel(input = {}, now = Date.now()) {
 
 // Row -> what the browser gets.
 export function shapeIntel(row, userName) {
-  if (!row) return { currentBiller: "", gatekeeper: "", directLine: "", email: "", patientVolume: "", objection: "", followUpAt: "", updatedBy: "", updatedAt: "" };
+  if (!row) return { currentBiller: "", gatekeeper: "", directLine: "", email: "", patientVolume: "", objection: "", winReason: "", followUpAt: "", updatedBy: "", updatedAt: "" };
   return {
     currentBiller: row.current_biller || "",
     gatekeeper: row.gatekeeper || "",
@@ -54,6 +62,7 @@ export function shapeIntel(row, userName) {
     email: row.email || "",
     patientVolume: row.patient_volume || "",
     objection: row.objection || "",
+    winReason: row.win_reason || "",
     followUpAt: row.follow_up_at ? String(row.follow_up_at).slice(0, 10) : "",
     updatedBy: userName || "",
     updatedAt: row.updated_at || "",
@@ -98,4 +107,27 @@ export function billerCounts(rows, limit = 10) {
     }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
     .slice(0, limit);
+}
+
+// Why leads signed, most common first (rows from lead_intel with a win_reason).
+export function winReasonCounts(rows) {
+  const counts = new Map();
+  for (const r of rows || []) {
+    if (r && r.win_reason) counts.set(r.win_reason, (counts.get(r.win_reason) || 0) + 1);
+  }
+  return [...counts.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
+}
+
+// What reps have heard on calls in one state: the most common objections and the billers they are up against.
+// rows: lead_intel rows ({ npi, objection, current_biller }); stateByNpi: Map npi -> "FL". Needs at least
+// MIN_PATTERN_ROWS calls in the state, so one lucky call does not read as a pattern.
+export const MIN_PATTERN_ROWS = 3;
+export function statePattern(rows, stateByNpi, state) {
+  const wanted = String(state || "").toUpperCase();
+  const inState = (rows || []).filter((r) => r && stateByNpi.get(String(r.npi)) === wanted);
+  if (inState.length < MIN_PATTERN_ROWS) return null;
+  const objections = objectionCounts(inState).slice(0, 3);
+  const billers = billerCounts(inState, 3).map((b) => ({ name: b.name, inHouse: b.inHouse, count: b.count }));
+  const withObjection = inState.filter((r) => r.objection).length;
+  return { state: wanted, calls: inState.length, withObjection, objections, billers };
 }

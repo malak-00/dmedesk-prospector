@@ -119,6 +119,61 @@
     }
   }
 
+  const dayText = (iso) => { const t = Date.parse(iso); return Number.isNaN(t) ? "" : `${MONTHS[new Date(t).getUTCMonth()]} ${new Date(t).getUTCDate()}, ${new Date(t).getUTCFullYear()}`; };
+
+  // Medicare enrollment (from /companies/product-mix, "enrollment"): is the supplier enrolled, since when, as what.
+  function describeEnrollment(e) {
+    if (!e) return null;
+    if (!e.enrolled) return { tone: "low", label: "Enrolled", text: "Not in Medicare's enrollment file", title: "CMS's public enrollment file has no record of this NPI. It may not bill Medicare, or its enrollment ended." };
+    const year = e.since ? e.since.slice(0, 4) : "";
+    const type = (e.types && e.types[0]) || "";
+    return {
+      tone: e.dme ? "none" : "mid",
+      label: "Enrolled",
+      text: `${year ? `Since ${year}` : "With Medicare"}${type ? `: ${type}` : ""}`,
+      title: `Medicare enrollment${e.since ? ` first created ${dayText(e.since)}` : ""}${e.types && e.types.length ? `. Enrolled as: ${e.types.join("; ")}` : ""}${e.dme ? "" : ". Not enrolled as a DME supplier, so check what they actually sell."}`,
+    };
+  }
+
+  // Product categories that grew or shrank since the year before (from "shifts").
+  function describeShifts(shifts) {
+    if (!shifts || !Array.isArray(shifts.moves) || !shifts.moves.length) return null;
+    const lines = shifts.moves.map((m) => {
+      if (m.kind === "new") return `${m.name}: new (${money(m.to)})`;
+      if (m.kind === "dropped") return `${m.name}: stopped (was ${money(m.from)})`;
+      const pct = Math.round(Math.abs(m.change) * 100);
+      return `${m.name} ${m.kind === "up" ? "up" : "down"} ${pct}% (${money(m.from)} → ${money(m.to)})`;
+    });
+    return { lines, text: lines.join("; "), year: shifts.year, previousYear: shifts.previousYear };
+  }
+
+  // Who last touched the lead (from /leads/last-touch). Recent contact is worth a look before dialing.
+  function describeTouch(touch, now) {
+    if (!touch || !touch.at) return null;
+    const t = Date.parse(touch.at);
+    if (Number.isNaN(t)) return null;
+    const days = Math.floor(((now != null ? now : Date.now()) - t) / 86400000);
+    return {
+      tone: days <= 14 ? "mid" : "none",
+      label: "Last touched",
+      text: `${dayText(touch.at)}${touch.by ? ` by ${touch.by}` : ""}`,
+      title: `${touch.by || "Someone"} ${touch.text || "touched it"}${days <= 14 ? ". Recent: check the notes before calling." : ""}`,
+      days,
+    };
+  }
+
+  // What reps have heard in this state (from /companies/state-pattern).
+  function describeStatePattern(p) {
+    if (!p || !p.calls) return null;
+    const top = (p.objections || [])[0];
+    const parts = [];
+    if (top) parts.push(`the objection heard most is "${top.reason}" (${top.count} of ${p.withObjection})`);
+    const billers = (p.billers || []).slice(0, 2).map((b) => `${b.name} (${b.count})`);
+    if (billers.length) parts.push(`billers reps meet: ${billers.join(", ")}`);
+    if (!parts.length) return null;
+    return { state: p.state, calls: p.calls, text: `In ${p.state}, across ${p.calls} lead${p.calls === 1 ? "" : "s"} with call notes, ${parts.join("; ")}.` };
+  }
+
   // Rental share and urban/rural, from the same CMS rows as the mix.
   function describeTraits(mix) {
     const out = [];
@@ -132,7 +187,7 @@
     return out;
   }
 
-  const api = { buildWhyCall, describeMix, describeTrend, describeTraits, money };
+  const api = { buildWhyCall, describeMix, describeTrend, describeTraits, describeEnrollment, describeShifts, describeTouch, describeStatePattern, money };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
   root.dmeWhyCall = api;
 
@@ -154,6 +209,8 @@
       ${items.length ? `<div class="why-chips">${items.map((it) =>
         `<span class="why-chip why-${it.tone}" title="${esc(it.title)}"><span class="why-label">${esc(it.label)}</span>${esc(it.text)}</span>`).join("")}</div>` : ""}
       <div class="why-mix" data-mix-npi="${esc(company && company.npi)}"${compact ? ' data-compact="1"' : ""} hidden></div>
+      <div class="why-touch" data-touch-npi="${esc(company && company.npi)}" hidden></div>
+      <div class="why-state why-same" data-state-npi="${esc(company && company.npi)}" hidden></div>
       <div class="why-same" data-same-npi="${esc(company && company.npi)}" hidden></div>
       <div class="why-owner why-same" data-owner-npi="${esc(company && company.npi)}" hidden></div>
       ${prior ? `<div class="why-prior"><strong>Contacted before.</strong> ${esc(prior.text)}${prior.note ? `<span class="why-prior-note">${esc(prior.note)}</span>` : ""}</div>` : ""}
@@ -179,6 +236,8 @@
       chips.push({ tone: d.fit ? "high" : "none", label: "Fit", text: d.fit ? labels : `Not in your verticals (${String(data.mix.categories[0].name).toLowerCase()})`, title: d.lead });
     }
     if (trend) chips.push({ tone: trend.tone, label: "Trend", text: trend.short, title: trend.title });
+    const enrolled = describeEnrollment(data && data.enrollment);
+    if (enrolled && enrolled.tone === "low") chips.push(enrolled);
     return chips.map((c) => `<span class="why-chip why-${c.tone}" title="${esc(c.title || "")}"><span class="why-label">${esc(c.label)}</span>${esc(c.text)}</span>`).join("");
   }
 
@@ -187,6 +246,8 @@
   const sameCache = new Map();
   const ownerCache = new Map();
   const mixCache = new Map();
+  const touchCache = new Map();
+  const stateCache = new Map();
 
   function sameHtml(data, box) {
     if (!data || !data.matches || !data.matches.length) return "";
@@ -199,6 +260,17 @@
         <span class="why-same-meta">${esc([m.suite, m.specialty, m.phone].filter(Boolean).join(" · "))}</span>
         ${m.claimedBy ? `<span class="why-same-tag why-same-held" title="${esc(m.status ? "Status: " + m.status : "Already claimed")}">Claimed by ${esc(m.claimedBy)}</span>` : '<span class="why-same-tag">Not claimed</span>'}
       </li>`).join("")}</ul>`;
+  }
+
+  function touchHtml(data) {
+    const t = describeTouch(data && data.touch);
+    if (!t) return "";
+    return `<div class="why-same-head"><span class="why-chip why-${t.tone}" title="${esc(t.title)}"><span class="why-label">${esc(t.label)}</span>${esc(t.text)}</span></div>`;
+  }
+
+  function stateHtml(data) {
+    const p = describeStatePattern(data && data.pattern);
+    return p ? `<div class="why-same-head"><strong>Local pattern</strong> <span>${esc(p.text)}</span></div>` : "";
   }
 
   function ownerHtml(data, box) {
@@ -218,11 +290,13 @@
     const mix = data && data.mix;
     const d = describeMix(mix);
     const trend = describeTrend(data && data.trend);
-    if (!d && !trend) return "";
+    if (!d && !trend && !(data && data.enrollment)) return "";
     const compact = box && box.dataset.compact;
     const chips = [];
     if (d) chips.push({ tone: d.fit ? "high" : "none", label: "Fit", text: d.lead, title: "Based on what they bill Medicare for" });
     if (trend) chips.push(trend);
+    const enrolled = describeEnrollment(data && data.enrollment);
+    if (enrolled) chips.push(enrolled);
     describeTraits(mix).forEach((t) => chips.push({ tone: "none", ...t }));
     const chipHtml = chips.map((c) => `<span class="why-chip why-${c.tone}" title="${esc(c.title || "")}"><span class="why-label">${esc(c.label)}</span>${esc(c.text)}</span>`).join("");
     let body = "";
@@ -236,20 +310,22 @@
         body += `<div class="why-mix-top">Mostly ${esc(d.bars.slice(0, 2).map((b) => `${b.name.toLowerCase()} ${b.pct}%`).join(", "))}</div>`;
       }
     }
+    const shifts = describeShifts(data && data.shifts);
+    if (shifts) body += `<div class="why-mix-top"><strong>${esc(shifts.previousYear)} to ${esc(shifts.year)}:</strong> ${esc(shifts.text)}</div>`;
     return `<div class="why-mix-head"><strong>What they bill Medicare for</strong> <span>${esc((d && d.year) || "")} data, estimated from CMS</span></div>
       <div class="why-chips why-mix-chips">${chipHtml}</div>${body}`;
   }
 
-  async function loadInto(cache, path, npi, params, kind, toHtml, pick) {
+  async function loadInto(cache, path, npi, params, kind, toHtml, pick, cacheKey = npi) {
     try {
-      if (!cache.has(npi)) cache.set(npi, apiGet(path, params));
-      const data = pick(await cache.get(npi));
+      if (!cache.has(cacheKey)) cache.set(cacheKey, apiGet(path, params));
+      const data = pick(await cache.get(cacheKey));
       document.querySelectorAll(`.why-${kind}[data-${kind}-npi="${npi}"]`).forEach((box) => {
         const html = toHtml(data, box);
         if (html) { box.innerHTML = html; box.hidden = false; }
       });
     } catch (err) {
-      cache.delete(npi);
+      cache.delete(cacheKey);
       console.log(`[whycall] ${path}: ${err.message}`);
     }
   }
@@ -263,5 +339,8 @@
     loadInto(mixCache, "companies/product-mix", npi, { npi }, "snap", snapHtml, (d) => d);
     loadInto(sameCache, "companies/same-address", npi, { npi, exclude }, "same", sameHtml, (d) => d);
     loadInto(ownerCache, "companies/same-owner", npi, { npi, exclude }, "owner", ownerHtml, (d) => d);
+    loadInto(touchCache, "leads/last-touch", npi, { npi }, "touch", touchHtml, (d) => d);
+    const place = company.address && company.address.state;
+    if (place) loadInto(stateCache, "companies/state-pattern", npi, { state: place }, "state", stateHtml, (d) => d, place);
   };
 })(typeof window !== "undefined" ? window : globalThis);

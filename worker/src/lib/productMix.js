@@ -95,6 +95,40 @@ export function buildProductMix(rows) {
   };
 }
 
+// What changed between two years of the by-supplier-and-service file: the product categories that grew or shrank
+// the most in dollars. prevRows and rows are the raw CMS rows for one supplier. A category must have moved by at
+// least SHIFT_MIN dollars and SHIFT_MIN_PCT to count, so small noise is not reported as a change.
+export const SHIFT_MIN = 5000;
+export const SHIFT_MIN_PCT = 0.2;
+
+function categoryPayments(rows) {
+  const out = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const pay = num(row.Tot_Suplr_Srvcs) * num(row.Avg_Suplr_Mdcr_Pymt_Amt);
+    const cat = categoryName(row.RBCS_Desc);
+    out.set(cat, (out.get(cat) || 0) + pay);
+  }
+  return out;
+}
+
+export function buildShifts(rows, prevRows, years = { year: MIX_YEAR, previousYear: MIX_YEAR - 1 }) {
+  const now = categoryPayments(rows);
+  const before = categoryPayments(prevRows);
+  if (now.size === 0 || before.size === 0) return null;
+  const moves = [];
+  for (const name of new Set([...now.keys(), ...before.keys()])) {
+    const a = before.get(name) || 0;
+    const b = now.get(name) || 0;
+    const diff = b - a;
+    if (Math.abs(diff) < SHIFT_MIN) continue;
+    if (a > 0 && Math.abs(diff) / a < SHIFT_MIN_PCT) continue;
+    moves.push({ name, from: Math.round(a), to: Math.round(b), change: a > 0 ? diff / a : null, kind: a === 0 ? "new" : b === 0 ? "dropped" : diff > 0 ? "up" : "down" });
+  }
+  if (!moves.length) return null;
+  moves.sort((x, y) => Math.abs(y.to - y.from) - Math.abs(x.to - x.from));
+  return { year: years.year, previousYear: years.previousYear, moves: moves.slice(0, 4) };
+}
+
 // Medicare payments by year, from the by-supplier files. yearRows: [{ year, payment, patients }] in any order;
 // a year with no row (the supplier was not billing Medicare) is simply absent.
 export const NEW_BELOW = 5000; // an earlier year under this is "just starting", not a base to measure growth from

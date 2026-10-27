@@ -38,6 +38,7 @@ export async function saveIntel(supabase, npiInput, fields, session, now = new D
   const res = await supabase.from("lead_intel").upsert(row, { onConflict: "npi" }).select("*").single();
   if (res.error) {
     if (isTableMissing(res.error)) throw httpError(503, NOT_INSTALLED);
+    if (/win_reason/.test(res.error.message || "")) throw httpError(503, "Saving why a lead signed isn't installed yet. Run sql/056_win_reason.sql in Supabase, then try again.");
     if (res.error.code === "PGRST204" || res.error.code === "42703" || /follow_up/.test(res.error.message || "")) throw httpError(503, "Follow-up dates aren't installed yet. Run sql/051_followups_and_goals.sql in Supabase, then try again.");
     throw httpError(500, "Failed to save call intel: " + res.error.message);
   }

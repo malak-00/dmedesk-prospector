@@ -84,6 +84,7 @@ test('product mix fetches from CMS once, then serves the cache', async () => {
   let calls = 0;
   globalThis.fetch = async (url) => {
     calls += 1;
+    if (/2457ea29/.test(String(url))) { assert.match(String(url), /filter\[NPI\]=1003386889/); return { status: 200, json: async () => [{ ENRLMT_ID: 'O20151130001936', PROVIDER_TYPE_DESC: 'DME SUPPLIER - OTHER' }] }; }
     assert.match(String(url), /filter\[Suplr_NPI\]=1003386889/);
     // by-supplier year files answer with one payment row; the by-service file with the product rows
     if (/size=1$/.test(String(url))) return { status: 200, json: async () => [{ Suplr_Mdcr_Pymt_Amt: '1000', Tot_Suplr_Benes: '10' }] };
@@ -93,6 +94,8 @@ test('product mix fetches from CMS once, then serves the cache', async () => {
     const db = fakeSupabase();
     const first = await getProductMix(db, '1003386889');
     assert.equal(first.mix.total, 1000);
+    assert.equal(first.enrollment.since, '2015-11-30');
+    assert.equal(first.shifts, null); // the earlier year answers with the same rows, so nothing moved
     const afterFirst = calls;
     const second = await getProductMix(db, '1003386889');
     assert.equal(second.mix.total, 1000);

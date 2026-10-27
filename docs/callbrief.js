@@ -110,6 +110,11 @@
       add("Medicare", "No Medicare billing found (small, new, or not a Medicare supplier)");
     }
     add("Trend", trendText(input.trend));
+    const why = root.dmeWhyCall || (typeof require === "function" ? require("./whycall.js") : null);
+    if (why) {
+      const enrolled = why.describeEnrollment(input.enrollment);
+      if (enrolled) add("Enrolled", enrolled.text);
+    }
 
     // What they sell
     const mix = input.mix;
@@ -120,7 +125,15 @@
       if (typeof mix.rentalShare === "number" && mix.total > 0) extras.push(`${Math.round(mix.rentalShare * 100)}% rentals`);
       if (mix.area && mix.area.category) extras.push(mix.area.category.toLowerCase());
       add("Billing", extras.join(", "));
+      const shifts = why && why.describeShifts(input.shifts);
+      if (shifts) add("Since last year", shifts.text);
     }
+
+    // What the team already knows
+    const touch = why && why.describeTouch(input.touch, input.now);
+    if (touch) add("Last touched", `${touch.text}. ${touch.title}`);
+    const pattern = why && why.describeStatePattern(input.statePattern);
+    if (pattern) add("Local pattern", pattern.text);
 
     // The business
     const biz = [];
@@ -338,12 +351,15 @@
   root.dmeHooks.briefHtml = async (company, claimed) => {
     const npi = String(company.npi || "");
     const ask = (path, params) => (typeof apiGet === "function" && npi ? apiGet(path, params) : Promise.reject(new Error("offline")));
-    const [mixRes, sameRes, notesRes, intelRes, ownerRes] = await Promise.allSettled([
+    const place = company.address && company.address.state;
+    const [mixRes, sameRes, notesRes, intelRes, ownerRes, touchRes, patternRes] = await Promise.allSettled([
       ask("companies/product-mix", { npi }),
       ask("companies/same-address", { npi }),
       ask("leads/annotations", { npi }),
       ask("leads/intel", { npi }),
       ask("companies/same-owner", { npi }),
+      ask("leads/last-touch", { npi }),
+      place ? ask("companies/state-pattern", { state: place }) : Promise.reject(new Error("no state")),
     ]);
     const val = (r) => (r.status === "fulfilled" ? r.value : null);
     const state = company.address && company.address.state;
@@ -351,6 +367,10 @@
       company,
       mix: val(mixRes) && val(mixRes).mix,
       trend: val(mixRes) && val(mixRes).trend,
+      shifts: val(mixRes) && val(mixRes).shifts,
+      enrollment: val(mixRes) && val(mixRes).enrollment,
+      touch: val(touchRes) && val(touchRes).touch,
+      statePattern: val(patternRes) && val(patternRes).pattern,
       same: val(sameRes),
       notes: val(notesRes),
       intel: val(intelRes),

@@ -1,5 +1,20 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-27 — Batch 4: enrollment, product shifts, last touched, local pattern, why they signed
+
+**Objective.** Put more useful facts in front of a rep before a call, and start learning what wins.
+
+**Actions Completed.**
+- **Medicare enrollment** (`worker/src/lib/enrollment.js`). `GET /companies/product-mix` now also asks CMS's public provider enrollment file (2026-10-01 release; the id is a constant in `services/productMix.js` and should be moved when a newer quarter is wanted) and returns `enrollment`: enrolled or not, since when (read from the enrollment id), and as what type. Shown as an "Enrolled" chip on the card and in the brief; "not in the enrollment file" also shows beside the Fit and Trend chips.
+- **Product shifts.** The same lookup also reads the 2023 by-supplier-and-service file and `buildShifts` names the categories that moved the most (at least $5,000 and 20%): "Orthotic Devices up 95% ($50k → $100k); Oxygen: stopped". Shown under the mix and in the brief ("Since last year"). The cache namespace moved to `cmsprofile2` so older cached answers without these fields are not used.
+- **Last touched by anyone.** `GET /leads/last-touch` (`repos/lastTouchRepo.js`, `lib/lastTouch.js`): newest of a dial tap, a team note, or a line in a claimed lead's call log (import lines are ignored). Card and brief show "Last touched Oct 3, 2026 by Ana", highlighted when within 14 days.
+- **Local pattern.** `GET /companies/state-pattern` (`repos/statePatternRepo.js`, `statePattern` in `lib/intel.js`): from call intel, the objection heard most and the billers reps meet in the lead's state; needs at least 3 leads with call notes. Shown on the card and in the brief.
+- **Why they signed.** `sql/056_win_reason.sql` adds `lead_intel.win_reason`. `docs/closereason.js` wraps `apiPost` so that when a lead is saved as onboarded a small bar asks what tipped it, and when saved as not interested it asks why (stored as the existing objection). It never blocks the next call and goes away after 25 seconds. "Why they signed" is also in Call intel, and Insights > Pipeline has a "Why leads sign" list (`pipeline.winReasons`).
+
+**Database / System Result.** sql/056 is written and NOT run; without it everything else works and the win reason is not saved (the app says which file to run). No other schema change.
+
+**Safety Status.** Read-only lookups to public CMS files and our own tables; the only write is the call-intel reason a rep picks. Worker tests pass (see the run); not browser-tested. Needs a Worker deploy and a frontend publish.
+
 ## 2026-10-27 — Claimed leads sort by claimed date
 
 **Objective.** Let a rep order their Claimed list by when they claimed each lead.

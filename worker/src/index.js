@@ -39,6 +39,8 @@ import * as ProductMix from "./services/productMix.js";
 import * as annotationsRepo from "./repos/annotationsRepo.js";
 import * as intelRepo from "./repos/intelRepo.js";
 import * as sameOwnerRepo from "./repos/sameOwnerRepo.js";
+import * as lastTouchRepo from "./repos/lastTouchRepo.js";
+import * as statePatternRepo from "./repos/statePatternRepo.js";
 import * as followUpRepo from "./repos/followUpRepo.js";
 import * as goalsRepo from "./repos/goalsRepo.js";
 import * as callLogRepo from "./repos/callLogRepo.js";
@@ -508,6 +510,10 @@ app.post("/leads/annotations/tag/remove", async (c) => {
 
 // What a supplier bills Medicare for (product categories and our verticals), from CMS's public file.
 app.get("/companies/product-mix", async (c) => c.json(ok(await ProductMix.getProductMix(supabaseFor(c), c.req.query("npi")))));
+
+// Who last touched a lead and when (opened Prospect card), and what reps have heard on calls in its state.
+app.get("/leads/last-touch", async (c) => c.json(ok(await lastTouchRepo.getLastTouch(supabaseFor(c), c.req.query("npi")))));
+app.get("/companies/state-pattern", async (c) => c.json(ok(await statePatternRepo.getStatePattern(supabaseFor(c), c.req.query("state")))));
 
 // Other businesses run by the same authorized official (opened Prospect card).
 app.get("/companies/same-owner", async (c) => {

@@ -7,7 +7,7 @@
 // so counting it would make adoption look better than it is.
 import { buildFunnel } from "./funnel.js";
 import { buildStateHeat } from "./stateHeat.js";
-import { billerCounts, objectionCounts } from "./intel.js";
+import { billerCounts, objectionCounts, winReasonCounts } from "./intel.js";
 import { summarizeCallRecords } from "./callLog.js";
 import { FEATURES } from "./events.js";
 import { allCallEvents, noteKind, parseNoteLines, tapsToLines } from "./teamActivity.js";
@@ -22,7 +22,7 @@ const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
 export function buildInsights({
   users = [], claimEvents = [], taps = [], leads = [], suggestions = [], badNumbers = [], searches = [],
-  queues = {}, system = null, days = 28, now = new Date(), events = null, intel = [], callRecords = [],
+  queues = {}, system = null, days = 28, now = new Date(), events = null, intel = [], winRows = [], callRecords = [],
 } = {}) {
   const span = Math.min(Math.max(Math.round(Number(days)) || 28, 7), 90);
   const nowMs = now.getTime();
@@ -241,7 +241,7 @@ export function buildInsights({
       daily: [...daily.values()],
       people: peopleList.map((p) => ({ ...p, lastActive: p.lastActive ? new Date(p.lastActive).toISOString() : null })),
     },
-    pipeline: { objections: objectionCounts(intel), billers: billerCounts(intel), funnel, statuses, firstCall, stuck: stuck.slice(0, 12), neverContacted, overdueCallbacks: overdue, openLeads: worked.length, staleDays: STALE_DAYS },
+    pipeline: { objections: objectionCounts(intel), winReasons: winReasonCounts(winRows), billers: billerCounts(intel), funnel, statuses, firstCall, stuck: stuck.slice(0, 12), neverContacted, overdueCallbacks: overdue, openLeads: worked.length, staleDays: STALE_DAYS },
     friction,
     usage,
     nudges,

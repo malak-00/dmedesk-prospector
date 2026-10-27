@@ -190,6 +190,17 @@
     render();
   }
 
+  // Why leads signed (sql/056), asked when a lead is marked onboarded.
+  const WIN_LABELS = { savings: "Saves them money", trust: "Trust or a referral", "bad experience": "Bad experience with the old biller", growth: "Growth or capacity", compliance: "Compliance help", timing: "Right timing", other: "Something else" };
+  function winReasonsList(list) {
+    if (!list || !list.length) return `<p class="ins-empty">No wins explained yet. When a lead is marked onboarded, a small bar asks what tipped it (sql/056).</p>`;
+    const max = Math.max(1, ...list.map((o) => o.count));
+    return `<div class="ins-funnel">${list.map((o) => `
+      <div class="ins-funnel-row"><span class="ins-funnel-label" title="${esc(WIN_LABELS[o.reason] || o.reason)}">${esc(WIN_LABELS[o.reason] || o.reason)}</span>
+        <span class="ins-funnel-track"><span class="ins-funnel-fill" style="width:${Math.max(3, Math.round((o.count / max) * 100))}%"></span></span>
+        <span class="ins-funnel-num">${num(o.count)}</span></div>`).join("")}</div>`;
+  }
+
   // The reasons leads gave for not signing, from Call intel (sql/050).
   function objectionsList(list) {
     if (!list || !list.length) return `<p class="ins-empty">No objections recorded yet. Reps pick one under Call intel on a lead (sql/050).</p>`;
@@ -459,6 +470,7 @@
           ${sec("Who we're up against", billersList(p.billers))}
           ${sec("Why leads say no", objectionsList(p.objections))}
         </div>
+        ${sec("Why leads sign", winReasonsList(p.winReasons))}
         ${sec("Territory map", territoryMap(d.territory))}
         ${sec('Claimed but never called <small>oldest first</small>', stuckList(p.stuck || []))}`)}
 

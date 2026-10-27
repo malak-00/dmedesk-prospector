@@ -11,6 +11,7 @@
 
   const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   const OBJECTIONS = ["price", "in-house", "happy with current", "bad timing", "not the decision maker", "no need", "other"];
+  const WIN_REASONS = [["savings", "Saves them money"], ["trust", "Trust or a referral"], ["bad experience", "Bad experience with the old biller"], ["growth", "Growth or capacity"], ["compliance", "Compliance help"], ["timing", "Right timing"], ["other", "Something else"]];
   const capital = (v) => String(v || "").charAt(0).toUpperCase() + String(v || "").slice(1);
 
   const FIELDS = [
@@ -38,6 +39,8 @@
           <input type="${f.type}" maxlength="${f.max}" data-intel-field="${f.key}" value="${esc(d[f.key])}" placeholder="${esc(f.placeholder)}" autocomplete="off"></label>`).join("")}
         <label class="intel-field"><span>Main objection</span>
           <select data-intel-field="objection"><option value="">None heard</option>${OBJECTIONS.map((o) => `<option value="${esc(o)}"${d.objection === o ? " selected" : ""}>${esc(capital(o))}</option>`).join("")}</select></label>
+        <label class="intel-field"><span>Why they signed</span>
+          <select data-intel-field="winReason"><option value="">Not signed</option>${WIN_REASONS.map(([v, l]) => `<option value="${esc(v)}"${d.winReason === v ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
       </div>
       <div class="intel-follow muted-note">Follow up in
         ${[3, 7, 14, 30].map((n) => `<button type="button" class="link-btn" data-intel-follow="${n}">${n === 7 ? "1 week" : n === 14 ? "2 weeks" : n === 30 ? "1 month" : n + " days"}</button>`).join(" \u00b7 ")}

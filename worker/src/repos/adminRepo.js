@@ -1064,7 +1064,7 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
   const nameById = new Map(users.map((u) => [u.id, u.display_name || u.username]));
 
   const problems = [];
-  const [claimEvents, taps, leads, suggestionRows, badNumbers, searches, matchReviews, providerChanges, sentNotes, eventsProbe, callRecords, intel] = await Promise.all([
+  const [claimEvents, taps, leads, suggestionRows, badNumbers, searches, matchReviews, providerChanges, sentNotes, eventsProbe, callRecords, intel, winRows] = await Promise.all([
     tryRows(() => supabase.from("lead_ownership_events").select("event_type, to_user_id, created_at", { count: "exact" }).eq("event_type", "claimed").gte("created_at", since), "claim history", true, problems),
     tryRows(() => supabase.from("call_taps").select("user_id, npi, tapped_at", { count: "exact" }).gte("tapped_at", since), "phone taps", true, problems),
     tryRows(() => supabase.from("leads").select("npi, company_name, claimed_by, claimed_at, is_disconnected, notes, reminder_at, meeting_at, status, specialty, state", { count: "exact" }).not("claimed_by", "is", null), "leads", true, problems),
@@ -1079,6 +1079,8 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
     // sql/053: the phone system's calls in the period. Empty until that file is run and a log is imported.
     tryRows(() => supabase.from("call_records").select("called_at, agent, duration_sec, disposition", { count: "exact" }).gte("called_at", since), "phone system calls", false, problems),
     tryRows(() => supabase.from("lead_intel").select("npi, objection, current_biller", { count: "exact" }).or("objection.not.is.null,current_biller.not.is.null"), "call intel", false, problems),
+    // sql/056; without it this is empty and Insights simply shows nothing for it.
+    tryRows(() => supabase.from("lead_intel").select("npi, win_reason", { count: "exact" }).not("win_reason", "is", null), "win reasons", false, []),
   ]);
   // 'not_installed' = sql/046 isn't there (the dashboard says events aren't being collected yet); 'failed' = it is, but
   // could not be read just now (the dashboard says so, instead of showing "no errors"); 'ok' otherwise.
@@ -1104,7 +1106,7 @@ export async function getInsights(supabase, systemInfo, { days = 28 } = {}) {
     users, claimEvents, taps, leads, badNumbers, searches,
     suggestions: suggestionRows.map((s) => ({ ...s, submitted_by_name: nameById.get(s.submitted_by) || "" })),
     queues: { matchReviews, providerChanges },
-    system: systemInfo, days: span, events: appEvents, intel, callRecords,
+    system: systemInfo, days: span, events: appEvents, intel, winRows, callRecords,
   });
   out.problems = problems;
   out.eventsStatus = eventsStatus;

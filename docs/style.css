@@ -3585,3 +3585,12 @@ tbody.is-settling { pointer-events: none; }
 .shift-left { font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 10px; border: 1px solid var(--hairline); border-radius: 999px; white-space: nowrap; }
 .shift-left[hidden] { display: none; }
 @media (max-width: 1100px) { .shift-left { display: none; } }
+
+/* "What tipped it?" bar after a signed or refused lead */
+.reason-bar { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 90; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; max-width: min(720px, calc(100vw - 32px)); padding: 10px 12px; background: var(--surface-2); color: var(--ink); border: 1px solid var(--hairline); border-radius: var(--radius-md); box-shadow: var(--shadow-card); font-size: 13px; }
+.reason-bar[hidden] { display: none; }
+.reason-title { font-weight: 650; margin-right: 4px; }
+.reason-opt { font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); cursor: pointer; }
+.reason-opt:hover { border-color: var(--ink); }
+.reason-x { font: inherit; font-size: 18px; line-height: 1; padding: 0 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.reason-x:hover { color: var(--ink); }
