@@ -19,6 +19,7 @@ export const SORTS = {
   location: { columns: ["state", "city"], firstDir: "asc" },
   status: { columns: ["status"], firstDir: "asc" },
   reminder: { columns: ["reminder_at"], firstDir: "asc", nullsLast: true },
+  claimed: { columns: ["claimed_at"], firstDir: "desc", nullsLast: true },
   updated: { columns: ["status_updated_at", "claimed_at"], firstDir: "desc", nullsLast: true },
 };
 

@@ -88,3 +88,11 @@ test('sending stale leads to Disconnected marks only the still-stale ones and no
   assert.equal(noteKind('Disconnected by Boss. No activity for 30+ days.'), 'import');
   await assert.rejects(() => disconnectStaleLeads(db, { id: 'a' }, { npis: [] }, NOW), (e) => e.status === 400);
 });
+
+test('claimed leads can be sorted by the date they were claimed', async () => {
+  const { parseListParams } = await import('../src/lib/leadView.js');
+  const p = parseListParams({ sort: 'claimed' }, NOW);
+  assert.equal(p.sortKey, 'claimed');
+  assert.equal(p.dir, 'desc'); // newest claim first
+  assert.equal(parseListParams({ sort: 'claimed', dir: 'asc' }, NOW).dir, 'asc');
+});

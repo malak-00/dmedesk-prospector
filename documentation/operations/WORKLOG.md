@@ -1,5 +1,16 @@
 # DME Desk Prospector Worklog
 
+## 2026-10-27 — Claimed leads sort by claimed date
+
+**Objective.** Let a rep order their Claimed list by when they claimed each lead.
+
+**Actions Completed.**
+- The "Claimed by" column (always the rep's own name, so sorting it did nothing) is now "Claimed": the claim date with the year, the name underneath. Clicking it sorts newest claim first, then oldest. Worker: new `claimed` sort (`claimed_at`, newest first, blanks last) in `worker/src/lib/leadView.js`; frontend `docs/app.js`, `docs/index.html`.
+
+**Database / System Result.** None.
+
+**Safety Status.** Read-only display and ordering change. Worker tests pass; not browser-tested. Needs a Worker deploy and a frontend publish.
+
 ## 2026-10-22 — Draft plan: lead outcomes from BD MEETINGS
 
 **Objective.** Plan how to bring BD MEETINGS results (onboarded, contract sent, dead, disqualified) into Prospector as per-NPI conversion labels for analysis, scoring and prediction.

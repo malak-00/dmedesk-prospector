@@ -261,7 +261,7 @@ function sortProspectResults(key, defaultDir) {
   renderResults();
 }
 
-const CLAIMED_DEFAULT_SORT_DIR = { company: 1, location: 1, claimedBy: 1, updated: -1, status: 1, reminder: 1 };
+const CLAIMED_DEFAULT_SORT_DIR = { company: 1, location: 1, claimed: -1, updated: -1, status: 1, reminder: 1 };
 
 function sortClaimedLeads(key, defaultDir) {
   state.claimedSortDir = state.claimedSortKey === key ? state.claimedSortDir * -1 : defaultDir;
@@ -3333,8 +3333,7 @@ function claimedQuery() {
     // Pages made of whole business groups, so a group is never split across pages.
     grouped: groupingOn() ? "1" : "",
   };
-  // Every claimed lead is yours, so sorting by "claimed by" can't change the order.
-  if (state.claimedSortKey && state.claimedSortKey !== "claimedBy") {
+  if (state.claimedSortKey) {
     query.sort = state.claimedSortKey;
     query.dir = state.claimedSortDir > 0 ? "asc" : "desc";
   }
@@ -3647,6 +3646,13 @@ function quietChip(lead) {
   return ` <span class="quiet-chip" title="No call, note or status change for ${lead.quietDays} days, and nothing scheduled. It may be handed back to Prospect.">Quiet ${lead.quietDays}d</span>`;
 }
 
+// When the lead was claimed, with the year, and who claimed it underneath.
+function claimedDateCell(lead) {
+  const at = Date.parse(lead.claimedAt);
+  const date = Number.isFinite(at) ? new Date(at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+  return `<span class="mono">${escapeHtml(date)}</span><div class="muted-note">${escapeHtml(lead.claimedBy || "")}</div>`;
+}
+
 function claimedLeadRowHtml(lead, index) {
   const contactLine = lead.contactName
     ? `${escapeHtml(lead.contactName)}${lead.contactTitle ? ` — ${escapeHtml(lead.contactTitle)}` : ""}`
@@ -3668,7 +3674,7 @@ function claimedLeadRowHtml(lead, index) {
       </td>
       <td class="mono">${escapeHtml(lead.city)}, ${escapeHtml(lead.state)}${window.dmeHooks.localTime ? `<div class="tz-line">${window.dmeHooks.localTime(lead.state)}</div>` : ""}</td>
       <td class="mono">${phoneCell(lead.contactPhone, lead.companyPhone)}</td>
-      <td>${escapeHtml(lead.claimedBy || "—")}</td>
+      <td>${claimedDateCell(lead)}</td>
       <td class="mono">${escapeHtml((lead.lastUpdated || "").slice(0, 10))}</td>
       <td onclick="event.stopPropagation()">
         <select class="status-select status-${escapeHtml(lead.status).replace(/\s+/g, "-")}" data-npi="${escapeHtml(lead.npi)}" data-index="${index}">
