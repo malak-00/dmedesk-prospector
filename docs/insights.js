@@ -388,7 +388,7 @@
       panel.innerHTML = error
         ? `<div class="today-empty"><div class="today-empty-title">Couldn't load the insights</div><p class="ins-empty">${esc(error)}</p>
              <button type="button" class="btn btn-primary" data-ins="reload">Try again</button></div>`
-        : `<div class="today-loading"><span class="spinner"></span> Gathering what's happening in the app…</div>`;
+        : `${skeletonPanel('Gathering what is happening in the app')}`;
       return;
     }
     const d = data;

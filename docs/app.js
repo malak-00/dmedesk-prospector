@@ -227,6 +227,30 @@ function skeletonRows(count, colCount) {
   return Array.from({ length: count }, () => row).join("");
 }
 
+// A grey sketch of a page (greeting, four numbers, two cards) while Today, Home or Insights load, instead of a spinner on an empty page.
+function skeletonPanel(label) {
+  return `<div class="sk-panel" role="status" aria-busy="true"><span class="sr-only">${escapeHtml(label || "Loading")}</span>
+    <div class="sk-hero skeleton-bar"></div>
+    <div class="sk-kpis">${'<div class="sk-kpi skeleton-bar"></div>'.repeat(4)}</div>
+    <div class="sk-cols"><div class="sk-card skeleton-bar"></div><div class="sk-card skeleton-bar"></div></div></div>`;
+}
+
+// Rows that are about to disappear (claimed, returned, sent away) fade out to the side first. Returns how long to wait before the
+// list is redrawn, 0 when there is nothing to animate or the person asked for less motion.
+const ROW_LEAVE_MS = 240;
+function rowsLeaving(rows) {
+  const list = rows.filter(Boolean);
+  if (!list.length || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) return 0;
+  list.forEach((row) => {
+    row.classList.add("row-leaving");
+    const detail = row.nextElementSibling;
+    if (detail && detail.classList.contains("detail-row")) detail.classList.add("row-leaving");
+  });
+  // While they leave the table does not take clicks: its rows no longer match the data underneath.
+  list[0].closest("tbody")?.classList.add("is-settling");
+  return ROW_LEAVE_MS;
+}
+
 /* ---------- Sortable columns (both tables) ---------- */
 
 // Clears any previous sort-asc/sort-desc classes in a table's header and
@@ -1945,7 +1969,7 @@ async function executeSearch(params, { isMore: more = false, isRescan = false } 
   els.searchMoreBtn.disabled = true;
   setStatus("busy", isMore ? "Searching more…" : "Searching…");
   if (!isMore) {
-    els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7"><div class="loading-row"><span class="spinner"></span> <span id="searchStatusMsg">Searching NPPES registry…</span></div></td></tr>`;
+    els.resultsBody.innerHTML = `<tr class="empty-row"><td colspan="7"><div class="loading-row loading-row-slim"><span class="spinner"></span> <span id="searchStatusMsg">Searching NPPES registry…</span></div></td></tr>${skeletonRows(7, 7)}`;
   }
 
   const phaseTimers = [
@@ -2758,6 +2782,7 @@ function getSelectedProspectCompanies() {
 function removeCompaniesFromProspect(companies) {
   const npisToRemove = new Set(companies.map((c) => c.npi).filter(Boolean));
   if (npisToRemove.size === 0) return;
+  const wait = rowsLeaving(state.companies.map((c, i) => (npisToRemove.has(c.npi) ? document.querySelector(`#resultsBody .lead-row[data-index="${i}"]`) : null)));
   state.companies = state.companies.filter((c) => !npisToRemove.has(c.npi));
   // state.companies is normally just a reference to the current page's own
   // array (see applyCurrentPage) -- the filter above makes a NEW array, so
@@ -2767,8 +2792,9 @@ function removeCompaniesFromProspect(companies) {
   if (currentPageEntry) currentPageEntry.companies = state.companies;
   state.selected.clear();
   state.expandedIndex = null;
-  renderResults();
   persistProspectResults();
+  if (wait) setTimeout(() => { els.resultsBody.classList.remove("is-settling"); renderResults(); }, wait);
+  else renderResults();
 }
 
 async function exportSheets() {
@@ -3450,6 +3476,12 @@ function getCheckedClaimedLeads() {
   return [...state.claimedSelected].map((i) => state.claimedLeads[i]);
 }
 
+// The checked claimed rows fade out before the list is reloaded without them.
+async function claimedRowsFadeOut() {
+  const wait = rowsLeaving([...state.claimedSelected].map((i) => document.querySelector(`#claimedBody .lead-row[data-claimed-index="${i}"]`)));
+  if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+}
+
 // Moves already-claimed leads OUT of wherever they currently live (a
 // teammate's own Claimed tab) and INTO the shared Disconnected tab --
 // unlike the Prospect version, this is a genuine move, not a fresh append,
@@ -3470,8 +3502,10 @@ async function sendClaimedToDisconnected() {
   try {
     const data = await apiPost("leads/disconnect", { npis });
     showToast(`Moved ${data.movedCount} lead(s) to Disconnected`);
+    await claimedRowsFadeOut();
     clearClaimedSelection();
     await loadClaimedLeads(); // moved rows should disappear from this view now
+    els.claimedBody.classList.remove("is-settling");
     setStatus("ready", "Ready");
   } catch (err) {
     showToast(err.message, true);
@@ -3500,8 +3534,10 @@ async function returnClaimedToProspect() {
   try {
     const data = await apiPost("leads/return-to-prospect", { npis });
     showToast(`Returned ${data.returnedCount} lead(s) to Prospect`);
+    await claimedRowsFadeOut();
     clearClaimedSelection();
     await loadClaimedLeads(); // returned rows should disappear from this view now
+    els.claimedBody.classList.remove("is-settling");
     setStatus("ready", "Ready");
   } catch (err) {
     showToast(err.message, true);
@@ -3693,6 +3729,12 @@ function claimedBranchesHtml(branches) {
 }
 
 // "Quiet 21d" on a claimed lead nobody has touched for the rep's cold-after setting (Today > Change). An admin can hand it back.
+// "Last touched: Ana, 2h ago" from the top line of the call log, so nobody rings a lead a teammate just called.
+function lastTouchHtml(lead) {
+  const text = window.dmeTouch ? window.dmeTouch.describe(lead.notes) : "";
+  return text ? `<div class="last-touch" title="Who last wrote on this lead, and when">Last touched: ${escapeHtml(text)}</div>` : "";
+}
+
 function quietChip(lead) {
   const limit = window.dmeHooks.staleDays?.() || 14;
   if (!(lead.quietDays >= limit)) return "";
@@ -3717,6 +3759,7 @@ function claimedLeadRowHtml(lead, index) {
       <td>
         <div class="company-name">${escapeHtml(lead.name)}${window.dmeGroups?.inShownGroup("claimed", index) ? "" : claimedBranchesBadge(lead.branches)}${window.dmeHooks.ageBadge?.(lead.enumerationDate) || ""}${quietChip(lead)}${providerChangeBadge(lead.providerChange)}${window.dmeHooks.relatedChip?.("claimed", index) || ""}</div>
         ${contactLine ? `<div class="company-taxonomy">${contactLine}</div>` : ""}
+        ${lastTouchHtml(lead)}
         ${lead.taxonomy ? specialtyPillHtml(lead.taxonomy) : ""}
         ${leadSignalsHtml({
           phone: lead.contactPhone || lead.companyPhone,

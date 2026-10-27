@@ -688,6 +688,31 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-28 — Smoother lists, skeleton loading, last touched, shift countdown
+
+### Objective
+
+Make the lists and loading feel smoother, and show two small facts that save mistakes.
+
+### Actions Completed
+
+- Smoother row actions (`docs/app.js`, `docs/style.css`): leads that leave Prospect (claimed) and checked Claimed leads sent to Disconnected or returned to
+  Prospect fade out to the side for a quarter of a second before the list is redrawn. The table ignores clicks meanwhile, since its rows no longer match the
+  data underneath, and reduced-motion users get no animation.
+- Skeleton loading: a Prospect search now shows grey placeholder rows under its status line; Today, Insights and the super admin Home show a grey sketch of the
+  page (`skeletonPanel`) instead of a spinner on an empty page. Claimed and the admin tables already had row skeletons.
+- `docs/lasttouch.js` (new, tested): Claimed rows show "Last touched: Ana, 2h ago", read from the newest line of the call log, so nobody rings a lead a teammate just called.
+- `docs/shift.js` (new, tested): the header shows "2h 10m left in shift" between 3:30 PM and 11:30 PM Cairo time and nothing outside it (hidden under 1100px).
+- `docs/index.html`: script tags and versions. Tests: `worker/test/lasttouch.test.js` (last touched and shift).
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required.
+
 ## 2026-10-27 — Faster calling: callback quick-picks, Undo toast, Save & next lead
 
 ### Objective

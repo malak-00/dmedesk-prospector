@@ -107,7 +107,7 @@
       panel.innerHTML = error
         ? `<div class="today-empty"><div class="today-empty-title">Couldn't load Home</div><p class="ins-empty">${esc(error)}</p>
              <button type="button" class="btn btn-primary" data-home="reload">Try again</button></div>`
-        : `<div class="today-loading"><span class="spinner"></span> Getting today's picture…</div>`;
+        : `${skeletonPanel('Getting today\'s picture')}`;
       return;
     }
     const d = data;

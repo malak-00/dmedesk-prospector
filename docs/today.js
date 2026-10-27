@@ -142,7 +142,7 @@
       panel.innerHTML = loadFailed
         ? `<div class="today-empty"><div class="today-empty-title">Couldn't load your leads</div>
              <button type="button" class="btn btn-primary" data-today="reload">Try again</button></div>`
-        : `<div class="today-loading"><span class="spinner"></span> Getting your day ready…</div>`;
+        : `${skeletonPanel('Getting your day ready')}`;
       return;
     }
     const b = buckets();
