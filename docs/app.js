@@ -1641,6 +1641,19 @@ function showToast(message, isError = false, linkUrl = null) {
   toastTimer = setTimeout(() => { els.toast.className = "toast"; }, isError ? 8000 : 5000);
 }
 
+// A message with an Undo button for a few seconds. undo() does the taking back (and says so itself); a failure shows as an error toast.
+function showUndoToast(message, undo, ms = 10000) {
+  els.toast.innerHTML = `${escapeHtml(message)} <button type="button" class="toast-undo">Undo</button>`;
+  els.toast.className = "toast visible";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { els.toast.className = "toast"; }, ms);
+  els.toast.querySelector(".toast-undo").addEventListener("click", async (e) => {
+    e.currentTarget.disabled = true;
+    clearTimeout(toastTimer);
+    try { await undo(); } catch (err) { showToast(`Couldn't undo: ${err.message}`, true); }
+  }, { once: true });
+}
+
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str ?? "";
@@ -2404,19 +2417,17 @@ document.addEventListener("click", (e) => {
 
 const BRIEF_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.8h5.2L12.5 5v9.2H4Z M9 1.8V5.2h3.5 M6 8h4.5 M6 10.5h4.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/></svg>';
 
-// Quick-remind chips: N days from now at 9:00 local time.
-function remindDateIso(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + Number(days));
-  d.setHours(9, 0, 0, 0);
-  return d.toISOString();
+// Quick-remind chips (see remind.js).
+// The pick is a token from remind.js ("h2", "1", "3", "mon", "7"); day picks land at 4 PM, the start of the shift.
+function remindDateIso(token) {
+  return window.dmeRemind.iso(token);
 }
 
 // One-click call logging: an outcome chip and/or a note becomes a single
 // timestamped call-log entry ("Voicemail — asked for a callback"), and a
 // remind chip sets the callback. Uses the same endpoints as the old notes
 // input and reminder dialog -- no new API.
-async function saveCallLog(idx) {
+async function saveCallLog(idx, { next = false } = {}) {
   const root = document.querySelector(`.call-log[data-claimed-index="${idx}"]`);
   const lead = state.claimedLeads[idx];
   if (!root || !lead) return;
@@ -2428,8 +2439,11 @@ async function saveCallLog(idx) {
     return;
   }
   const saveBtn = root.querySelector("[data-call-save]");
+  const nextBtn = root.querySelector("[data-call-save-next]");
   saveBtn.disabled = true;
+  if (nextBtn) nextBtn.disabled = true;
   let partlySaved = false;
+  let askedForTime = false;
   try {
     // One action, one story: the result sets the lead's status AND leads the
     // call-log entry, so the two can never disagree.
@@ -2452,14 +2466,27 @@ async function saveCallLog(idx) {
     showToast(remind ? "Call logged and reminder set" : "Call logged");
     refreshClaimedRowReminderBadge(idx); // also redraws the open card
     // A callback-style result with no reminder chosen: offer to set a time.
-    if (status && isCallbackStatus(status) && !remind) openReminderModal(idx);
+    if (status && isCallbackStatus(status) && !remind) { openReminderModal(idx); askedForTime = true; }
+    // Save & next: carry on with the next lead, unless the time question is open (answer it first).
+    if (next && !askedForTime) openNextClaimed(idx);
   } catch (err) {
     showToast(err.message, true);
     // Part of it may already be saved -- redraw so a retry can't log it twice.
     if (partlySaved) refreshClaimedDetailIfExpanded(idx);
   } finally {
     saveBtn.disabled = false;
+    if (nextBtn) nextBtn.disabled = false;
   }
+}
+
+// Opens the next lead below this one in the list as it is shown (skipping rows folded away inside a business group).
+function openNextClaimed(idx) {
+  const rows = [...document.querySelectorAll("#claimedBody .lead-row[data-claimed-index]")].filter((r) => r.offsetParent !== null);
+  const at = rows.findIndex((r) => Number(r.dataset.claimedIndex) === idx);
+  const nextRow = at >= 0 ? rows[at + 1] : null;
+  if (!nextRow) { showToast("That was the last lead in this list"); return; }
+  toggleClaimedRowDetail(Number(nextRow.dataset.claimedIndex));
+  nextRow.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // Statuses offered as call results: the common ones first, then any custom
@@ -2535,6 +2562,10 @@ function wireCallLog(idx) {
   root.querySelector("[data-call-save]")?.addEventListener("click", (e) => {
     e.stopPropagation();
     saveCallLog(idx);
+  });
+  root.querySelector("[data-call-save-next]")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    saveCallLog(idx, { next: true });
   });
   root.querySelector(".call-note")?.addEventListener("keydown", (e) => {
     e.stopPropagation();
@@ -2753,8 +2784,7 @@ async function exportSheets() {
     companies = allowed;
   }
   const who = getSession()?.displayName || "you";
-  // Claiming leads is a shared, team-visible action with no undo -- confirm
-  // before writing.
+  // Claiming leads is a shared, team-visible action -- confirm before writing (it can be taken back for a few seconds afterwards).
   if (!confirm(`Claim ${companies.length} lead(s) under ${who}?`)) return;
 
   els.exportSheetsBtn.disabled = true; // prevents a double-click from double-claiming
@@ -2772,6 +2802,16 @@ async function exportSheets() {
       : new Set(companies.map((c) => String(c.npi)));
     removeCompaniesFromProspect(companies.filter((c) => done.has(String(c.npi))));
     showClaimResult(data);
+    // Everything went through and nothing came along with it: the claim can be taken back for a few seconds.
+    const claimedNow = (data.claimedNpis || []).map(String);
+    const clean = claimedNow.length && !(data.blocked || []).length && !(data.heldForReview || []).length && !data.groupMatesClaimed && !(data.alreadyClaimedNpis || []).length;
+    if (clean) {
+      showUndoToast(claimedCountText(data), async () => {
+        await apiPost("leads/return-to-prospect", { npis: claimedNow });
+        state.claimedLoaded = false;
+        showToast(`${claimedNow.length} lead${claimedNow.length === 1 ? " is" : "s are"} back in Prospect. Search again to see ${claimedNow.length === 1 ? "it" : "them"}.`);
+      });
+    }
     setStatus("ready", "Ready");
   } catch (err) {
     showToast(err.message, true);
@@ -3172,13 +3212,26 @@ function refreshClaimedRowReminderBadge(idx) {
 
 async function saveReminder(idx, reminderAt) {
   const lead = state.claimedLeads[idx];
+  const before = lead.reminderAt || "";
   els.reminderSaveBtn.disabled = true;
   try {
     const data = await apiPost("leads/reminder", { npi: lead.npi, reminderAt });
     lead.reminderAt = data.reminderAt;
     closeReminderModal();
     refreshClaimedRowReminderBadge(idx);
-    showToast(data.reminderAt ? "Reminder set" : "Reminder cleared");
+    const message = data.reminderAt ? (before ? "Reminder changed" : "Reminder set") : "Reminder cleared";
+    if (before || data.reminderAt) {
+      // Back to what it was (a time, or none), for a few seconds.
+      showUndoToast(message, async () => {
+        const back = await apiPost("leads/reminder", { npi: lead.npi, reminderAt: before });
+        lead.reminderAt = back.reminderAt;
+        const k = state.claimedLeads.indexOf(lead);
+        if (k >= 0) refreshClaimedRowReminderBadge(k);
+        showToast(before ? "Reminder put back" : "Reminder removed");
+      });
+    } else {
+      showToast(message);
+    }
   } catch (err) {
     showToast(err.message, true);
   } finally {
@@ -3915,12 +3968,13 @@ function claimedDetailRowHtml(lead, index) {
               <div class="call-log-foot">
                 <div class="chip-row" role="group" aria-label="Remind me">
                   <span class="muted-note">Remind me</span>
-                  <button type="button" class="choice-chip remind-chip" data-remind="1">Tomorrow</button>
-                  <button type="button" class="choice-chip remind-chip" data-remind="3">3 days</button>
-                  <button type="button" class="choice-chip remind-chip" data-remind="7">1 week</button>
+                  ${window.dmeRemind.CHOICES.map((o) => `<button type="button" class="choice-chip remind-chip" data-remind="${o.token}" title="${escapeHtml(window.dmeRemind.describe(o.token))}">${o.label}</button>`).join("")}
                   <button type="button" class="choice-chip" data-call-custom-reminder>Pick a time…</button>
                 </div>
-                <button type="button" class="btn btn-primary btn-small" data-call-save>Save</button>
+                <span class="call-log-save">
+                  <button type="button" class="btn btn-ghost btn-small" data-call-save-next title="Save this call and open the next lead in the list">Save &amp; next lead</button>
+                  <button type="button" class="btn btn-primary btn-small" data-call-save>Save</button>
+                </span>
               </div>
               <div class="reasons-title">History</div>
               ${notesHistoryHtml(lead.notes, index)}
@@ -4396,6 +4450,7 @@ function attachClaimedRowHandlers() {
       }
 
       e.target.disabled = true;
+      const was = previousValue;
       try {
         status = (await apiPost("leads/status", { npi, status })).status; // as the server tidied it
         syncRowStatusSelect(Number(e.target.dataset.index), status);
@@ -4405,7 +4460,21 @@ function attachClaimedRowHandlers() {
         // correct without waiting for a full reload.
         state.claimedLeads[Number(e.target.dataset.index)].status = status;
         previousValue = status;
-        showToast(`Status updated to "${status}"`);
+        if (was && was !== status) {
+          const leadRef = state.claimedLeads[Number(e.target.dataset.index)];
+          showUndoToast(`Status updated to "${status}"`, async () => {
+            const back = (await apiPost("leads/status", { npi, status: was })).status;
+            leadRef.status = back;
+            const k = state.claimedLeads.indexOf(leadRef);
+            syncRowStatusSelect(k, back);
+            const sel = document.querySelector(`#claimedBody .status-select[data-index="${k}"]`);
+            if (sel) { sel.value = back; sel.className = `status-select status-${back.replace(/\s+/g, "-")}`; }
+            previousValue = back;
+            showToast(`Status back to "${back}"`);
+          });
+        } else {
+          showToast(`Status updated to "${status}"`);
+        }
         // A callback-ish status is a strong signal this lead needs a
         // follow-up time -- offer to set one right away, without forcing it
         // (Cancel just leaves the status change in place, reminder-less).

@@ -688,6 +688,32 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-10-27 — Faster calling: callback quick-picks, Undo toast, Save & next lead
+
+### Objective
+
+Save clicks on every call: better callback times, a way to take back a slip, and a one-click move to the next lead.
+
+### Actions Completed
+
+- `docs/remind.js` (new, loaded before `app.js`, tested in `worker/test/remind.test.js`): the shared quick-picks In 2 hours, Tomorrow, 3 days, Next Monday, 1 week.
+  Day picks now land at 4:00 PM on the rep's clock (the start of the 3:30 PM to 11:30 PM Cairo shift) instead of 9:00 AM, when nobody is calling.
+  Each chip's tooltip shows the exact time. Used by the claimed lead's call log, call mode (which keeps 2 weeks) and Today's meeting follow-up.
+- Undo toast (`showUndoToast` in `docs/app.js`, 10 seconds): after claiming from Prospect when nothing was blocked, held or came along with it (returns the leads
+  with `leads/return-to-prospect`); after changing a claimed lead's status in the table (puts the old status back); after setting, changing or clearing a reminder
+  (puts the old one back). Not offered where it cannot be done: Send to Disconnected, and Return to Prospect (a claim needs the original search result to redo).
+- Save & next lead (`docs/app.js`): next to Save in a claimed lead's call log; saves, then opens the next visible lead in the list (skips rows folded in a business
+  group). If the result asks for a callback time, it waits for that first. Call mode already had its own Save & next.
+- `docs/callmode.js`, `docs/style.css`, `docs/index.html`: the shared picks, the toast button and call-log button styles, script tag and versions.
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required: claim, undo, status undo, reminder undo, Save & next lead.
+
 ## 2026-10-26 — Fix: super admin Home greeting is a card
 
 The team picture had dropped onto its own line under the buttons. `docs/style.css`: the Home greeting is now a card like Today's (same tinted background

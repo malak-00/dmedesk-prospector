@@ -3560,3 +3560,9 @@ tr.group-collapsed, tr.sub-collapsed { display: none !important; }
 .ins-note.ins-warn-note { color: var(--ink); background: var(--glow-mid); border-left: 3px solid var(--score-mid); padding: 8px 12px; border-radius: 6px; margin: 10px 0; font-size: 13px; }
 .suggestion-done td { opacity: 0.55; }
 .suggestion-done td:last-child { opacity: 1; }
+
+/* ---------- Undo toast, and Save & next lead ---------- */
+.toast-undo { margin-left: 8px; font: inherit; font-weight: 700; color: var(--accent-ink); background: none; border: 0; padding: 0 2px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.toast-undo:hover { filter: brightness(1.15); }
+.toast-undo:disabled { opacity: 0.5; cursor: default; }
+.call-log-save { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }

@@ -9,10 +9,9 @@
 (function () {
   "use strict";
 
+  // The shared quick-picks (remind.js), each as a token in `days`, plus two weeks.
   const CALLBACK_CHOICES = [
-    { days: 1, label: "Tomorrow" },
-    { days: 3, label: "3 days" },
-    { days: 7, label: "1 week" },
+    ...window.dmeRemind.CHOICES.map((o) => ({ days: o.token, label: o.label })),
     { days: 14, label: "2 weeks" },
   ];
   const UP_NEXT_SHOWN = 4;
