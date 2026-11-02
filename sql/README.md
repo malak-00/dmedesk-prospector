@@ -48,6 +48,7 @@ Required manual sequence:
 049_identity_keys_one_row.sql     (planner hint: identity_candidate_keys() returns one row, so the ownership check uses index lookups)
 054_owner_name_index.sql         (index on the authorized official's name, so opening a Prospect card's same-owner lookup stops scanning the whole table)
 055_suggestion_done.sql           (done_at / done_by on suggestions, so an admin can mark a suggestion done)
+057_claim_others_set_based.sql  (claim_leads: other reps' leads keyed in one pass; ONLY after sql/audit_claim_cost.sql shows 0 differences)
 ```
 
 **Outstanding: `017` and `018`.** The bundle described next always holds
@@ -122,6 +123,7 @@ in `003`); save their output with the run.
 | `049_identity_keys_one_row.sql` | `ALTER FUNCTION identity_candidate_keys(jsonb) ROWS 1`: a planner estimate only. Function body, results, tables and data untouched; rerun-safe | **Run 2026-10-19 (at the user's request). `prorows` is now 1** |
 | `054_owner_name_index.sql` | Creates `idx_npi_records_official_name` (official last name, first name). No table or data changed; rerun-safe; about a second, briefly blocks writes to `npi_records` | **Not yet run. The same-owner lookup on a Prospect card keeps scanning the whole table and often times out** |
 | `055_suggestion_done.sql` | Adds nullable `done_at` and `done_by` to `suggestions`. Existing rows stay open; nothing dropped; rerun-safe | **Not yet run. Admin still lists suggestions, but "Mark done" says this file is needed** |
+| `057_claim_others_set_based.sql` | Patches the LIVE `claim_leads()` in place: step 3's per-lead `identity_candidate_keys()` call becomes one set-based pass with the same inputs and key functions. Stops with an error and changes nothing if the live text is not the sql/014 text. **Run `sql/audit_claim_cost.sql` first; query 4 must show 0 and 0** | **Not yet run. Claims keep timing out roughly half the time** |
 
 ## Notes on individual files
 

@@ -3103,3 +3103,34 @@ Nothing changed in Supabase. The script has not been run.
 ### Safety Status
 
 No destructive command, secret change or production mutation. Claim and ownership rules are untouched.
+
+## 2026-11-02 — Claim timeouts measured from the Worker log; guarded fix drafted (not run)
+
+### Objective
+
+Follow up the claim-timeout diagnosis with real numbers, and prepare the fix.
+
+### Actions Completed
+
+- The Worker log watcher started on 2026-10-26 kept running until 2026-10-29. Reading it: POST /export/sheets
+  was called 50 times and 24 failed with "Failed to claim leads: canceling statement due to statement timeout"
+  (48%; per day 6 of 14, 13 of 24, 5 of 12); POST /export/google-sheet, which runs the same claim_leads dry run,
+  failed 6 of 9. On 2026-10-19 the claim failure rate was about 3%. This fits the diagnosis: claim_leads keys every
+  other rep's active lead on every call, and the number of those leads has grown since sql/038 (group-mates)
+  went in on 2026-10-21.
+- Wrote `sql/057_claim_others_set_based.sql`: patches the live claim_leads in place so that step becomes one
+  set-based pass with the same inputs and key functions. It reads the live definition, swaps exactly one fragment
+  and re-creates the function; if the fragment is not found exactly once it stops and changes nothing. Checked
+  offline against sql/014: the fragment is found once and the patched block reads as intended.
+- DO NOT RUN until `sql/audit_claim_cost.sql` query 4 shows 0 and 0 differences and query 3 is clearly faster
+  than query 2. The Supabase connection still does not list this project, so none of it has been run.
+- Seen in the same log, not changed: `lead_intel.win_reason does not exist` on each insights load (sql/056 is
+  not run yet); `/companies/product-mix` "CMS did not answer"; the `same-owner` timeouts (sql/054).
+
+### Database / System Result
+
+Nothing changed in Supabase.
+
+### Safety Status
+
+No destructive command, secret change or production mutation. Claim and ownership rules are untouched until sql/057 is run by hand.
