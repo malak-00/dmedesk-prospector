@@ -167,6 +167,11 @@ app.post("/auth/exclude-keywords", async (c) => {
   return c.json(ok(data));
 });
 
+app.get("/auth/keyword-sources", async (c) => {
+  const data = await Auth.listKeywordSources(supabaseFor(c), c.get("session"));
+  return c.json(ok(data));
+});
+
 // ---- search -------------------------------------------------------------
 
 function parseCommaList(value) {

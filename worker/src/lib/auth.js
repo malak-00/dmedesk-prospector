@@ -174,6 +174,23 @@ export async function setExcludeKeywords(config, session, text) {
   return { excludeKeywords: trimmed, token };
 }
 
+// Teammates (not the caller, not disabled) who have saved exclude keywords, so
+// a user can borrow them. Read-only: the caller merges them into their OWN
+// list through setExcludeKeywords, so nobody can write to another account.
+export async function listKeywordSources(supabase, session) {
+  let res = await supabase.from("app_users").select("id, username, display_name, exclude_keywords, disabled_at").order("display_name");
+  if (res.error) res = await supabase.from("app_users").select("id, username, display_name, exclude_keywords").order("display_name"); // before sql/026
+  if (res.error) throw httpError(500, "Failed to load teammates' keywords: " + res.error.message);
+  return (res.data || [])
+    .filter((u) => u.id !== session.id && !u.disabled_at && !/-bot$/i.test(String(u.username || "")))
+    .map((u) => ({
+      username: u.username,
+      displayName: u.display_name,
+      excludeKeywords: String(u.exclude_keywords || "").split(",").map((k) => k.trim()).filter(Boolean),
+    }))
+    .filter((u) => u.excludeKeywords.length > 0);
+}
+
 export function hashPassword(password) {
   return bcrypt.hash(password, 10);
 }

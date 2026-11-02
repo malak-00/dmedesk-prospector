@@ -112,3 +112,17 @@ test('someone with a temporary password is flagged on every request until they c
 test('exclude keywords: over 4000 characters is refused (limit raised from 500)', async () => {
   await assert.rejects(() => setExcludeKeywords(config, { id: 'u1' }, 'a'.repeat(4001)), (err) => err.status === 400 && /4000/.test(err.message));
 });
+
+test('listKeywordSources: teammates with keywords only, never the caller, disabled users or bots', async () => {
+  const { listKeywordSources } = await import('../src/lib/auth.js');
+  const rows = [
+    { id: 'me', username: 'ben', display_name: 'Ben', exclude_keywords: 'a, b' },
+    { id: 'u2', username: 'ana', display_name: 'Ana', exclude_keywords: 'dental, , vision ' },
+    { id: 'u3', username: 'cy', display_name: 'Cy', exclude_keywords: '' },
+    { id: 'u4', username: 'dee', display_name: 'Dee', exclude_keywords: 'x', disabled_at: '2026-01-01' },
+    { id: 'u5', username: 'sync-bot', display_name: 'Sync', exclude_keywords: 'y' },
+  ];
+  const supabase = { from: () => ({ select: () => ({ order: async () => ({ data: rows, error: null }) }) }) };
+  const out = await listKeywordSources(supabase, { id: 'me' });
+  assert.deepEqual(out, [{ username: 'ana', displayName: 'Ana', excludeKeywords: ['dental', 'vision'] }]);
+});

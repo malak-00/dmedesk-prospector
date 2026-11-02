@@ -1,5 +1,19 @@
 # DME Desk Prospector Worklog
 
+## 2026-11-02 — Borrow a teammate's exclude keywords
+
+**Author.** Ben (with Claude).
+
+> **Reminder for Caro:** this is merged to `main` but not confirmed live. Please check it in your browser (Prospect > Exclude keywords > "Add a teammate's keywords"), and deploy the worker if it isn't automatic. Delete this note once done.
+
+**Objective.** Let a user add another user's saved exclude keywords to their own list.
+
+**Actions Completed.** Added read-only `GET /auth/keyword-sources` (`worker/src/lib/auth.js` `listKeywordSources`, route in `worker/src/index.js`): teammates with saved keywords, excluding the caller, disabled users and `-bot` accounts. Added an "Add a teammate's keywords" link and picker under Exclude keywords (`docs/index.html`, `docs/app.js`); the chosen keywords are merged into the user's own chips (de-duped, existing kept) and saved once through the existing `auth/exclude-keywords` call. Added a unit test in `worker/test/auth.test.js`.
+
+**Database / System Result.** None. No schema change; no one's keywords are written except the caller's own.
+
+**Safety Status.** Any signed-in user can now see teammates' keyword lists (assumption: not sensitive). Worker tests pass; not browser-tested. The worker may need a manual deploy.
+
 ## 2026-10-27 — Batch 4: enrollment, product shifts, last touched, local pattern, why they signed
 
 **Objective.** Put more useful facts in front of a rep before a call, and start learning what wins.
