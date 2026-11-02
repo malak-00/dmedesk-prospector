@@ -3146,3 +3146,10 @@ No destructive command, secret change or production mutation. Claim and ownershi
   The set-based step produces exactly the same keys and rows on today's data.
 - Query 3 (15 ms) is NOT a valid timing: with a bare count(*) Postgres skipped the join and the key functions.
   The script was corrected (sum of key lengths forces them to be computed); it must be re-run before sql/057.
+
+- Corrected query 3 (set-based, keys forced): 4,641 ms for the same 5,761 leads, against 10,144 ms for the current
+  method (about 2.2x faster). Same rows (query 4: 0 and 0). The remaining cost is the four identity_*_key functions
+  themselves (regex passes and array building per lead, about 0.8 ms each on this database), so sql/057 halves the
+  step but it still grows with the number of claimed leads. Durable option if claims still time out after sql/057:
+  keep the four keys on each lead (set when it is claimed, backfilled once, refreshed after an NPPES refresh) so a
+  claim reads them instead of recomputing.
