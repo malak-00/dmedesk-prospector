@@ -33,8 +33,12 @@ select count(*) from (
 ) others;
 
 -- 3. TIME OF THE SET-BASED METHOD: same inputs, same key functions, no per-lead function call.
+--    The sum() is there on purpose: with a bare count(*) Postgres skips computing the keys altogether and the time
+--    is meaningless (a first run showed 15 ms for that reason). Here every key has to be worked out.
 explain (analyze, timing off, summary on)
-select count(*) from (
+select count(*),
+       sum(length(coalesce(name_key, '') || coalesce(state_key, '') || coalesce(official_key, '') || coalesce(phone_key, ''))) as forces_the_keys_to_be_computed
+  from (
   select distinct on (l.npi, l.claimed_by)
          l.npi, l.claimed_by, l.group_id, l.company_name,
          public.identity_name_key(s.name) as name_key,

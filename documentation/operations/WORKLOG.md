@@ -3134,3 +3134,15 @@ Nothing changed in Supabase.
 ### Safety Status
 
 No destructive command, secret change or production mutation. Claim and ownership rules are untouched until sql/057 is run by hand.
+
+### Update 2026-11-02 — audit results from the user's run of sql/audit_claim_cost.sql
+
+- Query 1: real claim averaged 5,096 ms over 666 calls (max 7,975 ms) and 5,580 ms over another 86; the Send-to-Sheet
+  dry run averaged 5,471 ms over 331 calls and 4,575 ms over 15. The max values sit at the 8 s limit.
+- Query 2 (today's "others" step alone): 10,144 ms for 5,761 other-rep leads (it calls identity_candidate_keys once
+  per lead, loops=5761). That is longer than the 8 s statement limit by itself, and about 2.5x the ~2,300 leads of 2026-10-19.
+  This confirms the cause.
+- Query 4 (equivalence): current_rows 5761, set_based_rows 5761, only_in_current 0, only_in_set_based 0.
+  The set-based step produces exactly the same keys and rows on today's data.
+- Query 3 (15 ms) is NOT a valid timing: with a bare count(*) Postgres skipped the join and the key functions.
+  The script was corrected (sum of key lengths forces them to be computed); it must be re-run before sql/057.
