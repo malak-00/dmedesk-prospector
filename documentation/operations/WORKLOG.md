@@ -1,5 +1,19 @@
 # DME Desk Prospector Worklog
 
+## 2026-11-02 — Borrow a teammate's exclude keywords
+
+**Author.** Ben (with Claude).
+
+> **Reminder for Caro:** this is not deployed yet. Please deploy the worker and `docs/`, then check it in your browser: Prospect > Exclude keywords > "Add a teammate's keywords". Delete this note once done.
+
+**Objective.** Let a user add another user's saved exclude keywords to their own list.
+
+**Actions Completed.** Added read-only `GET /auth/keyword-sources` (`worker/src/lib/auth.js` `listKeywordSources`, route in `worker/src/index.js`): teammates with saved keywords, excluding the caller, disabled users and `-bot` accounts. Added an "Add a teammate's keywords" link and picker under Exclude keywords (`docs/index.html`, `docs/app.js`); the chosen keywords are merged into the user's own chips (de-duped, existing kept) and saved once through the existing `auth/exclude-keywords` call. Added a unit test in `worker/test/auth.test.js`.
+
+**Database / System Result.** None. No schema change; no one's keywords are written except the caller's own.
+
+**Safety Status.** Not deployed. Worker and `docs/` need deploying, then a manual browser check. Any signed-in user can now see teammates' keyword lists (assumption: not sensitive).
+
 ## 2026-10-22 — Draft plan: lead outcomes from BD MEETINGS
 
 **Objective.** Plan how to bring BD MEETINGS results (onboarded, contract sent, dead, disqualified) into Prospector as per-NPI conversion labels for analysis, scoring and prediction.

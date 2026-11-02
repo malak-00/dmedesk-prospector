@@ -40,3 +40,7 @@ This repository contains the DME Desk Prospector application. The live path is a
 - Summarize changed files, checks run, database impact, and any manual deployment/browser steps still required.
 
 ## dont forget to update worklog !
+
+## Open reminder for Caro (remove once done)
+
+If Caro is the one working in this repo: tell her at the start of the session that Ben added "Add a teammate's keywords" (Exclude keywords, Prospect tab) and it still needs deploying and a manual browser check. Details are in the 2026-11-02 entry in `documentation/operations/WORKLOG.md`. Delete this section after she confirms.

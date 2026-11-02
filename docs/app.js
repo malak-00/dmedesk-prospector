@@ -386,6 +386,8 @@ const els = {
   excludeKeywordsChipList: document.getElementById("excludeKeywordsChipList"),
   excludeKeywordsEntry: document.getElementById("excludeKeywordsEntry"),
   saveExcludeKeywordsBtn: document.getElementById("saveExcludeKeywordsBtn"),
+  borrowKeywordsBtn: document.getElementById("borrowKeywordsBtn"),
+  borrowKeywordsSelect: document.getElementById("borrowKeywordsSelect"),
   excludeKeywordsCount: document.getElementById("excludeKeywordsCount"),
   clearExcludeKeywordsBtn: document.getElementById("clearExcludeKeywordsBtn"),
   nameContainsInput: document.getElementById("nameContainsInput"),
@@ -1832,6 +1834,44 @@ async function saveExcludeKeywordsDefault() {
   } finally {
     els.saveExcludeKeywordsBtn.disabled = false;
   }
+}
+
+// "Add a teammate's keywords": lists teammates who have saved exclude keywords
+// and merges the chosen person's into THIS user's chips (added to what's
+// already there, de-duped; each add auto-saves like any other edit). Only ever
+// writes to the signed-in user's own list.
+let keywordSources = [];
+
+async function openBorrowKeywords() {
+  els.borrowKeywordsBtn.disabled = true;
+  try {
+    keywordSources = await apiGet("auth/keyword-sources");
+    if (!keywordSources.length) {
+      showToast("No teammates have saved exclude keywords yet");
+      return;
+    }
+    els.borrowKeywordsSelect.innerHTML = '<option value="">Choose a teammate…</option>' + keywordSources.map((u, i) =>
+      `<option value="${i}">${escapeHtml(u.displayName || u.username)} (${u.excludeKeywords.length} keyword${u.excludeKeywords.length === 1 ? "" : "s"})</option>`).join("");
+    els.borrowKeywordsSelect.hidden = false;
+    els.borrowKeywordsSelect.focus();
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    els.borrowKeywordsBtn.disabled = false;
+  }
+}
+
+function applyBorrowedKeywords() {
+  const source = keywordSources[Number(els.borrowKeywordsSelect.value)];
+  els.borrowKeywordsSelect.hidden = true;
+  if (!source) return;
+  const before = excludeKeywordsChipInput.length;
+  const mine = els.excludeKeywordsInput.value ? els.excludeKeywordsInput.value.split(",") : [];
+  excludeKeywordsChipInput.setAll([...mine, ...source.excludeKeywords]); // setAll de-dupes case-insensitively, keeps yours first
+  const added = excludeKeywordsChipInput.length - before;
+  if (!added) { showToast("You already have all of those"); return; }
+  persistExcludeKeywords({ silent: true }); // setAll doesn't save on its own -- one save for the whole batch
+  showToast(`Added ${added} keyword${added === 1 ? "" : "s"} from ${source.displayName || source.username}`);
 }
 
 /* ---------- Search more (session-scoped pagination memory) ---------- */
@@ -4750,6 +4790,8 @@ restoreSearchFormState();
 
 els.form.addEventListener("submit", runSearch);
 els.saveExcludeKeywordsBtn.addEventListener("click", saveExcludeKeywordsDefault);
+els.borrowKeywordsBtn.addEventListener("click", openBorrowKeywords);
+els.borrowKeywordsSelect.addEventListener("change", applyBorrowedKeywords);
 // Note: the Exclude keywords and Company name (contains) chip inputs'
 // entry-field keydown/blur handling (Enter/comma to add, Backspace-on-empty
 // to remove last, blur to commit pending text) is already wired inside
