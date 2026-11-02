@@ -3153,3 +3153,11 @@ No destructive command, secret change or production mutation. Claim and ownershi
   step but it still grows with the number of claimed leads. Durable option if claims still time out after sql/057:
   keep the four keys on each lead (set when it is claimed, backfilled once, refreshed after an NPPES refresh) so a
   claim reads them instead of recomputing.
+
+- sql/057 failed when first run: syntax error at "E'      from public.leads l\n'" (adjacent E'' string pieces on
+  separate lines are not allowed after the first; Postgres only joins plain ones). Nothing was applied: the error is
+  raised before the DO block runs. Fixed by joining the pieces with ||. Verified with Postgres' own parser
+  (libpg-query): the old form reproduces the user's exact error; the new string expressions, the "others" step before
+  and after the patch, and the other statements in the block all parse. The PL/pgSQL body as a whole could not be
+  parsed with that build, so the first real run is still the final test (it is one transaction and changes nothing if
+  anything fails).

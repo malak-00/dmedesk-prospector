@@ -31,28 +31,28 @@ declare
   v_def text;
   v_old_cols constant text :=
     E'           l.npi, l.claimed_by, l.group_id, l.company_name, k.name_key, k.state_key, k.official_key, k.phone_key\n'
-    E'      from public.leads l\n'
-    E'     cross join lateral public.identity_candidate_keys(jsonb_build_object(\n'
-    E'       ''npi'', l.npi, ''name'', l.company_name, ''state'', l.state, ''phone'', l.phone,\n'
-    E'       ''officialName'', case when l.contact_source = ''nppes'' then l.contact_name end,\n'
-    E'       ''officialPhone'', case when l.contact_source = ''nppes'' then l.contact_phone end)) k\n';
+    || E'      from public.leads l\n'
+    || E'     cross join lateral public.identity_candidate_keys(jsonb_build_object(\n'
+    || E'       ''npi'', l.npi, ''name'', l.company_name, ''state'', l.state, ''phone'', l.phone,\n'
+    || E'       ''officialName'', case when l.contact_source = ''nppes'' then l.contact_name end,\n'
+    || E'       ''officialPhone'', case when l.contact_source = ''nppes'' then l.contact_phone end)) k\n';
   v_new_cols constant text :=
     E'           l.npi, l.claimed_by, l.group_id, l.company_name,\n'
-    E'           public.identity_name_key(s.name) as name_key,\n'
-    E'           public.identity_state_key(s.state) as state_key,\n'
-    E'           public.identity_official_key(s.first_name, s.last_name) as official_key,\n'
-    E'           public.identity_phone_key(s.phone, s.official_phone) as phone_key\n'
-    E'      from public.leads l\n'
-    E'      left join public.npi_records nr on nr.npi = btrim(coalesce(l.npi, ''''))\n'
-    E'     cross join lateral (select\n'
-    E'             case when nr.npi is not null then nr.name else l.company_name end as name,\n'
-    E'             case when nr.npi is not null then nr.address_state else l.state end as state,\n'
-    E'             case when nr.npi is not null then nr.authorizedofficial_firstname\n'
-    E'                  else case when l.contact_source = ''nppes'' then l.contact_name end end as first_name,\n'
-    E'             case when nr.npi is not null then nr.authorizedofficial_lastname else null end as last_name,\n'
-    E'             case when nr.npi is not null then nr.phone else l.phone end as phone,\n'
-    E'             case when nr.npi is not null then nr.authorizedofficial_phone\n'
-    E'                  else case when l.contact_source = ''nppes'' then l.contact_phone end end as official_phone) s\n';
+    || E'           public.identity_name_key(s.name) as name_key,\n'
+    || E'           public.identity_state_key(s.state) as state_key,\n'
+    || E'           public.identity_official_key(s.first_name, s.last_name) as official_key,\n'
+    || E'           public.identity_phone_key(s.phone, s.official_phone) as phone_key\n'
+    || E'      from public.leads l\n'
+    || E'      left join public.npi_records nr on nr.npi = btrim(coalesce(l.npi, ''''))\n'
+    || E'     cross join lateral (select\n'
+    || E'             case when nr.npi is not null then nr.name else l.company_name end as name,\n'
+    || E'             case when nr.npi is not null then nr.address_state else l.state end as state,\n'
+    || E'             case when nr.npi is not null then nr.authorizedofficial_firstname\n'
+    || E'                  else case when l.contact_source = ''nppes'' then l.contact_name end end as first_name,\n'
+    || E'             case when nr.npi is not null then nr.authorizedofficial_lastname else null end as last_name,\n'
+    || E'             case when nr.npi is not null then nr.phone else l.phone end as phone,\n'
+    || E'             case when nr.npi is not null then nr.authorizedofficial_phone\n'
+    || E'                  else case when l.contact_source = ''nppes'' then l.contact_phone end end as official_phone) s\n';
 begin
   if (select count(*) from pg_proc where proname = 'claim_leads' and pronamespace = 'public'::regnamespace) <> 1 then
     raise exception 'expected exactly one public.claim_leads; found a different number. Nothing changed.';
