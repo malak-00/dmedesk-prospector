@@ -73,49 +73,90 @@
 
   /* ---------- spin the wheel ---------- */
 
-  const PRIZES = [
-    "You pick the next playlist. Everyone else has to listen.",
-    "A well-earned 5-minute stretch break. Go!",
-    "Compliment of the day: you make hard calls look easy.",
-    "Fun fact: you've outworked the alarm clock today.",
-    "Your next callback is guaranteed to go well. (Trust me.)",
-    "A virtual high five from me.",
-    "Treat yourself to your favourite snack. You earned it.",
-    "You're excused from small talk for the next 10 minutes.",
-    "Today's superpower: persistence. Use it wisely.",
-    "A sticker for your shift: a gold star.",
-    "Go ahead and call your best lead next. Momentum is yours.",
-    "Free pass: pick any lead and call it first.",
-  ];
+  const W = window.dmeWheel;
+  const WHEEL_COLORS = ["#4cb8c4", "#e0b84a", "#e75a8f", "#7a6be0", "#3aa862", "#f08a24", "#4f8ff7", "#d64545"];
+  const reducedMotion = () => Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   let spinning = false;
 
   const goalHit = () => (api.stats().callsToday || 0) >= api.goal();
+  // Today's spin: { day, index, value, angle, granted }. It is written before the wheel turns, so a reload cannot give a second spin.
   const wheelState = () => {
     const w = api.read(WHEEL_KEY, null);
-    return w && w.day === api.today() ? w : null;
+    return w && w.day === api.today() && Number.isInteger(w.index) ? w : null;
   };
+
+  // The disc: eight coloured slices with a short name each, turned by `angle` degrees. The pointer is drawn separately at the top.
+  function wheelHtml(angle, { dim = false, go = false } = {}) {
+    const n = W.PRIZES.length;
+    const seg = 360 / n;
+    const r = 100;
+    const c = 110;
+    const slices = W.PRIZES.map((p, i) => {
+      const a0 = ((i * seg - 90) * Math.PI) / 180;
+      const a1 = (((i + 1) * seg - 90) * Math.PI) / 180;
+      const pt = (a) => `${(c + r * Math.cos(a)).toFixed(2)} ${(c + r * Math.sin(a)).toFixed(2)}`;
+      return `<path d="M${c} ${c}L${pt(a0)}A${r} ${r} 0 0 1 ${pt(a1)}Z" fill="${WHEEL_COLORS[i % WHEEL_COLORS.length]}" stroke="rgba(255,255,255,0.9)" stroke-width="1.5"/>
+        <text x="${c}" y="${c - r + 27}" transform="rotate(${((i + 0.5) * seg).toFixed(2)} ${c} ${c})" text-anchor="middle" class="wheel-label">${escapeHtml(p.short)}</text>`;
+    }).join("");
+    return `<div class="wheel-wrap${dim ? " is-dim" : ""}" aria-hidden="true">
+      <div class="wheel-pointer"></div>
+      <div class="wheel-disc" ${go ? "data-go" : ""} style="transform:rotate(${angle}deg)"><svg viewBox="0 0 220 220">${slices}<circle cx="${c}" cy="${c}" r="14" fill="var(--surface, #fff)" stroke="rgba(0,0,0,0.25)" stroke-width="2"/></svg></div>
+    </div>`;
+  }
+
+  function perksHtml() {
+    const perks = window.dmePerks ? window.dmePerks.list() : [];
+    if (!perks.length) return "";
+    const until = (ms) => { const days = Math.ceil((ms - Date.now()) / 86400000); return days <= 1 ? "until tomorrow" : `${days} days left`; };
+    return `<div class="buddy-fun-label">Your prizes</div><ul class="wheel-perks">${perks.map((p) => `<li><strong>${escapeHtml(p.label)}</strong> <span>${escapeHtml(until(p.until))}</span><div class="buddy-fun-note">${escapeHtml(p.text)}</div></li>`).join("")}</ul>`;
+  }
+
+  // The prize becomes a perk, once, and Caro says so.
+  function award(w, quiet) {
+    if (!w || w.granted || !window.dmePerks) return;
+    w.granted = true;
+    api.write(WHEEL_KEY, w);
+    window.dmePerks.grant(w.index, w.value);
+    if (!quiet) api.say({ key: `spin:${api.today()}`, kind: "event", pose: "party", title: `The wheel says: ${W.PRIZES[w.index].label}!`, text: W.describe(w.index, w.value), confetti: true });
+  }
 
   function wheelSection() {
     const w = wheelState();
     let body;
-    if (w) body = `<div class="buddy-fun-note">Today's spin: ${escapeHtml(w.prize)}</div>`;
-    else if (spinning) body = `<div class="buddy-wheel is-spinning" aria-hidden="true">${uiIcon("wheel", "big")}</div><div class="buddy-fun-note">Spinning…</div>`;
-    else if (goalHit()) body = `<div class="buddy-fun-note">You hit your goal, so you earned a spin!</div><button type="button" class="btn btn-primary btn-small" data-fun="spin">${uiIcon("wheel")} Spin</button>`;
-    else body = `<div class="buddy-fun-note">Hit your daily goal (${api.goal()} calls) to unlock a spin.</div>`;
+    if (w && !spinning) {
+      award(w, true); // a spin that was cut short by a reload still pays out
+      body = `${wheelHtml(w.angle % 360)}<div class="buddy-fun-note">Today's spin: <strong>${escapeHtml(W.PRIZES[w.index].label)}</strong>. ${escapeHtml(W.describe(w.index, w.value))}</div>${perksHtml()}`;
+    } else if (spinning) {
+      body = `${wheelHtml(0, { go: true })}<div class="buddy-fun-note">Spinning…</div>`;
+    } else if (goalHit()) {
+      body = `${wheelHtml(0)}<div class="buddy-fun-note">You hit your goal, so you earned a spin! The rarer prizes come up less often.</div><button type="button" class="btn btn-primary btn-small" data-fun="spin">${uiIcon("wheel")} Spin</button>${perksHtml()}`;
+    } else {
+      body = `${wheelHtml(0, { dim: true })}<div class="buddy-fun-note">Hit your daily goal (${api.goal()} calls) to unlock a spin. Prizes: a frame, a title, a Caro look, a sparkle, an app colour, Caro's lead pick, a snooze, or golden kudos.</div>${perksHtml()}`;
+    }
     return section("wheel", `${uiIcon("wheel")} Spin the wheel${w ? ` ${uiIcon("check")}` : ""}`, body);
   }
 
   function spin() {
     if (spinning || wheelState() || !goalHit()) return;
+    const index = W.weightedIndex();
+    const value = W.resolve(index);
+    const angle = W.spinAngle(index);
+    api.write(WHEEL_KEY, { day: api.today(), index, value, angle, granted: false });
     spinning = true;
     api.rerender();
+    const ms = reducedMotion() ? 500 : 4200;
+    // Next tick: the disc is on screen at 0, so turning it now animates.
+    setTimeout(() => {
+      const disc = document.querySelector(".wheel-disc[data-go]");
+      if (!disc) return;
+      disc.style.transition = `transform ${ms}ms cubic-bezier(0.12, 0.62, 0.08, 1)`;
+      disc.style.transform = `rotate(${angle}deg)`;
+    }, 80);
     setTimeout(() => {
       spinning = false;
-      const prize = api.pick(PRIZES);
-      api.write(WHEEL_KEY, { day: api.today(), prize });
-      api.say({ key: `spin:${api.today()}`, kind: "event", pose: "party", title: "The wheel says…", text: prize, confetti: true });
+      award(wheelState(), false);
       api.rerender();
-    }, 1300);
+    }, ms + 350);
   }
 
   /* ---------- lead of the day ---------- */
@@ -153,7 +194,8 @@
 
   function kudosSection() {
     if (!team.people.length) return "";
-    return section("kudos", `${uiIcon("megaphone")} Give kudos`, `<div class="buddy-fun-note">Thank a teammate. They'll see it pop up once.</div>
+    const golden = window.dmePerks && window.dmePerks.has("golden");
+    return section("kudos", `${uiIcon("megaphone")} Give kudos`, `<div class="buddy-fun-note">${golden ? "You have a golden kudos from the wheel: your next thank-you pops up for them with confetti. " : ""}Thank a teammate. They'll see it pop up once.</div>
       <div class="buddy-fun-row"><select data-fun-kudos-to aria-label="Who to thank">${team.people.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("")}</select></div>
       <div class="buddy-fun-row"><input type="text" data-fun-kudos-body maxlength="140" placeholder="Thanks for covering my callbacks!" aria-label="Your thank-you"><button type="button" class="btn btn-primary btn-small" data-fun="kudos-send">Send</button></div>`);
   }
@@ -163,9 +205,11 @@
     const input = root.querySelector("[data-fun-kudos-body]");
     const body = input.value.trim();
     if (!body) { showToast("Write a few words first", true); return; }
+    const golden = window.dmePerks && window.dmePerks.has("golden");
     try {
-      await apiPost("buddy/kudos", { toUserId: to.value, body });
-      showToast("Thank-you sent");
+      await apiPost("buddy/kudos", { toUserId: to.value, body: golden ? `Golden kudos: ${body}`.slice(0, 160) : body });
+      if (golden) window.dmePerks.consume("golden");
+      showToast(golden ? "Golden kudos sent" : "Thank-you sent");
       input.value = "";
       api.earn("cheer");
       bingoMark("kudos");
@@ -176,7 +220,7 @@
 
   function onKudos(list) {
     list.forEach((k) => api.say({
-      key: `kudos:${k.id}`, kind: "event", pose: "thumbs", who: { name: k.from }, title: `${k.from} says thanks`, text: k.body,
+      key: `kudos:${k.id}`, kind: "event", pose: "thumbs", who: { name: k.from }, title: `${k.from} says thanks`, text: k.body, confetti: /^Golden kudos:/.test(k.body),
       onSeen: () => apiPost("buddy/kudos/seen", { id: k.id }).catch((err) => console.log("[buddy] " + err.message)),
     }));
   }

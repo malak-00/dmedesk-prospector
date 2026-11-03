@@ -3594,3 +3594,55 @@ tbody.is-settling { pointer-events: none; }
 .reason-opt:hover { border-color: var(--ink); }
 .reason-x { font: inherit; font-size: 18px; line-height: 1; padding: 0 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
 .reason-x:hover { color: var(--ink); }
+
+/* ---------- The prize wheel ---------- */
+.wheel-wrap { position: relative; width: 210px; max-width: 100%; margin: 6px auto 2px; }
+.wheel-wrap.is-dim { opacity: 0.55; filter: grayscale(0.4); }
+.wheel-disc { width: 100%; aspect-ratio: 1; border-radius: 50%; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); will-change: transform; }
+.wheel-disc svg { display: block; width: 100%; height: 100%; }
+.wheel-label { font-size: 11px; font-weight: 700; fill: #fff; paint-order: stroke; stroke: rgba(0, 0, 0, 0.45); stroke-width: 2.4px; stroke-linejoin: round; letter-spacing: 0.02em; }
+.wheel-pointer { position: absolute; left: 50%; top: -6px; width: 0; height: 0; margin-left: -9px; z-index: 2; border-left: 9px solid transparent; border-right: 9px solid transparent; border-top: 16px solid var(--ink); filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4)); }
+.wheel-perks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.wheel-perks li { padding: 7px 9px; border: 1px solid var(--selection-chip-border); border-radius: var(--radius-sm); background: var(--surface); font-size: 12.5px; }
+.wheel-perks li span { float: right; color: var(--muted); font-size: 11.5px; }
+
+/* ---------- Wheel perks on the page ---------- */
+/* An app colour replaces the accent for a few days (both themes). */
+:root[data-accent="violet"] { --accent: #8b7cf0; --accent-soft: rgba(139, 124, 240, 0.16); --accent-ink: #b9afff; --selection-chip-border: rgba(139, 124, 240, 0.34); }
+:root[data-accent="violet"][data-theme="light"] { --accent: #6b57d6; --accent-soft: rgba(107, 87, 214, 0.1); --accent-ink: #5442b5; --selection-chip-border: rgba(107, 87, 214, 0.3); }
+:root[data-accent="rose"] { --accent: #ec6a9a; --accent-soft: rgba(236, 106, 154, 0.16); --accent-ink: #ffa3c4; --selection-chip-border: rgba(236, 106, 154, 0.34); }
+:root[data-accent="rose"][data-theme="light"] { --accent: #cf3f78; --accent-soft: rgba(207, 63, 120, 0.1); --accent-ink: #a82d60; --selection-chip-border: rgba(207, 63, 120, 0.3); }
+:root[data-accent="amber"] { --accent: #e8a634; --accent-soft: rgba(232, 166, 52, 0.16); --accent-ink: #ffcf7a; --selection-chip-border: rgba(232, 166, 52, 0.34); }
+:root[data-accent="amber"][data-theme="light"] { --accent: #b97708; --accent-soft: rgba(185, 119, 8, 0.1); --accent-ink: #8f5c06; --selection-chip-border: rgba(185, 119, 8, 0.3); }
+:root[data-accent="green"] { --accent: #3fbf7a; --accent-soft: rgba(63, 191, 122, 0.16); --accent-ink: #8ce6b4; --selection-chip-border: rgba(63, 191, 122, 0.34); }
+:root[data-accent="green"][data-theme="light"] { --accent: #1f8f55; --accent-soft: rgba(31, 143, 85, 0.1); --accent-ink: #176e42; --selection-chip-border: rgba(31, 143, 85, 0.3); }
+
+/* A frame around your picture in the header. */
+html[data-frame="gold"] #userAvatar .av { box-shadow: 0 0 0 2px #e0b84a, 0 0 10px rgba(224, 184, 74, 0.7); }
+html[data-frame="silver"] #userAvatar .av { box-shadow: 0 0 0 2px #c9d4e6, 0 0 10px rgba(201, 212, 230, 0.65); }
+html[data-frame="aurora"] #userAvatar .av { animation: frame-aurora 4s linear infinite; }
+@keyframes frame-aurora { 0% { box-shadow: 0 0 0 2px #4cb8c4, 0 0 10px #4cb8c4; } 33% { box-shadow: 0 0 0 2px #7a6be0, 0 0 10px #7a6be0; } 66% { box-shadow: 0 0 0 2px #e75a8f, 0 0 10px #e75a8f; } 100% { box-shadow: 0 0 0 2px #4cb8c4, 0 0 10px #4cb8c4; } }
+
+/* A title by your name. */
+.user-title { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; color: var(--accent-ink); background: var(--accent-soft); border: 1px solid var(--selection-chip-border); white-space: nowrap; }
+@media (max-width: 1100px) { .user-title { display: none; } }
+
+/* A sparkle around the header chip: twinkling stars, falling confetti, or a soft moving glow. */
+html[data-deco] .user-chip::before, html[data-deco] .user-chip::after { content: ""; position: absolute; pointer-events: none; }
+html[data-deco="sparkles"] .user-chip::before { top: -7px; right: 14px; width: 12px; height: 12px; background: #f6c945; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); animation: deco-twinkle 2.4s ease-in-out infinite; }
+html[data-deco="sparkles"] .user-chip::after { bottom: -6px; left: 22px; width: 9px; height: 9px; background: #fff; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); animation: deco-twinkle 2.4s ease-in-out -1.2s infinite; }
+@keyframes deco-twinkle { 0%, 100% { opacity: 0.15; transform: scale(0.5) rotate(0); } 50% { opacity: 1; transform: scale(1.1) rotate(35deg); } }
+html[data-deco="confetti"] .user-chip::before { top: -10px; left: 20%; width: 5px; height: 5px; border-radius: 1px; background: #e75a8f; box-shadow: 26px 4px #4cb8c4, 52px -2px #f6c945, 78px 5px #7a6be0, 104px 0 #3aa862, 130px 4px #f08a24; animation: deco-fall 2.6s ease-in infinite; }
+@keyframes deco-fall { 0% { transform: translateY(-4px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(40px) rotate(180deg); opacity: 0; } }
+html[data-deco="confetti"] .user-chip::after { display: none; }
+html[data-deco="glow"] .user-chip { animation: deco-glow 3s ease-in-out infinite; }
+@keyframes deco-glow { 0%, 100% { box-shadow: 0 0 4px var(--accent); } 50% { box-shadow: 0 0 14px 2px var(--accent); } }
+html[data-deco="glow"] .user-chip::before, html[data-deco="glow"] .user-chip::after { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  html[data-deco] .user-chip, html[data-deco] .user-chip::before, html[data-deco] .user-chip::after, html[data-frame="aurora"] #userAvatar .av { animation: none; }
+  html[data-deco="sparkles"] .user-chip::before, html[data-deco="sparkles"] .user-chip::after { opacity: 0.9; }
+  html[data-deco="confetti"] .user-chip::before { opacity: 1; }
+}
+
+/* Caro's pick on Today. */
+.today-pick { border-color: var(--accent); background: linear-gradient(135deg, var(--accent-soft), transparent 70%), var(--surface); }

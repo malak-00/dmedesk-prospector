@@ -951,7 +951,7 @@
     api: {
       say, earn, mode, pick, read, write, today, dayNumber, minutesNow, clockText, SHIFT, weekKey, confetti, NAME, POSES, POSE_LABELS,
       rerender: renderPanel, stats: () => lastStats, goal: () => lastGoal, idleMs: () => Date.now() - lastActive,
-      seenPoses, restPose, roughToday, isQuiet, openPanel: () => { if ($("buddyPanel") && $("buddyPanel").hidden) togglePanel(); },
+      seenPoses, unlockPose, restPose, roughToday, isQuiet, openPanel: () => { if ($("buddyPanel") && $("buddyPanel").hidden) togglePanel(); },
       setPreferred: (pose) => { write(PREF_KEY, pose); setLaunchPose(restPose()); renderPanel(); },
       preferred: () => read(PREF_KEY, ""),
     },

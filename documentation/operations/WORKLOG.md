@@ -717,6 +717,36 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-11-03 — A real prize wheel with in-app rewards
+
+### Objective
+
+Turn "Spin the wheel" (a spinner icon and a line of text) into a real wheel with prizes that do something in the app.
+
+### Actions Completed
+
+- `docs/wheel.js` (new, tested in `worker/test/wheel.test.js`): eight equal slices with weights (rarer ones come up less): Profile frame, Title by your name,
+  Caro look, Header sparkle, App colour, Caro's lead pick, Extra snooze, Golden kudos. Decides the spin, where the disc stops, what each prize gives and how long it lasts.
+- `docs/buddy-fun.js`: the wheel is drawn as a coloured disc with a pointer that turns for about four seconds and lands on the prize (half a second with reduced motion).
+  The spin is saved before it turns, so a reload cannot give a second one, and a spin cut short still pays out. Same unlock as before: hit the daily call goal.
+  The panel lists the prizes you hold and when they run out.
+- `docs/perks.js` (new, loaded after `buddy-fun.js`): applies the prizes, kept on this device per person and expiring by themselves:
+  frame (gold, silver or aurora ring around the header picture), title (a small label by the name), Caro look (unlocks and wears a pose for the day, then puts the
+  old pick back; `unlockPose` is now exported from `buddy.js`), header sparkle (twinkling stars, falling confetti or a glow), app colour (violet, rose, amber or green accent
+  for 3 days, both themes).
+- Caro's pick (`docs/today.js`): a card at the top of Today with the best-looking lead among callbacks, first calls and quiet leads (good time to call, contact, phone, Medicare).
+- Extra snooze (`docs/app.js`): a "Use snooze (+1 day)" button next to a claimed lead's reminder pushes it a day and uses the prize up.
+- Golden kudos (`docs/buddy-fun.js`): the next kudos sent is prefixed "Golden kudos:" and pops up with confetti for the teammate; no server change.
+- `docs/style.css`, `docs/index.html`: wheel, perk and pick styles; script tags and versions.
+
+### Database / System Result
+
+- No SQL, no Worker change. Prizes are per device (not shared with teammates and not carried to another computer). Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required: hit the goal, spin, check each kind of prize.
+
 ## 2026-10-28 — Smoother lists, skeleton loading, last touched, shift countdown
 
 ### Objective

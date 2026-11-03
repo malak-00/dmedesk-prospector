@@ -119,6 +119,22 @@
     </div>`;
   }
 
+  // Caro's lead pick (a wheel prize): of the leads due or waiting, the one that looks best to ring now.
+  function pickHtml(b) {
+    if (!window.dmePerks || !window.dmePerks.has("pick")) return "";
+    const pool = unique([...b.callbacks, ...b.firstCalls, ...b.stale]);
+    if (!pool.length) return "";
+    const open = (l) => Boolean(window.dmeTime && window.dmeTime.localInfo(l.state) && window.dmeTime.localInfo(l.state).good);
+    const money = (l) => Math.log10(1 + Math.max(0, Number(l.medicarePayment) || 0));
+    const score = (l) => (open(l) ? 4 : 0) + (phoneOf(l) ? 3 : 0) + (l.contactName ? 2 : 0) + (b.callbacks.includes(l) ? 2 : 0) + Math.min(3, money(l) / 2);
+    const best = pool.slice().sort((x, y) => score(y) - score(x))[0];
+    const why = [open(best) ? "a good time to call there" : "", best.contactName ? "has a named contact" : "", phoneOf(best) ? "has a phone number" : ""].filter(Boolean).join(", ");
+    return `<section class="today-card today-pick">
+      <header class="today-card-head"><h3>Caro's pick</h3><span class="today-hint">A prize from the wheel</span></header>
+      <div class="today-rows"><div class="today-row">${whoHtml(best)}<span class="today-when"><span class="muted-note">${escapeHtml(why || "worth a call")}</span></span>${actionsHtml(best)}</div></div>
+    </section>`;
+  }
+
   function whoHtml(l) {
     const sub = [l.contactName, [l.city, l.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
     const tz = window.dmeHooks.localTime?.(l.state) || "";
@@ -179,7 +195,7 @@
       ${kpi("Meetings held", ins.heldWeek, "this week")}
       ${kpi("Claimed leads", b.total, `${ins.touched} worked so far`)}
     </div>`;
-    let html = "";
+    let html = pickHtml(b);
 
     if (b.review.length) {
       html += section("How did it go?", b.review.length, b.review.map((l) => `

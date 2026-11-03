@@ -2647,6 +2647,14 @@ function wireCallLog(idx) {
     e.stopPropagation();
     saveReminder(idx, "");
   });
+  document.querySelector(`[data-snooze-index="${idx}"]`)?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const lead = state.claimedLeads[idx];
+    // A day on from the reminder, or from now if it is already overdue.
+    const base = Math.max(Date.now(), Date.parse(lead.reminderAt) || 0);
+    await saveReminder(idx, new Date(base + 86400000).toISOString());
+    if (state.claimedLeads[idx] && state.claimedLeads[idx].reminderAt !== lead.reminderAt) window.dmePerks.consume("snooze");
+  });
 }
 
 /* ---------- Lead detail card helpers ---------- */
@@ -4080,7 +4088,7 @@ function claimedDetailRowHtml(lead, index) {
                 <div class="reasons-title">Next callback</div>
                 ${lead.reminderAt
                   ? `<div class="reminder-current reminder-${urgency}">${uiIcon("bell")} ${escapeHtml(formatReminder(lead.reminderAt))}${urgency === "overdue" ? " · overdue" : ""}</div>
-                     <div class="callback-actions"><button type="button" class="text-action" data-reminder-index="${index}">Change</button><button type="button" class="text-action" data-clear-reminder="${index}">Clear</button></div>`
+                     <div class="callback-actions"><button type="button" class="text-action" data-reminder-index="${index}">Change</button><button type="button" class="text-action" data-clear-reminder="${index}">Clear</button>${window.dmePerks && window.dmePerks.has("snooze") ? `<button type="button" class="text-action" data-snooze-index="${index}" title="Your snooze from the wheel: pushes this reminder back a day">Use snooze (+1 day)</button>` : ""}</div>`
                   : `<span class="muted-note">None set</span>
                      <div class="callback-actions"><button type="button" class="text-action" data-reminder-index="${index}">Set a reminder</button></div>`}
               </div>
