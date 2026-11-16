@@ -717,6 +717,28 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-11-16 — Thanksgiving decorations: a turkey and a harvest set
+
+### Objective
+
+Make the Thanksgiving decorations look better and add a turkey.
+
+### Actions Completed
+
+- `docs/holidays.js`: new drawings (turkey with a fan of red, orange and gold tail feathers, a maple leaf, a ribbed harvest pumpkin without the Halloween face, an ear of corn)
+  and a new Thanksgiving set: maple leaf, acorn, turkey, harvest pumpkin, corn, a red maple leaf and wheat. The sidebar shows the same set in reverse, so the turkey
+  appears in both. The Halloween pumpkin is unchanged.
+- `docs/style.css`: Thanksgiving's string and cords are a warm brown, like twine. `docs/index.html`: versions bumped.
+- Checked on a test page (`?holiday=thanksgiving`) in the header and in the sidebar; a pie-slice drawing was tried and dropped because it read as a hat.
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required.
+
 ## 2026-11-03 — A real prize wheel with in-app rewards
 
 ### Objective

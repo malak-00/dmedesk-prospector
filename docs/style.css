@@ -3646,3 +3646,8 @@ html[data-deco="glow"] .user-chip::before, html[data-deco="glow"] .user-chip::af
 
 /* Caro's pick on Today. */
 .today-pick { border-color: var(--accent); background: linear-gradient(135deg, var(--accent-soft), transparent 70%), var(--surface); }
+
+/* Thanksgiving: the string and cords are a warm brown, like twine. */
+.holiday-strip.hd-thanksgiving::before { border-top-color: #b9863a; }
+.holiday-side.hd-thanksgiving::before { border-left-color: #b9863a; }
+.hd-thanksgiving .hd-item::before { background: #b9863a; }
