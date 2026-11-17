@@ -103,9 +103,10 @@ def discover_latest_dataset(fetch_json: FetchJson) -> tuple[str, str] | None:
         catalog = fetch_json(CATALOG_URL)
     except Exception:
         return None
-    best: tuple[int, str, str] | None = None
+    best: tuple[int, bool, str, str] | None = None
     for dataset in (catalog or {}).get("dataset", []) or []:
-        if str(dataset.get("title", "")).strip().lower() != DATASET_TITLE.lower():
+        # Since 2026 each year is its own catalog entry titled "<title> : <date>".
+        if str(dataset.get("title", "")).split(" : ")[0].strip().lower() != DATASET_TITLE.lower():
             continue
         for dist in dataset.get("distribution", []) or []:
             url = str(dist.get("accessURL") or dist.get("downloadURL") or "")
@@ -115,9 +116,11 @@ def discover_latest_dataset(fetch_json: FetchJson) -> tuple[str, str] | None:
             years = [int(y.group(0)) for y in YEAR.finditer(f"{dist.get('temporal', '')} {dist.get('title', '')}")]
             year = max(years) if years else 0
             label = str(dist.get("title") or dist.get("temporal") or match.group(1))
-            if best is None or year > best[0]:
-                best = (year, match.group(1), label)
-    return (best[1], best[2]) if best else None
+            # Within one year, prefer the distribution CMS marks "latest".
+            latest = str(dist.get("description") or "").strip().lower() == "latest"
+            if best is None or (year, latest) > (best[0], best[1]):
+                best = (year, latest, match.group(1), label)
+    return (best[2], best[3]) if best else None
 
 
 def fetch_total_rows(fetch_json: FetchJson, dataset_id: str) -> int | None:

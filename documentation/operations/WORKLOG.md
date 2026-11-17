@@ -1,5 +1,19 @@
 # DME Desk Prospector Worklog
 
+## 2026-11-17 — November 2026 NPPES + deactivation + CMS Medicare loaded; two loader fixes
+
+**Author.** Caro (with Claude).
+
+**Objective.** Add this month's new DMEs from NPPES and CMS to the app.
+
+**Actions Completed.** Downloaded `NPPES_Data_Dissemination_November_2026_V2.zip` and `NPPES_Deactivated_NPI_Report_110926_V2.zip` from download.cms.gov/nppes. Extracted `npidata_pfile_20050523-20261102.csv` to `C:\Users\Caroline.Richards\nppes_extract_2026-11`. Dry run: 9,891,116 source rows (+0.4% vs October), 269,528 in scope; rejected individual_provider 7,900,879, taxonomy_not_enabled 1,271,880, keyword_excluded 448,798, missing_name 31. Applied with checksum (`--release-date 2026-11-02 --label 2026-11-02-full --expect-rows 9852180 --apply`), run `6f5e816c-9d5d-445b-b012-7cf62670b9c7`. The deactivation report now ships as `.xlsx` with an "NPPES Deactivation Date" header; converted it to CSV with a stdlib script (360,673 rows) and applied it as run `022e8c41-4ec9-4ea9-b308-072753ca0692`. Then `python -m nppes_ingest.medicare --apply`, run `ffabc149-3a0b-4f36-bb20-8a021b6b516b` (2024 data year, dataset `a2d56d3f…`, which CMS marks "latest"; still the newest year).
+
+Fixes: `scripts/nppes_ingest/mapping.py` accepts "NPPES Deactivation Date" as an alias (without it every deactivation date would have been stored empty). `scripts/nppes_ingest/medicare.py` `discover_latest_dataset` matches catalog titles that now carry a " : <date>" suffix and prefers the distribution marked "latest" within a year (it was silently falling back to the hard-coded dataset). One test added for each; `python -m unittest discover -s scripts/tests -t scripts` 90 OK.
+
+**Database / System Result.** NPPES: 3,027 new providers, 16,889 updated, 249,612 unchanged, 4,716 field-history rows; 84 claimed leads refreshed, 32 change alerts; identity keys 3,770 changed; registry matching 1,466 new pairs, 734 no longer match; exclusion keywords flagged 1 (521 held by reps, untouched). Deactivation: 376 providers marked deactivated (752 history rows), 360,297 NPIs not in scope skipped; 39 claimed leads refreshed, 28 change alerts. Medicare: 66 suppliers inserted (providers new to `npi_records`), 31,860 unchanged, 28,134 skipped (not in `npi_records`), 0 claim-drop alerts.
+
+**Safety Status.** Nothing deleted; groups not touched; leads only had provider snapshot fields refreshed. `--remove-excluded` not run. The 11 GB extracted CSV, the deactivation folder `C:\Users\Caroline.Richards\nppes_deact_2026-11`, and both October and November zips are still on disk.
+
 ## 2026-11-02 — Borrow a teammate's exclude keywords
 
 **Author.** Ben (with Claude).

@@ -114,6 +114,24 @@ class DiscoveryTests(unittest.TestCase):
     def test_picks_newest_year_of_the_exact_dataset_first_listed_on_ties(self):
         self.assertEqual(discover_latest_dataset(lambda url: CATALOG)[0], NEW_ID)
 
+    def test_per_year_catalog_entries_with_dated_titles_pick_latest(self):
+        def period(year):
+            return [{"@type": "PeriodOfTime", "startDate": f"{year}-01-01", "endDate": f"{year}-12-31"}]
+
+        def api(dataset_id):
+            return f"https://data.cms.gov/data-api/v1/dataset/{dataset_id}/data"
+
+        catalog = {"dataset": [
+            {"title": "Medicare Durable Medical Equipment, Devices & Supplies - by Supplier and Service : 2030-01-01",
+             "distribution": [{"temporal": period(2030), "accessURL": api("00000000-0000-0000-0000-000000000000")}]},
+            {"title": "Medicare Durable Medical Equipment, Devices & Supplies - by Supplier : 2023-01-01",
+             "distribution": [{"temporal": period(2023), "accessURL": api(OLD_ID)}]},
+            {"title": "Medicare Durable Medical Equipment, Devices & Supplies - by Supplier : 2024-01-01",
+             "distribution": [{"temporal": period(2024), "accessURL": api(DUP_ID)},
+                              {"temporal": period(2024), "description": "latest", "accessURL": api(NEW_ID)}]},
+        ]}
+        self.assertEqual(discover_latest_dataset(lambda url: catalog)[0], NEW_ID)
+
     def test_missing_dataset_or_catalog_failure_returns_none(self):
         self.assertIsNone(discover_latest_dataset(lambda url: {"dataset": []}))
 

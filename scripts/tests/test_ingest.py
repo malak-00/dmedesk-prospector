@@ -27,7 +27,7 @@ from nppes_ingest.ingest import (  # noqa: E402
     read_source_rows,
     run_ingest,
 )
-from nppes_ingest.mapping import HeaderIndex, map_provider_row  # noqa: E402
+from nppes_ingest.mapping import HeaderIndex, map_deactivation_row, map_provider_row  # noqa: E402
 from nppes_ingest.validate import (  # noqa: E402
     REASON_BAD_NPI_CHECKSUM,
     REASON_DUPLICATE_NPI,
@@ -159,6 +159,12 @@ class MappingTests(unittest.TestCase):
         index = HeaderIndex(["  npi  ", "entity type code"])
         self.assertEqual(index.resolve("npi"), "  npi  ")
         self.assertEqual(index.resolve("entity_type_code"), "entity type code")
+
+    def test_deactivation_report_nppes_header_keeps_the_date(self) -> None:
+        index = HeaderIndex(["NPI", "NPPES Deactivation Date"])
+        provider = map_deactivation_row(index, {"NPI": "1407028269", "NPPES Deactivation Date": "11/08/2026"}, 2)
+        self.assertEqual(provider.status, "deactivated")
+        self.assertEqual(provider.deactivation_date, "2026-11-08")
 
 
 class RowCountGuardTests(unittest.TestCase):

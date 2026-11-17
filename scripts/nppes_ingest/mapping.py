@@ -50,7 +50,9 @@ HEADER_ALIASES: dict[str, tuple[str, ...]] = {
     "authorizedofficial_phone": ("Authorized Official Telephone Number",),
     "enumeration_date": ("Provider Enumeration Date",),
     "lastupdated": ("Last Update Date",),
-    "deactivation_date": ("NPI Deactivation Date",),
+    # The monthly deactivation report (an .xlsx since 2026) labels the column
+    # "NPPES Deactivation Date"; the full dissemination file says "NPI ...".
+    "deactivation_date": ("NPI Deactivation Date", "NPPES Deactivation Date"),
     "reactivation_date": ("NPI Reactivation Date",),
     "certification_date": ("Certification Date",),
 }
