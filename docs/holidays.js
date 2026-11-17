@@ -155,6 +155,34 @@
     document.body.appendChild(holder);
   }
 
+
+  // A cooked turkey on a platter for the greeting cards (Today and the super admin Home) while it is Thanksgiving. Drawn once here,
+  // with its own gradients, so the cards only have to ask for it. "" on any other day, or when decorations are switched off.
+  const DISH = `<svg class="holiday-dish-svg" viewBox="0 0 130 96" aria-hidden="true">
+    <defs>
+      <radialGradient id="hdSkin" cx="42%" cy="32%" r="75%"><stop offset="0" stop-color="#f2b25c"/><stop offset="0.55" stop-color="#c8782a"/><stop offset="1" stop-color="#8a4a16"/></radialGradient>
+      <linearGradient id="hdLeg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e0953f"/><stop offset="1" stop-color="#9a5420"/></linearGradient>
+      <linearGradient id="hdPlate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbf8f1"/><stop offset="1" stop-color="#d9d2c3"/></linearGradient>
+    </defs>
+    <ellipse cx="65" cy="88" rx="54" ry="6" fill="rgba(0,0,0,0.28)"/>
+    <ellipse cx="65" cy="72" rx="58" ry="16" fill="url(#hdPlate)" stroke="#b9b2a2" stroke-width="1.200"/>
+    <ellipse cx="65" cy="72" rx="48" ry="11.500" fill="none" stroke="#c9c1b0" stroke-width="1"/>
+    <g fill="#3f9a45"><ellipse cx="14" cy="68" rx="7" ry="3.600" transform="rotate(-25 14 68)"/><ellipse cx="22" cy="75" rx="6" ry="3" transform="rotate(20 22 75)"/><ellipse cx="116" cy="68" rx="7" ry="3.600" transform="rotate(25 116 68)"/><ellipse cx="108" cy="75" rx="6" ry="3" transform="rotate(-20 108 75)"/></g>
+    <g fill="#b5202f"><circle cx="20" cy="70" r="3.200"/><circle cx="27" cy="77" r="2.800"/><circle cx="110" cy="70" r="3.200"/><circle cx="103" cy="77" r="2.800"/><circle cx="15" cy="76" r="2.400"/><circle cx="115" cy="76" r="2.400"/></g>
+    <g class="dish-legs">
+      <ellipse cx="30" cy="62" rx="12" ry="7.500" transform="rotate(-32 30 62)" fill="url(#hdLeg)"/>
+      <path d="M21 71l-6 6" stroke="#f4efe2" stroke-width="3.200" stroke-linecap="round"/><circle cx="13.500" cy="78" r="2.600" fill="#f4efe2"/><circle cx="16" cy="79.500" r="2.200" fill="#f4efe2"/>
+      <ellipse cx="100" cy="62" rx="12" ry="7.500" transform="rotate(32 100 62)" fill="url(#hdLeg)"/>
+      <path d="M109 71l6 6" stroke="#f4efe2" stroke-width="3.200" stroke-linecap="round"/><circle cx="116.500" cy="78" r="2.600" fill="#f4efe2"/><circle cx="114" cy="79.500" r="2.200" fill="#f4efe2"/>
+    </g>
+    <ellipse cx="65" cy="52" rx="33" ry="22" fill="url(#hdSkin)"/>
+    <ellipse cx="56" cy="42" rx="19" ry="8.500" fill="#ffe2a8" opacity="0.4"/>
+    <g fill="none" stroke="#6b3410" stroke-width="1.100" stroke-linecap="round" opacity="0.55"><path d="M44 54c4 4 9 6 14 6M72 60c5 0 10-2 14-6M52 47c3 2 7 3 11 3M70 50c3-.4 6-1.600 9-3.500"/></g>
+    <g fill="#f6d27a" opacity="0.85"><circle cx="50" cy="40" r="1.300"/><circle cx="62" cy="36" r="1.100"/><circle cx="74" cy="41" r="1.300"/><circle cx="82" cy="50" r="1.100"/><circle cx="46" cy="50" r="1.100"/></g>
+    <g fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round"><path class="dish-steam s1" d="M52 24c-3-4 3-6 0-11"/><path class="dish-steam s2" d="M65 22c-3-4 3-6 0-12"/><path class="dish-steam s3" d="M78 24c-3-4 3-6 0-11"/></g>
+  </svg>`;
+  const dishHtml = () => (!switchedOff() && current() === "thanksgiving" ? `<span class="holiday-dish" aria-hidden="true">${DISH}</span>` : "");
+
   function glyphSvg([name, colour], i) {
     const [kind, shapes] = G[name];
     const paint = kind === "fill" ? `fill="${colour}"` : `fill="none" stroke="${colour}" stroke-width="2" stroke-linecap="round"`;
@@ -209,6 +237,7 @@
   root.dmeHolidays = Object.assign(api, {
     active: () => current(),
     enabled: () => !switchedOff(),
+    dishHtml,
     mount,
     unmount,
   });

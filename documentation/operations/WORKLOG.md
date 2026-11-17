@@ -731,6 +731,27 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-11-17 — A cooked turkey on the greeting cards for Thanksgiving
+
+### Objective
+
+Add a cooked turkey dish to the home cards while it is Thanksgiving.
+
+### Actions Completed
+
+- `docs/holidays.js`: a drawn roast turkey on a platter (golden skin with shine, two drumsticks, parsley, cranberries, a little steam) and `dmeHolidays.dishHtml()`, which returns it
+  only on Thanksgiving days (or `?holiday=thanksgiving`) and when decorations are not switched off.
+- `docs/today.js` and `docs/superhome.js`: the greeting cards ask for it and show it to the left of the team picture. `docs/style.css`: from 1100px wide, with room
+  made on the card; hidden below that; steam rises slowly and stops for reduced motion. `docs/index.html`: versions bumped. Checked on a test page.
+
+### Database / System Result
+
+- No SQL, no Worker change. Tests pass.
+
+### Safety Status
+
+- Frontend only. Manual look required.
+
 ## 2026-11-16 — Thanksgiving decorations: a turkey and a harvest set
 
 ### Objective

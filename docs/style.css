@@ -3651,3 +3651,19 @@ html[data-deco="glow"] .user-chip::before, html[data-deco="glow"] .user-chip::af
 .holiday-strip.hd-thanksgiving::before { border-top-color: #b9863a; }
 .holiday-side.hd-thanksgiving::before { border-left-color: #b9863a; }
 .hd-thanksgiving .hd-item::before { background: #b9863a; }
+
+/* Thanksgiving: a cooked turkey on a platter in the greeting cards, to the left of the team picture. */
+.holiday-dish { display: none; pointer-events: none; user-select: none; }
+@media (min-width: 1100px) {
+  .holiday-dish { display: block; position: absolute; bottom: 8px; width: 150px; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3)); }
+  .today-hero .holiday-dish { right: 310px; }
+  .home-head .holiday-dish { right: 280px; }
+  .today-hero:has(.holiday-dish) { padding-right: 470px; }
+  .home-head:has(.holiday-dish) { padding-right: 440px; }
+}
+.holiday-dish-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.dish-steam { animation: dish-steam 3.2s ease-in-out infinite; opacity: 0; }
+.dish-steam.s2 { animation-delay: -1s; }
+.dish-steam.s3 { animation-delay: -2s; }
+@keyframes dish-steam { 0% { opacity: 0; transform: translateY(6px); } 35% { opacity: 0.9; } 100% { opacity: 0; transform: translateY(-8px); } }
+@media (prefers-reduced-motion: reduce) { .dish-steam { animation: none; opacity: 0.5; } }
