@@ -3655,11 +3655,11 @@ html[data-deco="glow"] .user-chip::before, html[data-deco="glow"] .user-chip::af
 /* Thanksgiving: a cooked turkey on a platter in the greeting cards, to the left of the team picture. */
 .holiday-dish { display: none; pointer-events: none; user-select: none; }
 @media (min-width: 1100px) {
-  .holiday-dish { display: block; position: absolute; bottom: 8px; width: 150px; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3)); }
-  .today-hero .holiday-dish { right: 310px; }
-  .home-head .holiday-dish { right: 280px; }
-  .today-hero:has(.holiday-dish) { padding-right: 470px; }
-  .home-head:has(.holiday-dish) { padding-right: 440px; }
+  .holiday-dish { display: block; position: absolute; bottom: 6px; width: 188px; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3)); }
+  .today-hero .holiday-dish { right: 300px; }
+  .home-head .holiday-dish { right: 270px; }
+  .today-hero:has(.holiday-dish) { padding-right: 500px; }
+  .home-head:has(.holiday-dish) { padding-right: 470px; }
 }
 .holiday-dish-svg { display: block; width: 100%; height: auto; overflow: visible; }
 .dish-steam { animation: dish-steam 3.2s ease-in-out infinite; opacity: 0; }

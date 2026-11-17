@@ -731,6 +731,11 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-11-17 — Better-looking Thanksgiving turkey dish
+
+The dish was redrawn and enlarged (`docs/holidays.js`, `docs/style.css`, `docs/index.html`): a glazed, crackled roast bird with shine, drumsticks in front with white paper frills, a gold-rimmed
+platter with a soft shadow, orange slices, parsley, cranberries and a sprig on top, and steam. About 190px wide on the cards (room adjusted). Checked at full size on a test page. No other change.
+
 ## 2026-11-17 — A cooked turkey on the greeting cards for Thanksgiving
 
 ### Objective
