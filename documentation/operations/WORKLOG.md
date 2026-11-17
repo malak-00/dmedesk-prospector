@@ -731,6 +731,11 @@ Import and claim all qualifying leads from `BD MEETINGS 2026 - Onboarded (2).csv
 - No data deleted or truncated. Existing reps' claims were left untouched.
 - Group-aware constraints and audit trail (`claim_for_user`) respected.
 
+## 2026-11-17 — Thanksgiving turkey dish drawn from the side
+
+The dish was redrawn in side profile (`docs/holidays.js`, `docs/index.html`): the bird seen from the side with its tail nub on the left, the wing along its flank, a drumstick with a paper frill
+pointing forward, three carved slices on the platter in front, and the same platter, orange slices, parsley, cranberries and steam. Checked at full size and at card size on a test page. No other change.
+
 ## 2026-11-17 — Better-looking Thanksgiving turkey dish
 
 The dish was redrawn and enlarged (`docs/holidays.js`, `docs/style.css`, `docs/index.html`): a glazed, crackled roast bird with shine, drumsticks in front with white paper frills, a gold-rimmed

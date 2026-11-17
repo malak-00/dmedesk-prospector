@@ -160,8 +160,10 @@
   // with its own gradients, so the cards only have to ask for it. "" on any other day, or when decorations are switched off.
   const DISH = `<svg class="holiday-dish-svg" viewBox="0 0 170 116" aria-hidden="true">
     <defs>
-      <radialGradient id="hdSkin" cx="40%" cy="28%" r="82%"><stop offset="0" stop-color="#f7c26a"/><stop offset="0.45" stop-color="#d98a30"/><stop offset="0.8" stop-color="#a85a1c"/><stop offset="1" stop-color="#6e3410"/></radialGradient>
+      <radialGradient id="hdSkin" cx="62%" cy="26%" r="85%"><stop offset="0" stop-color="#f7c26a"/><stop offset="0.45" stop-color="#d98a30"/><stop offset="0.8" stop-color="#a85a1c"/><stop offset="1" stop-color="#6e3410"/></radialGradient>
       <linearGradient id="hdLeg" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#eba24a"/><stop offset="0.6" stop-color="#bb6a24"/><stop offset="1" stop-color="#7c3c12"/></linearGradient>
+      <linearGradient id="hdWing" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c47a2c"/><stop offset="1" stop-color="#8a4616"/></linearGradient>
+      <linearGradient id="hdSlice" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbe9c4"/><stop offset="1" stop-color="#e8c88a"/></linearGradient>
       <linearGradient id="hdPlate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfc7b6"/></linearGradient>
       <linearGradient id="hdRim" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#d9b25a"/><stop offset="0.5" stop-color="#f6e0a0"/><stop offset="1" stop-color="#c79a3c"/></linearGradient>
       <filter id="hdSoft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.600"/></filter>
@@ -171,33 +173,42 @@
     <ellipse cx="85" cy="92" rx="64" ry="13.500" fill="none" stroke="#d6cdb8" stroke-width="1.200"/>
     <ellipse cx="85" cy="91" rx="56" ry="10" fill="rgba(0,0,0,0.1)"/>
     <g class="dish-garnish">
-      <g fill="#3a8f40"><ellipse cx="15" cy="84" rx="8" ry="3.800" transform="rotate(-30 15 84)"/><ellipse cx="22" cy="92" rx="7" ry="3.400" transform="rotate(14 22 92)"/><ellipse cx="29" cy="82" rx="6.500" ry="3.200" transform="rotate(-62 29 82)"/><ellipse cx="155" cy="84" rx="8" ry="3.800" transform="rotate(30 155 84)"/><ellipse cx="148" cy="92" rx="7" ry="3.400" transform="rotate(-14 148 92)"/><ellipse cx="141" cy="82" rx="6.500" ry="3.200" transform="rotate(62 141 82)"/></g>
-      <g fill="#58b25a"><ellipse cx="19" cy="86" rx="5" ry="2.200" transform="rotate(-20 19 86)"/><ellipse cx="151" cy="86" rx="5" ry="2.200" transform="rotate(20 151 86)"/></g>
-      <g><circle cx="38" cy="100" r="7.500" fill="#f09a2a"/><circle cx="38" cy="100" r="5.800" fill="#fbc45a"/><path d="M38 94.200v11.600M32.200 100h11.600M34 96l8 8M42 96l-8 8" stroke="#f09a2a" stroke-width=".9"/>
-        <circle cx="132" cy="100" r="7.500" fill="#f09a2a"/><circle cx="132" cy="100" r="5.800" fill="#fbc45a"/><path d="M132 94.200v11.600M126.200 100h11.600M128 96l8 8M136 96l-8 8" stroke="#f09a2a" stroke-width=".9"/></g>
-      <g fill="#c4202f"><circle cx="24" cy="98" r="3.600"/><circle cx="30" cy="104" r="3.200"/><circle cx="19" cy="103" r="2.800"/><circle cx="146" cy="98" r="3.600"/><circle cx="140" cy="104" r="3.200"/><circle cx="151" cy="103" r="2.800"/></g>
-      <g fill="rgba(255,255,255,0.55)"><circle cx="23" cy="96.800" r="1"/><circle cx="29" cy="102.800" r="1"/><circle cx="145" cy="96.800" r="1"/><circle cx="139" cy="102.800" r="1"/></g>
+      <g fill="#3a8f40"><ellipse cx="14" cy="84" rx="8" ry="3.800" transform="rotate(-30 14 84)"/><ellipse cx="21" cy="92" rx="7" ry="3.400" transform="rotate(14 21 92)"/><ellipse cx="28" cy="82" rx="6.500" ry="3.200" transform="rotate(-62 28 82)"/><ellipse cx="157" cy="84" rx="8" ry="3.800" transform="rotate(30 157 84)"/><ellipse cx="150" cy="92" rx="7" ry="3.400" transform="rotate(-14 150 92)"/><ellipse cx="143" cy="82" rx="6.500" ry="3.200" transform="rotate(62 143 82)"/></g>
+      <g fill="#58b25a"><ellipse cx="18" cy="86" rx="5" ry="2.200" transform="rotate(-20 18 86)"/><ellipse cx="153" cy="86" rx="5" ry="2.200" transform="rotate(20 153 86)"/></g>
+      <g><circle cx="30" cy="99" r="7.500" fill="#f09a2a"/><circle cx="30" cy="99" r="5.800" fill="#fbc45a"/><path d="M30 93.200v11.600M24.200 99h11.600M26 95l8 8M34 95l-8 8" stroke="#f09a2a" stroke-width=".9"/>
+        <circle cx="152" cy="101" r="7.500" fill="#f09a2a"/><circle cx="152" cy="101" r="5.800" fill="#fbc45a"/><path d="M152 95.200v11.600M146.200 101h11.600M148 97l8 8M156 97l-8 8" stroke="#f09a2a" stroke-width=".9"/></g>
+      <g fill="#c4202f"><circle cx="17" cy="97" r="3.600"/><circle cx="22" cy="104" r="3.200"/><circle cx="12" cy="103" r="2.800"/><circle cx="162" cy="97" r="3.400"/><circle cx="158" cy="105" r="3"/><circle cx="165" cy="104" r="2.600"/></g>
+      <g fill="rgba(255,255,255,0.55)"><circle cx="16" cy="95.800" r="1"/><circle cx="21" cy="102.800" r="1"/><circle cx="161" cy="95.800" r="1"/><circle cx="157" cy="103.800" r="1"/></g>
     </g>
-    <ellipse cx="85" cy="86" rx="46" ry="8" fill="rgba(0,0,0,0.28)" filter="url(#hdSoft)"/>
-    <path d="M36 70C36 44 58 28 85 28s49 16 49 42c0 14-22 22-49 22S36 84 36 70z" fill="url(#hdSkin)"/>
-    <path d="M44 56c6-12 20-20 40-20" fill="none" stroke="#ffe7b0" stroke-width="7" stroke-linecap="round" opacity="0.45" filter="url(#hdSoft)"/>
-    <ellipse cx="60" cy="46" rx="14" ry="6" fill="#fff3d0" opacity="0.5" transform="rotate(-18 60 46)"/>
-    <path d="M85 32c-2 14-2 34 0 56" fill="none" stroke="#7c3c12" stroke-width="1.400" opacity="0.35"/>
-    <g fill="none" stroke="#5e2c0c" stroke-width="1.200" stroke-linecap="round" opacity="0.5"><path d="M50 62c6 5 14 8 23 8M97 70c9 0 17-3 23-8M58 52c5 3 11 5 17 5M96 57c6 0 12-2 17-5M64 78c7 3 14 4 21 4M104 78c-5 2-9 3-13 3"/></g>
-    <g class="dish-legs">
-      <ellipse cx="47" cy="77" rx="16" ry="10" transform="rotate(-26 47 77)" fill="url(#hdLeg)"/>
-      <ellipse cx="43" cy="72.500" rx="9" ry="3" transform="rotate(-26 43 72.500)" fill="#ffe0a0" opacity="0.5"/>
-      <path d="M35 83l-9 6" stroke="#f7f1e2" stroke-width="4.600" stroke-linecap="round"/><circle cx="22.500" cy="91" r="3.900" fill="#f7f1e2"/><circle cx="26.500" cy="94" r="3.500" fill="#f7f1e2"/>
-      <path d="M31 80.500l5 4.200-2.200 3-5.200-2.600z" fill="#fff" stroke="#d8cfba" stroke-width=".6"/>
-      <ellipse cx="123" cy="77" rx="16" ry="10" transform="rotate(26 123 77)" fill="url(#hdLeg)"/>
-      <ellipse cx="127" cy="72.500" rx="9" ry="3" transform="rotate(26 127 72.500)" fill="#ffe0a0" opacity="0.5"/>
-      <path d="M135 83l9 6" stroke="#f7f1e2" stroke-width="4.600" stroke-linecap="round"/><circle cx="147.500" cy="91" r="3.900" fill="#f7f1e2"/><circle cx="143.500" cy="94" r="3.500" fill="#f7f1e2"/>
-      <path d="M139 80.500l-5 4.200 2.200 3 5.200-2.600z" fill="#fff" stroke="#d8cfba" stroke-width=".6"/>
+    <ellipse cx="82" cy="88" rx="52" ry="7" fill="rgba(0,0,0,0.3)" filter="url(#hdSoft)"/>
+    <path d="M30 68C28 50 46 33 76 31c28-2 54 10 58 33 3 15-16 27-44 27-28 0-58-2-60-23z" fill="url(#hdSkin)"/>
+    <ellipse cx="29" cy="66" rx="7" ry="6" fill="#b86a22" transform="rotate(-20 29 66)"/>
+    <ellipse cx="28" cy="64" rx="3.400" ry="2.400" fill="#e2a050" transform="rotate(-20 28 64)"/>
+    <path d="M66 38c18-5 40-1 52 10" fill="none" stroke="#ffe7b0" stroke-width="7" stroke-linecap="round" opacity="0.5" filter="url(#hdSoft)"/>
+    <ellipse cx="104" cy="46" rx="14" ry="5.500" fill="#fff3d0" opacity="0.55" transform="rotate(14 104 46)"/>
+    <path d="M122 56c6 4 9 11 7 18" fill="none" stroke="#7c3c12" stroke-width="1.300" opacity="0.4"/>
+    <g>
+      <ellipse cx="80" cy="63" rx="27" ry="13" transform="rotate(6 80 63)" fill="url(#hdWing)"/>
+      <ellipse cx="78" cy="58" rx="22" ry="5" transform="rotate(6 78 58)" fill="#e8aa55" opacity="0.4"/>
+      <g fill="none" stroke="#5e2c0c" stroke-width="1.100" stroke-linecap="round" opacity="0.55"><path d="M60 62c10 3 22 4 34 2M62 68c10 2 20 2 30 0M68 57c8 2 16 2 24 1"/></g>
     </g>
-    <g fill="#ffe6a0" opacity="0.9"><circle cx="58" cy="44" r="1.500"/><circle cx="72" cy="38" r="1.300"/><circle cx="90" cy="36" r="1.300"/><circle cx="106" cy="42" r="1.500"/><circle cx="118" cy="54" r="1.300"/><circle cx="52" cy="58" r="1.300"/><circle cx="82" cy="50" r="1.200"/><circle cx="100" cy="52" r="1.200"/></g>
-    <g fill="#3a8f40"><ellipse cx="86" cy="30" rx="6" ry="2.600" transform="rotate(-20 86 30)"/><ellipse cx="94" cy="32" rx="5" ry="2.300" transform="rotate(25 94 32)"/><ellipse cx="78" cy="32" rx="5" ry="2.300" transform="rotate(-50 78 32)"/></g>
-    <circle cx="92" cy="30" r="2.600" fill="#c4202f"/><circle cx="82" cy="31" r="2.200" fill="#c4202f"/>
-    <g fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2.400" stroke-linecap="round"><path class="dish-steam s1" d="M62 22c-4-5 4-8 0-14"/><path class="dish-steam s2" d="M85 18c-4-5 4-8 0-15"/><path class="dish-steam s3" d="M108 22c-4-5 4-8 0-14"/></g>
+    <g fill="none" stroke="#5e2c0c" stroke-width="1.200" stroke-linecap="round" opacity="0.45"><path d="M40 52c4-6 10-10 17-13M52 80c10 4 24 6 38 5M100 84c8-1 15-4 20-9"/></g>
+    <g fill="#ffe6a0" opacity="0.9"><circle cx="58" cy="42" r="1.500"/><circle cx="76" cy="37" r="1.300"/><circle cx="96" cy="38" r="1.300"/><circle cx="114" cy="46" r="1.500"/><circle cx="44" cy="56" r="1.300"/><circle cx="92" cy="50" r="1.200"/><circle cx="125" cy="60" r="1.200"/></g>
+    <g class="dish-leg">
+      <ellipse cx="111" cy="80" rx="19" ry="10.500" transform="rotate(26 111 80)" fill="url(#hdLeg)"/>
+      <ellipse cx="106" cy="75" rx="10" ry="3.200" transform="rotate(26 106 75)" fill="#ffe0a0" opacity="0.5"/>
+      <path d="M126 87l11 7" stroke="#f7f1e2" stroke-width="4.800" stroke-linecap="round"/><circle cx="141" cy="96.500" r="4" fill="#f7f1e2"/><circle cx="137" cy="99.500" r="3.600" fill="#f7f1e2"/>
+      <path d="M126 83.500l3.600 6 3.800-2.600-2.800-6.200z" fill="#fff" stroke="#d8cfba" stroke-width=".6"/>
+    </g>
+    <g class="dish-slices" stroke="#c9a05a" stroke-width="1">
+      <ellipse cx="50" cy="97" rx="12" ry="5.600" fill="url(#hdSlice)" transform="rotate(-8 50 97)"/>
+      <ellipse cx="64" cy="99" rx="12" ry="5.600" fill="url(#hdSlice)" transform="rotate(-4 64 99)"/>
+      <ellipse cx="78" cy="100" rx="12" ry="5.600" fill="url(#hdSlice)"/>
+      <path d="M44 96c4-2 9-2 13 0M58 98c4-2 9-2 13 0M72 99c4-2 9-2 13 0" fill="none" stroke="#e1b36c" stroke-width=".8"/>
+    </g>
+    <g fill="#3a8f40"><ellipse cx="82" cy="33" rx="6" ry="2.600" transform="rotate(-20 82 33)"/><ellipse cx="90" cy="35" rx="5" ry="2.300" transform="rotate(25 90 35)"/><ellipse cx="74" cy="35" rx="5" ry="2.300" transform="rotate(-50 74 35)"/></g>
+    <circle cx="88" cy="33" r="2.600" fill="#c4202f"/><circle cx="78" cy="34" r="2.200" fill="#c4202f"/>
+    <g fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2.400" stroke-linecap="round"><path class="dish-steam s1" d="M62 24c-4-5 4-8 0-14"/><path class="dish-steam s2" d="M85 20c-4-5 4-8 0-15"/><path class="dish-steam s3" d="M108 24c-4-5 4-8 0-14"/></g>
   </svg>`;
   const dishHtml = () => (!switchedOff() && current() === "thanksgiving" ? `<span class="holiday-dish" aria-hidden="true">${DISH}</span>` : "");
 
